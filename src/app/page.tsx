@@ -23,22 +23,16 @@ import PageLayout from '@/components/PageLayout';
 import { useSite } from '@/components/SiteProvider';
 import VideoCard from '@/components/VideoCard';
 
-// 主内容区大型 KatelyaTV Logo 组件
+// 主内容区大型 KatelyaTV Logo 组件 - 已隐藏但保留代码以备后用
+/*
 const MainKatelyaLogo = () => {
   return (
     <div className='main-logo-container'>
-      {/* 背景光效 */}
       <div className='logo-background-glow'></div>
-
-      {/* 主 Logo */}
       <div className='main-katelya-logo'>KatelyaTV</div>
-
-      {/* 副标题 */}
       <div className='mt-3 text-center'>
         <div className='main-logo-subtitle'>极致影视体验，尽在指尖</div>
       </div>
-
-      {/* 装饰性粒子效果 */}
       <div className='logo-particles'>
         <div className='particle particle-1'></div>
         <div className='particle particle-2'></div>
@@ -50,6 +44,7 @@ const MainKatelyaLogo = () => {
     </div>
   );
 };
+*/
 
 // KatelyaTV 底部 Logo 组件
 const BottomKatelyaLogo = () => {
@@ -148,7 +143,9 @@ function HomeClient() {
   }, []);
 
   // 处理收藏数据更新的函数
-  const updateFavoriteItems = async (allFavorites: Record<string, Favorite>) => {
+  const updateFavoriteItems = async (
+    allFavorites: Record<string, Favorite>
+  ) => {
     const allPlayRecords = await getAllPlayRecords();
 
     // 根据保存时间排序（从近到远）
@@ -209,7 +206,7 @@ function HomeClient() {
     <PageLayout>
       <div className='px-4 sm:px-8 lg:px-12 py-4 sm:py-8 overflow-visible'>
         {/* 主内容区大型 KatelyaTV Logo - 仅在首页显示 */}
-        {activeTab === 'home' && <MainKatelyaLogo />}
+        {/* {activeTab === 'home' && <MainKatelyaLogo />} */}
 
         {/* 顶部 Tab 切换 */}
         <div className='mb-8 flex justify-center'>
@@ -295,10 +292,7 @@ function HomeClient() {
                   {loading
                     ? // 加载状态显示灰色占位数据 (显示10个，2行x5列)
                       Array.from({ length: 10 }).map((_, index) => (
-                        <div
-                          key={index}
-                          className='w-full'
-                        >
+                        <div key={index} className='w-full'>
                           <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-purple-200 animate-pulse dark:bg-purple-800'>
                             <div className='absolute inset-0 bg-purple-300 dark:bg-purple-700'></div>
                           </div>
@@ -307,10 +301,7 @@ function HomeClient() {
                       ))
                     : // 显示真实数据，只显示前10个实现2行布局
                       hotMovies.slice(0, 10).map((movie, index) => (
-                        <div
-                          key={index}
-                          className='w-full'
-                        >
+                        <div key={index} className='w-full'>
                           <VideoCard
                             from='douban'
                             title={movie.title}
@@ -343,10 +334,7 @@ function HomeClient() {
                   {loading
                     ? // 加载状态显示灰色占位数据 (显示10个，2行x5列)
                       Array.from({ length: 10 }).map((_, index) => (
-                        <div
-                          key={index}
-                          className='w-full'
-                        >
+                        <div key={index} className='w-full'>
                           <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-purple-200 animate-pulse dark:bg-purple-800'>
                             <div className='absolute inset-0 bg-purple-300 dark:bg-purple-700'></div>
                           </div>
@@ -355,10 +343,7 @@ function HomeClient() {
                       ))
                     : // 显示真实数据，只显示前10个实现2行布局
                       hotTvShows.slice(0, 10).map((show, index) => (
-                        <div
-                          key={index}
-                          className='w-full'
-                        >
+                        <div key={index} className='w-full'>
                           <VideoCard
                             from='douban'
                             title={show.title}
@@ -390,10 +375,7 @@ function HomeClient() {
                   {loading
                     ? // 加载状态显示灰色占位数据 (显示10个，2行x5列)
                       Array.from({ length: 10 }).map((_, index) => (
-                        <div
-                          key={index}
-                          className='w-full'
-                        >
+                        <div key={index} className='w-full'>
                           <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-purple-200 animate-pulse dark:bg-purple-800'>
                             <div className='absolute inset-0 bg-purple-300 dark:bg-purple-700'></div>
                           </div>
@@ -402,10 +384,7 @@ function HomeClient() {
                       ))
                     : // 显示真实数据，只显示前10个实现2行布局
                       hotVarietyShows.slice(0, 10).map((show, index) => (
-                        <div
-                          key={index}
-                          className='w-full'
-                        >
+                        <div key={index} className='w-full'>
                           <VideoCard
                             from='douban'
                             title={show.title}

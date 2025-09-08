@@ -3,12 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useRouter } from 'next/navigation';
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
@@ -174,7 +169,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     if (categoryContainerRef.current && buttonRefs.current[currentPage]) {
       const container = categoryContainerRef.current;
       const button = buttonRefs.current[currentPage];
-      
+
       if (button) {
         const containerRect = container.getBoundingClientRect();
         const buttonRect = button.getBoundingClientRect();
@@ -195,11 +190,26 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     }
   }, [currentPage]);
 
-  // 生成分页标签
+  // 生成分页标签 - 优化显示逻辑
   const categories = Array.from({ length: pageCount }, (_, i) => {
     const start = i * episodesPerPage + 1;
     const end = Math.min(start + episodesPerPage - 1, totalEpisodes);
-    return start === end ? `${start}` : `${start}-${end}`;
+
+    // 对于很大的数字，使用更紧凑的显示方式
+    if (start === end) {
+      return `${start}`;
+    } else if (start >= 1000 || end >= 1000) {
+      // 对于千位数以上，使用缩写形式
+      const formatNumber = (num: number) => {
+        if (num >= 1000) {
+          return `${Math.floor(num / 100) / 10}k`;
+        }
+        return num.toString();
+      };
+      return `${formatNumber(start)}-${formatNumber(end)}`;
+    } else {
+      return `${start}-${end}`;
+    }
   });
 
   // 处理换源tab点击，只在点击时才搜索
@@ -268,32 +278,63 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         <>
           {/* 分类标签 */}
           <div className='flex items-center gap-4 mb-4 border-b border-gray-300 dark:border-gray-700 -mx-6 px-6 flex-shrink-0'>
-            <div className='flex-1 overflow-x-auto' ref={categoryContainerRef}>
-              <div className='flex gap-2 min-w-max'>
-                {categories.map((label, idx) => {
-                  const isActive = idx === currentPage;
-                  return (
-                    <button
-                      key={label}
-                      ref={(el) => {
-                        buttonRefs.current[idx] = el;
-                      }}
-                      onClick={() => handleCategoryClick(idx)}
-                      className={`w-20 relative py-2 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 text-center
-                        ${
-                          isActive
-                            ? 'text-green-500 dark:text-green-400'
-                            : 'text-gray-700 hover:text-green-600 dark:text-gray-300 dark:hover:text-green-400'
-                        }
-                      `.trim()}
-                    >
-                      {label}
-                      {isActive && (
-                        <div className='absolute bottom-0 left-0 right-0 h-0.5 bg-green-500 dark:bg-green-400' />
-                      )}
-                    </button>
-                  );
-                })}
+            <div className='flex-1 relative'>
+              {/* 左側漸變指示器 */}
+              <div className='absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white dark:from-gray-900 to-transparent z-10 pointer-events-none opacity-75' />
+
+              {/* 右側漸變指示器 */}
+              <div className='absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white dark:from-gray-900 to-transparent z-10 pointer-events-none opacity-75' />
+
+              {/* 滾動容器 */}
+              <div
+                className='overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500'
+                ref={categoryContainerRef}
+                style={{
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: 'rgb(209 213 219) transparent',
+                }}
+              >
+                <div className='flex gap-2 min-w-max px-6'>
+                  {categories.map((label, idx) => {
+                    const isActive = idx === currentPage;
+                    // 动态计算按钮宽度，根据标签长度和内容调整
+                    const getButtonWidth = (text: string) => {
+                      if (text.length <= 2) return 'w-12'; // 单个数字
+                      if (text.length <= 5) return 'w-16'; // 如 "1-10"
+                      if (text.length <= 8) return 'w-20'; // 如 "101-110"
+                      if (text.length <= 11) return 'w-24'; // 如 "1001-1010"
+                      return 'w-28'; // 更长的标签
+                    };
+
+                    const buttonWidth = getButtonWidth(label);
+
+                    return (
+                      <button
+                        key={label}
+                        ref={(el) => {
+                          buttonRefs.current[idx] = el;
+                        }}
+                        onClick={() => handleCategoryClick(idx)}
+                        className={`${buttonWidth} relative py-2 px-1 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 text-center
+                          ${
+                            isActive
+                              ? 'text-green-500 dark:text-green-400'
+                              : 'text-gray-700 hover:text-green-600 dark:text-gray-300 dark:hover:text-green-400'
+                          }
+                        `.trim()}
+                        title={`第 ${idx * episodesPerPage + 1}-${Math.min(
+                          (idx + 1) * episodesPerPage,
+                          totalEpisodes
+                        )} 集`}
+                      >
+                        <span className='block truncate'>{label}</span>
+                        {isActive && (
+                          <div className='absolute bottom-0 left-0 right-0 h-0.5 bg-green-500 dark:bg-green-400' />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
             {/* 向上/向下按钮 */}
@@ -344,7 +385,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                         ? 'bg-green-500 text-white shadow-lg shadow-green-500/25 dark:bg-green-600'
                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:scale-105 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20'
                     }`.trim()}
-                  type="button"
+                  type='button'
                 >
                   {episodeNumber}
                 </button>

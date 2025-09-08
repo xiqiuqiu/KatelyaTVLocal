@@ -23,7 +23,9 @@ import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
-import SkipController, { SkipSettingsButton } from '@/components/SkipController';
+import SkipController, {
+  SkipSettingsButton,
+} from '@/components/SkipController';
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
@@ -1223,7 +1225,7 @@ function PlayPageClient() {
       artPlayerRef.current.on('video:timeupdate', () => {
         const currentTime = artPlayerRef.current.currentTime || 0;
         setCurrentPlayTime(currentTime);
-        
+
         // 同时更新时长（防止ready事件中获取不到）
         const duration = artPlayerRef.current.duration || 0;
         if (duration > 0 && videoDuration !== duration) {
@@ -1493,137 +1495,114 @@ function PlayPageClient() {
               </span>
             )}
           </h1>
-          
+
           {/* 跳过设置按钮 */}
           {currentSource && currentId && (
             <SkipSettingsButton onClick={() => setIsSkipSettingMode(true)} />
           )}
         </div>
-        {/* 第二行：播放器和选集 */}
-        <div className='space-y-2'>
-          {/* 折叠控制 - 仅在 lg 及以上屏幕显示 */}
-          <div className='hidden lg:flex justify-end'>
-            <button
-              onClick={() =>
-                setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
-              }
-              className='group relative flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 hover:bg-white dark:bg-gray-800/80 dark:hover:bg-gray-800 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-200'
-              title={
-                isEpisodeSelectorCollapsed ? '显示选集面板' : '隐藏选集面板'
-              }
-            >
-              <svg
-                className={`w-3.5 h-3.5 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${
-                  isEpisodeSelectorCollapsed ? 'rotate-180' : 'rotate-0'
-                }`}
-                fill='none'
-                stroke='currentColor'
-                viewBox='0 0 24 24'
-              >
-                <path
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                  strokeWidth='2'
-                  d='M9 5l7 7-7 7'
-                />
-              </svg>
-              <span className='text-xs font-medium text-gray-600 dark:text-gray-300'>
-                {isEpisodeSelectorCollapsed ? '显示' : '隐藏'}
-              </span>
-
-              {/* 精致的状态指示点 */}
+        {/* 第二行：播放器 */}
+        <div className='space-y-4'>
+          {/* 视频播放器 */}
+          <div className='w-full'>
+            <div className='relative w-full h-[300px] md:h-[400px] lg:h-[500px] xl:h-[650px] 2xl:h-[750px]'>
               <div
-                className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full transition-all duration-200 ${
-                  isEpisodeSelectorCollapsed
-                    ? 'bg-orange-400 animate-pulse'
-                    : 'bg-green-400'
-                }`}
+                ref={artRef}
+                className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
               ></div>
-            </button>
-          </div>
 
-          <div
-            className={`grid gap-4 lg:h-[500px] xl:h-[650px] 2xl:h-[750px] transition-all duration-300 ease-in-out ${
-              isEpisodeSelectorCollapsed
-                ? 'grid-cols-1'
-                : 'grid-cols-1 md:grid-cols-4'
-            }`}
-          >
-            {/* 播放器 */}
-            <div
-              className={`h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 ${
-                isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
-              }`}
-            >
-              <div className='relative w-full h-[300px] lg:h-full'>
-                <div
-                  ref={artRef}
-                  className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
-                ></div>
+              {/* 跳过片头片尾控制器 */}
+              {currentSource && currentId && videoTitle && (
+                <SkipController
+                  source={currentSource}
+                  id={currentId}
+                  title={videoTitle}
+                  artPlayerRef={artPlayerRef}
+                  currentTime={currentPlayTime}
+                  duration={videoDuration}
+                  isSettingMode={isSkipSettingMode}
+                  onSettingModeChange={setIsSkipSettingMode}
+                  onNextEpisode={handleNextEpisode}
+                />
+              )}
 
-                {/* 跳过片头片尾控制器 */}
-                {currentSource && currentId && videoTitle && (
-                  <SkipController
-                    source={currentSource}
-                    id={currentId}
-                    title={videoTitle}
-                    artPlayerRef={artPlayerRef}
-                    currentTime={currentPlayTime}
-                    duration={videoDuration}
-                    isSettingMode={isSkipSettingMode}
-                    onSettingModeChange={setIsSkipSettingMode}
-                    onNextEpisode={handleNextEpisode}
-                  />
-                )}
-
-                {/* 换源加载蒙层 */}
-                {isVideoLoading && (
-                  <div className='absolute inset-0 bg-black/85 backdrop-blur-sm rounded-xl flex items-center justify-center z-[500] transition-all duration-300'>
-                    <div className='text-center max-w-md mx-auto px-6'>
-                      {/* 动画影院图标 */}
-                      <div className='relative mb-8'>
-                        <div className='relative mx-auto w-24 h-24 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl shadow-2xl flex items-center justify-center transform hover:scale-105 transition-transform duration-300'>
-                          <div className='text-white text-4xl'>🎬</div>
-                          {/* 旋转光环 */}
-                          <div className='absolute -inset-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl opacity-20 animate-spin'></div>
-                        </div>
-
-                        {/* 浮动粒子效果 */}
-                        <div className='absolute top-0 left-0 w-full h-full pointer-events-none'>
-                          <div className='absolute top-2 left-2 w-2 h-2 bg-green-400 rounded-full animate-bounce'></div>
-                          <div
-                            className='absolute top-4 right-4 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce'
-                            style={{ animationDelay: '0.5s' }}
-                          ></div>
-                          <div
-                            className='absolute bottom-3 left-6 w-1 h-1 bg-lime-400 rounded-full animate-bounce'
-                            style={{ animationDelay: '1s' }}
-                          ></div>
-                        </div>
+              {/* 换源加载蒙层 */}
+              {isVideoLoading && (
+                <div className='absolute inset-0 bg-black/85 backdrop-blur-sm rounded-xl flex items-center justify-center z-[500] transition-all duration-300'>
+                  <div className='text-center max-w-md mx-auto px-6'>
+                    {/* 动画影院图标 */}
+                    <div className='relative mb-8'>
+                      <div className='relative mx-auto w-24 h-24 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl shadow-2xl flex items-center justify-center transform hover:scale-105 transition-transform duration-300'>
+                        <div className='text-white text-4xl'>🎬</div>
+                        {/* 旋转光环 */}
+                        <div className='absolute -inset-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl opacity-20 animate-spin'></div>
                       </div>
 
-                      {/* 换源消息 */}
-                      <div className='space-y-2'>
-                        <p className='text-xl font-semibold text-white animate-pulse'>
-                          {videoLoadingStage === 'sourceChanging'
-                            ? '🔄 切换播放源...'
-                            : '🔄 视频加载中...'}
-                        </p>
+                      {/* 浮动粒子效果 */}
+                      <div className='absolute top-0 left-0 w-full h-full pointer-events-none'>
+                        <div className='absolute top-2 left-2 w-2 h-2 bg-green-400 rounded-full animate-bounce'></div>
+                        <div
+                          className='absolute top-4 right-4 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce'
+                          style={{ animationDelay: '0.5s' }}
+                        ></div>
+                        <div
+                          className='absolute bottom-3 left-6 w-1 h-1 bg-lime-400 rounded-full animate-bounce'
+                          style={{ animationDelay: '1s' }}
+                        ></div>
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            </div>
 
-            {/* 选集和换源 - 在移动端始终显示，在 lg 及以上可折叠 */}
-            <div
-              className={`h-[300px] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${
-                isEpisodeSelectorCollapsed
-                  ? 'md:col-span-1 lg:hidden lg:opacity-0 lg:scale-95'
-                  : 'md:col-span-1 lg:opacity-100 lg:scale-100'
-              }`}
-            >
+                    {/* 换源消息 */}
+                    <div className='space-y-2'>
+                      <p className='text-xl font-semibold text-white animate-pulse'>
+                        {videoLoadingStage === 'sourceChanging'
+                          ? '🔄 切换播放源...'
+                          : '🔄 视频加载中...'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 选集和换源面板 - 位于播放器下方 */}
+          <div
+            className={`transition-all duration-300 ease-in-out ${
+              isEpisodeSelectorCollapsed ? 'hidden' : 'block'
+            }`}
+          >
+            {/* 折叠控制按钮 */}
+            {!isEpisodeSelectorCollapsed && (
+              <div className='flex justify-end mb-2'>
+                <button
+                  onClick={() =>
+                    setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
+                  }
+                  className='group relative flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 hover:bg-white dark:bg-gray-800/80 dark:hover:bg-gray-800 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-200'
+                  title='隐藏选集面板'
+                >
+                  <svg
+                    className='w-3.5 h-3.5 text-gray-500 dark:text-gray-400 transition-transform duration-200'
+                    fill='none'
+                    stroke='currentColor'
+                    viewBox='0 0 24 24'
+                  >
+                    <path
+                      strokeLinecap='round'
+                      strokeLinejoin='round'
+                      strokeWidth='2'
+                      d='M6 18L18 6M6 6l12 12'
+                    />
+                  </svg>
+                  <span className='text-xs font-medium text-gray-600 dark:text-gray-300'>
+                    隐藏
+                  </span>
+                </button>
+              </div>
+            )}
+
+            <div className='w-full min-h-[280px] md:min-h-[320px]'>
               <EpisodeSelector
                 totalEpisodes={totalEpisodes}
                 value={currentEpisodeIndex + 1}
@@ -1639,6 +1618,35 @@ function PlayPageClient() {
               />
             </div>
           </div>
+
+          {/* 显示选集面板按钮 - 仅在折叠状态下显示 */}
+          {isEpisodeSelectorCollapsed && (
+            <div className='flex justify-center'>
+              <button
+                onClick={() => setIsEpisodeSelectorCollapsed(false)}
+                className='group relative flex items-center space-x-2 px-4 py-2 rounded-full bg-green-500/90 hover:bg-green-500 text-white backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-200'
+                title='显示选集面板'
+              >
+                <svg
+                  className='w-4 h-4 transition-transform duration-200 group-hover:scale-110'
+                  fill='none'
+                  stroke='currentColor'
+                  viewBox='0 0 24 24'
+                >
+                  <path
+                    strokeLinecap='round'
+                    strokeLinejoin='round'
+                    strokeWidth='2'
+                    d='M19 9l-7 7-7-7'
+                  />
+                </svg>
+                <span className='text-sm font-medium'>显示选集</span>
+
+                {/* 精致的状态指示点 */}
+                <div className='absolute -top-1 -right-1 w-3 h-3 bg-orange-400 rounded-full animate-pulse border-2 border-white'></div>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* 详情展示 */}

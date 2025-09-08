@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any */
 'use client';
 
-import { ChevronUp, Search, X } from 'lucide-react';
+import { ChevronUp, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
@@ -25,10 +25,12 @@ function SearchPageClient() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+
+  // 从 URL 参数获取搜索词
+  const searchQuery = searchParams.get('q') || '';
 
   // 获取默认聚合设置：只读取用户本地设置，默认为 true
   const getDefaultAggregate = () => {
@@ -148,7 +150,6 @@ function SearchPageClient() {
     // 当搜索参数变化时更新搜索状态
     const query = searchParams.get('q');
     if (query) {
-      setSearchQuery(query);
       fetchSearchResults(query);
 
       // 保存到搜索历史 (事件监听会自动更新界面)
@@ -200,24 +201,6 @@ function SearchPageClient() {
     }
   };
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = searchQuery.trim().replace(/\s+/g, ' ');
-    if (!trimmed) return;
-
-    // 回显搜索框
-    setSearchQuery(trimmed);
-    setIsLoading(true);
-    setShowResults(true);
-
-    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
-    // 直接发请求
-    fetchSearchResults(trimmed);
-
-    // 保存到搜索历史 (事件监听会自动更新界面)
-    addSearchHistory(trimmed);
-  };
-
   // 返回顶部功能
   const scrollToTop = () => {
     try {
@@ -235,23 +218,6 @@ function SearchPageClient() {
   return (
     <PageLayout activePath='/search'>
       <div className='px-4 sm:px-10 py-4 sm:py-8 overflow-visible mb-10'>
-        {/* 搜索框 */}
-        <div className='mb-8'>
-          <form onSubmit={handleSearch} className='max-w-2xl mx-auto'>
-            <div className='relative'>
-              <Search className='absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 dark:text-gray-500' />
-              <input
-                id='searchInput'
-                type='text'
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder='搜索电影、电视剧...'
-                className='w-full h-12 rounded-lg bg-gray-50/80 py-3 pl-10 pr-4 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-400 focus:bg-white border border-gray-200/50 shadow-sm dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:bg-gray-700 dark:border-gray-700'
-              />
-            </div>
-          </form>
-        </div>
-
         {/* 搜索结果或搜索历史 */}
         <div className='max-w-[95%] mx-auto mt-12 overflow-visible'>
           {isLoading ? (
@@ -356,7 +322,6 @@ function SearchPageClient() {
                   <div key={item} className='relative group'>
                     <button
                       onClick={() => {
-                        setSearchQuery(item);
                         router.push(
                           `/search?q=${encodeURIComponent(item.trim())}`
                         );

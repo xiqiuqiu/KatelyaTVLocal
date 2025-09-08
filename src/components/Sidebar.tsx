@@ -12,8 +12,6 @@ import {
   useState,
 } from 'react';
 
-import { useSite } from './SiteProvider';
-
 interface SidebarContextType {
   isCollapsed: boolean;
 }
@@ -23,21 +21,6 @@ const SidebarContext = createContext<SidebarContextType>({
 });
 
 export const useSidebar = () => useContext(SidebarContext);
-
-// Logo 组件 - 应用彩虹渐变效果
-const Logo = () => {
-  const { siteName } = useSite();
-  return (
-    <Link
-      href='/'
-      className='flex items-center justify-center h-16 select-none hover:opacity-80 transition-opacity duration-200'
-    >
-      <span className='text-2xl font-bold katelya-logo tracking-tight'>
-        {siteName}
-      </span>
-    </Link>
-  );
-};
 
 interface SidebarProps {
   onToggle?: (collapsed: boolean) => void;
@@ -151,30 +134,17 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
       <div className='hidden md:flex'>
         <aside
           data-sidebar
-          className={`fixed top-0 left-0 h-screen bg-white/40 backdrop-blur-xl transition-all duration-300 border-r border-purple-200/50 z-10 shadow-lg dark:bg-gray-900/70 dark:border-purple-700/50 ${
+          className={`fixed top-0 left-0 h-screen bg-[#0f0f0f] transition-all duration-300 border-r border-[#333333] z-10 ${
             isCollapsed ? 'w-16' : 'w-64'
           }`}
-          style={{
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-          }}
         >
           <div className='flex h-full flex-col'>
-            {/* 顶部 Logo 区域 */}
-            <div className='relative h-16'>
-              <div
-                className={`absolute inset-0 flex items-center justify-center transition-opacity duration-200 ${
-                  isCollapsed ? 'opacity-0' : 'opacity-100'
-                }`}
-              >
-                <div className='w-[calc(100%-4rem)] flex justify-center'>
-                  {!isCollapsed && <Logo />}
-                </div>
-              </div>
+            {/* 顶部切换按钮区域 */}
+            <div className='relative h-16 flex items-center'>
               <button
                 onClick={handleToggle}
-                className={`absolute top-1/2 -translate-y-1/2 flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100/50 transition-colors duration-200 z-10 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700/50 ${
-                  isCollapsed ? 'left-1/2 -translate-x-1/2' : 'right-2'
+                className={`absolute top-1/2 -translate-y-1/2 flex items-center justify-center w-8 h-8 rounded-lg text-[#aaaaaa] hover:text-white hover:bg-[#272727] transition-colors duration-200 z-10 ${
+                  isCollapsed ? 'left-1/2 -translate-x-1/2' : 'left-4'
                 }`}
               >
                 <Menu className='h-4 w-4' />
@@ -187,12 +157,12 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                 href='/'
                 onClick={() => setActive('/')}
                 data-active={active === '/'}
-                className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-gray-700 hover:bg-purple-100/30 hover:text-purple-600 data-[active=true]:bg-purple-500/20 data-[active=true]:text-purple-700 font-medium transition-colors duration-200 min-h-[40px] dark:text-gray-300 dark:hover:text-purple-400 dark:data-[active=true]:bg-purple-500/10 dark:data-[active=true]:text-purple-400 ${
+                className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-[#aaaaaa] hover:bg-[#272727] hover:text-white data-[active=true]:bg-[#272727] data-[active=true]:text-white font-medium transition-colors duration-200 min-h-[40px] ${
                   isCollapsed ? 'w-full max-w-none mx-0' : 'mx-0'
                 } gap-3 justify-start`}
               >
                 <div className='w-4 h-4 flex items-center justify-center'>
-                  <Home className='h-4 w-4 text-gray-500 group-hover:text-purple-600 data-[active=true]:text-purple-700 dark:text-gray-400 dark:group-hover:text-purple-400 dark:data-[active=true]:text-purple-400' />
+                  <Home className='h-4 w-4 text-[#aaaaaa] group-hover:text-white data-[active=true]:text-white' />
                 </div>
                 {!isCollapsed && (
                   <span className='whitespace-nowrap transition-opacity duration-200 opacity-100'>
@@ -208,12 +178,12 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                   setActive('/search');
                 }}
                 data-active={active === '/search'}
-                className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-gray-700 hover:bg-purple-100/30 hover:text-purple-600 data-[active=true]:bg-purple-500/20 data-[active=true]:text-purple-700 font-medium transition-colors duration-200 min-h-[40px] dark:text-gray-300 dark:hover:text-purple-400 dark:data-[active=true]:bg-purple-500/10 dark:data-[active=true]:text-purple-400 ${
+                className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-[#aaaaaa] hover:bg-[#272727] hover:text-white data-[active=true]:bg-[#272727] data-[active=true]:text-white font-medium transition-colors duration-200 min-h-[40px] ${
                   isCollapsed ? 'w-full max-w-none mx-0' : 'mx-0'
                 } gap-3 justify-start`}
               >
                 <div className='w-4 h-4 flex items-center justify-center'>
-                  <Search className='h-4 w-4 text-gray-500 group-hover:text-purple-600 data-[active=true]:text-purple-700 dark:text-gray-400 dark:group-hover:text-purple-400 dark:data-[active=true]:text-purple-400' />
+                  <Search className='h-4 w-4 text-[#aaaaaa] group-hover:text-white data-[active=true]:text-white' />
                 </div>
                 {!isCollapsed && (
                   <span className='whitespace-nowrap transition-opacity duration-200 opacity-100'>
@@ -248,12 +218,12 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                       href={item.href}
                       onClick={() => setActive(item.href)}
                       data-active={isActive}
-                      className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-sm text-gray-700 hover:bg-purple-100/30 hover:text-purple-600 data-[active=true]:bg-purple-500/20 data-[active=true]:text-purple-700 transition-colors duration-200 min-h-[40px] dark:text-gray-300 dark:hover:text-purple-400 dark:data-[active=true]:bg-purple-500/10 dark:data-[active=true]:text-purple-400 ${
+                      className={`group flex items-center rounded-lg px-2 py-2 pl-4 text-sm text-[#aaaaaa] hover:bg-[#272727] hover:text-white data-[active=true]:bg-[#272727] data-[active=true]:text-white transition-colors duration-200 min-h-[40px] ${
                         isCollapsed ? 'w-full max-w-none mx-0' : 'mx-0'
                       } gap-3 justify-start`}
                     >
                       <div className='w-4 h-4 flex items-center justify-center'>
-                        <Icon className='h-4 w-4 text-gray-500 group-hover:text-purple-600 data-[active=true]:text-purple-700 dark:text-gray-400 dark:group-hover:text-purple-400 dark:data-[active=true]:text-purple-400' />
+                        <Icon className='h-4 w-4 text-[#aaaaaa] group-hover:text-white data-[active=true]:text-white' />
                       </div>
                       {!isCollapsed && (
                         <span className='whitespace-nowrap transition-opacity duration-200 opacity-100'>
@@ -265,6 +235,27 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                 })}
               </div>
             </div>
+
+            {/* 底部工具栏：已移到顶部搜索栏 */}
+            {/* <div className='border-t border-[#333333] p-2'>
+              <div className='flex items-center justify-center gap-2'>
+                {isCollapsed ? (
+                  // 折叠状态：垂直排列
+                  <>
+                    <div className='flex flex-col gap-2'>
+                      <ThemeToggle />
+                      <UserMenu />
+                    </div>
+                  </>
+                ) : (
+                  // 展开状态：水平排列
+                  <>
+                    <ThemeToggle />
+                    <UserMenu />
+                  </>
+                )}
+              </div>
+            </div> */}
           </div>
         </aside>
         <div

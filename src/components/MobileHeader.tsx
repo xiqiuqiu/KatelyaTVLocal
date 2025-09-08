@@ -1,11 +1,6 @@
 'use client';
 
-import Link from 'next/link';
-
-import { BackButton } from './BackButton';
 import { useSite } from './SiteProvider';
-import { ThemeToggle } from './ThemeToggle';
-import { UserMenu } from './UserMenu';
 
 interface MobileHeaderProps {
   showBackButton?: boolean;
@@ -14,28 +9,22 @@ interface MobileHeaderProps {
 const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
   const { siteName } = useSite();
   return (
-    <header className='md:hidden relative w-full bg-white/70 backdrop-blur-xl border-b border-purple-200/50 shadow-sm dark:bg-gray-900/70 dark:border-purple-700/50'>
+    <header className='md:hidden relative w-full bg-[#0f0f0f] border-b border-[#333333]'>
       <div className='h-12 flex items-center justify-between px-4'>
-        {/* 左侧：返回按钮和设置按钮 */}
-        <div className='flex items-center gap-2'>
+        {/* 左侧：返回按钮 */}
+        {/* <div className='flex items-center gap-2'>
           {showBackButton && <BackButton />}
-        </div>
+        </div> */}
 
-        {/* 右侧按钮 */}
-        <div className='flex items-center gap-2'>
-          <ThemeToggle />
-          <UserMenu />
-        </div>
-      </div>
+        {/* 中间：网站名称 */}
+        {/* <div className='flex-1 text-center'>
+          <span className='text-lg font-bold text-white tracking-tight'>
+            {siteName}
+          </span>
+        </div> */}
 
-      {/* 中间：Logo（绝对居中）- 应用彩虹渐变效果 */}
-      <div className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'>
-        <Link
-          href='/'
-          className='text-2xl font-bold katelya-logo tracking-tight hover:opacity-80 transition-opacity'
-        >
-          {siteName}
-        </Link>
+        {/* 右侧：预留空间保持对称 */}
+        {/* <div className='w-16'></div> */}
       </div>
     </header>
   );

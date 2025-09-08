@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\docs/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Bash(pnpm run dev:*)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
