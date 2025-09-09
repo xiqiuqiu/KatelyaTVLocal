@@ -98,7 +98,6 @@ export default async function RootLayout({
           attribute='class'
           defaultTheme='system'
           enableSystem
-          disableTransitionOnChange
         >
           <SiteProvider siteName={siteName} announcement={announcement}>
             {children}

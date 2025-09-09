@@ -23,7 +23,8 @@
       "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
       "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
       "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
-      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal/**)"
+      "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal/**)",
+      "Bash(npm run dev)"
     ],
     "deny": [],
     "ask": []

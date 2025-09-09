@@ -24,14 +24,14 @@ const YouTubeSearchBar = () => {
             placeholder='搜索影片...'
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className='w-full h-8 px-4 bg-[#121212] border border-[#333333] rounded-l-full text-white placeholder-[#717171] text-sm focus:border-[#3ea6ff] focus:outline-none'
+            className='w-full h-8 px-4 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-l-full text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none'
           />
         </div>
         <button
           type='submit'
-          className='px-3 bg-[#222222] border border-l-0 border-[#333333] rounded-r-full hover:bg-[#3a3a3a] transition-colors flex items-center justify-center'
+          className='px-3 bg-gray-200 dark:bg-gray-800 border border-l-0 border-gray-300 dark:border-gray-700 rounded-r-full hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors flex items-center justify-center'
         >
-          <Search size={16} className='text-[#aaaaaa]' />
+          <Search size={16} className='text-gray-600 dark:text-gray-400' />
         </button>
       </div>
     </form>

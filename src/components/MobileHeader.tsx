@@ -9,7 +9,7 @@ interface MobileHeaderProps {
 const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
   const { siteName } = useSite();
   return (
-    <header className='md:hidden relative w-full bg-[#0f0f0f] border-b border-[#333333]'>
+    <header className='md:hidden relative w-full bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800'>
       <div className='h-12 flex items-center justify-between px-4'>
         {/* 左侧：返回按钮 */}
         {/* <div className='flex items-center gap-2'>

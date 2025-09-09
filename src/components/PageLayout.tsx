@@ -1,6 +1,7 @@
 import MobileBottomNav from './MobileBottomNav';
 import Sidebar from './Sidebar';
 import TopSearchBar from './TopSearchBar';
+import { useEffect, useState } from 'react';
 
 interface PageLayoutProps {
   children: React.ReactNode;
@@ -8,33 +9,37 @@ interface PageLayoutProps {
 }
 
 const PageLayout = ({ children, activePath = '/' }: PageLayoutProps) => {
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
+
+  useEffect(() => {
+    const handleSidebarVisibilityChange = (event: CustomEvent) => {
+      setIsSidebarVisible(event.detail.visible);
+    };
+
+    window.addEventListener('sidebarVisibilityChange', handleSidebarVisibilityChange as EventListener);
+
+    return () => {
+      window.removeEventListener('sidebarVisibilityChange', handleSidebarVisibilityChange as EventListener);
+    };
+  }, []);
+
   return (
-    <div className='w-full min-h-screen bg-[#0f0f0f]'>
+    <div className='w-full min-h-screen bg-white dark:bg-black'>
       {/* 顶部搜索栏 - 在所有设备上显示 */}
       <TopSearchBar />
-
-      {/* 移动端头部 (fixed) */}
-      {/* <MobileHeader showBackButton={['/play'].includes(activePath)} /> */}
-
-      {/* 桌面端 YouTube 风格顶部导航栏 (fixed) - 已隐藏 */}
-      {/* <YouTubeTopNavbar activePath={activePath} /> */}
-
       {/* 主内容区域 - YouTube 风格布局 */}
       <div className='relative min-w-0 transition-all duration-300'>
         {/* 桌面端侧边栏 */}
-        <div className='hidden md:block'>
+        <div className={`hidden md:block transition-all duration-300 ${
+          isSidebarVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}>
           <Sidebar activePath={activePath} />
         </div>
 
-        {/* 桌面端左上角返回按钮 */}
-        {/* {['/play'].includes(activePath) && (
-          <div className='absolute top-3 left-1 z-20 hidden md:flex'>
-            <BackButton />
-          </div>
-        )} */}
-
         {/* 主内容容器 - YouTube 风格布局 */}
-        <main className='mb-14 md:mb-0 md:pl-64 pt-2'>
+        <main className={`mb-14 md:mb-0 pt-2 transition-all duration-300 ${
+          isSidebarVisible ? 'md:pl-64' : 'md:pl-0'
+        }`}>
           <div className='flex w-full min-h-screen'>
             {/* 主内容区 - 全宽度 */}
             <div className='flex-1 w-full'>

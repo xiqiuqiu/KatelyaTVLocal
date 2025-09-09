@@ -762,6 +762,7 @@ function PlayPageClient() {
   };
 
   const handleNextEpisode = () => {
+    console.log('尝试切换到下一集');
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx < d.episodes.length - 1) {

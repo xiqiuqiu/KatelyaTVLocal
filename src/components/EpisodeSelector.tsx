@@ -279,12 +279,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           {/* 分类标签 */}
           <div className='flex items-center gap-4 mb-4 border-b border-gray-300 dark:border-gray-700 -mx-6 px-6 flex-shrink-0'>
             <div className='flex-1 relative'>
-              {/* 左側漸變指示器 */}
-              <div className='absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white dark:from-gray-900 to-transparent z-10 pointer-events-none opacity-75' />
-
-              {/* 右側漸變指示器 */}
-              <div className='absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white dark:from-gray-900 to-transparent z-10 pointer-events-none opacity-75' />
-
               {/* 滾動容器 */}
               <div
                 className='overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500'
@@ -514,7 +508,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                                     videoInfo.quality
                                   );
                                   const textColorClasses = isUltraHigh
-                                    ? 'text-purple-600 dark:text-purple-400'
+                                    ? 'text-blue-600 dark:text-blue-400'
                                     : isHigh
                                     ? 'text-green-600 dark:text-green-400'
                                     : 'text-yellow-600 dark:text-yellow-400';

@@ -34,6 +34,7 @@ interface VideoCardProps {
   rate?: string;
   items?: SearchResult[];
   type?: string;
+  size?: 'default' | 'small';
 }
 
 export default function VideoCard({
@@ -53,6 +54,7 @@ export default function VideoCard({
   rate,
   items,
   type = '',
+  size = 'default',
 }: VideoCardProps) {
   const router = useRouter();
   const [favorited, setFavorited] = useState(false);
@@ -266,9 +268,13 @@ export default function VideoCard({
     return configs[from] || configs.search;
   }, [from, isAggregate, actualDoubanId, rate]);
 
+  const isSmall = size === 'small';
+
   return (
     <div
-      className='group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-300 ease-in-out hover:scale-[1.05] hover:z-[500]'
+      className={`group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-300 ease-in-out hover:scale-[1] hover:z-[500] ${
+        isSmall ? 'scale-75 origin-top-left' : ''
+      }`}
       onClick={handleClick}
     >
       {/* 海报容器 */}
@@ -292,7 +298,7 @@ export default function VideoCard({
         {config.showPlayButton && (
           <div className='absolute inset-0 flex items-center justify-center opacity-0 transition-all duration-300 ease-in-out delay-75 group-hover:opacity-100 group-hover:scale-100'>
             <PlayCircleIcon
-              size={50}
+              size={isSmall ? 30 : 50}
               strokeWidth={0.8}
               className='text-white fill-transparent transition-all duration-300 ease-out hover:fill-green-500 hover:scale-[1.1]'
             />
@@ -305,14 +311,14 @@ export default function VideoCard({
             {config.showCheckCircle && (
               <CheckCircle
                 onClick={handleDeleteRecord}
-                size={20}
+                size={isSmall ? 16 : 20}
                 className='text-white transition-all duration-300 ease-out hover:stroke-green-500 hover:scale-[1.1]'
               />
             )}
             {config.showHeart && (
               <Heart
                 onClick={handleToggleFavorite}
-                size={20}
+                size={isSmall ? 16 : 20}
                 className={`transition-all duration-300 ease-out ${
                   favorited
                     ? 'fill-red-600 stroke-red-600'
@@ -325,13 +331,21 @@ export default function VideoCard({
 
         {/* 徽章 */}
         {config.showRating && rate && (
-          <div className='absolute top-2 right-2 bg-pink-500 text-white text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center shadow-md transition-all duration-300 ease-out group-hover:scale-110'>
+          <div
+            className={`absolute top-2 right-2 bg-pink-500 text-white font-bold rounded-full flex items-center justify-center shadow-md transition-all duration-300 ease-out group-hover:scale-110 ${
+              isSmall ? 'text-[10px] w-5 h-5' : 'text-xs w-7 h-7'
+            }`}
+          >
             {rate}
           </div>
         )}
 
         {actualEpisodes && actualEpisodes > 1 && (
-          <div className='absolute top-2 right-2 bg-green-500 text-white text-xs font-semibold px-2 py-1 rounded-md shadow-md transition-all duration-300 ease-out group-hover:scale-110'>
+          <div
+            className={`absolute top-2 right-2 bg-green-500 text-white font-semibold rounded-md shadow-md transition-all duration-300 ease-out group-hover:scale-110 ${
+              isSmall ? 'text-[10px] px-1 py-0.5' : 'text-xs px-2 py-1'
+            }`}
+          >
             {currentEpisode
               ? `${currentEpisode}/${actualEpisodes}`
               : actualEpisodes}
@@ -347,8 +361,12 @@ export default function VideoCard({
             onClick={(e) => e.stopPropagation()}
             className='absolute top-2 left-2 opacity-0 -translate-x-2 transition-all duration-300 ease-in-out delay-100 group-hover:opacity-100 group-hover:translate-x-0'
           >
-            <div className='bg-green-500 text-white text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center shadow-md hover:bg-green-600 hover:scale-[1.1] transition-all duration-300 ease-out'>
-              <Link size={16} />
+            <div
+              className={`bg-green-500 text-white font-bold rounded-full flex items-center justify-center shadow-md hover:bg-green-600 hover:scale-[1.1] transition-all duration-300 ease-out ${
+                isSmall ? 'text-[10px] w-5 h-5' : 'text-xs w-7 h-7'
+              }`}
+            >
+              <Link size={isSmall ? 12 : 16} />
             </div>
           </a>
         )}
@@ -365,9 +383,13 @@ export default function VideoCard({
       )}
 
       {/* 标题与来源 */}
-      <div className='mt-2 text-center'>
+      <div className={`text-center ${isSmall ? 'mt-1' : 'mt-2'}`}>
         <div className='relative'>
-          <span className='block text-sm font-semibold truncate text-gray-900 dark:text-gray-100 transition-colors duration-300 ease-in-out group-hover:text-green-600 dark:group-hover:text-green-400 peer'>
+          <span
+            className={`block font-semibold truncate text-gray-900 dark:text-gray-100 transition-colors duration-300 ease-in-out group-hover:text-green-600 dark:group-hover:text-green-400 peer ${
+              isSmall ? 'text-xs' : 'text-sm'
+            }`}
+          >
             {actualTitle}
           </span>
           {/* 自定义 tooltip */}
@@ -377,7 +399,11 @@ export default function VideoCard({
           </div>
         </div>
         {config.showSourceName && source_name && (
-          <span className='block text-xs text-gray-500 dark:text-gray-400 mt-1'>
+          <span
+            className={`block text-gray-500 dark:text-gray-400 ${
+              isSmall ? 'text-[10px] mt-0.5' : 'text-xs mt-1'
+            }`}
+          >
             <span className='inline-block border rounded px-2 py-0.5 border-gray-500/60 dark:border-gray-400/60 transition-all duration-300 ease-in-out group-hover:border-green-500/60 group-hover:text-green-600 dark:group-hover:text-green-400'>
               {source_name}
             </span>

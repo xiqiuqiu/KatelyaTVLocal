@@ -47,7 +47,7 @@ function VersionDisplay() {
             updateStatus === UpdateStatus.HAS_UPDATE
               ? 'text-yellow-600 dark:text-yellow-400'
               : updateStatus === UpdateStatus.NO_UPDATE
-              ? 'text-purple-600 dark:text-purple-400'
+              ? 'text-blue-600 dark:text-blue-400'
               : ''
           }`}
         >
@@ -155,11 +155,11 @@ function LoginPageClient() {
     <IOSCompatibility>
       <div className='relative min-h-screen flex items-center justify-center px-4 overflow-hidden'>
         {/* iOS Safari兼容的背景渐变 */}
-        <div className='absolute inset-0 bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 dark:from-gray-900 dark:via-purple-900 dark:to-indigo-900'></div>
+        <div className='absolute inset-0 bg-gradient-to-br from-blue-50 via-cyan-50 to-indigo-50 dark:from-gray-900 dark:via-blue-900 dark:to-indigo-900'></div>
 
         {/* 简化的装饰性元素 - iOS Safari兼容 */}
         <div className='absolute inset-0 overflow-hidden pointer-events-none'>
-          <div className='absolute top-1/4 left-1/4 w-32 h-32 bg-purple-200 dark:bg-purple-800 rounded-full opacity-20 blur-xl'></div>
+          <div className='absolute top-1/4 left-1/4 w-32 h-32 bg-blue-200 dark:bg-blue-800 rounded-full opacity-20 blur-xl'></div>
           <div className='absolute bottom-1/4 right-1/4 w-40 h-40 bg-pink-200 dark:bg-pink-800 rounded-full opacity-20 blur-xl'></div>
           <div className='absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-indigo-200 dark:bg-indigo-800 rounded-full opacity-15 blur-lg'></div>
         </div>
@@ -171,7 +171,7 @@ function LoginPageClient() {
         <div className='relative z-10 w-full max-w-md rounded-3xl bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl shadow-2xl p-10 dark:border dark:border-zinc-800 border border-gray-200'>
           {/* 简化的Logo - iOS Safari兼容 */}
           <h1 className='text-center text-3xl font-extrabold mb-8'>
-            <span className='bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 dark:from-purple-400 dark:via-pink-400 dark:to-purple-400 bg-clip-text text-transparent'>
+            <span className='bg-gradient-to-r from-blue-600 via-cyan-600 to-blue-600 dark:from-blue-400 dark:via-cyan-400 dark:to-blue-400 bg-clip-text text-transparent'>
               {siteName}
             </span>
           </h1>
@@ -186,7 +186,7 @@ function LoginPageClient() {
                   id='username'
                   type='text'
                   autoComplete='username'
-                  className='block w-full rounded-lg border-0 py-3 px-4 text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-gray-300 dark:ring-gray-600 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-purple-500 focus:outline-none sm:text-base bg-white dark:bg-zinc-800'
+                  className='block w-full rounded-lg border-0 py-3 px-4 text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-gray-300 dark:ring-gray-600 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:outline-none sm:text-base bg-white dark:bg-zinc-800'
                   placeholder='输入用户名'
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -202,7 +202,7 @@ function LoginPageClient() {
                 id='password'
                 type='password'
                 autoComplete='current-password'
-                className='block w-full rounded-lg border-0 py-3 px-4 text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-gray-300 dark:ring-gray-600 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-purple-500 focus:outline-none sm:text-base bg-white dark:bg-zinc-800'
+                className='block w-full rounded-lg border-0 py-3 px-4 text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-gray-300 dark:ring-gray-600 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:outline-none sm:text-base bg-white dark:bg-zinc-800'
                 placeholder='输入访问密码'
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -220,7 +220,7 @@ function LoginPageClient() {
                   type='button'
                   onClick={handleRegister}
                   disabled={!password || !username || loading}
-                  className='flex-1 inline-flex justify-center rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50'
+                  className='flex-1 inline-flex justify-center rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50'
                 >
                   {loading ? '注册中...' : '注册'}
                 </button>
@@ -229,7 +229,7 @@ function LoginPageClient() {
                   disabled={
                     !password || loading || (shouldAskUsername && !username)
                   }
-                  className='flex-1 inline-flex justify-center rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50'
+                  className='flex-1 inline-flex justify-center rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50'
                 >
                   {loading ? '登录中...' : '登录'}
                 </button>
@@ -240,7 +240,7 @@ function LoginPageClient() {
                 disabled={
                   !password || loading || (shouldAskUsername && !username)
                 }
-                className='inline-flex w-full justify-center rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50'
+                className='inline-flex w-full justify-center rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50'
               >
                 {loading ? '登录中...' : '登录'}
               </button>
