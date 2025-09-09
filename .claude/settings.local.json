@@ -24,7 +24,9 @@
       "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
       "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal\\src\\components/**)",
       "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal/**)",
-      "Bash(npm run dev)"
+      "Bash(npm run dev)",
+      "Bash(npm run lint)",
+      "Bash(npm run build)"
     ],
     "deny": [],
     "ask": []

@@ -1603,7 +1603,7 @@ function PlayPageClient() {
               </div>
             )}
 
-            <div className='w-full min-h-[280px] md:min-h-[320px]'>
+            <div className='w-full'>
               <EpisodeSelector
                 totalEpisodes={totalEpisodes}
                 value={currentEpisodeIndex + 1}

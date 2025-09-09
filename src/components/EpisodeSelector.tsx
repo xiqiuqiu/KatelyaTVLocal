@@ -242,7 +242,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   );
 
   return (
-    <div className='md:ml-2 px-4 py-0 h-full rounded-xl bg-black/10 dark:bg-white/5 flex flex-col border border-white/0 dark:border-white/30 overflow-hidden'>
+    <div className='md:ml-2 px-4 py-0 min-h-[200px] max-h-[600px] rounded-xl bg-black/10 dark:bg-white/5 flex flex-col border border-white/0 dark:border-white/30 overflow-hidden'>
       {/* 主要的 Tab 切换 - 无缝融入设计 */}
       <div className='flex mb-1 -mx-6 flex-shrink-0'>
         {totalEpisodes > 1 && (
@@ -275,20 +275,22 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
       {/* 选集 Tab 内容 */}
       {activeTab === 'episodes' && (
-        <>
+        <div className='flex flex-col flex-1 min-h-0'>
           {/* 分类标签 */}
           <div className='flex items-center gap-4 mb-4 border-b border-gray-300 dark:border-gray-700 -mx-6 px-6 flex-shrink-0'>
-            <div className='flex-1 relative'>
+            <div className='flex-1 relative overflow-hidden'>
               {/* 滾動容器 */}
               <div
-                className='overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500'
+                className='overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 dark:[&::-webkit-scrollbar-thumb]:bg-gray-600 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400 dark:hover:[&::-webkit-scrollbar-thumb]:bg-gray-500 snap-x snap-mandatory scroll-smooth'
                 ref={categoryContainerRef}
                 style={{
                   scrollbarWidth: 'thin',
                   scrollbarColor: 'rgb(209 213 219) transparent',
+                  msOverflowStyle: 'none',
+                  WebkitOverflowScrolling: 'touch',
                 }}
               >
-                <div className='flex gap-2 min-w-max px-6'>
+                <div className='flex gap-2 min-w-max px-6 py-1'>
                   {categories.map((label, idx) => {
                     const isActive = idx === currentPage;
                     // 动态计算按钮宽度，根据标签长度和内容调整
@@ -356,7 +358,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           </div>
 
           {/* 集数网格 */}
-          <div className='grid grid-cols-[repeat(auto-fill,minmax(48px,1fr))] justify-center gap-2 overflow-y-auto pb-4'>
+          <div className='flex-1 grid grid-cols-[repeat(auto-fill,minmax(48px,1fr))] justify-center gap-2 overflow-y-auto pb-4'>
             {(() => {
               const len = currentEnd - currentStart + 1;
               const episodes = Array.from({ length: len }, (_, i) =>
@@ -386,12 +388,12 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
               );
             })}
           </div>
-        </>
+        </div>
       )}
 
       {/* 换源 Tab 内容 */}
       {activeTab === 'sources' && (
-        <div className='flex flex-col h-full mt-4'>
+        <div className='flex flex-col flex-1 min-h-0 mt-4'>
           {sourceSearchLoading && (
             <div className='flex items-center justify-center py-8'>
               <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-green-500'></div>
@@ -428,7 +430,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           {!sourceSearchLoading &&
             !sourceSearchError &&
             availableSources.length > 0 && (
-              <div className='flex-1 overflow-y-auto space-y-2 pb-20'>
+              <div className='flex-1 overflow-y-auto space-y-2 pb-4'>
                 {availableSources
                   .sort((a, b) => {
                     const aIsCurrent =
