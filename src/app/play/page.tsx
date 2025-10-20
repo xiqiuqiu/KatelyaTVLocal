@@ -23,9 +23,7 @@ import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
-import SkipController, {
-  SkipSettingsButton,
-} from '@/components/SkipController';
+import SkipController from '@/components/SkipController';
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
@@ -1498,9 +1496,9 @@ function PlayPageClient() {
           </h1>
 
           {/* 跳过设置按钮 */}
-          {currentSource && currentId && (
+          {/* {currentSource && currentId && (
             <SkipSettingsButton onClick={() => setIsSkipSettingMode(true)} />
-          )}
+          )} */}
         </div>
         {/* 第二行：播放器 */}
         <div className='space-y-4'>
