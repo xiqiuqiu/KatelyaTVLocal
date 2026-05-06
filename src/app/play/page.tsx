@@ -2,8 +2,6 @@
 
 'use client';
 
-import Artplayer from 'artplayer';
-import Hls from 'hls.js';
 import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
@@ -436,35 +434,36 @@ function PlayPageClient() {
     return filteredLines.join('\n');
   }
 
-  class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
-    constructor(config: any) {
-      super(config);
-      const load = this.load.bind(this);
-      this.load = function (context: any, config: any, callbacks: any) {
-        // 拦截manifest和level请求
-        if (
-          (context as any).type === 'manifest' ||
-          (context as any).type === 'level'
-        ) {
-          const onSuccess = callbacks.onSuccess;
-          callbacks.onSuccess = function (
-            response: any,
-            stats: any,
-            context: any
+  const createCustomHlsJsLoader = (HlsModule: any) =>
+    class CustomHlsJsLoader extends HlsModule.DefaultConfig.loader {
+      constructor(config: any) {
+        super(config);
+        const load = this.load.bind(this);
+        this.load = function (context: any, config: any, callbacks: any) {
+          // 拦截manifest和level请求
+          if (
+            (context as any).type === 'manifest' ||
+            (context as any).type === 'level'
           ) {
-            // 如果是m3u8文件，处理内容以移除广告分段
-            if (response.data && typeof response.data === 'string') {
-              // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-              response.data = filterAdsFromM3U8(response.data);
-            }
-            return onSuccess(response, stats, context, null);
-          };
-        }
-        // 执行原始load方法
-        load(context, config, callbacks);
-      };
-    }
-  }
+            const onSuccess = callbacks.onSuccess;
+            callbacks.onSuccess = function (
+              response: any,
+              stats: any,
+              context: any
+            ) {
+              // 如果是m3u8文件，处理内容以移除广告分段
+              if (response.data && typeof response.data === 'string') {
+                // 过滤掉广告段 - 实现更精确的广告过滤逻辑
+                response.data = filterAdsFromM3U8(response.data);
+              }
+              return onSuccess(response, stats, context, null);
+            };
+          }
+          // 执行原始load方法
+          load(context, config, callbacks);
+        };
+      }
+    };
 
   // 当集数索引变化时自动更新视频地址
   useEffect(() => {
@@ -1011,8 +1010,6 @@ function PlayPageClient() {
 
   useEffect(() => {
     if (
-      !Artplayer ||
-      !Hls ||
       !videoUrl ||
       loading ||
       currentEpisodeIndex === null ||
@@ -1038,43 +1035,58 @@ function PlayPageClient() {
     }
     console.log(videoUrl);
 
-    // 检测是否为WebKit浏览器
-    const isWebkit =
-      typeof window !== 'undefined' &&
-      typeof (window as any).webkitConvertPointFromNodeToPage === 'function';
+    let cancelled = false;
 
-    // 非WebKit浏览器且播放器已存在，使用switch方法切换
-    if (!isWebkit && artPlayerRef.current) {
-      artPlayerRef.current.switch = videoUrl;
-      artPlayerRef.current.title = `${videoTitle} - 第${
-        currentEpisodeIndex + 1
-      }集`;
-      artPlayerRef.current.poster = videoCover;
-      if (artPlayerRef.current?.video) {
-        ensureVideoSource(
-          artPlayerRef.current.video as HTMLVideoElement,
-          videoUrl
-        );
-      }
-      return;
-    }
+    const setupPlayer = async () => {
+      try {
+        const [artplayerModule, hlsModule] = await Promise.all([
+          import('artplayer'),
+          import('hls.js'),
+        ]);
+        const Artplayer = artplayerModule.default as any;
+        const Hls = hlsModule.default as any;
 
-    // WebKit浏览器或首次创建：销毁之前的播放器实例并创建新的
-    if (artPlayerRef.current) {
-      if (artPlayerRef.current.video && artPlayerRef.current.video.hls) {
-        artPlayerRef.current.video.hls.destroy();
-      }
-      // 销毁播放器实例
-      artPlayerRef.current.destroy();
-      artPlayerRef.current = null;
-    }
+        if (cancelled) return;
 
-    try {
-      // 创建新的播放器实例
-      Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
-      Artplayer.USE_RAF = true;
+        // 检测是否为WebKit浏览器
+        const isWebkit =
+          typeof window !== 'undefined' &&
+          typeof (window as any).webkitConvertPointFromNodeToPage ===
+            'function';
 
-      artPlayerRef.current = new Artplayer({
+        // 非WebKit浏览器且播放器已存在，使用switch方法切换
+        if (!isWebkit && artPlayerRef.current) {
+          artPlayerRef.current.switch = videoUrl;
+          artPlayerRef.current.title = `${videoTitle} - 第${
+            currentEpisodeIndex + 1
+          }集`;
+          artPlayerRef.current.poster = videoCover;
+          if (artPlayerRef.current?.video) {
+            ensureVideoSource(
+              artPlayerRef.current.video as HTMLVideoElement,
+              videoUrl
+            );
+          }
+          return;
+        }
+
+        // WebKit浏览器或首次创建：销毁之前的播放器实例并创建新的
+        if (artPlayerRef.current) {
+          if (artPlayerRef.current.video && artPlayerRef.current.video.hls) {
+            artPlayerRef.current.video.hls.destroy();
+          }
+          // 销毁播放器实例
+          artPlayerRef.current.destroy();
+          artPlayerRef.current = null;
+        }
+
+        const CustomHlsJsLoader = createCustomHlsJsLoader(Hls);
+
+        // 创建新的播放器实例
+        Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+        Artplayer.USE_RAF = true;
+
+        artPlayerRef.current = new Artplayer({
         container: artRef.current,
         url: videoUrl,
         poster: videoCover,
@@ -1131,7 +1143,7 @@ function PlayPageClient() {
 
               /* 自定义loader */
               loader: blockAdEnabledRef.current
-                ? CustomHlsJsLoader
+                ? (CustomHlsJsLoader as any)
                 : Hls.DefaultConfig.loader,
             });
 
@@ -1208,8 +1220,8 @@ function PlayPageClient() {
         ],
       });
 
-      // 监听播放器事件
-      artPlayerRef.current.on('ready', () => {
+        // 监听播放器事件
+        artPlayerRef.current.on('ready', () => {
         setError(null);
         // 更新视频时长
         const duration = artPlayerRef.current.duration || 0;
@@ -1306,11 +1318,18 @@ function PlayPageClient() {
           videoUrl
         );
       }
-    } catch (err) {
-      console.error('创建播放器失败:', err);
-      setError('播放器初始化失败');
-    }
-  }, [Artplayer, Hls, videoUrl, loading, blockAdEnabled]);
+      } catch (err) {
+        console.error('创建播放器失败:', err);
+        setError('播放器初始化失败');
+      }
+    };
+
+    setupPlayer();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [videoUrl, loading, blockAdEnabled]);
 
   // 当组件卸载时清理定时器
   useEffect(() => {
