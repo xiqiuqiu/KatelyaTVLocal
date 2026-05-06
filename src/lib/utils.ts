@@ -2,6 +2,290 @@
 
 import Hls from 'hls.js';
 
+import {
+  SourceDomainPreference,
+  SourcePlaybackMode,
+  SourceProbeResult,
+  SourceStatus,
+  SourceStatusKind,
+  SourceVideoInfo,
+} from './types';
+
+const SOURCE_DOMAIN_MEMORY_KEY = 'sourceDomainPreferences';
+const SOURCE_DOMAIN_MEMORY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function readSourceDomainPreferenceMap(): Record<
+  string,
+  SourceDomainPreference
+> {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    const rawValue = localStorage.getItem(SOURCE_DOMAIN_MEMORY_KEY);
+    if (!rawValue) return {};
+
+    const parsed = JSON.parse(rawValue) as Record<
+      string,
+      SourceDomainPreference
+    >;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSourceDomainPreferenceMap(
+  value: Record<string, SourceDomainPreference>
+): void {
+  if (typeof window === 'undefined') return;
+
+  localStorage.setItem(SOURCE_DOMAIN_MEMORY_KEY, JSON.stringify(value));
+}
+
+export function getSourceIdentityKey(source: string, id: string): string {
+  return `${source}-${id}`;
+}
+
+export function normalizeSourceUrl(url: string): string | null {
+  if (!url) return null;
+
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl) return null;
+
+  try {
+    return new URL(trimmedUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
+export function extractSourceDomain(url: string): string | null {
+  const normalizedUrl = normalizeSourceUrl(url);
+  if (!normalizedUrl) return null;
+
+  try {
+    return new URL(normalizedUrl).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+export function getSourceDomainFromEpisodes(episodes: string[]): string | null {
+  if (!episodes?.length) return null;
+
+  for (const episodeUrl of episodes) {
+    const domain = extractSourceDomain(episodeUrl);
+    if (domain) {
+      return domain;
+    }
+  }
+
+  return null;
+}
+
+export function getSourceDomainPreference(
+  domain: string | null
+): SourceDomainPreference | null {
+  if (!domain || typeof window === 'undefined') return null;
+
+  const allPreferences = readSourceDomainPreferenceMap();
+  const preference = allPreferences[domain];
+  if (!preference) return null;
+
+  if (Date.now() - preference.updatedAt > SOURCE_DOMAIN_MEMORY_TTL_MS) {
+    delete allPreferences[domain];
+    writeSourceDomainPreferenceMap(allPreferences);
+    return null;
+  }
+
+  return preference;
+}
+
+export function rememberSourceDomainPreference(
+  domain: string | null,
+  mode: SourcePlaybackMode | 'unavailable',
+  error?: string
+): void {
+  if (!domain || typeof window === 'undefined') return;
+
+  const allPreferences = readSourceDomainPreferenceMap();
+  const previousPreference = allPreferences[domain];
+
+  allPreferences[domain] = {
+    mode,
+    failCount: mode === 'direct' ? 0 : (previousPreference?.failCount || 0) + 1,
+    updatedAt: Date.now(),
+    lastError: error,
+  };
+
+  writeSourceDomainPreferenceMap(allPreferences);
+}
+
+export function clearSourceDomainPreference(domain: string | null): void {
+  if (!domain || typeof window === 'undefined') return;
+
+  const allPreferences = readSourceDomainPreferenceMap();
+  if (!(domain in allPreferences)) return;
+
+  delete allPreferences[domain];
+  writeSourceDomainPreferenceMap(allPreferences);
+}
+
+export function createSourceStatus(
+  kind: SourceStatusKind,
+  options: {
+    reason?: string;
+    playbackMode?: SourcePlaybackMode;
+    domain?: string | null;
+    measured?: SourceVideoInfo;
+    updatedAt?: number;
+    fromMemory?: boolean;
+  } = {}
+): SourceStatus {
+  return {
+    kind,
+    reason: options.reason,
+    playbackMode: options.playbackMode,
+    domain: options.domain,
+    measured: options.measured,
+    updatedAt: options.updatedAt ?? Date.now(),
+    fromMemory: options.fromMemory,
+  };
+}
+
+export function getRememberedSourceStatus(
+  episodes: string[]
+): SourceStatus | null {
+  const domain = getSourceDomainFromEpisodes(episodes);
+  const preference = getSourceDomainPreference(domain);
+  if (!preference) return null;
+
+  if (preference.mode === 'unavailable') {
+    return createSourceStatus('unavailable', {
+      domain,
+      reason: preference.lastError || '该源近期不可用',
+      fromMemory: true,
+      updatedAt: preference.updatedAt,
+    });
+  }
+
+  return createSourceStatus(preference.mode, {
+    domain,
+    playbackMode: preference.mode,
+    reason:
+      preference.mode === 'proxy'
+        ? '该源近期更适合通过代理播放'
+        : '该源近期可直接播放',
+    fromMemory: true,
+    updatedAt: preference.updatedAt,
+  });
+}
+
+export function getSourceStatusLabel(status: SourceStatus): string {
+  switch (status.kind) {
+    case 'probing':
+      return '检测中';
+    case 'direct':
+      return '直连';
+    case 'proxy':
+      return '代理';
+    case 'unavailable':
+      return '不可用';
+    default:
+      return '待检测';
+  }
+}
+
+export function isSourceStatusClickable(
+  status: SourceStatus | null | undefined
+): boolean {
+  if (!status) return true;
+
+  return status.kind !== 'unavailable' && status.kind !== 'probing';
+}
+
+export function getSourceProbeUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  const serverSourceProbe = (window as any).RUNTIME_CONFIG?.SOURCE_PROBE;
+  return serverSourceProbe && serverSourceProbe.trim()
+    ? serverSourceProbe.trim()
+    : null;
+}
+
+export function buildSourceProbeUrl(originalUrl: string): string | null {
+  if (!originalUrl) return null;
+
+  const probeUrl = getSourceProbeUrl();
+  if (!probeUrl) return null;
+
+  return `${probeUrl}${encodeURIComponent(originalUrl)}`;
+}
+
+export async function probeSourcePlayback(
+  sourceUrl: string
+): Promise<SourceProbeResult> {
+  const normalizedUrl = normalizeSourceUrl(sourceUrl);
+
+  if (!normalizedUrl) {
+    return {
+      kind: 'unavailable',
+      reason: '无效播放地址',
+      domain: null,
+    };
+  }
+
+  try {
+    const requestUrl = buildSourceProbeUrl(normalizedUrl);
+    if (!requestUrl) {
+      return {
+        kind: 'unavailable',
+        reason: '未配置来源探测端点',
+        domain: extractSourceDomain(normalizedUrl),
+      };
+    }
+
+    const response = await fetch(requestUrl, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | SourceProbeResult
+      | { error?: string }
+      | null;
+
+    if (!response.ok) {
+      return {
+        kind: 'unavailable',
+        reason:
+          (payload && 'error' in payload && payload.error) || '服务端探测失败',
+        domain: extractSourceDomain(normalizedUrl),
+        upstreamStatus: response.status,
+      };
+    }
+
+    if (!payload || !('kind' in payload)) {
+      return {
+        kind: 'unavailable',
+        reason: '服务端探测返回无效结果',
+        domain: extractSourceDomain(normalizedUrl),
+      };
+    }
+
+    return {
+      ...payload,
+      domain: payload.domain ?? extractSourceDomain(normalizedUrl),
+    };
+  } catch (error) {
+    return {
+      kind: 'unavailable',
+      reason: error instanceof Error ? error.message : '服务端探测失败',
+      domain: extractSourceDomain(normalizedUrl),
+    };
+  }
+}
+
 /**
  * 获取图片代理 URL 设置
  */
@@ -64,6 +348,28 @@ export function getDoubanProxyUrl(): string | null {
   return serverDoubanProxy && serverDoubanProxy.trim()
     ? serverDoubanProxy.trim()
     : null;
+}
+
+/**
+ * 获取 HLS 代理 URL 设置
+ */
+export function getHlsProxyUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  const serverHlsProxy = (window as any).RUNTIME_CONFIG?.HLS_PROXY;
+  return serverHlsProxy && serverHlsProxy.trim() ? serverHlsProxy.trim() : null;
+}
+
+/**
+ * 处理 HLS URL，如果配置了代理则使用代理
+ */
+export function buildHlsProxyUrl(originalUrl: string): string | null {
+  if (!originalUrl) return null;
+
+  const proxyUrl = getHlsProxyUrl();
+  if (!proxyUrl) return null;
+
+  return `${proxyUrl}${encodeURIComponent(originalUrl)}`;
 }
 
 /**

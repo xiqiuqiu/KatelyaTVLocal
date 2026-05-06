@@ -11,6 +11,8 @@ import { ThemeProvider } from '../components/ThemeProvider';
 
 const inter = Inter({ subsets: ['latin'] });
 const defaultImageProxy = '/api/image-proxy?url=';
+const defaultSourceProbe = '/api/source-probe?url=';
+const defaultHlsProxy = '/api/hls-proxy?url=';
 
 // 动态生成 metadata，支持配置更新后的标题变化
 export async function generateMetadata(): Promise<Metadata> {
@@ -58,6 +60,9 @@ export default async function RootLayout({
   let enableRegister = process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true';
   let imageProxy = process.env.NEXT_PUBLIC_IMAGE_PROXY || '';
   let doubanProxy = process.env.NEXT_PUBLIC_DOUBAN_PROXY || '';
+  const sourceProbe =
+    process.env.NEXT_PUBLIC_SOURCE_PROBE || defaultSourceProbe;
+  const hlsProxy = process.env.NEXT_PUBLIC_HLS_PROXY || defaultHlsProxy;
   if (
     process.env.NEXT_PUBLIC_STORAGE_TYPE !== 'd1' &&
     process.env.NEXT_PUBLIC_STORAGE_TYPE !== 'upstash'
@@ -80,6 +85,8 @@ export default async function RootLayout({
     ENABLE_REGISTER: enableRegister,
     IMAGE_PROXY: imageProxy,
     DOUBAN_PROXY: doubanProxy,
+    SOURCE_PROBE: sourceProbe,
+    HLS_PROXY: hlsProxy,
   };
 
   return (
@@ -99,11 +106,7 @@ export default async function RootLayout({
         {/* 浮动几何形状装饰 */}
         <FloatingShapes />
 
-        <ThemeProvider
-          attribute='class'
-          defaultTheme='system'
-          enableSystem
-        >
+        <ThemeProvider attribute='class' defaultTheme='system' enableSystem>
           <SiteProvider siteName={siteName} announcement={announcement}>
             {children}
           </SiteProvider>

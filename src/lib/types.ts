@@ -76,9 +76,18 @@ export interface IStorage {
   deleteSearchHistory(userName: string, keyword?: string): Promise<void>;
 
   // 片头片尾跳过配置相关
-  getSkipConfig(userName: string, key: string): Promise<EpisodeSkipConfig | null>;
-  setSkipConfig(userName: string, key: string, config: EpisodeSkipConfig): Promise<void>;
-  getAllSkipConfigs(userName: string): Promise<{ [key: string]: EpisodeSkipConfig }>;
+  getSkipConfig(
+    userName: string,
+    key: string
+  ): Promise<EpisodeSkipConfig | null>;
+  setSkipConfig(
+    userName: string,
+    key: string,
+    config: EpisodeSkipConfig
+  ): Promise<void>;
+  getAllSkipConfigs(
+    userName: string
+  ): Promise<{ [key: string]: EpisodeSkipConfig }>;
   deleteSkipConfig(userName: string, key: string): Promise<void>;
 
   // 用户列表
@@ -104,6 +113,46 @@ export interface SearchResult {
   douban_id?: number;
 }
 
+export type SourcePlaybackMode = 'direct' | 'proxy';
+
+export type SourceStatusKind =
+  | 'idle'
+  | 'probing'
+  | 'direct'
+  | 'proxy'
+  | 'unavailable';
+
+export interface SourceVideoInfo {
+  quality: string;
+  loadSpeed: string;
+  pingTime: number;
+  hasError?: boolean;
+}
+
+export interface SourceStatus {
+  kind: SourceStatusKind;
+  reason?: string;
+  playbackMode?: SourcePlaybackMode;
+  domain?: string | null;
+  measured?: SourceVideoInfo;
+  updatedAt?: number;
+  fromMemory?: boolean;
+}
+
+export interface SourceDomainPreference {
+  mode: SourcePlaybackMode | 'unavailable';
+  failCount: number;
+  updatedAt: number;
+  lastError?: string;
+}
+
+export interface SourceProbeResult {
+  kind: 'direct' | 'proxy' | 'unavailable';
+  reason?: string;
+  domain?: string | null;
+  upstreamStatus?: number;
+}
+
 // 豆瓣数据结构
 export interface DoubanItem {
   id: string;
@@ -125,6 +174,8 @@ export interface RuntimeConfig {
   ENABLE_REGISTER?: boolean;
   IMAGE_PROXY?: string;
   DOUBAN_PROXY?: string;
+  SOURCE_PROBE?: string;
+  HLS_PROXY?: string;
 }
 
 // 全局Window类型扩展

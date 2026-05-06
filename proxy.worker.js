@@ -1,5 +1,12 @@
 /* eslint-disable */
 
+const PLAYLIST_CONTENT_TYPES = [
+  'application/vnd.apple.mpegurl',
+  'application/x-mpegurl',
+  'audio/mpegurl',
+  'audio/x-mpegurl',
+];
+
 addEventListener('fetch', (event) => {
   event.respondWith(handleRequest(event.request));
 });
@@ -7,6 +14,18 @@ addEventListener('fetch', (event) => {
 async function handleRequest(request) {
   try {
     const url = new URL(request.url);
+
+    if (request.method === 'OPTIONS') {
+      return handleOptionsRequest();
+    }
+
+    if (url.pathname === '/api/source-probe') {
+      return handleSourceProbe(request, url);
+    }
+
+    if (url.pathname === '/api/hls-proxy') {
+      return handleHlsProxy(request, url);
+    }
 
     // 如果访问根目录，返回HTML
     if (url.pathname === '/') {
@@ -83,6 +102,176 @@ async function handleRequest(request) {
   }
 }
 
+async function handleSourceProbe(request, requestUrl) {
+  const targetUrl = requestUrl.searchParams.get('url');
+
+  if (!targetUrl) {
+    return jsonResponse({ error: 'Missing source URL' }, 400);
+  }
+
+  try {
+    const origin = request.headers.get('origin') || requestUrl.origin;
+    const upstreamResponse = await fetch(targetUrl, {
+      headers: buildMediaHeaders(targetUrl),
+      redirect: 'follow',
+    });
+
+    if (!upstreamResponse.ok && upstreamResponse.status !== 206) {
+      return jsonResponse(
+        {
+          kind: 'unavailable',
+          reason: `上游响应失败: ${upstreamResponse.status}`,
+          domain: new URL(targetUrl).hostname.toLowerCase(),
+          upstreamStatus: upstreamResponse.status,
+        },
+        200
+      );
+    }
+
+    const domain = new URL(targetUrl).hostname.toLowerCase();
+    const playlistResponse = isPlaylistResponse(
+      targetUrl,
+      upstreamResponse.headers.get('Content-Type')
+    );
+    const playlistCorsAccessible = isCorsAccessible(upstreamResponse, origin);
+
+    if (!playlistResponse) {
+      return jsonResponse(
+        {
+          kind: playlistCorsAccessible ? 'direct' : 'proxy',
+          reason: playlistCorsAccessible
+            ? '媒体地址可直接跨域访问'
+            : '媒体地址可拉取，但浏览器跨域受限',
+          domain,
+          upstreamStatus: upstreamResponse.status,
+        },
+        200
+      );
+    }
+
+    const playlistContent = await upstreamResponse.text();
+    const nextTarget = getFirstPlaylistTarget(playlistContent, targetUrl);
+
+    if (!nextTarget) {
+      return jsonResponse(
+        {
+          kind: playlistCorsAccessible ? 'direct' : 'proxy',
+          reason: playlistCorsAccessible
+            ? '播放列表可直接访问'
+            : '播放列表缺少跨域头，需走代理',
+          domain,
+          upstreamStatus: upstreamResponse.status,
+        },
+        200
+      );
+    }
+
+    const nestedProbe = await probeNestedTarget(nextTarget, origin);
+
+    if (!nestedProbe.ok) {
+      return jsonResponse(
+        {
+          kind: 'unavailable',
+          reason: `首个媒体片段不可达: ${nestedProbe.status}`,
+          domain,
+          upstreamStatus: nestedProbe.status,
+        },
+        200
+      );
+    }
+
+    const canDirect = playlistCorsAccessible && nestedProbe.corsAccessible;
+    return jsonResponse(
+      {
+        kind: canDirect ? 'direct' : 'proxy',
+        reason: canDirect
+          ? '播放列表和首个媒体片段都支持浏览器直连'
+          : '上游可用，但至少一层缺少浏览器跨域头，建议走代理',
+        domain,
+        upstreamStatus: upstreamResponse.status,
+      },
+      200
+    );
+  } catch (error) {
+    return jsonResponse(
+      {
+        kind: 'unavailable',
+        reason: error.message || '探测失败',
+      },
+      200
+    );
+  }
+}
+
+async function handleHlsProxy(request, requestUrl) {
+  const targetUrl = requestUrl.searchParams.get('url');
+
+  if (!targetUrl) {
+    return jsonResponse({ error: 'Missing HLS URL' }, 400);
+  }
+
+  try {
+    const upstreamResponse = await fetch(targetUrl, {
+      headers: buildMediaHeaders(targetUrl, request.headers.get('range')),
+      redirect: 'follow',
+    });
+
+    if (!upstreamResponse.ok && upstreamResponse.status !== 206) {
+      return jsonResponse(
+        {
+          error: 'Upstream request failed',
+          status: upstreamResponse.status,
+          statusText: upstreamResponse.statusText,
+        },
+        upstreamResponse.status
+      );
+    }
+
+    if (!upstreamResponse.body) {
+      return jsonResponse({ error: 'Upstream response has no body' }, 502);
+    }
+
+    const proxyPrefix = `${requestUrl.origin}/api/hls-proxy?url=`;
+    const isPlaylist = isPlaylistResponse(
+      targetUrl,
+      upstreamResponse.headers.get('Content-Type')
+    );
+
+    if (isPlaylist) {
+      const playlistContent = await upstreamResponse.text();
+      const rewrittenPlaylist = rewritePlaylistContent(
+        playlistContent,
+        targetUrl,
+        proxyPrefix
+      );
+      const response = new Response(rewrittenPlaylist, {
+        status: upstreamResponse.status,
+        statusText: upstreamResponse.statusText,
+        headers: createHlsProxyHeaders(upstreamResponse, true),
+      });
+
+      setCorsHeaders(response.headers);
+      return response;
+    }
+
+    const response = new Response(upstreamResponse.body, {
+      status: upstreamResponse.status,
+      statusText: upstreamResponse.statusText,
+      headers: createHlsProxyHeaders(upstreamResponse, false),
+    });
+
+    setCorsHeaders(response.headers);
+    return response;
+  } catch (error) {
+    return jsonResponse(
+      {
+        error: error.message || 'Proxy request failed',
+      },
+      500
+    );
+  }
+}
+
 // 确保 URL 带有协议
 function ensureProtocol(url, defaultProtocol) {
   return url.startsWith('http://') || url.startsWith('https://')
@@ -124,13 +313,160 @@ function replaceRelativePaths(text, protocol, host, origin) {
   return text.replace(regex, `$1${protocol}//${host}/${origin}/`);
 }
 
+function isPlaylistResponse(targetUrl, contentType) {
+  const normalizedContentType = (contentType || '').toLowerCase();
+
+  return (
+    PLAYLIST_CONTENT_TYPES.some((item) =>
+      normalizedContentType.includes(item)
+    ) || targetUrl.toLowerCase().includes('.m3u8')
+  );
+}
+
+function buildAbsoluteUrl(input, baseUrl) {
+  return new URL(input, baseUrl).toString();
+}
+
+function buildMediaHeaders(targetUrl, rangeHeader) {
+  const headers = new Headers();
+
+  if (rangeHeader) {
+    headers.set('Range', rangeHeader);
+  }
+
+  headers.set(
+    'User-Agent',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36'
+  );
+  headers.set('Referer', new URL(targetUrl).origin);
+  headers.set('Accept', '*/*');
+
+  return headers;
+}
+
+function isCorsAccessible(response, origin) {
+  const allowOrigin = response.headers.get('Access-Control-Allow-Origin');
+  if (!allowOrigin) return false;
+  if (allowOrigin === '*') return true;
+
+  return allowOrigin
+    .split(',')
+    .map((value) => value.trim())
+    .includes(origin);
+}
+
+function getFirstPlaylistTarget(content, baseUrl) {
+  const lines = content.split('\n');
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+
+    return buildAbsoluteUrl(line, baseUrl);
+  }
+
+  return null;
+}
+
+async function probeNestedTarget(targetUrl, origin) {
+  const isNestedPlaylist = targetUrl.toLowerCase().includes('.m3u8');
+  const response = await fetch(targetUrl, {
+    headers: buildMediaHeaders(
+      targetUrl,
+      isNestedPlaylist ? null : 'bytes=0-1'
+    ),
+    redirect: 'follow',
+  });
+
+  return {
+    ok: response.ok || response.status === 206,
+    corsAccessible: isCorsAccessible(response, origin),
+    status: response.status,
+  };
+}
+
+function rewritePlaylistAttributes(line, baseUrl, proxyPrefix) {
+  return line.replace(/URI="([^"]+)"/g, (_match, uri) => {
+    const absoluteUrl = buildAbsoluteUrl(uri, baseUrl);
+    return `URI="${proxyPrefix}${encodeURIComponent(absoluteUrl)}"`;
+  });
+}
+
+function rewritePlaylistContent(content, baseUrl, proxyPrefix) {
+  return content
+    .split('\n')
+    .map((rawLine) => {
+      const line = rawLine.trim();
+      if (!line) return rawLine;
+
+      if (line.startsWith('#')) {
+        return rewritePlaylistAttributes(rawLine, baseUrl, proxyPrefix);
+      }
+
+      const absoluteUrl = buildAbsoluteUrl(line, baseUrl);
+      return `${proxyPrefix}${encodeURIComponent(absoluteUrl)}`;
+    })
+    .join('\n');
+}
+
+function createHlsProxyHeaders(upstreamResponse, isPlaylist) {
+  const headers = new Headers();
+  const passthroughHeaderNames = [
+    'Accept-Ranges',
+    'Content-Length',
+    'Content-Range',
+    'Content-Type',
+    'ETag',
+    'Last-Modified',
+  ];
+
+  passthroughHeaderNames.forEach((headerName) => {
+    if (
+      isPlaylist &&
+      (headerName === 'Content-Length' || headerName === 'Content-Range')
+    ) {
+      return;
+    }
+
+    const value = upstreamResponse.headers.get(headerName);
+    if (value) {
+      headers.set(headerName, value);
+    }
+  });
+
+  if (isPlaylist) {
+    headers.set('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+    headers.set('Cache-Control', 'public, max-age=30, s-maxage=30');
+  } else {
+    headers.set('Cache-Control', 'public, max-age=600, s-maxage=600');
+  }
+
+  return headers;
+}
+
 // 返回 JSON 格式的响应
 function jsonResponse(data, status) {
+  const headers = new Headers({
+    'Content-Type': 'application/json; charset=utf-8',
+  });
+  setCorsHeaders(headers);
+  setNoCacheHeaders(headers);
+
   return new Response(JSON.stringify(data), {
     status: status,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-    },
+    headers,
+  });
+}
+
+function handleOptionsRequest() {
+  const headers = new Headers();
+  setCorsHeaders(headers);
+
+  return new Response(null, {
+    status: 204,
+    headers,
   });
 }
 
@@ -147,7 +483,10 @@ function setNoCacheHeaders(headers) {
 // 设置 CORS 头部
 function setCorsHeaders(headers) {
   headers.set('Access-Control-Allow-Origin', '*');
-  headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  headers.set(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, DELETE, OPTIONS'
+  );
   headers.set('Access-Control-Allow-Headers', '*');
 }
 

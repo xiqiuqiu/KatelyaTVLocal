@@ -5,16 +5,18 @@
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-import { SearchResult } from '@/lib/types';
-import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-
-// 定义视频信息类型
-interface VideoInfo {
-  quality: string;
-  loadSpeed: string;
-  pingTime: number;
-  hasError?: boolean;
-}
+import { SearchResult, SourceStatus, SourceVideoInfo } from '@/lib/types';
+import {
+  createSourceStatus,
+  getRememberedSourceStatus,
+  getSourceIdentityKey,
+  getSourceStatusLabel,
+  getVideoResolutionFromM3u8,
+  isSourceStatusClickable,
+  probeSourcePlayback,
+  processImageUrl,
+  rememberSourceDomainPreference,
+} from '@/lib/utils';
 
 interface EpisodeSelectorProps {
   /** 总集数 */
@@ -35,7 +37,7 @@ interface EpisodeSelectorProps {
   sourceSearchLoading?: boolean;
   sourceSearchError?: string | null;
   /** 预计算的测速结果，避免重复测速 */
-  precomputedVideoInfo?: Map<string, VideoInfo>;
+  precomputedVideoInfo?: Map<string, SourceVideoInfo>;
 }
 
 /**
@@ -57,18 +59,23 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 }) => {
   const router = useRouter();
   const pageCount = Math.ceil(totalEpisodes / episodesPerPage);
+  const MAX_AUTO_PROBE_SOURCES = 3;
 
   // 存储每个源的视频信息
-  const [videoInfoMap, setVideoInfoMap] = useState<Map<string, VideoInfo>>(
-    new Map()
-  );
+  const [videoInfoMap, setVideoInfoMap] = useState<
+    Map<string, SourceVideoInfo>
+  >(new Map());
+  const [sourceStatusMap, setSourceStatusMap] = useState<
+    Map<string, SourceStatus>
+  >(new Map());
   const [attemptedSources, setAttemptedSources] = useState<Set<string>>(
     new Set()
   );
 
   // 使用 ref 来避免闭包问题
   const attemptedSourcesRef = useRef<Set<string>>(new Set());
-  const videoInfoMapRef = useRef<Map<string, VideoInfo>>(new Map());
+  const videoInfoMapRef = useRef<Map<string, SourceVideoInfo>>(new Map());
+  const sourceStatusMapRef = useRef<Map<string, SourceStatus>>(new Map());
 
   // 同步状态到 ref
   useEffect(() => {
@@ -78,6 +85,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   useEffect(() => {
     videoInfoMapRef.current = videoInfoMap;
   }, [videoInfoMap]);
+
+  useEffect(() => {
+    sourceStatusMapRef.current = sourceStatusMap;
+  }, [sourceStatusMap]);
 
   // 主要的 tab 状态：'episodes' 或 'sources'
   // 当只有一集时默认展示 "换源"，并隐藏 "选集" 标签
@@ -93,39 +104,257 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   const [descending, setDescending] = useState<boolean>(false);
 
   // 获取视频信息的函数
-  const getVideoInfo = useCallback(async (source: SearchResult) => {
-    const sourceKey = `${source.source}-${source.id}`;
+  const getSourceStatus = useCallback((source: SearchResult) => {
+    return sourceStatusMapRef.current.get(
+      getSourceIdentityKey(source.source, source.id)
+    );
+  }, []);
 
-    // 使用 ref 获取最新的状态，避免闭包问题
-    if (attemptedSourcesRef.current.has(sourceKey)) {
-      return;
-    }
+  const probeSourceDirectPlayback = useCallback(
+    async (source: SearchResult) => {
+      const sourceKey = getSourceIdentityKey(source.source, source.id);
+      const existingStatus = sourceStatusMapRef.current.get(sourceKey);
+      const rememberedStatus = getRememberedSourceStatus(source.episodes);
 
-    // 获取第一集的URL
-    if (!source.episodes || source.episodes.length === 0) {
-      return;
-    }
-    const episodeUrl =
-      source.episodes.length > 1 ? source.episodes[1] : source.episodes[0];
+      if (existingStatus?.kind === 'probing') {
+        return existingStatus;
+      }
 
-    // 标记为已尝试
-    setAttemptedSources((prev) => new Set(prev).add(sourceKey));
+      // 使用 ref 获取最新的状态，避免闭包问题
+      if (
+        attemptedSourcesRef.current.has(sourceKey) &&
+        existingStatus &&
+        existingStatus.kind !== 'idle'
+      ) {
+        return existingStatus;
+      }
 
-    try {
-      const info = await getVideoResolutionFromM3u8(episodeUrl);
-      setVideoInfoMap((prev) => new Map(prev).set(sourceKey, info));
-    } catch (error) {
-      // 失败时保存错误状态
-      setVideoInfoMap((prev) =>
-        new Map(prev).set(sourceKey, {
+      // 获取第一集的URL
+      if (!source.episodes || source.episodes.length === 0) {
+        const missingEpisodeStatus = createSourceStatus('unavailable', {
+          reason: '该播放源没有可用剧集',
+          domain: rememberedStatus?.domain || null,
+        });
+        setSourceStatusMap((prev) =>
+          new Map(prev).set(sourceKey, missingEpisodeStatus)
+        );
+        return missingEpisodeStatus;
+      }
+      const episodeUrl =
+        source.episodes.length > 1 ? source.episodes[1] : source.episodes[0];
+
+      const serverProbeResult = await probeSourcePlayback(episodeUrl);
+
+      if (serverProbeResult.kind === 'proxy') {
+        const proxyStatus = createSourceStatus('proxy', {
+          reason: serverProbeResult.reason || '该源需通过代理播放',
+          playbackMode: 'proxy',
+          domain: serverProbeResult.domain || rememberedStatus?.domain || null,
+        });
+        setSourceStatusMap((prev) => new Map(prev).set(sourceKey, proxyStatus));
+        rememberSourceDomainPreference(
+          proxyStatus.domain || null,
+          'proxy',
+          serverProbeResult.reason
+        );
+        return proxyStatus;
+      }
+
+      if (serverProbeResult.kind === 'unavailable') {
+        const unavailableInfo: SourceVideoInfo = {
           quality: '错误',
           loadSpeed: '未知',
           pingTime: 0,
           hasError: true,
-        })
-      );
-    }
-  }, []);
+        };
+
+        setVideoInfoMap((prev) =>
+          new Map(prev).set(sourceKey, unavailableInfo)
+        );
+
+        const unavailableStatus = createSourceStatus('unavailable', {
+          reason: serverProbeResult.reason || '服务端探测失败',
+          domain: serverProbeResult.domain || rememberedStatus?.domain || null,
+          measured: unavailableInfo,
+        });
+        setSourceStatusMap((prev) =>
+          new Map(prev).set(sourceKey, unavailableStatus)
+        );
+        rememberSourceDomainPreference(
+          unavailableStatus.domain || null,
+          'unavailable',
+          serverProbeResult.reason
+        );
+        return unavailableStatus;
+      }
+
+      // 标记为已尝试
+      setAttemptedSources((prev) => new Set(prev).add(sourceKey));
+      setSourceStatusMap((prev) => {
+        const next = new Map(prev);
+        next.set(
+          sourceKey,
+          createSourceStatus('probing', {
+            reason: '正在检测浏览器是否可直连',
+            domain: rememberedStatus?.domain || null,
+          })
+        );
+        return next;
+      });
+
+      try {
+        const info = await getVideoResolutionFromM3u8(episodeUrl);
+        setVideoInfoMap((prev) => new Map(prev).set(sourceKey, info));
+
+        const directStatus = createSourceStatus('direct', {
+          reason: '浏览器可直接播放',
+          playbackMode: 'direct',
+          measured: info,
+          domain: rememberedStatus?.domain || null,
+        });
+        setSourceStatusMap((prev) =>
+          new Map(prev).set(sourceKey, directStatus)
+        );
+        rememberSourceDomainPreference(directStatus.domain || null, 'direct');
+        return directStatus;
+      } catch (error) {
+        const unavailableInfo: SourceVideoInfo = {
+          quality: '错误',
+          loadSpeed: '未知',
+          pingTime: 0,
+          hasError: true,
+        };
+
+        // 失败时保存错误状态
+        setVideoInfoMap((prev) =>
+          new Map(prev).set(sourceKey, {
+            ...unavailableInfo,
+          })
+        );
+
+        const failureReason =
+          error instanceof Error ? error.message : '浏览器直连检测失败';
+        const unavailableStatus = createSourceStatus('unavailable', {
+          reason: failureReason,
+          domain: rememberedStatus?.domain || null,
+          measured: unavailableInfo,
+        });
+        setSourceStatusMap((prev) =>
+          new Map(prev).set(sourceKey, unavailableStatus)
+        );
+        rememberSourceDomainPreference(
+          unavailableStatus.domain || null,
+          'unavailable',
+          failureReason
+        );
+        return unavailableStatus;
+      }
+    },
+    []
+  );
+
+  const getAutoProbeCandidates = useCallback(() => {
+    return [...availableSources]
+      .sort((a, b) => {
+        const aKey = getSourceIdentityKey(a.source, a.id);
+        const bKey = getSourceIdentityKey(b.source, b.id);
+        const aStatus = sourceStatusMapRef.current.get(aKey);
+        const bStatus = sourceStatusMapRef.current.get(bKey);
+        const aIsCurrent =
+          a.source?.toString() === currentSource?.toString() &&
+          a.id?.toString() === currentId?.toString();
+        const bIsCurrent =
+          b.source?.toString() === currentSource?.toString() &&
+          b.id?.toString() === currentId?.toString();
+
+        const getPriority = (isCurrent: boolean, status?: SourceStatus) => {
+          if (isCurrent) return 0;
+          if (status?.kind === 'direct') return 1;
+          if (status?.kind === 'idle') return 2;
+          return 3;
+        };
+
+        return (
+          getPriority(aIsCurrent, aStatus) - getPriority(bIsCurrent, bStatus)
+        );
+      })
+      .filter((source) => {
+        const sourceKey = getSourceIdentityKey(source.source, source.id);
+        const status = sourceStatusMapRef.current.get(sourceKey);
+
+        if (attemptedSourcesRef.current.has(sourceKey)) {
+          return false;
+        }
+
+        return !status || status.kind === 'idle' || status.kind === 'direct';
+      })
+      .slice(0, MAX_AUTO_PROBE_SOURCES);
+  }, [availableSources, currentId, currentSource]);
+
+  const handleSourceCardClick = useCallback(
+    async (source: SearchResult) => {
+      const sourceKey = getSourceIdentityKey(source.source, source.id);
+      const isCurrentSource =
+        source.source?.toString() === currentSource?.toString() &&
+        source.id?.toString() === currentId?.toString();
+
+      if (isCurrentSource) {
+        return;
+      }
+
+      let status = sourceStatusMapRef.current.get(sourceKey);
+      if (!status || status.kind === 'idle') {
+        status = await probeSourceDirectPlayback(source);
+      }
+
+      if (!isSourceStatusClickable(status)) {
+        return;
+      }
+
+      onSourceChange?.(source.source, source.id, source.title);
+    },
+    [currentId, currentSource, onSourceChange, probeSourceDirectPlayback]
+  );
+
+  useEffect(() => {
+    setSourceStatusMap((prev) => {
+      const next = new Map<string, SourceStatus>();
+
+      availableSources.forEach((source) => {
+        const sourceKey = getSourceIdentityKey(source.source, source.id);
+        const previousStatus = prev.get(sourceKey);
+        const rememberedStatus = getRememberedSourceStatus(source.episodes);
+        const isCurrentSource =
+          source.source?.toString() === currentSource?.toString() &&
+          source.id?.toString() === currentId?.toString();
+
+        if (previousStatus && previousStatus.kind !== 'idle') {
+          next.set(sourceKey, previousStatus);
+          return;
+        }
+
+        if (rememberedStatus) {
+          next.set(sourceKey, rememberedStatus);
+          return;
+        }
+
+        if (isCurrentSource) {
+          next.set(
+            sourceKey,
+            createSourceStatus('direct', {
+              reason: '当前播放源',
+              playbackMode: 'direct',
+            })
+          );
+          return;
+        }
+
+        next.set(sourceKey, createSourceStatus('idle'));
+      });
+
+      return next;
+    });
+  }, [availableSources, currentId, currentSource]);
 
   // 当有预计算结果时，先合并到videoInfoMap中
   useEffect(() => {
@@ -145,20 +374,48 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         });
         return newSet;
       });
+
+      setSourceStatusMap((prev) => {
+        const next = new Map(prev);
+
+        precomputedVideoInfo.forEach((info, key) => {
+          const previousStatus = next.get(key);
+          if (info.hasError) {
+            next.set(
+              key,
+              createSourceStatus('unavailable', {
+                reason: '初始化检测失败',
+                domain: previousStatus?.domain || null,
+                measured: info,
+              })
+            );
+            return;
+          }
+
+          next.set(
+            key,
+            createSourceStatus('direct', {
+              reason: '初始化检测通过',
+              playbackMode: 'direct',
+              domain: previousStatus?.domain || null,
+              measured: info,
+            })
+          );
+        });
+
+        return next;
+      });
     }
   }, [precomputedVideoInfo]);
 
-  // 当换源Tab激活且没有测速过时，开始测速
+  // 当换源Tab激活时，只对少量候选源做浏览器直连检测，避免控制台刷满错误
   useEffect(() => {
     if (activeTab === 'sources') {
-      availableSources.forEach((source) => {
-        const sourceKey = `${source.source}-${source.id}`;
-        if (!attemptedSourcesRef.current.has(sourceKey)) {
-          getVideoInfo(source);
-        }
+      getAutoProbeCandidates().forEach((source) => {
+        void probeSourceDirectPlayback(source);
       });
     }
-  }, [activeTab, availableSources, getVideoInfo]);
+  }, [activeTab, getAutoProbeCandidates, probeSourceDirectPlayback]);
 
   // 分类标签容器和按钮的引用
   const categoryContainerRef = useRef<HTMLDivElement>(null);
@@ -230,9 +487,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
   const handleSourceClick = useCallback(
     (source: SearchResult) => {
-      onSourceChange?.(source.source, source.id, source.title);
+      void handleSourceCardClick(source);
     },
-    [onSourceChange]
+    [handleSourceCardClick]
   );
 
   const currentStart = currentPage * episodesPerPage + 1;
@@ -447,17 +704,47 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     const isCurrentSource =
                       source.source?.toString() === currentSource?.toString() &&
                       source.id?.toString() === currentId?.toString();
+                    const sourceKey = getSourceIdentityKey(
+                      source.source,
+                      source.id
+                    );
+                    const sourceStatus = getSourceStatus(source);
+                    const isClickable =
+                      !isCurrentSource && isSourceStatusClickable(sourceStatus);
+                    const statusLabel = sourceStatus
+                      ? getSourceStatusLabel(sourceStatus)
+                      : '待检测';
+
+                    const statusClassName = (() => {
+                      if (!sourceStatus) {
+                        return 'bg-gray-500/10 dark:bg-gray-400/20 text-gray-600 dark:text-gray-300';
+                      }
+
+                      switch (sourceStatus.kind) {
+                        case 'direct':
+                          return 'bg-gray-500/10 dark:bg-gray-400/20 text-green-600 dark:text-green-400';
+                        case 'proxy':
+                          return 'bg-gray-500/10 dark:bg-gray-400/20 text-blue-600 dark:text-blue-400';
+                        case 'unavailable':
+                          return 'bg-gray-500/10 dark:bg-gray-400/20 text-red-600 dark:text-red-400';
+                        case 'probing':
+                          return 'bg-gray-500/10 dark:bg-gray-400/20 text-yellow-600 dark:text-yellow-400';
+                        default:
+                          return 'bg-gray-500/10 dark:bg-gray-400/20 text-gray-600 dark:text-gray-300';
+                      }
+                    })();
+
                     return (
                       <div
-                        key={`${source.source}-${source.id}`}
-                        onClick={() =>
-                          !isCurrentSource && handleSourceClick(source)
-                        }
+                        key={sourceKey}
+                        onClick={() => isClickable && handleSourceClick(source)}
                         className={`flex items-start gap-3 px-2 py-3 rounded-lg transition-all select-none duration-200 relative
                           ${
                             isCurrentSource
                               ? 'bg-green-500/10 dark:bg-green-500/20 border-green-500/30 border'
-                              : 'hover:bg-gray-200/50 dark:hover:bg-white/10 hover:scale-[1.02] cursor-pointer'
+                              : isClickable
+                              ? 'hover:bg-gray-200/50 dark:hover:bg-white/10 hover:scale-[1.02] cursor-pointer'
+                              : 'opacity-70 cursor-not-allowed'
                           }`.trim()}
                       >
                         {/* 封面 */}
@@ -491,42 +778,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                                 </div>
                               )}
                             </div>
-                            {(() => {
-                              const sourceKey = `${source.source}-${source.id}`;
-                              const videoInfo = videoInfoMap.get(sourceKey);
-                              if (videoInfo && videoInfo.quality !== '未知') {
-                                if (videoInfo.hasError) {
-                                  return (
-                                    <div className='bg-gray-500/10 dark:bg-gray-400/20 text-red-600 dark:text-red-400 px-1.5 py-0 rounded text-xs flex-shrink-0 min-w-[50px] text-center'>
-                                      检测失败
-                                    </div>
-                                  );
-                                } else {
-                                  // 根据分辨率设置不同颜色：2K、4K为紫色，1080p、720p为绿色，其他为黄色
-                                  const isUltraHigh = ['4K', '2K'].includes(
-                                    videoInfo.quality
-                                  );
-                                  const isHigh = ['1080p', '720p'].includes(
-                                    videoInfo.quality
-                                  );
-                                  const textColorClasses = isUltraHigh
-                                    ? 'text-blue-600 dark:text-blue-400'
-                                    : isHigh
-                                    ? 'text-green-600 dark:text-green-400'
-                                    : 'text-yellow-600 dark:text-yellow-400';
-
-                                  return (
-                                    <div
-                                      className={`bg-gray-500/10 dark:bg-gray-400/20 ${textColorClasses} px-1.5 py-0 rounded text-xs flex-shrink-0 min-w-[50px] text-center`}
-                                    >
-                                      {videoInfo.quality}
-                                    </div>
-                                  );
-                                }
-                              }
-
-                              return null;
-                            })()}
+                            <div
+                              className={`${statusClassName} px-1.5 py-0 rounded text-xs flex-shrink-0 min-w-[50px] text-center`}
+                            >
+                              {statusLabel}
+                            </div>
                           </div>
 
                           {/* 源名称和集数信息 - 垂直居中 */}
@@ -544,8 +800,15 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                           {/* 网络信息 - 底部 */}
                           <div className='flex items-end h-6'>
                             {(() => {
-                              const sourceKey = `${source.source}-${source.id}`;
                               const videoInfo = videoInfoMap.get(sourceKey);
+                              if (sourceStatus?.kind === 'probing') {
+                                return (
+                                  <div className='text-yellow-600 dark:text-yellow-400 font-medium text-xs'>
+                                    正在检测浏览器直连能力...
+                                  </div>
+                                );
+                              }
+
                               if (videoInfo) {
                                 if (!videoInfo.hasError) {
                                   return (
@@ -561,11 +824,41 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                                 } else {
                                   return (
                                     <div className='text-red-500/90 dark:text-red-400 font-medium text-xs'>
-                                      无测速数据
+                                      {sourceStatus?.reason || '该源当前不可用'}
                                     </div>
                                   );
                                 }
                               }
+
+                              if (sourceStatus?.kind === 'proxy') {
+                                return (
+                                  <div className='text-blue-600 dark:text-blue-400 font-medium text-xs'>
+                                    该源更适合通过代理播放
+                                  </div>
+                                );
+                              }
+
+                              if (sourceStatus?.kind === 'direct') {
+                                return (
+                                  <div className='text-green-600 dark:text-green-400 font-medium text-xs'>
+                                    浏览器可直接播放
+                                  </div>
+                                );
+                              }
+
+                              if (sourceStatus?.kind === 'unavailable') {
+                                return (
+                                  <div className='text-red-500/90 dark:text-red-400 font-medium text-xs'>
+                                    {sourceStatus.reason || '该源当前不可用'}
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div className='text-gray-500 dark:text-gray-400 font-medium text-xs'>
+                                  待检测
+                                </div>
+                              );
                             })()}
                           </div>
                         </div>
