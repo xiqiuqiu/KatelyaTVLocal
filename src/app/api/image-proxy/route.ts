@@ -15,7 +15,10 @@ export async function GET(request: Request) {
   const imageUrl = searchParams.get('url');
 
   if (!imageUrl) {
-    const response = NextResponse.json({ error: 'Missing image URL' }, { status: 400 });
+    const response = NextResponse.json(
+      { error: 'Missing image URL' },
+      { status: 400 }
+    );
     return addCorsHeaders(response);
   }
 
@@ -24,7 +27,7 @@ export async function GET(request: Request) {
       headers: {
         Referer: 'https://movie.douban.com/',
         'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
       },
     });
 

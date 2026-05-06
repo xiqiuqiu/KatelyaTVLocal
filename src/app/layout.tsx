@@ -10,6 +10,7 @@ import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
 
 const inter = Inter({ subsets: ['latin'] });
+const defaultImageProxy = '/api/image-proxy?url=';
 
 // 动态生成 metadata，支持配置更新后的标题变化
 export async function generateMetadata(): Promise<Metadata> {
@@ -67,6 +68,10 @@ export default async function RootLayout({
     enableRegister = config.UserConfig.AllowRegister;
     imageProxy = config.SiteConfig.ImageProxy;
     doubanProxy = config.SiteConfig.DoubanProxy;
+  }
+
+  if (!imageProxy.trim()) {
+    imageProxy = defaultImageProxy;
   }
 
   // 将运行时配置注入到全局 window 对象，供客户端在运行时读取
