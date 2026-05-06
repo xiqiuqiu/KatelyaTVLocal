@@ -129,7 +129,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         return existingStatus;
       }
 
-      // 获取第一集的URL
+      // 使用当前选中的集数做探测，避免第 1 集可播但第 2 集异常时误判整个源
       if (!source.episodes || source.episodes.length === 0) {
         const missingEpisodeStatus = createSourceStatus('unavailable', {
           reason: '该播放源没有可用剧集',
@@ -140,8 +140,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         );
         return missingEpisodeStatus;
       }
-      const episodeUrl =
-        source.episodes.length > 1 ? source.episodes[1] : source.episodes[0];
+      const probeEpisodeIndex = Math.max(
+        0,
+        Math.min(value - 1, source.episodes.length - 1)
+      );
+      const episodeUrl = source.episodes[probeEpisodeIndex];
 
       const serverProbeResult = await probeSourcePlayback(episodeUrl);
 

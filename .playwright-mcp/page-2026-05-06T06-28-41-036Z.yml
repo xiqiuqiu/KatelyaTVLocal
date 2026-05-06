@@ -1,0 +1,51 @@
+- generic [active] [ref=e1]:
+  - alert [ref=e2]
+  - generic [ref=e23]:
+    - generic [ref=e25]:
+      - button "切换侧边栏" [ref=e27] [cursor=pointer]:
+        - img [ref=e28]
+      - button "ZOTUBE" [ref=e30] [cursor=pointer]
+      - generic [ref=e33]:
+        - textbox "搜索影片、电视剧、综艺..." [ref=e35]
+        - button [ref=e36] [cursor=pointer]:
+          - img [ref=e37]
+      - generic [ref=e40]:
+        - button "Toggle theme" [ref=e41] [cursor=pointer]:
+          - img [ref=e42]
+        - button "User Menu" [ref=e45] [cursor=pointer]:
+          - img [ref=e46]
+    - generic [ref=e50]:
+      - complementary [ref=e51]:
+        - generic [ref=e52]:
+          - button [ref=e54] [cursor=pointer]:
+            - img [ref=e55]
+          - navigation [ref=e56]:
+            - link "首页" [ref=e57] [cursor=pointer]:
+              - /url: /
+              - img [ref=e59]
+              - generic [ref=e62]: 首页
+            - link "搜索" [ref=e63] [cursor=pointer]:
+              - /url: /search
+              - img [ref=e65]
+              - generic [ref=e68]: 搜索
+          - generic [ref=e70]:
+            - link "电影" [ref=e71] [cursor=pointer]:
+              - /url: /douban?type=movie
+              - img [ref=e73]
+              - generic [ref=e75]: 电影
+            - link "剧集" [ref=e76] [cursor=pointer]:
+              - /url: /douban?type=tv
+              - img [ref=e78]
+              - generic [ref=e81]: 剧集
+            - link "综艺" [ref=e82] [cursor=pointer]:
+              - /url: /douban?type=show
+              - img [ref=e84]
+              - generic [ref=e88]: 综艺
+            - link "TVBox配置" [ref=e89] [cursor=pointer]:
+              - /url: /config
+              - img [ref=e91]
+              - generic [ref=e94]: TVBox配置
+      - main [ref=e95]:
+        - generic [ref=e100]:
+          - generic [ref=e103]: 🎬
+          - paragraph [ref=e113]: 🎬 正在获取视频详情...

@@ -227,7 +227,11 @@ function PlayPageClient() {
 
     await Promise.all(
       serverProbeCandidates.map(async ({ source, sourceKey }) => {
-        const episodeUrl = source.episodes?.[1] || source.episodes?.[0];
+        const probeEpisodeIndex = Math.max(
+          0,
+          Math.min(currentEpisodeIndexRef.current, source.episodes.length - 1)
+        );
+        const episodeUrl = source.episodes?.[probeEpisodeIndex];
         if (!episodeUrl) {
           effectiveStatusMap.set(
             sourceKey,
@@ -298,16 +302,20 @@ function PlayPageClient() {
       const batchResults = await Promise.all(
         batchSources.map(async ({ source }) => {
           try {
-            // 检查是否有第一集的播放地址
+            // 使用当前集做测速，避免某一集异常导致整源误判
             if (!source.episodes || source.episodes.length === 0) {
               console.warn(`播放源 ${source.source_name} 没有可用的播放地址`);
               return null;
             }
 
-            const episodeUrl =
-              source.episodes.length > 1
-                ? source.episodes[1]
-                : source.episodes[0];
+            const probeEpisodeIndex = Math.max(
+              0,
+              Math.min(
+                currentEpisodeIndexRef.current,
+                source.episodes.length - 1
+              )
+            );
+            const episodeUrl = source.episodes[probeEpisodeIndex];
             const testResult = await getVideoResolutionFromM3u8(episodeUrl);
             const status = effectiveStatusMap.get(
               getSourceIdentityKey(source.source, source.id)
@@ -1085,12 +1093,6 @@ function PlayPageClient() {
       });
 
       lastSaveTimeRef.current = Date.now();
-      console.log('播放进度已保存:', {
-        title: videoTitleRef.current,
-        episode: currentEpisodeIndexRef.current + 1,
-        year: detailRef.current?.year,
-        progress: `${Math.floor(currentTime)}/${Math.floor(duration)}`,
-      });
     } catch (err) {
       console.error('保存播放进度失败:', err);
     }
