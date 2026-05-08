@@ -13,6 +13,7 @@ import {
 
 const SOURCE_DOMAIN_MEMORY_KEY = 'sourceDomainPreferences';
 const SOURCE_DOMAIN_MEMORY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const SOURCE_DOMAIN_MEMORY_NEGATIVE_TTL_MS = 1 * 60 * 60 * 1000; // 1 hour for unavailable
 
 function readSourceDomainPreferenceMap(): Record<
   string,
@@ -92,7 +93,12 @@ export function getSourceDomainPreference(
   const preference = allPreferences[domain];
   if (!preference) return null;
 
-  if (Date.now() - preference.updatedAt > SOURCE_DOMAIN_MEMORY_TTL_MS) {
+  const ttl =
+    preference.mode === 'unavailable'
+      ? SOURCE_DOMAIN_MEMORY_NEGATIVE_TTL_MS
+      : SOURCE_DOMAIN_MEMORY_TTL_MS;
+
+  if (Date.now() - preference.updatedAt > ttl) {
     delete allPreferences[domain];
     writeSourceDomainPreferenceMap(allPreferences);
     return null;
