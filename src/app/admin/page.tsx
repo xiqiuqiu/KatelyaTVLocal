@@ -2,6 +2,8 @@
 
 'use client';
 
+export const runtime = 'edge';
+
 import {
   closestCenter,
   DndContext,

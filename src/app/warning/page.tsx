@@ -5,6 +5,8 @@ export const metadata: Metadata = {
   description: '站点安全配置警告',
 };
 
+export const runtime = 'edge';
+
 export default function WarningPage() {
   return (
     <div className='min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4'>

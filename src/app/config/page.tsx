@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'edge';
 
 export default function ConfigPage() {
   const [copied, setCopied] = useState(false);

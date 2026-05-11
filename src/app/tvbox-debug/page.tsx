@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 
+export const runtime = 'edge';
+
 export default function TVBoxDebugPage() {
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(false);

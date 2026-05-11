@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'edge';
 
 export default function TVBoxPage() {
   const router = useRouter();

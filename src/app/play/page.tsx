@@ -2,6 +2,8 @@
 
 'use client';
 
+export const runtime = 'edge';
+
 import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
