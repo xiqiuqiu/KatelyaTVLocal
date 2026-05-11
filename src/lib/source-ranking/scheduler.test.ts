@@ -6,7 +6,10 @@ interface StatementRecord {
   values: unknown[];
 }
 
-function createFakeDatabase(records: StatementRecord[]) {
+function createFakeDatabase(
+  records: StatementRecord[],
+  allResults: Array<{ results?: unknown[] }> = []
+) {
   return {
     prepare(sql: string) {
       return {
@@ -15,6 +18,11 @@ function createFakeDatabase(records: StatementRecord[]) {
             async run() {
               records.push({ sql, values });
               return { success: true };
+            },
+            async all<T = unknown>() {
+              return (allResults.shift() || { results: [] }) as {
+                results?: T[];
+              };
             },
           };
         },
@@ -237,10 +245,10 @@ describe('source ranking scheduler', () => {
         statement.sql.includes('INSERT OR REPLACE INTO source_rank_snapshots')
       );
       const alphaSnapshot = snapshotWrites.find(
-        (statement) => statement.values[1] === 'alpha'
+        (statement) => statement.values[1] === 'alpha-video-1'
       );
       const betaSnapshot = snapshotWrites.find(
-        (statement) => statement.values[1] === 'beta'
+        (statement) => statement.values[1] === 'beta-video-2'
       );
 
       expect(runInsert?.values).toEqual([
@@ -253,7 +261,7 @@ describe('source ranking scheduler', () => {
       expect(runUpdate?.values?.[1]).toBe('completed');
       expect(snapshotWrites).toHaveLength(2);
       expect(alphaSnapshot?.values.slice(1, 14)).toEqual([
-        'alpha',
+        'alpha-video-1',
         'alpha.example.com',
         '24h',
         30.002000000000002,
@@ -268,7 +276,7 @@ describe('source ranking scheduler', () => {
         3,
       ]);
       expect(betaSnapshot?.values.slice(1, 14)).toEqual([
-        'beta',
+        'beta-video-2',
         'beta.example.com',
         '24h',
         80,
@@ -285,5 +293,65 @@ describe('source ranking scheduler', () => {
     } finally {
       process.env.USERNAME = originalUsername;
     }
+  });
+
+  it('falls back to recent playback feedback when play records are unavailable', async () => {
+    const statements: StatementRecord[] = [];
+    const persistedTasks: string[] = [];
+
+    const result = await runLowFrequencySourceRankingCheck({
+      env: {
+        DB: createFakeDatabase(statements, [
+          {
+            results: [
+              {
+                sourceKey: 'mdzy-16302',
+                title: '庆余年',
+                recordedAt: 1710000500000,
+              },
+            ],
+          },
+        ]),
+      },
+      origin: 'https://app.example.com',
+      triggerType: 'cron',
+      idFactory: () => 'run-feedback',
+      now: () => 1710000600000,
+      getUsers: async () => [],
+      getPlayRecords: async () => ({}),
+      fetchDetail: async () => ({
+        id: '16302',
+        title: '庆余年',
+        poster: '',
+        episodes: ['https://media.example.com/qyn-1.m3u8'],
+        source: 'mdzy',
+        source_name: '魔都资源',
+        year: '2019',
+      }),
+      probePlayback: async () => ({
+        kind: 'direct',
+        domain: 'media.example.com',
+        reason: '可直连',
+        upstreamStatus: 200,
+        probeTimeMs: 123,
+        resolutionLabel: null,
+        firstSegmentLatencyMs: null,
+        firstSegmentSpeedKbps: null,
+      }),
+      persistProbeResult: async (_env, _runId, task) => {
+        persistedTasks.push(task.sourceKey);
+      },
+    });
+
+    expect(result).toMatchObject({
+      triggered: true,
+      status: 'completed',
+      sampledRecordCount: 1,
+      taskCount: 1,
+      probeCount: 1,
+      snapshotCount: 1,
+      errorCount: 0,
+    });
+    expect(persistedTasks).toEqual(['mdzy-16302']);
   });
 });

@@ -22,6 +22,7 @@ type SchedulerStatus =
 interface D1PreparedStatementLike {
   bind: (...values: unknown[]) => {
     run: () => Promise<unknown>;
+    all: <T = unknown>() => Promise<{ results?: T[] }>;
   };
 }
 
@@ -38,6 +39,12 @@ interface RecentPlaySample {
   source: string;
   id: string;
   record: PlayRecord;
+}
+
+interface RecentFeedbackSampleRow {
+  sourceKey: string;
+  title: string | null;
+  recordedAt: number;
 }
 
 interface SampledProbeTask extends OfflineProbeTask {
@@ -156,6 +163,24 @@ function parseRecordKey(key: string): { source: string; id: string } | null {
   };
 }
 
+function parseSourceIdentityKey(
+  key: string
+): { source: string; id: string } | null {
+  const separatorIndex = key.indexOf('-');
+  if (separatorIndex <= 0 || separatorIndex >= key.length - 1) {
+    return null;
+  }
+
+  return {
+    source: key.slice(0, separatorIndex),
+    id: key.slice(separatorIndex + 1),
+  };
+}
+
+function buildSourceIdentityKey(source: string, id: string): string {
+  return `${source}-${id}`;
+}
+
 function buildEpisodeCandidates(
   episodes: string[],
   currentEpisodeIndex: number
@@ -237,6 +262,51 @@ async function loadRecentPlaySamples(
     .slice(0, MAX_RECENT_RECORDS);
 }
 
+async function loadRecentFeedbackSamples(
+  database: D1DatabaseLike
+): Promise<RecentPlaySample[]> {
+  const result = await database
+    .prepare(
+      `SELECT
+         source_key AS sourceKey,
+         title,
+         recorded_at AS recordedAt
+       FROM playback_feedback_events
+       WHERE startup_success = 1
+       ORDER BY recorded_at DESC
+       LIMIT ?`
+    )
+    .bind(MAX_RECENT_RECORDS)
+    .all<RecentFeedbackSampleRow>();
+
+  return (result.results || [])
+    .map((row) => {
+      const parsed = parseSourceIdentityKey(row.sourceKey);
+      if (!parsed) {
+        return null;
+      }
+
+      return {
+        userName: 'feedback-fallback',
+        source: parsed.source,
+        id: parsed.id,
+        record: {
+          title: row.title || parsed.id,
+          source_name: parsed.source,
+          cover: '',
+          year: '',
+          index: 1,
+          total_episodes: 1,
+          play_time: 0,
+          total_time: 0,
+          save_time: row.recordedAt,
+          search_title: row.title || parsed.id,
+        },
+      } satisfies RecentPlaySample;
+    })
+    .filter((sample): sample is RecentPlaySample => Boolean(sample));
+}
+
 async function buildProbeTasksFromRecentPlays(
   samples: RecentPlaySample[],
   fetchDetail: LowFrequencySourceRankingOptions['fetchDetail']
@@ -267,7 +337,9 @@ async function buildProbeTasksFromRecentPlays(
       continue;
     }
 
-    const sourceKey = detail.source || sample.source;
+    const normalizedSource = detail.source || sample.source;
+    const normalizedId = detail.id || sample.id;
+    const sourceKey = buildSourceIdentityKey(normalizedSource, normalizedId);
     const currentSourceCount = perSourceCount.get(sourceKey) || 0;
     if (currentSourceCount >= MAX_TASKS_PER_SOURCE) {
       continue;
@@ -298,8 +370,9 @@ async function buildProbeTasksFromRecentPlays(
       tasks.push({
         userName: sample.userName,
         sourceKey,
-        sourceId: detail.id || sample.id,
-        sourceName: detail.source_name || sample.record.source_name || sourceKey,
+        sourceId: normalizedId,
+        sourceName:
+          detail.source_name || sample.record.source_name || normalizedSource,
         titleSample: detail.title || sample.record.title,
         episodeUrl,
       });
@@ -488,7 +561,10 @@ export async function runLowFrequencySourceRankingCheck(
   await insertProbeRun(database, runId, triggerType, startedAt);
 
   try {
-    const samples = await loadRecentPlaySamples(getUsers, getPlayRecords);
+    let samples = await loadRecentPlaySamples(getUsers, getPlayRecords);
+    if (samples.length === 0) {
+      samples = await loadRecentFeedbackSamples(database);
+    }
     sampledRecordCount = samples.length;
 
     let tasks: SampledProbeTask[] = [];
