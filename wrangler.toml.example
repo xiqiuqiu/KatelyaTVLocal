@@ -13,7 +13,9 @@ database_id = "replace-with-your-d1-id"
 migrations_dir = "migrations"
 
 [vars]
+NEXT_PUBLIC_STORAGE_TYPE = "d1"
 SOURCE_RANKING_ENABLED = "true"
 NEXT_PUBLIC_SOURCE_RANKING_ENABLED = "true"
 SOURCE_RANKING_FALLBACK_TO_LIVE = "true"
 SOURCE_RANKING_CRON_ENABLED = "true"
+USERNAME = "admin"
