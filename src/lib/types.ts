@@ -67,6 +67,8 @@ export interface IStorage {
   checkUserExist(userName: string): Promise<boolean>;
   // 修改用户密码
   changePassword(userName: string, newPassword: string): Promise<void>;
+  // 将旧的明文密码升级为安全哈希
+  upgradeLegacyPasswords?(): Promise<number>;
   // 删除用户（包括密码、搜索历史、播放记录、收藏夹）
   deleteUser(userName: string): Promise<void>;
 
@@ -225,6 +227,10 @@ export interface RuntimeConfig {
   SOURCE_PROBE?: string;
   HLS_PROXY?: string;
   SOURCE_RANKING_ENABLED?: boolean;
+  CURRENT_USER?: {
+    username?: string | null;
+    role?: 'owner' | 'admin' | 'user';
+  } | null;
 }
 
 // 全局Window类型扩展

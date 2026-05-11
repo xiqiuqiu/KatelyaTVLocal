@@ -1,8 +1,10 @@
-/* eslint-disable no-console,@typescript-eslint/no-explicit-any */
+/* eslint-disable no-console */
 import { NextRequest, NextResponse } from 'next/server';
 
+import { getSessionSigningSecret } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
+import { createSessionCookieValue } from '@/lib/security/session';
 
 export const runtime = 'edge';
 
@@ -15,51 +17,31 @@ const STORAGE_TYPE =
     | 'upstash'
     | undefined) || 'localstorage';
 
-// 生成签名
-async function generateSignature(
-  data: string,
-  secret: string
-): Promise<string> {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(secret);
-  const messageData = encoder.encode(data);
-
-  // 导入密钥
-  const key = await crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-
-  // 生成签名
-  const signature = await crypto.subtle.sign('HMAC', key, messageData);
-
-  // 转换为十六进制字符串
-  return Array.from(new Uint8Array(signature))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-// 生成认证Cookie（带签名）
-async function generateAuthCookie(username: string): Promise<string> {
-  const authData: any = {
-    role: 'user',
-    username,
-    timestamp: Date.now(),
-  };
-
-  // 使用process.env.PASSWORD作为签名密钥，而不是用户密码
-  const signingKey = process.env.PASSWORD || '';
-  const signature = await generateSignature(username, signingKey);
-  authData.signature = signature;
-
-  return encodeURIComponent(JSON.stringify(authData));
+function setAuthCookie(
+  req: NextRequest,
+  response: NextResponse,
+  cookieValue: string,
+  expires: Date
+) {
+  response.cookies.set('auth', cookieValue, {
+    path: '/',
+    expires,
+    sameSite: 'lax',
+    httpOnly: true,
+    secure: req.nextUrl.protocol === 'https:',
+  });
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const signingSecret = getSessionSigningSecret();
+    if (!signingSecret) {
+      return NextResponse.json(
+        { error: 'AUTH_SIGNING_SECRET 未配置' },
+        { status: 500 }
+      );
+    }
+
     // localstorage 模式下不支持注册
     if (STORAGE_TYPE === 'localstorage') {
       return NextResponse.json(
@@ -95,6 +77,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '用户已存在' }, { status: 400 });
       }
 
+      await db.upgradeLegacyPasswords();
       await db.registerUser(username, password);
 
       // 添加到配置中并保存
@@ -106,17 +89,14 @@ export async function POST(req: NextRequest) {
 
       // 注册成功，设置认证cookie
       const response = NextResponse.json({ ok: true });
-      const cookieValue = await generateAuthCookie(username);
+      const cookieValue = await createSessionCookieValue(
+        { username, role: 'user' },
+        signingSecret
+      );
       const expires = new Date();
-      expires.setDate(expires.getDate() + 7); // 7天过期
+      expires.setDate(expires.getDate() + 7);
 
-      response.cookies.set('auth', cookieValue, {
-        path: '/',
-        expires,
-        sameSite: 'lax', // 改为 lax 以支持 PWA
-        httpOnly: false, // PWA 需要客户端可访问
-        secure: false, // 根据协议自动设置
-      });
+      setAuthCookie(req, response, cookieValue, expires);
 
       return response;
     } catch (err) {

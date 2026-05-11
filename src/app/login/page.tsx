@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertCircle, CheckCircle } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
 import { checkForUpdates, CURRENT_VERSION, UpdateStatus } from '@/lib/version';
@@ -70,7 +70,6 @@ function VersionDisplay() {
 }
 
 function LoginPageClient() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -110,7 +109,7 @@ function LoginPageClient() {
 
       if (res.ok) {
         const redirect = searchParams.get('redirect') || '/';
-        router.replace(redirect);
+        window.location.href = redirect;
       } else if (res.status === 401) {
         setError('密码错误');
       } else {
@@ -139,7 +138,7 @@ function LoginPageClient() {
 
       if (res.ok) {
         const redirect = searchParams.get('redirect') || '/';
-        router.replace(redirect);
+        window.location.href = redirect;
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? '服务器错误');

@@ -26,7 +26,11 @@
       "Read(/G:\\Xiqiuqiu_space\\All_Projects\\codeFromCC\\KatelyaTVLocal/**)",
       "Bash(npm run dev)",
       "Bash(npm run lint)",
-      "Bash(npm run build)"
+      "Bash(npm run build)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_resize",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_snapshot"
     ],
     "deny": [],
     "ask": []

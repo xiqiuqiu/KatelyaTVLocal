@@ -152,6 +152,14 @@ export class DbManager {
     return this.storage.checkUserExist(userName);
   }
 
+  async upgradeLegacyPasswords(): Promise<number> {
+    if (typeof this.storage.upgradeLegacyPasswords === 'function') {
+      return this.storage.upgradeLegacyPasswords();
+    }
+
+    return 0;
+  }
+
   // ---------- 搜索历史 ----------
   async getSearchHistory(userName: string): Promise<string[]> {
     return this.storage.getSearchHistory(userName);

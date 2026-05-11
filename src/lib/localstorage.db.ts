@@ -1,5 +1,10 @@
 /* eslint-disable no-console */
 import { AdminConfig } from './admin.types';
+import {
+  hashPassword,
+  isLegacyPlaintextPassword,
+  verifyPassword,
+} from './security/password';
 import { EpisodeSkipConfig, Favorite, IStorage, PlayRecord } from './types';
 
 /**
@@ -142,7 +147,10 @@ export class LocalStorage implements IStorage {
     
     try {
       const storageKey = this.getStorageKey('user', userName);
-      const userData = { password, createdAt: new Date().toISOString() };
+      const userData = {
+        password: await hashPassword(password),
+        createdAt: new Date().toISOString(),
+      };
       localStorage.setItem(storageKey, JSON.stringify(userData));
     } catch (error) {
       console.error('Error registering user:', error);
@@ -159,7 +167,7 @@ export class LocalStorage implements IStorage {
       if (!data) return false;
       
       const userData = JSON.parse(data);
-      return userData.password === password;
+      return verifyPassword(userData.password, password);
     } catch (error) {
       console.error('Error verifying user:', error);
       return false;
@@ -347,11 +355,41 @@ export class LocalStorage implements IStorage {
       }
       
       const userData = JSON.parse(data);
-      userData.password = newPassword;
+      userData.password = await hashPassword(newPassword);
       userData.updatedAt = new Date().toISOString();
       localStorage.setItem(storageKey, JSON.stringify(userData));
     } catch (error) {
       console.error('Error changing password:', error);
+      throw error;
+    }
+  }
+
+  async upgradeLegacyPasswords(): Promise<number> {
+    if (typeof window === 'undefined') return 0;
+
+    try {
+      const users = await this.getAllUsers();
+      let upgraded = 0;
+
+      for (const userName of users) {
+        const storageKey = this.getStorageKey('user', userName);
+        const data = localStorage.getItem(storageKey);
+        if (!data) continue;
+
+        const userData = JSON.parse(data);
+        if (!isLegacyPlaintextPassword(userData.password)) {
+          continue;
+        }
+
+        userData.password = await hashPassword(userData.password);
+        userData.updatedAt = new Date().toISOString();
+        localStorage.setItem(storageKey, JSON.stringify(userData));
+        upgraded += 1;
+      }
+
+      return upgraded;
+    } catch (error) {
+      console.error('Error upgrading legacy passwords:', error);
       throw error;
     }
   }

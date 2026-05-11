@@ -27,7 +27,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import Swal from 'sweetalert2';
 
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
-import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
+import { getRuntimeCurrentUser } from '@/lib/auth';
 
 import PageLayout from '@/components/PageLayout';
 
@@ -125,7 +125,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
   });
 
   // 当前登录用户名
-  const currentUsername = getAuthInfoFromBrowserCookie()?.username || null;
+  const currentUsername = getRuntimeCurrentUser()?.username || null;
 
   // 检测存储类型是否为 d1
   const isD1Storage =

@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const { newPassword } = body;
 
     // 获取认证信息
-    const authInfo = getAuthInfoFromCookie(request);
+    const authInfo = await getAuthInfoFromCookie(request);
     if (!authInfo || !authInfo.username) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -58,7 +58,16 @@ export async function POST(request: NextRequest) {
     // 修改密码
     await storage.changePassword(username, newPassword);
 
-    return NextResponse.json({ ok: true });
+    const response = NextResponse.json({ ok: true, reauthRequired: true });
+    response.cookies.set('auth', '', {
+      path: '/',
+      expires: new Date(0),
+      sameSite: 'lax',
+      httpOnly: true,
+      secure: request.nextUrl.protocol === 'https:',
+    });
+
+    return response;
   } catch (error) {
     console.error('修改密码失败:', error);
     return NextResponse.json(

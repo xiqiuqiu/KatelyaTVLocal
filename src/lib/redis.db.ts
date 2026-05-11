@@ -3,6 +3,11 @@
 import { createClient, RedisClientType } from 'redis';
 
 import { AdminConfig } from './admin.types';
+import {
+  hashPassword,
+  isLegacyPlaintextPassword,
+  verifyPassword,
+} from './security/password';
 import { EpisodeSkipConfig, Favorite, IStorage, PlayRecord } from './types';
 
 // 搜索历史最大条数
@@ -168,8 +173,10 @@ export class RedisStorage implements IStorage {
   }
 
   async registerUser(userName: string, password: string): Promise<void> {
-    // 简单存储明文密码，生产环境应加密
-    await withRetry(() => this.client.set(this.userPwdKey(userName), password));
+    const hashedPassword = await hashPassword(password);
+    await withRetry(() =>
+      this.client.set(this.userPwdKey(userName), hashedPassword)
+    );
   }
 
   async verifyUser(userName: string, password: string): Promise<boolean> {
@@ -177,8 +184,7 @@ export class RedisStorage implements IStorage {
       this.client.get(this.userPwdKey(userName))
     );
     if (stored === null) return false;
-    // 确保比较时都是字符串类型
-    return ensureString(stored) === password;
+    return verifyPassword(ensureString(stored), password);
   }
 
   // 检查用户是否存在
@@ -192,10 +198,30 @@ export class RedisStorage implements IStorage {
 
   // 修改用户密码
   async changePassword(userName: string, newPassword: string): Promise<void> {
-    // 简单存储明文密码，生产环境应加密
+    const hashedPassword = await hashPassword(newPassword);
     await withRetry(() =>
-      this.client.set(this.userPwdKey(userName), newPassword)
+      this.client.set(this.userPwdKey(userName), hashedPassword)
     );
+  }
+
+  async upgradeLegacyPasswords(): Promise<number> {
+    const users = await this.getAllUsers();
+    let upgraded = 0;
+
+    for (const userName of users) {
+      const stored = await withRetry(() => this.client.get(this.userPwdKey(userName)));
+      if (!stored || !isLegacyPlaintextPassword(ensureString(stored))) {
+        continue;
+      }
+
+      const hashedPassword = await hashPassword(ensureString(stored));
+      await withRetry(() =>
+        this.client.set(this.userPwdKey(userName), hashedPassword)
+      );
+      upgraded += 1;
+    }
+
+    return upgraded;
   }
 
   // 删除用户及其所有数据

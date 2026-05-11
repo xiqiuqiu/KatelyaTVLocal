@@ -14,7 +14,7 @@
  * 如后续需要在客户端读取收藏等其它数据，可按同样方式在此文件中补充实现。
  */
 
-import { getAuthInfoFromBrowserCookie } from './auth';
+import { getRuntimeCurrentUser } from './auth';
 
 // ---- 类型 ----
 export interface PlayRecord {
@@ -123,8 +123,8 @@ class HybridCacheManager {
    * 获取当前用户名
    */
   private getCurrentUsername(): string | null {
-    const authInfo = getAuthInfoFromBrowserCookie();
-    return authInfo?.username || null;
+    const currentUser = getRuntimeCurrentUser();
+    return currentUser?.username || null;
   }
 
   /**
@@ -1240,12 +1240,12 @@ export function getCacheStatus(): {
     };
   }
 
-  const authInfo = getAuthInfoFromBrowserCookie();
+  const currentUser = getRuntimeCurrentUser();
   return {
     hasPlayRecords: !!cacheManager.getCachedPlayRecords(),
     hasFavorites: !!cacheManager.getCachedFavorites(),
     hasSearchHistory: !!cacheManager.getCachedSearchHistory(),
-    username: authInfo?.username || null,
+    username: currentUser?.username || null,
   };
 }
 
@@ -1340,8 +1340,8 @@ export async function getSkipConfig(
       }
 
       // 缓存未命中，从服务器获取
-      const authInfo = getAuthInfoFromBrowserCookie();
-      if (!authInfo?.username) {
+      const currentUser = getRuntimeCurrentUser();
+      if (!currentUser?.username) {
         return null;
       }
 
@@ -1353,9 +1353,6 @@ export async function getSkipConfig(
         body: JSON.stringify({
           action: 'get',
           key,
-          username: authInfo.username,
-          signature: authInfo.signature,
-          timestamp: authInfo.timestamp,
         }),
       });
 
@@ -1401,8 +1398,8 @@ export async function saveSkipConfig(
       localStorage.setItem(SKIP_CONFIGS_KEY, JSON.stringify(allConfigs));
     } else {
       // 数据库模式
-      const authInfo = getAuthInfoFromBrowserCookie();
-      if (!authInfo?.username) {
+      const currentUser = getRuntimeCurrentUser();
+      if (!currentUser?.username) {
         throw new Error('用户未登录');
       }
 
@@ -1415,9 +1412,6 @@ export async function saveSkipConfig(
           action: 'set',
           key,
           config,
-          username: authInfo.username,
-          signature: authInfo.signature,
-          timestamp: authInfo.timestamp,
         }),
       });
 
@@ -1457,8 +1451,8 @@ export async function getAllSkipConfigs(): Promise<Record<string, EpisodeSkipCon
       }
 
       // 缓存未命中，从服务器获取
-      const authInfo = getAuthInfoFromBrowserCookie();
-      if (!authInfo?.username) {
+      const currentUser = getRuntimeCurrentUser();
+      if (!currentUser?.username) {
         return {};
       }
 
@@ -1469,9 +1463,6 @@ export async function getAllSkipConfigs(): Promise<Record<string, EpisodeSkipCon
         },
         body: JSON.stringify({
           action: 'getAll',
-          username: authInfo.username,
-          signature: authInfo.signature,
-          timestamp: authInfo.timestamp,
         }),
       });
 
@@ -1509,8 +1500,8 @@ export async function deleteSkipConfig(source: string, id: string): Promise<void
       localStorage.setItem(SKIP_CONFIGS_KEY, JSON.stringify(allConfigs));
     } else {
       // 数据库模式
-      const authInfo = getAuthInfoFromBrowserCookie();
-      if (!authInfo?.username) {
+      const currentUser = getRuntimeCurrentUser();
+      if (!currentUser?.username) {
         throw new Error('用户未登录');
       }
 
@@ -1522,9 +1513,6 @@ export async function deleteSkipConfig(source: string, id: string): Promise<void
         body: JSON.stringify({
           action: 'delete',
           key,
-          username: authInfo.username,
-          signature: authInfo.signature,
-          timestamp: authInfo.timestamp,
         }),
       });
 

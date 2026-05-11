@@ -1,10 +1,13 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
+import { cookies } from 'next/headers';
 
 import './globals.css';
 import 'sweetalert2/dist/sweetalert2.min.css';
 
+import { getSessionSigningSecret } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
+import { parseSessionCookieValue } from '@/lib/security/session';
 
 import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
@@ -79,6 +82,19 @@ export default async function RootLayout({
     imageProxy = defaultImageProxy;
   }
 
+  const authCookie = cookies().get('auth');
+  const signingSecret = getSessionSigningSecret();
+  const currentSession =
+    authCookie && signingSecret
+      ? await parseSessionCookieValue(authCookie.value, signingSecret)
+      : null;
+  const currentUser = currentSession
+    ? {
+        username: currentSession.username ?? null,
+        role: currentSession.role,
+      }
+    : null;
+
   // 将运行时配置注入到全局 window 对象，供客户端在运行时读取
   const runtimeConfig = {
     STORAGE_TYPE: process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage',
@@ -89,6 +105,7 @@ export default async function RootLayout({
     HLS_PROXY: hlsProxy,
     SOURCE_RANKING_ENABLED:
       process.env.NEXT_PUBLIC_SOURCE_RANKING_ENABLED === 'true',
+    CURRENT_USER: currentUser,
   };
 
   return (

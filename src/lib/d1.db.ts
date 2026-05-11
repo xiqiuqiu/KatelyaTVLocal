@@ -1,6 +1,11 @@
 /* eslint-disable no-console, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
 import { AdminConfig } from './admin.types';
+import {
+  hashPassword,
+  isLegacyPlaintextPassword,
+  verifyPassword,
+} from './security/password';
 import { EpisodeSkipConfig, Favorite, IStorage, PlayRecord } from './types';
 
 // 搜索历史最大条数
@@ -275,9 +280,10 @@ export class D1Storage implements IStorage {
   async registerUser(userName: string, password: string): Promise<void> {
     try {
       const db = await this.getDatabase();
+      const hashedPassword = await hashPassword(password);
       await db
         .prepare('INSERT INTO users (username, password) VALUES (?, ?)')
-        .bind(userName, password)
+        .bind(userName, hashedPassword)
         .run();
     } catch (err) {
       console.error('Failed to register user:', err);
@@ -293,7 +299,7 @@ export class D1Storage implements IStorage {
         .bind(userName)
         .first<{ password: string }>();
 
-      return result?.password === password;
+      return result ? verifyPassword(result.password, password) : false;
     } catch (err) {
       console.error('Failed to verify user:', err);
       throw err;
@@ -318,12 +324,41 @@ export class D1Storage implements IStorage {
   async changePassword(userName: string, newPassword: string): Promise<void> {
     try {
       const db = await this.getDatabase();
+      const hashedPassword = await hashPassword(newPassword);
       await db
         .prepare('UPDATE users SET password = ? WHERE username = ?')
-        .bind(newPassword, userName)
+        .bind(hashedPassword, userName)
         .run();
     } catch (err) {
       console.error('Failed to change password:', err);
+      throw err;
+    }
+  }
+
+  async upgradeLegacyPasswords(): Promise<number> {
+    try {
+      const db = await this.getDatabase();
+      const result = await db
+        .prepare('SELECT username, password FROM users ORDER BY created_at ASC')
+        .all<{ username: string; password: string }>();
+
+      let upgraded = 0;
+      for (const row of result.results) {
+        if (!isLegacyPlaintextPassword(row.password)) {
+          continue;
+        }
+
+        const hashedPassword = await hashPassword(row.password);
+        await db
+          .prepare('UPDATE users SET password = ? WHERE username = ?')
+          .bind(hashedPassword, row.username)
+          .run();
+        upgraded += 1;
+      }
+
+      return upgraded;
+    } catch (err) {
+      console.error('Failed to upgrade legacy passwords:', err);
       throw err;
     }
   }

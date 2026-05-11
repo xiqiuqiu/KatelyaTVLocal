@@ -3,6 +3,11 @@
 import { createClient, RedisClientType } from 'redis';
 
 import { AdminConfig } from './admin.types';
+import {
+  hashPassword,
+  isLegacyPlaintextPassword,
+  verifyPassword,
+} from './security/password';
 import { EpisodeSkipConfig, Favorite, IStorage, PlayRecord } from './types';
 
 // 搜索历史最大条数
@@ -274,7 +279,7 @@ export class KvrocksStorage implements IStorage {
   async registerUser(userName: string, password: string): Promise<void> {
     const userData = {
       username: userName,
-      password: password, // 这里传入的应该是已经hash的密码
+      password: await hashPassword(password),
       created_at: Date.now(),
     };
     await this.setUser(userName, userData);
@@ -282,7 +287,7 @@ export class KvrocksStorage implements IStorage {
 
   async verifyUser(userName: string, password: string): Promise<boolean> {
     const userData = await this.getUser(userName);
-    return userData && userData.password === password;
+    return userData ? verifyPassword(userData.password, password) : false;
   }
 
   async checkUserExist(userName: string): Promise<boolean> {
@@ -293,9 +298,27 @@ export class KvrocksStorage implements IStorage {
   async changePassword(userName: string, newPassword: string): Promise<void> {
     const userData = await this.getUser(userName);
     if (userData) {
-      userData.password = newPassword;
+      userData.password = await hashPassword(newPassword);
       await this.setUser(userName, userData);
     }
+  }
+
+  async upgradeLegacyPasswords(): Promise<number> {
+    const users = await this.getAllUsers();
+    let upgraded = 0;
+
+    for (const userName of users) {
+      const userData = await this.getUser(userName);
+      if (!userData || !isLegacyPlaintextPassword(userData.password)) {
+        continue;
+      }
+
+      userData.password = await hashPassword(userData.password);
+      await this.setUser(userName, userData);
+      upgraded += 1;
+    }
+
+    return upgraded;
   }
 
   async deleteUser(userName: string): Promise<void> {
