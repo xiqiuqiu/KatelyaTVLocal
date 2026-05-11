@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
+import {
+  filterAdsFromM3U8,
+  getM3U8AdFilterDebugInfo,
+} from '@/lib/hls-ad-filter';
 
 export const runtime = 'edge';
 
@@ -10,6 +14,51 @@ const PLAYLIST_CONTENT_TYPES = [
   'audio/mpegurl',
   'audio/x-mpegurl',
 ];
+
+const proxyAdFilterDebugLogKeys = new Set<string>();
+
+function logProxyAdFilterDebug(
+  targetUrl: string,
+  originalContent: string,
+  filteredContent: string
+): void {
+  const debugInfo = getM3U8AdFilterDebugInfo(
+    originalContent,
+    filteredContent,
+    targetUrl
+  );
+
+  if (!debugInfo.shouldLog) {
+    return;
+  }
+
+  const logKey = JSON.stringify({
+    targetUrl,
+    removedLineCount: debugInfo.removedLineCount,
+    candidateAdBlocks: debugInfo.summary.candidateAdBlocks,
+    cueOutCount: debugInfo.summary.cueOutCount,
+    cueInCount: debugInfo.summary.cueInCount,
+    scte35Count: debugInfo.summary.scte35Count,
+    daterangeCount: debugInfo.summary.daterangeCount,
+  });
+
+  if (proxyAdFilterDebugLogKeys.has(logKey)) {
+    return;
+  }
+
+  proxyAdFilterDebugLogKeys.add(logKey);
+
+  const message =
+    debugInfo.removedLineCount > 0
+      ? '[去广告][代理] 已过滤播放列表'
+      : '[去广告][代理] 检测到广告相关信号，但本次未移除分段';
+
+  console.log(message, {
+    targetUrl,
+    removedLineCount: debugInfo.removedLineCount,
+    summary: debugInfo.summary,
+  });
+}
 
 function isPlaylistResponse(
   targetUrl: string,
@@ -166,8 +215,12 @@ export async function GET(request: Request) {
 
     if (isPlaylist) {
       const playlistContent = await upstreamResponse.text();
+      const filteredPlaylist = filterAdsFromM3U8(playlistContent, targetUrl);
+
+      logProxyAdFilterDebug(targetUrl, playlistContent, filteredPlaylist);
+
       const rewrittenPlaylist = rewritePlaylistContent(
-        playlistContent,
+        filteredPlaylist,
         targetUrl,
         proxyPrefix
       );

@@ -309,22 +309,26 @@ export default function VideoCard({
         {(config.showHeart || config.showCheckCircle) && (
           <div className='absolute bottom-3 right-3 flex gap-3 opacity-0 translate-y-2 transition-all duration-300 ease-in-out group-hover:opacity-100 group-hover:translate-y-0'>
             {config.showCheckCircle && (
-              <CheckCircle
-                onClick={handleDeleteRecord}
-                size={isSmall ? 16 : 20}
-                className='text-white transition-all duration-300 ease-out hover:stroke-green-500 hover:scale-[1.1]'
-              />
+              <span className='inline-flex p-1.5'>
+                <CheckCircle
+                  onClick={handleDeleteRecord}
+                  size={isSmall ? 20 : 24}
+                  className='text-white transition-all duration-300 ease-out hover:stroke-green-500 hover:scale-[1.1]'
+                />
+              </span>
             )}
             {config.showHeart && (
-              <Heart
-                onClick={handleToggleFavorite}
-                size={isSmall ? 16 : 20}
-                className={`transition-all duration-300 ease-out ${
-                  favorited
-                    ? 'fill-red-600 stroke-red-600'
-                    : 'fill-transparent stroke-white hover:stroke-red-400'
-                } hover:scale-[1.1]`}
-              />
+              <span className='inline-flex p-1.5'>
+                <Heart
+                  onClick={handleToggleFavorite}
+                  size={isSmall ? 20 : 24}
+                  className={`transition-all duration-300 ease-out ${
+                    favorited
+                      ? 'fill-red-600 stroke-red-600'
+                      : 'fill-transparent stroke-white hover:stroke-red-400'
+                  } hover:scale-[1.1]`}
+                />
+              </span>
             )}
           </div>
         )}
@@ -333,7 +337,7 @@ export default function VideoCard({
         {config.showRating && rate && (
           <div
             className={`absolute top-2 right-2 bg-pink-500 text-white font-bold rounded-full flex items-center justify-center shadow-md transition-all duration-300 ease-out group-hover:scale-110 ${
-              isSmall ? 'text-[10px] w-5 h-5' : 'text-xs w-7 h-7'
+              isSmall ? 'text-[10px] w-6 h-6' : 'text-sm w-9 h-9'
             }`}
           >
             {rate}
@@ -363,10 +367,10 @@ export default function VideoCard({
           >
             <div
               className={`bg-green-500 text-white font-bold rounded-full flex items-center justify-center shadow-md hover:bg-green-600 hover:scale-[1.1] transition-all duration-300 ease-out ${
-                isSmall ? 'text-[10px] w-5 h-5' : 'text-xs w-7 h-7'
+                isSmall ? 'text-[10px] w-6 h-6' : 'text-sm w-9 h-9'
               }`}
             >
-              <Link size={isSmall ? 12 : 16} />
+              <Link size={isSmall ? 14 : 18} />
             </div>
           </a>
         )}

@@ -16,6 +16,10 @@ import {
   savePlayRecord,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import {
+  filterAdsFromM3U8,
+  getM3U8AdFilterDebugInfo,
+} from '@/lib/hls-ad-filter';
 import { getBrowserProbeBudget } from '@/lib/source-preference';
 import {
   PlaybackFeedbackInput,
@@ -46,6 +50,54 @@ declare global {
   interface HTMLVideoElement {
     hls?: any;
   }
+}
+
+const directAdFilterDebugLogKeys = new Set<string>();
+
+function logDirectAdFilterDebug(
+  playlistUrl: string | undefined,
+  originalContent: string,
+  filteredContent: string,
+  playlistType: string | undefined
+): void {
+  const debugInfo = getM3U8AdFilterDebugInfo(
+    originalContent,
+    filteredContent,
+    playlistUrl
+  );
+
+  if (!debugInfo.shouldLog) {
+    return;
+  }
+
+  const logKey = JSON.stringify({
+    playlistUrl: playlistUrl || '',
+    playlistType: playlistType || '',
+    removedLineCount: debugInfo.removedLineCount,
+    candidateAdBlocks: debugInfo.summary.candidateAdBlocks,
+    cueOutCount: debugInfo.summary.cueOutCount,
+    cueInCount: debugInfo.summary.cueInCount,
+    scte35Count: debugInfo.summary.scte35Count,
+    daterangeCount: debugInfo.summary.daterangeCount,
+  });
+
+  if (directAdFilterDebugLogKeys.has(logKey)) {
+    return;
+  }
+
+  directAdFilterDebugLogKeys.add(logKey);
+
+  const message =
+    debugInfo.removedLineCount > 0
+      ? '[去广告][直连] 已过滤播放列表'
+      : '[去广告][直连] 检测到广告相关信号，但本次未移除分段';
+
+  console.log(message, {
+    playlistUrl,
+    playlistType,
+    removedLineCount: debugInfo.removedLineCount,
+    summary: debugInfo.summary,
+  });
 }
 
 function PlayPageClient() {
@@ -349,8 +401,7 @@ function PlayPageClient() {
         const measured = buildVideoInfoFromPreferenceResult(result);
         const nextStatus = createSourceStatus(result.kind, {
           reason: result.reason,
-          playbackMode:
-            result.kind === 'unavailable' ? undefined : result.kind,
+          playbackMode: result.kind === 'unavailable' ? undefined : result.kind,
           domain: result.domain || null,
           measured: measured || undefined,
           updatedAt: result.updatedAt,
@@ -416,7 +467,9 @@ function PlayPageClient() {
     const orderedEntries = orderedSourceKeys
       .map((sourceKey) => sourceEntryMap.get(sourceKey))
       .filter(Boolean) as typeof sourceEntries;
-    const orderedKeySet = new Set(orderedEntries.map((entry) => entry.sourceKey));
+    const orderedKeySet = new Set(
+      orderedEntries.map((entry) => entry.sourceKey)
+    );
     sourceEntries.forEach((entry) => {
       if (!orderedKeySet.has(entry.sourceKey)) {
         orderedEntries.push(entry);
@@ -433,7 +486,9 @@ function PlayPageClient() {
     setPrecomputedSourceStatuses(new Map(normalizedStatusMap));
 
     const directProbeCandidates = orderedEntries
-      .filter(({ sourceKey }) => normalizedStatusMap.get(sourceKey)?.kind === 'direct')
+      .filter(
+        ({ sourceKey }) => normalizedStatusMap.get(sourceKey)?.kind === 'direct'
+      )
       .slice(0, getBrowserProbeBudget(orderedEntries.length));
 
     if (directProbeCandidates.length === 0) {
@@ -760,26 +815,6 @@ function PlayPageClient() {
     }
   };
 
-  // 去广告相关函数
-  function filterAdsFromM3U8(m3u8Content: string): string {
-    if (!m3u8Content) return '';
-
-    // 按行分割M3U8内容
-    const lines = m3u8Content.split('\n');
-    const filteredLines = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // 只过滤#EXT-X-DISCONTINUITY标识
-      if (!line.includes('#EXT-X-DISCONTINUITY')) {
-        filteredLines.push(line);
-      }
-    }
-
-    return filteredLines.join('\n');
-  }
-
   const createCustomHlsJsLoader = (HlsModule: any) =>
     class CustomHlsJsLoader extends HlsModule.DefaultConfig.loader {
       constructor(config: any) {
@@ -799,8 +834,21 @@ function PlayPageClient() {
             ) {
               // 如果是m3u8文件，处理内容以移除广告分段
               if (response.data && typeof response.data === 'string') {
-                // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-                response.data = filterAdsFromM3U8(response.data);
+                const originalContent = response.data;
+                const playlistUrl = response.url || context?.url;
+                const filteredContent = filterAdsFromM3U8(
+                  originalContent,
+                  playlistUrl
+                );
+
+                logDirectAdFilterDebug(
+                  playlistUrl,
+                  originalContent,
+                  filteredContent,
+                  context?.type
+                );
+
+                response.data = filteredContent;
               }
               return onSuccess(response, stats, context, null);
             };
