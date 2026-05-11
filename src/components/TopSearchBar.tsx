@@ -39,13 +39,16 @@ const TopSearchBar = () => {
   };
 
   return (
-    <div className='w-full bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 sticky top-0 z-[9999]'>
+    <div
+      className='w-full bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 sticky top-0 z-[9999]'
+      style={{ paddingTop: 'env(safe-area-inset-top)' }}
+    >
       <div className='h-14 flex items-center px-4 md:px-6 lg:px-8'>
         {/* 汉堡菜单按钮 - 左侧 */}
         <div className='flex-shrink-0 mr-3 md:mr-4'>
           <button
             onClick={toggleSidebar}
-            className='p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-200'
+            className='p-3 rounded-lg text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-200'
             aria-label='切换侧边栏'
           >
             <Menu size={20} />
@@ -77,7 +80,7 @@ const TopSearchBar = () => {
               </div>
               <button
                 type='submit'
-                className='px-4 bg-gray-200 dark:bg-gray-800 border border-l-0 border-gray-300 dark:border-gray-700 rounded-r-full hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors flex items-center justify-center'
+                className='px-4 h-10 bg-gray-200 dark:bg-gray-800 border border-l-0 border-gray-300 dark:border-gray-700 rounded-r-full hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors flex items-center justify-center'
               >
                 <Search
                   size={18}

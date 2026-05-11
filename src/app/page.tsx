@@ -204,7 +204,7 @@ function HomeClient() {
 
   return (
     <PageLayout>
-      <div className='px-4 sm:px-8 lg:px-12 py-4 sm:py-8 overflow-visible'>
+      <div className='sm:px-8 lg:px-12 sm:py-8 overflow-visible'>
         {/* 主内容区大型 KatelyaTV Logo - 仅在首页显示 */}
         {/* {activeTab === 'home' && <MainKatelyaLogo />} */}
 
@@ -243,7 +243,7 @@ function HomeClient() {
                   )}
                 </div>
                 {/* 优化收藏夹网格布局，确保在新的居中布局下完美对齐 */}
-                <div className='grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-6 lg:gap-x-8 justify-items-center'>
+                <div className='grid grid-cols-3 gap-x-2 gap-y-6 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-6 lg:gap-x-8 justify-items-center'>
                   {favoriteItems.map((item) => (
                     <div
                       key={item.id + item.source}
