@@ -17,7 +17,6 @@ const defaultImageProxy = '/api/image-proxy?url=';
 const defaultSourceProbe = '/api/source-probe?url=';
 const defaultHlsProxy = '/api/hls-proxy?url=';
 
-// 动态生成 metadata，支持配置更新后的标题变化
 export async function generateMetadata(): Promise<Metadata> {
   let siteName = process.env.SITE_NAME || 'KatelyaTV';
   if (
@@ -42,7 +41,6 @@ export const viewport: Viewport = {
   themeColor: '#000000',
 };
 
-// 浮动几何形状组件
 const FloatingShapes = () => {
   return (
     <div className='floating-shapes'>
@@ -98,7 +96,6 @@ export default async function RootLayout({
       }
     : null;
 
-  // 将运行时配置注入到全局 window 对象，供客户端在运行时读取
   const runtimeConfig = {
     STORAGE_TYPE: process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage',
     ENABLE_REGISTER: enableRegister,
@@ -114,7 +111,6 @@ export default async function RootLayout({
   return (
     <html lang='zh-CN' suppressHydrationWarning>
       <head>
-        {/* 将配置序列化后直接写入脚本，浏览器端可通过 window.RUNTIME_CONFIG 获取 */}
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script
           dangerouslySetInnerHTML={{
@@ -125,9 +121,7 @@ export default async function RootLayout({
       <body
         className={`${inter.className} min-h-screen bg-white text-gray-900 dark:bg-black dark:text-gray-200`}
       >
-        {/* 浮动几何形状装饰 */}
         <FloatingShapes />
-
         <ThemeProvider attribute='class' defaultTheme='system' enableSystem>
           <SiteProvider siteName={siteName} announcement={announcement}>
             {children}

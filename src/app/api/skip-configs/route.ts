@@ -19,9 +19,8 @@ export async function POST(request: NextRequest) {
 
     // 获取认证信息
     const authInfo = await getAuthInfoFromCookie(request);
-    
     const finalUsername = authInfo?.username;
-    
+
     if (!finalUsername) {
       return NextResponse.json({ error: '用户未登录' }, { status: 401 });
     }

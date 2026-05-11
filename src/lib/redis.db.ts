@@ -205,11 +205,13 @@ export class RedisStorage implements IStorage {
   }
 
   async upgradeLegacyPasswords(): Promise<number> {
-    const users = await this.getAllUsers();
+    const userNames = await this.getAllUsers();
     let upgraded = 0;
 
-    for (const userName of users) {
-      const stored = await withRetry(() => this.client.get(this.userPwdKey(userName)));
+    for (const userName of userNames) {
+      const stored = await withRetry(() =>
+        this.client.get(this.userPwdKey(userName))
+      );
       if (!stored || !isLegacyPlaintextPassword(ensureString(stored))) {
         continue;
       }

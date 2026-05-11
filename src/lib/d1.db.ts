@@ -338,12 +338,12 @@ export class D1Storage implements IStorage {
   async upgradeLegacyPasswords(): Promise<number> {
     try {
       const db = await this.getDatabase();
-      const result = await db
-        .prepare('SELECT username, password FROM users ORDER BY created_at ASC')
+      const rows = await db
+        .prepare('SELECT username, password FROM users')
         .all<{ username: string; password: string }>();
 
       let upgraded = 0;
-      for (const row of result.results) {
+      for (const row of rows.results) {
         if (!isLegacyPlaintextPassword(row.password)) {
           continue;
         }

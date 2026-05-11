@@ -147,8 +147,9 @@ export class LocalStorage implements IStorage {
     
     try {
       const storageKey = this.getStorageKey('user', userName);
+      const hashedPassword = await hashPassword(password);
       const userData = {
-        password: await hashPassword(password),
+        password: hashedPassword,
         createdAt: new Date().toISOString(),
       };
       localStorage.setItem(storageKey, JSON.stringify(userData));
@@ -367,17 +368,19 @@ export class LocalStorage implements IStorage {
   async upgradeLegacyPasswords(): Promise<number> {
     if (typeof window === 'undefined') return 0;
 
+    let upgraded = 0;
     try {
-      const users = await this.getAllUsers();
-      let upgraded = 0;
-
-      for (const userName of users) {
+      const userNames = await this.getAllUsers();
+      for (const userName of userNames) {
         const storageKey = this.getStorageKey('user', userName);
         const data = localStorage.getItem(storageKey);
         if (!data) continue;
 
-        const userData = JSON.parse(data);
-        if (!isLegacyPlaintextPassword(userData.password)) {
+        const userData = JSON.parse(data) as {
+          password?: string;
+          updatedAt?: string;
+        };
+        if (!userData.password || !isLegacyPlaintextPassword(userData.password)) {
           continue;
         }
 

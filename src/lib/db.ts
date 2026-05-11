@@ -147,17 +147,17 @@ export class DbManager {
     return this.storage.verifyUser(userName, password);
   }
 
-  // 检查用户是否已存在
-  async checkUserExist(userName: string): Promise<boolean> {
-    return this.storage.checkUserExist(userName);
-  }
-
   async upgradeLegacyPasswords(): Promise<number> {
     if (typeof this.storage.upgradeLegacyPasswords === 'function') {
       return this.storage.upgradeLegacyPasswords();
     }
 
     return 0;
+  }
+
+  // 检查用户是否已存在
+  async checkUserExist(userName: string): Promise<boolean> {
+    return this.storage.checkUserExist(userName);
   }
 
   // ---------- 搜索历史 ----------

@@ -55,9 +55,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 修改密码
     await storage.changePassword(username, newPassword);
-
     const response = NextResponse.json({ ok: true, reauthRequired: true });
     response.cookies.set('auth', '', {
       path: '/',

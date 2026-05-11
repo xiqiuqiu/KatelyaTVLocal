@@ -1240,12 +1240,12 @@ export function getCacheStatus(): {
     };
   }
 
-  const currentUser = getRuntimeCurrentUser();
+  const authInfo = getRuntimeCurrentUser();
   return {
     hasPlayRecords: !!cacheManager.getCachedPlayRecords(),
     hasFavorites: !!cacheManager.getCachedFavorites(),
     hasSearchHistory: !!cacheManager.getCachedSearchHistory(),
-    username: currentUser?.username || null,
+    username: authInfo?.username || null,
   };
 }
 
@@ -1340,8 +1340,8 @@ export async function getSkipConfig(
       }
 
       // 缓存未命中，从服务器获取
-      const currentUser = getRuntimeCurrentUser();
-      if (!currentUser?.username) {
+      const authInfo = getRuntimeCurrentUser();
+      if (!authInfo?.username) {
         return null;
       }
 
@@ -1398,8 +1398,8 @@ export async function saveSkipConfig(
       localStorage.setItem(SKIP_CONFIGS_KEY, JSON.stringify(allConfigs));
     } else {
       // 数据库模式
-      const currentUser = getRuntimeCurrentUser();
-      if (!currentUser?.username) {
+      const authInfo = getRuntimeCurrentUser();
+      if (!authInfo?.username) {
         throw new Error('用户未登录');
       }
 
@@ -1451,8 +1451,8 @@ export async function getAllSkipConfigs(): Promise<Record<string, EpisodeSkipCon
       }
 
       // 缓存未命中，从服务器获取
-      const currentUser = getRuntimeCurrentUser();
-      if (!currentUser?.username) {
+      const authInfo = getRuntimeCurrentUser();
+      if (!authInfo?.username) {
         return {};
       }
 
@@ -1500,8 +1500,8 @@ export async function deleteSkipConfig(source: string, id: string): Promise<void
       localStorage.setItem(SKIP_CONFIGS_KEY, JSON.stringify(allConfigs));
     } else {
       // 数据库模式
-      const currentUser = getRuntimeCurrentUser();
-      if (!currentUser?.username) {
+      const authInfo = getRuntimeCurrentUser();
+      if (!authInfo?.username) {
         throw new Error('用户未登录');
       }
 

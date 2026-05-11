@@ -1,6 +1,6 @@
+import { webcrypto } from 'crypto';
+import { TextDecoder, TextEncoder } from 'util';
 import '@testing-library/jest-dom/extend-expect';
-const { TextEncoder, TextDecoder } = require('util');
-const { webcrypto } = require('crypto');
 
 if (typeof global.TextEncoder === 'undefined') {
   global.TextEncoder = TextEncoder;

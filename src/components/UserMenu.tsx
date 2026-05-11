@@ -49,14 +49,27 @@ export const UserMenu: React.FC = () => {
 
   // 获取认证信息和存储类型
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const auth = getRuntimeCurrentUser();
-      setAuthInfo(auth);
-
-      const type =
-        (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
-      setStorageType(type);
+    if (typeof window === 'undefined') {
+      return;
     }
+
+    const auth = getRuntimeCurrentUser();
+    setAuthInfo(auth);
+
+    const type =
+      (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
+    setStorageType(type);
+
+    fetch('/api/session')
+      .then((response) => response.json())
+      .then((data) => {
+        if (data?.authenticated) {
+          setAuthInfo(data.user);
+        }
+      })
+      .catch(() => {
+        // keep runtime fallback
+      });
   }, []);
 
   // 从 localStorage 读取设置

@@ -82,10 +82,10 @@ config.json  →  scripts/convert-config.js  →  src/lib/runtime.ts (auto-gener
 
 `src/middleware.ts` protects all routes except `/login`, `/warning`, `/api/login`, `/api/register`, and a whitelist of public API routes. Auth flow:
 
-- **localstorage mode:** plain password comparison against `PASSWORD` env var, stored in `auth` cookie.
-- **Other modes (redis/d1/etc.):** HMAC-SHA256 signature from `USERNAME` + `PASSWORD`, stored in cookie as `{username, signature, timestamp, role}`.
+- **localstorage mode:** plain password comparison against `PASSWORD` env var, then the server signs a versioned session cookie.
+- **Other modes (redis/d1/etc.):** owner login still checks `USERNAME` + `PASSWORD`, database users check stored passwords, and the server signs the resulting session cookie with `AUTH_SIGNING_SECRET`.
 
-`src/lib/auth.ts` provides `getAuthInfoFromCookie()` (server) and `getAuthInfoFromBrowserCookie()` (client).
+`src/lib/auth.ts` provides `getAuthInfoFromCookie()` (server) and `getRuntimeCurrentUser()` (client runtime fallback). Client UI can also call `/api/session` for the current minimal user info.
 
 ### API routes (App Router handlers in `src/app/api/`)
 

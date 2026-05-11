@@ -277,9 +277,10 @@ export class KvrocksStorage implements IStorage {
   }
 
   async registerUser(userName: string, password: string): Promise<void> {
+    const hashedPassword = await hashPassword(password);
     const userData = {
       username: userName,
-      password: await hashPassword(password),
+      password: hashedPassword,
       created_at: Date.now(),
     };
     await this.setUser(userName, userData);
@@ -287,7 +288,10 @@ export class KvrocksStorage implements IStorage {
 
   async verifyUser(userName: string, password: string): Promise<boolean> {
     const userData = await this.getUser(userName);
-    return userData ? verifyPassword(userData.password, password) : false;
+    if (!userData?.password) {
+      return false;
+    }
+    return verifyPassword(userData.password, password);
   }
 
   async checkUserExist(userName: string): Promise<boolean> {
@@ -304,12 +308,12 @@ export class KvrocksStorage implements IStorage {
   }
 
   async upgradeLegacyPasswords(): Promise<number> {
-    const users = await this.getAllUsers();
+    const userNames = await this.getAllUsers();
     let upgraded = 0;
 
-    for (const userName of users) {
+    for (const userName of userNames) {
       const userData = await this.getUser(userName);
-      if (!userData || !isLegacyPlaintextPassword(userData.password)) {
+      if (!userData?.password || !isLegacyPlaintextPassword(userData.password)) {
         continue;
       }
 

@@ -5,7 +5,7 @@ const SCTE35_TAG = '#EXT-X-SCTE35';
 const DATERANGE_TAG = '#EXT-X-DATERANGE';
 
 const AD_URL_PATTERNS = [
-  /\/ads?(?:[\/_-]|$)/i,
+  /\/ads?(?:[/_-]|$)/i,
   /advertisement/i,
   /commercial/i,
 ];
