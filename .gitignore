@@ -47,3 +47,5 @@ public/manifest.json
 # test artifacts
 .playwright-mcp/
 tmp-cloudflare-play-test.png
+.wrangler/
+.tmp-dev-*.log

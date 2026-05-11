@@ -1,24 +1,82 @@
 /* eslint-disable no-console */
 
+import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
+import { isAuthorizedCronRequest } from '@/lib/source-ranking/cron-auth';
+import {
+  runLowFrequencySourceRankingCheck,
+  SourceRankingSchedulerEnvLike,
+} from '@/lib/source-ranking/scheduler';
 import { SearchResult } from '@/lib/types';
 
 export const runtime = 'edge';
 
+type RuntimeSource = Record<string, unknown>;
+
+function readFlag(source: RuntimeSource, key: string, defaultValue = false) {
+  const value = source[key];
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    return value === 'true';
+  }
+
+  return defaultValue;
+}
+
+function hasDbBinding(source: RuntimeSource) {
+  const value = source.DB;
+  return (
+    value &&
+    typeof value === 'object' &&
+    typeof (value as SourceRankingSchedulerEnvLike['DB'])?.prepare === 'function'
+  );
+}
+
+function resolveSourceRankingEnv(): RuntimeSource | undefined {
+  try {
+    const requestContext = getOptionalRequestContext();
+    return requestContext?.env as RuntimeSource | undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function GET(request: NextRequest) {
+  const rankingEnv =
+    resolveSourceRankingEnv() ||
+    (process.env as unknown as RuntimeSource);
+
+  if (!isAuthorizedCronRequest(request, rankingEnv)) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: 'Unauthorized',
+      },
+      { status: 401 }
+    );
+  }
+
   console.log(request.url);
   try {
     console.log('Cron job triggered:', new Date().toISOString());
 
-    refreshRecordAndFavorites();
+    const refreshPromise = refreshRecordAndFavorites();
+    const sourceRanking = await tryRunSourceRankingCron(request, rankingEnv);
+
+    await refreshPromise;
 
     return NextResponse.json({
       success: true,
       message: 'Cron job executed successfully',
       timestamp: new Date().toISOString(),
+      sourceRanking,
     });
   } catch (error) {
     console.error('Cron job failed:', error);
@@ -32,6 +90,52 @@ export async function GET(request: NextRequest) {
       },
       { status: 500 }
     );
+  }
+}
+
+function shouldRunSourceRankingCron(source: RuntimeSource) {
+  return (
+    readFlag(source, 'SOURCE_RANKING_CRON_ENABLED') && hasDbBinding(source)
+  );
+}
+
+async function tryRunSourceRankingCron(
+  request: NextRequest,
+  rankingEnv: RuntimeSource
+) {
+  if (!shouldRunSourceRankingCron(rankingEnv)) {
+    return {
+      attempted: false,
+      reason: 'disabled or missing D1 binding',
+    };
+  }
+
+  try {
+    const result = await runLowFrequencySourceRankingCheck({
+      env: rankingEnv as SourceRankingSchedulerEnvLike,
+      origin: new URL(request.url).origin,
+      triggerType: 'cron',
+    });
+
+    return {
+      attempted: true,
+      status: result.status,
+      runId: result.runId,
+      sampledRecordCount: result.sampledRecordCount,
+      taskCount: result.taskCount,
+      probeCount: result.probeCount,
+      snapshotCount: result.snapshotCount,
+      errorCount: result.errorCount,
+      reason: result.reason,
+    };
+  } catch (error) {
+    console.error('播放源优选体检执行失败:', error);
+
+    return {
+      attempted: true,
+      status: 'failed',
+      reason: error instanceof Error ? error.message : 'Unknown error',
+    };
   }
 }
 

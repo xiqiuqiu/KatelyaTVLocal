@@ -16,7 +16,16 @@ import {
   savePlayRecord,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { SearchResult, SourcePlaybackMode, SourceVideoInfo } from '@/lib/types';
+import { getBrowserProbeBudget } from '@/lib/source-preference';
+import {
+  PlaybackFeedbackInput,
+  SearchResult,
+  SourcePlaybackMode,
+  SourcePreferenceResponse,
+  SourcePreferenceResult,
+  SourceStatus,
+  SourceVideoInfo,
+} from '@/lib/types';
 import {
   buildHlsProxyUrl,
   createSourceStatus,
@@ -40,9 +49,6 @@ declare global {
 }
 
 function PlayPageClient() {
-  const MAX_BROWSER_PROBE_SOURCES = 3;
-  const MAX_SERVER_PROBE_SOURCES = 6;
-
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -173,6 +179,14 @@ function PlayPageClient() {
   const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<
     Map<string, SourceVideoInfo>
   >(new Map());
+  const [precomputedSourceStatuses, setPrecomputedSourceStatuses] = useState<
+    Map<string, SourceStatus>
+  >(new Map());
+  const precomputedVideoInfoRef = useRef<Map<string, SourceVideoInfo>>(
+    new Map()
+  );
+  const playbackStartupStartedAtRef = useRef<number | null>(null);
+  const startupFeedbackSentRef = useRef(false);
 
   // 折叠状态（仅在 lg 及以上屏幕有效）
   const [isEpisodeSelectorCollapsed, setIsEpisodeSelectorCollapsed] =
@@ -198,15 +212,74 @@ function PlayPageClient() {
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
 
+  useEffect(() => {
+    precomputedVideoInfoRef.current = precomputedVideoInfo;
+  }, [precomputedVideoInfo]);
+
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
   // -----------------------------------------------------------------------------
+
+  const buildVideoInfoFromPreferenceResult = (
+    result: Pick<
+      SourcePreferenceResult,
+      'qualityLabel' | 'speedLabel' | 'pingTimeMs'
+    >
+  ): SourceVideoInfo | null => {
+    const quality = result.qualityLabel || '未知';
+    const loadSpeed = result.speedLabel || '未知';
+    const pingTime = result.pingTimeMs ?? 0;
+
+    if (quality === '未知' && loadSpeed === '未知' && pingTime <= 0) {
+      return null;
+    }
+
+    return {
+      quality,
+      loadSpeed,
+      pingTime,
+    };
+  };
+
+  const getCurrentSourceKey = () =>
+    getSourceIdentityKey(currentSourceRef.current, currentIdRef.current);
+
+  const getCurrentPlaybackDomain = () => {
+    const directUrl = originalVideoUrlRef.current;
+    if (!directUrl) {
+      return null;
+    }
+
+    try {
+      return new URL(directUrl).hostname.toLowerCase();
+    } catch {
+      return null;
+    }
+  };
+
+  const reportPlaybackFeedback = async (input: PlaybackFeedbackInput) => {
+    try {
+      await fetch('/api/source-feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(input),
+      });
+    } catch (error) {
+      console.warn('播放反馈上报失败', error);
+    }
+  };
 
   // 播放源优选函数
   const preferBestSource = async (
     sources: SearchResult[]
   ): Promise<SearchResult> => {
-    if (sources.length === 1) return sources[0];
+    if (sources.length === 1) {
+      setPrecomputedSourceStatuses(new Map());
+      setPrecomputedVideoInfo(new Map());
+      return sources[0];
+    }
 
     const sourceEntries = sources.map((source) => ({
       source,
@@ -214,72 +287,161 @@ function PlayPageClient() {
       rememberedStatus: getRememberedSourceStatus(source.episodes),
     }));
 
-    const effectiveStatusMap = new Map(
-      sourceEntries.map(({ sourceKey, rememberedStatus }) => [
-        sourceKey,
-        rememberedStatus || null,
-      ])
+    const sourceEntryMap = new Map(
+      sourceEntries.map((entry) => [entry.sourceKey, entry])
     );
+    const effectiveStatusMap = new Map<string, SourceStatus | null>();
 
-    const serverProbeCandidates = sourceEntries
-      .filter(({ rememberedStatus }) => !rememberedStatus)
-      .slice(0, MAX_SERVER_PROBE_SOURCES);
-
-    await Promise.all(
-      serverProbeCandidates.map(async ({ source, sourceKey }) => {
-        const probeEpisodeIndex = Math.max(
-          0,
-          Math.min(currentEpisodeIndexRef.current, source.episodes.length - 1)
-        );
-        const episodeUrl = source.episodes?.[probeEpisodeIndex];
-        if (!episodeUrl) {
-          effectiveStatusMap.set(
-            sourceKey,
-            createSourceStatus('unavailable', {
-              reason: '该播放源没有可用剧集',
-            })
-          );
-          return;
-        }
-
-        const probeResult = await probeSourcePlayback(episodeUrl);
+    sourceEntries.forEach(({ source, sourceKey, rememberedStatus }) => {
+      if (!source.episodes || source.episodes.length === 0) {
         effectiveStatusMap.set(
           sourceKey,
-          createSourceStatus(probeResult.kind, {
-            reason: probeResult.reason,
-            playbackMode:
-              probeResult.kind === 'unavailable' ? undefined : probeResult.kind,
-            domain: probeResult.domain || null,
+          createSourceStatus('unavailable', {
+            reason: '该播放源没有可用剧集',
           })
         );
-        rememberSourceDomainPreference(
-          probeResult.domain || null,
-          probeResult.kind,
-          probeResult.reason
-        );
-      })
-    );
+        return;
+      }
 
-    const directProbeCandidates = sourceEntries
-      .filter(({ sourceKey }) => {
-        const status = effectiveStatusMap.get(sourceKey);
-        return !status || status.kind === 'direct';
-      })
-      .sort((a, b) => {
-        const aStatus = effectiveStatusMap.get(a.sourceKey);
-        const bStatus = effectiveStatusMap.get(b.sourceKey);
-        const aPriority = aStatus?.kind === 'direct' ? 0 : 1;
-        const bPriority = bStatus?.kind === 'direct' ? 0 : 1;
-        return aPriority - bPriority;
-      })
-      .slice(0, MAX_BROWSER_PROBE_SOURCES);
+      effectiveStatusMap.set(sourceKey, rememberedStatus || null);
+    });
+
+    let orderedSourceKeys = sourceEntries.map(({ sourceKey }) => sourceKey);
+    const seededVideoInfoMap = new Map<string, SourceVideoInfo>();
+
+    try {
+      const probeEpisodeIndex = Math.max(
+        0,
+        Math.min(currentEpisodeIndexRef.current, sources[0].episodes.length - 1)
+      );
+      const response = await fetch('/api/source-preference', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+        body: JSON.stringify({
+          sources: sourceEntries.map(({ source, sourceKey }) => ({
+            sourceKey,
+            episodeUrl:
+              source.episodes?.[
+                Math.max(
+                  0,
+                  Math.min(probeEpisodeIndex, source.episodes.length - 1)
+                )
+              ] || null,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`批量探测失败: ${response.status}`);
+      }
+
+      const preferenceData =
+        (await response.json()) as SourcePreferenceResponse;
+
+      if (preferenceData.orderedSourceKeys.length > 0) {
+        orderedSourceKeys = preferenceData.orderedSourceKeys;
+      }
+
+      preferenceData.results.forEach((result) => {
+        const measured = buildVideoInfoFromPreferenceResult(result);
+        const nextStatus = createSourceStatus(result.kind, {
+          reason: result.reason,
+          playbackMode:
+            result.kind === 'unavailable' ? undefined : result.kind,
+          domain: result.domain || null,
+          measured: measured || undefined,
+          updatedAt: result.updatedAt,
+          rankingSource: result.rankingSource,
+          rankScore: result.rankScore,
+        });
+
+        effectiveStatusMap.set(result.sourceKey, nextStatus);
+        if (measured) {
+          seededVideoInfoMap.set(result.sourceKey, measured);
+        }
+        rememberSourceDomainPreference(
+          result.domain || null,
+          result.kind,
+          result.reason
+        );
+      });
+    } catch (error) {
+      const fallbackProbeCandidates = sourceEntries
+        .filter(({ sourceKey, source }) => {
+          const status = effectiveStatusMap.get(sourceKey);
+          return (
+            source.episodes?.length &&
+            (!status || status.kind === 'idle' || status.kind === 'probing')
+          );
+        })
+        .slice(0, 6);
+
+      await Promise.all(
+        fallbackProbeCandidates.map(async ({ source, sourceKey }) => {
+          const probeEpisodeIndex = Math.max(
+            0,
+            Math.min(currentEpisodeIndexRef.current, source.episodes.length - 1)
+          );
+          const episodeUrl = source.episodes?.[probeEpisodeIndex];
+          if (!episodeUrl) {
+            return;
+          }
+
+          const probeResult = await probeSourcePlayback(episodeUrl);
+          effectiveStatusMap.set(
+            sourceKey,
+            createSourceStatus(probeResult.kind, {
+              reason: probeResult.reason,
+              playbackMode:
+                probeResult.kind === 'unavailable'
+                  ? undefined
+                  : probeResult.kind,
+              domain: probeResult.domain || null,
+            })
+          );
+          rememberSourceDomainPreference(
+            probeResult.domain || null,
+            probeResult.kind,
+            probeResult.reason
+          );
+        })
+      );
+
+      console.warn('批量优选失败，已回退到逐源探测', error);
+    }
+
+    const orderedEntries = orderedSourceKeys
+      .map((sourceKey) => sourceEntryMap.get(sourceKey))
+      .filter(Boolean) as typeof sourceEntries;
+    const orderedKeySet = new Set(orderedEntries.map((entry) => entry.sourceKey));
+    sourceEntries.forEach((entry) => {
+      if (!orderedKeySet.has(entry.sourceKey)) {
+        orderedEntries.push(entry);
+      }
+    });
+
+    const normalizedStatusMap = new Map<string, SourceStatus>();
+    orderedEntries.forEach(({ sourceKey }) => {
+      const status = effectiveStatusMap.get(sourceKey);
+      if (status) {
+        normalizedStatusMap.set(sourceKey, status);
+      }
+    });
+    setPrecomputedSourceStatuses(new Map(normalizedStatusMap));
+
+    const directProbeCandidates = orderedEntries
+      .filter(({ sourceKey }) => normalizedStatusMap.get(sourceKey)?.kind === 'direct')
+      .slice(0, getBrowserProbeBudget(orderedEntries.length));
 
     if (directProbeCandidates.length === 0) {
-      const firstAvailableSource = sourceEntries.find(
+      const firstAvailableSource = orderedEntries.find(
         ({ sourceKey }) =>
-          effectiveStatusMap.get(sourceKey)?.kind !== 'unavailable'
+          normalizedStatusMap.get(sourceKey)?.kind !== 'unavailable'
       );
-      setPrecomputedVideoInfo(new Map());
+      setPrecomputedVideoInfo(new Map(seededVideoInfoMap));
       return firstAvailableSource?.source || sources[0];
     }
 
@@ -317,7 +479,7 @@ function PlayPageClient() {
             );
             const episodeUrl = source.episodes[probeEpisodeIndex];
             const testResult = await getVideoResolutionFromM3u8(episodeUrl);
-            const status = effectiveStatusMap.get(
+            const status = normalizedStatusMap.get(
               getSourceIdentityKey(source.source, source.id)
             );
             rememberSourceDomainPreference(status?.domain || null, 'direct');
@@ -327,14 +489,6 @@ function PlayPageClient() {
               testResult,
             };
           } catch (error) {
-            const status = effectiveStatusMap.get(
-              getSourceIdentityKey(source.source, source.id)
-            );
-            rememberSourceDomainPreference(
-              status?.domain || null,
-              'unavailable',
-              error instanceof Error ? error.message : '浏览器直连检测失败'
-            );
             return null;
           }
         })
@@ -351,6 +505,7 @@ function PlayPageClient() {
         loadSpeed: string;
         pingTime: number;
         hasError?: boolean;
+        errorReason?: string;
       }
     >();
     allResults.forEach((result, index) => {
@@ -359,7 +514,6 @@ function PlayPageClient() {
         return;
       }
 
-      const source = candidate.source;
       const sourceKey = candidate.sourceKey;
 
       if (result) {
@@ -371,6 +525,7 @@ function PlayPageClient() {
           loadSpeed: '未知',
           pingTime: 0,
           hasError: true,
+          errorReason: '初始化测速失败，可尝试播放',
         });
       }
     });
@@ -381,13 +536,18 @@ function PlayPageClient() {
       testResult: { quality: string; loadSpeed: string; pingTime: number };
     }>;
 
-    setPrecomputedVideoInfo(newVideoInfoMap);
+    const mergedVideoInfoMap = new Map(seededVideoInfoMap);
+    newVideoInfoMap.forEach((value, key) => {
+      mergedVideoInfoMap.set(key, value);
+    });
+
+    setPrecomputedVideoInfo(mergedVideoInfoMap);
 
     if (successfulResults.length === 0) {
       console.warn('候选播放源测速都失败，回退到第一个未标记不可用的播放源');
-      const fallbackSource = sourceEntries.find(
+      const fallbackSource = orderedEntries.find(
         ({ sourceKey }) =>
-          effectiveStatusMap.get(sourceKey)?.kind !== 'unavailable'
+          normalizedStatusMap.get(sourceKey)?.kind !== 'unavailable'
       );
       return fallbackSource?.source || sources[0];
     }
@@ -550,6 +710,8 @@ function PlayPageClient() {
         : directUrl;
 
     if (nextUrl !== videoUrlRef.current) {
+      startupFeedbackSentRef.current = false;
+      playbackStartupStartedAtRef.current = Date.now();
       setVideoUrl(nextUrl);
     }
   };
@@ -568,6 +730,8 @@ function PlayPageClient() {
     }
 
     sourceFallbackAttemptedRef.current = true;
+    startupFeedbackSentRef.current = false;
+    playbackStartupStartedAtRef.current = Date.now();
     setPlaybackMode('proxy');
     setVideoLoadingStage('sourceChanging');
     setIsVideoLoading(true);
@@ -719,6 +883,8 @@ function PlayPageClient() {
       }
       setSourceSearchLoading(true);
       setLoading(true);
+      setPrecomputedVideoInfo(new Map());
+      setPrecomputedSourceStatuses(new Map());
       setLoadingStage(currentSource && currentId ? 'fetching' : 'searching');
       setLoadingMessage(
         currentSource && currentId
@@ -1468,6 +1634,40 @@ function PlayPageClient() {
 
           // 隐藏换源加载状态
           setIsVideoLoading(false);
+
+          if (!startupFeedbackSentRef.current) {
+            startupFeedbackSentRef.current = true;
+            const currentVideoInfo = precomputedVideoInfoRef.current.get(
+              getCurrentSourceKey()
+            );
+            const startedAt = playbackStartupStartedAtRef.current;
+            void reportPlaybackFeedback({
+              sourceKey: getCurrentSourceKey(),
+              playbackDomain: getCurrentPlaybackDomain(),
+              title: videoTitleRef.current,
+              playbackMode: playbackModeRef.current,
+              startupSuccess: true,
+              startupTimeMs:
+                startedAt && startedAt > 0 ? Date.now() - startedAt : undefined,
+              switchedToProxy: playbackModeRef.current === 'proxy',
+              browserQuality:
+                currentVideoInfo &&
+                !currentVideoInfo.hasError &&
+                currentVideoInfo.quality !== '未知'
+                  ? currentVideoInfo.quality
+                  : undefined,
+              browserPingMs:
+                currentVideoInfo && currentVideoInfo.pingTime > 0
+                  ? currentVideoInfo.pingTime
+                  : undefined,
+              browserSpeedLabel:
+                currentVideoInfo &&
+                !currentVideoInfo.hasError &&
+                currentVideoInfo.loadSpeed !== '未知'
+                  ? currentVideoInfo.loadSpeed
+                  : undefined,
+            });
+          }
         });
 
         artPlayerRef.current.on('error', (err: any) => {
@@ -1479,6 +1679,29 @@ function PlayPageClient() {
 
           if (artPlayerRef.current.currentTime > 0) {
             return;
+          }
+
+          if (!startupFeedbackSentRef.current) {
+            startupFeedbackSentRef.current = true;
+            void reportPlaybackFeedback({
+              sourceKey: getCurrentSourceKey(),
+              playbackDomain: getCurrentPlaybackDomain(),
+              title: videoTitleRef.current,
+              playbackMode: playbackModeRef.current,
+              startupSuccess: false,
+              startupTimeMs:
+                playbackStartupStartedAtRef.current &&
+                playbackStartupStartedAtRef.current > 0
+                  ? Date.now() - playbackStartupStartedAtRef.current
+                  : undefined,
+              switchedToProxy: playbackModeRef.current === 'proxy',
+              sessionError:
+                err instanceof Error
+                  ? err.message
+                  : typeof err === 'string'
+                  ? err
+                  : '播放器启动失败',
+            });
           }
         });
 
@@ -1833,6 +2056,7 @@ function PlayPageClient() {
                 sourceSearchLoading={sourceSearchLoading}
                 sourceSearchError={sourceSearchError}
                 precomputedVideoInfo={precomputedVideoInfo}
+                precomputedSourceStatuses={precomputedSourceStatuses}
               />
             </div>
           </div>

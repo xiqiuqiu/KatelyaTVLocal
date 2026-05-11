@@ -120,6 +120,7 @@ export type SourceStatusKind =
   | 'probing'
   | 'direct'
   | 'proxy'
+  | 'playable'
   | 'unavailable';
 
 export interface SourceVideoInfo {
@@ -127,6 +128,7 @@ export interface SourceVideoInfo {
   loadSpeed: string;
   pingTime: number;
   hasError?: boolean;
+  errorReason?: string;
 }
 
 export interface SourceStatus {
@@ -137,6 +139,8 @@ export interface SourceStatus {
   measured?: SourceVideoInfo;
   updatedAt?: number;
   fromMemory?: boolean;
+  rankingSource?: 'd1' | 'live';
+  rankScore?: number;
 }
 
 export interface SourceDomainPreference {
@@ -151,6 +155,50 @@ export interface SourceProbeResult {
   reason?: string;
   domain?: string | null;
   upstreamStatus?: number;
+}
+
+export interface SourcePreferenceResult extends SourceProbeResult {
+  sourceKey: string;
+  probeTimeMs?: number;
+  cacheState?: 'hit' | 'miss';
+  qualityLabel?: string | null;
+  speedLabel?: string | null;
+  pingTimeMs?: number | null;
+  latencyMs?: number | null;
+  speedKbps?: number | null;
+  updatedAt?: number;
+  rankingSource?: 'd1' | 'live';
+  rankScore?: number;
+}
+
+export interface SourcePreferenceRequest {
+  allowLiveProbeFallback?: boolean;
+  sources: Array<{
+    sourceKey: string;
+    episodeUrl: string | null;
+  }>;
+}
+
+export interface SourcePreferenceResponse {
+  orderedSourceKeys: string[];
+  results: SourcePreferenceResult[];
+  generatedAt: number;
+  rankingSource?: 'd1' | 'live' | 'mixed';
+  confidence?: 'low' | 'medium';
+}
+
+export interface PlaybackFeedbackInput {
+  sourceKey: string;
+  playbackDomain?: string | null;
+  title?: string;
+  playbackMode: SourcePlaybackMode;
+  startupSuccess: boolean;
+  startupTimeMs?: number;
+  switchedToProxy?: boolean;
+  browserQuality?: string;
+  browserPingMs?: number;
+  browserSpeedLabel?: string;
+  sessionError?: string;
 }
 
 // 豆瓣数据结构
@@ -176,6 +224,7 @@ export interface RuntimeConfig {
   DOUBAN_PROXY?: string;
   SOURCE_PROBE?: string;
   HLS_PROXY?: string;
+  SOURCE_RANKING_ENABLED?: boolean;
 }
 
 // 全局Window类型扩展

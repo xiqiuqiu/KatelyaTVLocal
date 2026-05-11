@@ -1,0 +1,22 @@
+name = "katelyatv"
+compatibility_date = "2026-05-11"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+# 这个文件只提供 D1 和 Cron 的最小模板。
+# 真正启用前，请把下面的数据库名、数据库 ID 和 Cron 时间改成你自己的值。
+
+[[d1_databases]]
+binding = "DB"
+database_name = "katelyatv_1"
+database_id = "a76a3a18-d0aa-44f3-8736-30684d46661b"
+migrations_dir = "migrations"
+
+[vars]
+SOURCE_RANKING_ENABLED = "true"
+NEXT_PUBLIC_SOURCE_RANKING_ENABLED = "true"
+SOURCE_RANKING_FALLBACK_TO_LIVE = "true"
+SOURCE_RANKING_CRON_ENABLED = "true"
+
+[triggers]
+crons = ["0 3 * * *"]

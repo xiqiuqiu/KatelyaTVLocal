@@ -13,7 +13,13 @@ import {
 
 const SOURCE_DOMAIN_MEMORY_KEY = 'sourceDomainPreferences';
 const SOURCE_DOMAIN_MEMORY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const SOURCE_DOMAIN_MEMORY_NEGATIVE_TTL_MS = 1 * 60 * 60 * 1000; // 1 hour for unavailable
+const SOURCE_DOMAIN_MEMORY_NEGATIVE_TTL_MS = 15 * 60 * 1000; // 15 minutes for unavailable
+const BROWSER_PROBE_ERROR_PATTERNS = [
+  'Timeout loading video metadata',
+  'Failed to load video metadata',
+  '浏览器直连检测失败',
+  'HLS播放失败:',
+];
 
 function readSourceDomainPreferenceMap(): Record<
   string,
@@ -107,6 +113,14 @@ export function getSourceDomainPreference(
   return preference;
 }
 
+function isTransientBrowserProbeError(error?: string): boolean {
+  if (!error) return false;
+
+  return BROWSER_PROBE_ERROR_PATTERNS.some((pattern) =>
+    error.includes(pattern)
+  );
+}
+
 export function rememberSourceDomainPreference(
   domain: string | null,
   mode: SourcePlaybackMode | 'unavailable',
@@ -146,6 +160,8 @@ export function createSourceStatus(
     measured?: SourceVideoInfo;
     updatedAt?: number;
     fromMemory?: boolean;
+    rankingSource?: 'd1' | 'live';
+    rankScore?: number;
   } = {}
 ): SourceStatus {
   return {
@@ -156,7 +172,31 @@ export function createSourceStatus(
     measured: options.measured,
     updatedAt: options.updatedAt ?? Date.now(),
     fromMemory: options.fromMemory,
+    rankingSource: options.rankingSource,
+    rankScore: options.rankScore,
   };
+}
+
+export function createPlayableSourceStatus(options: {
+  reason?: string;
+  playbackMode?: SourcePlaybackMode;
+  domain?: string | null;
+  measured?: SourceVideoInfo;
+  updatedAt?: number;
+  fromMemory?: boolean;
+  rankingSource?: 'd1' | 'live';
+  rankScore?: number;
+} = {}): SourceStatus {
+  return createSourceStatus('playable', {
+    reason: options.reason || '测速失败，可尝试播放',
+    playbackMode: options.playbackMode,
+    domain: options.domain,
+    measured: options.measured,
+    updatedAt: options.updatedAt,
+    fromMemory: options.fromMemory,
+    rankingSource: options.rankingSource,
+    rankScore: options.rankScore,
+  });
 }
 
 export function getRememberedSourceStatus(
@@ -167,6 +207,11 @@ export function getRememberedSourceStatus(
   if (!preference) return null;
 
   if (preference.mode === 'unavailable') {
+    if (isTransientBrowserProbeError(preference.lastError)) {
+      clearSourceDomainPreference(domain);
+      return null;
+    }
+
     return createSourceStatus('unavailable', {
       domain,
       reason: preference.lastError || '该源近期不可用',
@@ -195,6 +240,8 @@ export function getSourceStatusLabel(status: SourceStatus): string {
       return '直连';
     case 'proxy':
       return '代理';
+    case 'playable':
+      return '可播';
     case 'unavailable':
       return '不可用';
     default:
@@ -219,13 +266,28 @@ export function getSourceProbeUrl(): string | null {
     : null;
 }
 
-export function buildSourceProbeUrl(originalUrl: string): string | null {
-  if (!originalUrl) return null;
+export function getLocalSourceProbeUrl(): string | null {
+  if (typeof window === 'undefined') return null;
 
-  const probeUrl = getSourceProbeUrl();
-  if (!probeUrl) return null;
+  return '/api/source-probe?url=';
+}
+
+export function buildSourceProbeUrl(
+  originalUrl: string,
+  probeUrl = getSourceProbeUrl()
+): string | null {
+  if (!originalUrl || !probeUrl) return null;
 
   return `${probeUrl}${encodeURIComponent(originalUrl)}`;
+}
+
+function getSourceProbeRequestUrls(originalUrl: string): string[] {
+  const urls = [
+    buildSourceProbeUrl(originalUrl, getSourceProbeUrl()),
+    buildSourceProbeUrl(originalUrl, getLocalSourceProbeUrl()),
+  ].filter((url): url is string => Boolean(url));
+
+  return Array.from(new Set(urls));
 }
 
 export async function probeSourcePlayback(
@@ -241,55 +303,56 @@ export async function probeSourcePlayback(
     };
   }
 
-  try {
-    const requestUrl = buildSourceProbeUrl(normalizedUrl);
-    if (!requestUrl) {
-      return {
-        kind: 'unavailable',
-        reason: '未配置来源探测端点',
-        domain: extractSourceDomain(normalizedUrl),
-      };
-    }
-
-    const response = await fetch(requestUrl, {
-      method: 'GET',
-      cache: 'no-store',
-    });
-
-    const payload = (await response.json().catch(() => null)) as
-      | SourceProbeResult
-      | { error?: string }
-      | null;
-
-    if (!response.ok) {
-      return {
-        kind: 'unavailable',
-        reason:
-          (payload && 'error' in payload && payload.error) || '服务端探测失败',
-        domain: extractSourceDomain(normalizedUrl),
-        upstreamStatus: response.status,
-      };
-    }
-
-    if (!payload || !('kind' in payload)) {
-      return {
-        kind: 'unavailable',
-        reason: '服务端探测返回无效结果',
-        domain: extractSourceDomain(normalizedUrl),
-      };
-    }
-
-    return {
-      ...payload,
-      domain: payload.domain ?? extractSourceDomain(normalizedUrl),
-    };
-  } catch (error) {
+  const requestUrls = getSourceProbeRequestUrls(normalizedUrl);
+  if (requestUrls.length === 0) {
     return {
       kind: 'unavailable',
-      reason: error instanceof Error ? error.message : '服务端探测失败',
+      reason: '未配置来源探测端点',
       domain: extractSourceDomain(normalizedUrl),
     };
   }
+
+  let lastFailureReason = '服务端探测失败';
+
+  for (const requestUrl of requestUrls) {
+    try {
+      const response = await fetch(requestUrl, {
+        method: 'GET',
+        cache: 'no-store',
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | SourceProbeResult
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        lastFailureReason =
+          (payload && 'error' in payload && payload.error) ||
+          `服务端探测失败: ${response.status}`;
+        continue;
+      }
+
+      if (!payload || !('kind' in payload)) {
+        lastFailureReason = '服务端探测返回无效结果';
+        continue;
+      }
+
+      return {
+        ...payload,
+        domain: payload.domain ?? extractSourceDomain(normalizedUrl),
+      };
+    } catch (error) {
+      lastFailureReason =
+        error instanceof Error ? error.message : '服务端探测失败';
+    }
+  }
+
+  return {
+    kind: 'unavailable',
+    reason: lastFailureReason,
+    domain: extractSourceDomain(normalizedUrl),
+  };
 }
 
 /**
@@ -439,7 +502,7 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
         hls.destroy();
         video.remove();
         reject(new Error('Timeout loading video metadata'));
-      }, 4000);
+      }, 8000);
 
       video.onerror = () => {
         clearTimeout(timeout);

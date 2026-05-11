@@ -87,6 +87,8 @@ export default async function RootLayout({
     DOUBAN_PROXY: doubanProxy,
     SOURCE_PROBE: sourceProbe,
     HLS_PROXY: hlsProxy,
+    SOURCE_RANKING_ENABLED:
+      process.env.NEXT_PUBLIC_SOURCE_RANKING_ENABLED === 'true',
   };
 
   return (

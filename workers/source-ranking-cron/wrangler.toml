@@ -1,0 +1,9 @@
+name = "katelyatv-source-ranking-cron"
+main = "worker.js"
+compatibility_date = "2026-05-11"
+
+[vars]
+CRON_TARGET_URL = "https://katelyatv-b3u.pages.dev/api/cron"
+
+[triggers]
+crons = ["0 3 * * *"]
