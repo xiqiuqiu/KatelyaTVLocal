@@ -4,95 +4,69 @@ import { Clover, Film, Home, Search, Tv } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import {
+  type NavigationIcon,
+  isNavigationItemActive,
+  primaryNavigationItems,
+} from '@/lib/ui/navigation';
+
 interface MobileBottomNavProps {
-  /**
-   * 主动指定当前激活的路径。当未提供时，自动使用 usePathname() 获取的路径。
-   */
   activePath?: string;
 }
+
+const iconMap: Record<NavigationIcon, typeof Home> = {
+  home: Home,
+  search: Search,
+  film: Film,
+  tv: Tv,
+  clover: Clover,
+  settings: Home,
+};
 
 const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
   const pathname = usePathname();
 
-  // 当前激活路径：优先使用传入的 activePath，否则回退到浏览器地址
   const currentActive = activePath ?? pathname;
-
-  const navItems = [
-    { icon: Home, label: '首页', href: '/' },
-    { icon: Search, label: '搜索', href: '/search' },
-    {
-      icon: Film,
-      label: '电影',
-      href: '/douban?type=movie',
-    },
-    {
-      icon: Tv,
-      label: '剧集',
-      href: '/douban?type=tv',
-    },
-    {
-      icon: Clover,
-      label: '综艺',
-      href: '/douban?type=show',
-    },
-  ];
-
-  const isActive = (href: string) => {
-    const typeMatch = href.match(/type=([^&]+)/)?.[1];
-
-    // 解码URL以进行正确的比较
-    const decodedActive = decodeURIComponent(currentActive);
-    const decodedItemHref = decodeURIComponent(href);
-
-    return (
-      decodedActive === decodedItemHref ||
-      (decodedActive.startsWith('/douban') &&
-        decodedActive.includes(`type=${typeMatch}`))
-    );
-  };
 
   return (
     <nav
-      className='md:hidden fixed left-0 right-0 z-[600] bg-white/90 backdrop-blur-xl border-t border-gray-200/50 overflow-hidden dark:bg-gray-900/80 dark:border-gray-700/50 shadow-lg'
+      className='fixed inset-x-0 bottom-0 z-[600] border-t border-white/10 bg-[rgba(10,14,20,0.9)] shadow-ui-strong backdrop-blur-2xl md:hidden'
       style={{
-        /* 紧贴视口底部，同时在内部留出安全区高度 */
-        bottom: 0,
         paddingBottom: 'env(safe-area-inset-bottom)',
       }}
     >
-      {/* 顶部装饰线 */}
-      <div className='absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent'></div>
+      <div className='absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent' />
 
       <ul className='flex items-center'>
-        {navItems.map((item) => {
-          const active = isActive(item.href);
+        {primaryNavigationItems.map((item) => {
+          const active = isNavigationItemActive(currentActive, item.href);
+          const Icon = iconMap[item.icon];
+
           return (
             <li key={item.href} className='flex-shrink-0 w-1/5'>
               <Link
                 href={item.href}
-                className={`flex flex-col items-center justify-center w-full h-14 gap-1 text-xs transition-all duration-200 relative ${
-                  active
-                    ? 'transform -translate-y-1'
-                    : 'hover:transform hover:-translate-y-0.5'
+                data-active={active}
+                className={`relative flex h-16 w-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition ${
+                  active ? '-translate-y-0.5' : 'hover:-translate-y-0.5'
                 }`}
               >
-                {/* 激活状态的背景光晕 */}
                 {active && (
-                  <div className='absolute inset-0 bg-blue-500/10 rounded-lg mx-2 my-1 border border-blue-300/20'></div>
+                  <div className='absolute inset-x-2 inset-y-1 rounded-ui-md border border-white/10 bg-white/7' />
                 )}
 
-                <item.icon
-                  className={`h-6 w-6 transition-all duration-200 ${
+                <Icon
+                  className={`relative h-5 w-5 transition ${
                     active
-                      ? 'text-blue-600 dark:text-blue-400 scale-110'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-blue-500 dark:hover:text-blue-300'
+                      ? 'scale-105 text-[rgb(var(--ui-accent))]'
+                      : 'text-[rgb(var(--ui-text-muted))] hover:text-[rgb(var(--ui-text))]'
                   }`}
                 />
                 <span
-                  className={`transition-all duration-200 font-medium ${
+                  className={`relative transition ${
                     active
-                      ? 'text-blue-600 dark:text-blue-400'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-blue-500 dark:hover:text-blue-300'
+                      ? 'text-[rgb(var(--ui-text))]'
+                      : 'text-[rgb(var(--ui-text-muted))]'
                   }`}
                 >
                   {item.label}

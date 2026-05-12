@@ -1,0 +1,43 @@
+:root {
+  --ui-bg: 8 10 14;
+  --ui-bg-elevated: 12 16 24;
+  --ui-surface: 18 22 30;
+  --ui-surface-strong: 24 30 40;
+  --ui-border: 255 255 255;
+  --ui-border-alpha: 0.08;
+  --ui-text: 244 247 250;
+  --ui-text-muted: 154 163 175;
+  --ui-accent: 74 144 226;
+  --ui-accent-warm: 245 166 35;
+  --ui-radius-sm: 12px;
+  --ui-radius-md: 18px;
+  --ui-radius-lg: 24px;
+  --ui-shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.22);
+  --ui-shadow-strong: 0 22px 44px rgba(0, 0, 0, 0.32);
+  --ui-motion-fast: 120ms;
+  --ui-motion-base: 180ms;
+  --ui-motion-slow: 240ms;
+}
+
+.ui-app-bg {
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(var(--ui-accent), 0.16),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(var(--ui-accent-warm), 0.1),
+      transparent 28%
+    ),
+    linear-gradient(180deg, rgba(18, 22, 30, 0.94), rgba(8, 10, 14, 1)),
+    rgb(var(--ui-bg));
+}
+
+.ui-shell-panel {
+  background: rgba(var(--ui-surface), 0.72);
+  border: 1px solid rgba(var(--ui-border), var(--ui-border-alpha));
+  box-shadow: var(--ui-shadow-soft);
+  backdrop-filter: blur(24px);
+}

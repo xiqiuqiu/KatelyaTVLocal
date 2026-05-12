@@ -3,6 +3,8 @@ import { Inter } from 'next/font/google';
 import { cookies } from 'next/headers';
 
 import './globals.css';
+import '@/styles/globals.css';
+import '@/styles/ui-theme.css';
 import 'sweetalert2/dist/sweetalert2.min.css';
 
 import { getSessionSigningSecret } from '@/lib/auth';
@@ -119,7 +121,7 @@ export default async function RootLayout({
         />
       </head>
       <body
-        className={`${inter.className} min-h-screen bg-white text-gray-900 dark:bg-black dark:text-gray-200`}
+        className={`${inter.className} min-h-screen bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text))]`}
       >
         <FloatingShapes />
         <ThemeProvider attribute='class' defaultTheme='system' enableSystem>

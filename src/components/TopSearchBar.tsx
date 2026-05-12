@@ -4,32 +4,27 @@ import { Menu, Search } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import { useSite } from './SiteProvider';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
 
-const TopSearchBar = () => {
+interface TopSearchBarProps {
+  isSidebarVisible?: boolean;
+  onToggleSidebar?: () => void;
+}
+
+const TopSearchBar = ({
+  isSidebarVisible = true,
+  onToggleSidebar,
+}: TopSearchBarProps) => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { siteName } = useSite();
   const [query, setQuery] = useState('');
-  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
 
-  // 从 URL 参数中获取搜索词并设置到搜索框
   useEffect(() => {
-    const currentQuery = searchParams.get('q');
-    if (currentQuery) {
-      setQuery(currentQuery);
-    }
+    setQuery(searchParams.get('q') ?? '');
   }, [searchParams]);
-
-  const toggleSidebar = () => {
-    setIsSidebarVisible(!isSidebarVisible);
-    // 触发全局事件让其他组件知道侧边栏状态变化
-    window.dispatchEvent(
-      new CustomEvent('sidebarVisibilityChange', {
-        detail: { visible: !isSidebarVisible },
-      })
-    );
-  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,65 +34,60 @@ const TopSearchBar = () => {
   };
 
   return (
-    <div
-      className='w-full bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 sticky top-0 z-[9999]'
+    <header
+      className='sticky top-0 z-[9999] border-b border-white/10 bg-[rgba(8,10,14,0.82)] shadow-[0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl'
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
-      <div className='h-14 flex items-center px-4 md:px-6 lg:px-8'>
-        {/* 汉堡菜单按钮 - 左侧 */}
-        <div className='flex-shrink-0 mr-3 md:mr-4'>
+      <div className='mx-auto flex h-16 max-w-[1600px] items-center gap-3 px-4 md:px-6 lg:px-8'>
+        <div className='flex-shrink-0'>
           <button
-            onClick={toggleSidebar}
-            className='p-3 rounded-lg text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-200'
+            onClick={onToggleSidebar}
+            aria-pressed={isSidebarVisible}
             aria-label='切换侧边栏'
+            className='inline-flex h-11 w-11 items-center justify-center rounded-ui-sm border border-white/10 bg-white/5 text-[rgb(var(--ui-text-muted))] transition hover:bg-white/10 hover:text-[rgb(var(--ui-text))]'
           >
             <Menu size={20} />
           </button>
         </div>
 
-        {/* Logo - 左侧，在小屏幕上隐藏 */}
-        <div className='hidden md:flex flex-shrink-0 mr-4 lg:mr-6'>
+        <div className='hidden flex-shrink-0 md:flex'>
           <button
             onClick={() => router.push('/')}
-            className='text-gray-900 dark:text-white font-bold text-lg lg:text-xl hover:text-blue-500 dark:hover:text-blue-400 transition-colors cursor-pointer'
+            className='text-sm font-semibold uppercase tracking-[0.24em] text-[rgb(var(--ui-text))] transition hover:text-[rgb(var(--ui-accent-warm))]'
           >
-            ZOTUBE
+            {siteName}
           </button>
         </div>
 
-        {/* 搜索表单 - 居中显示 */}
-        <div className='flex-1 max-w-2xl mx-auto'>
-          <form onSubmit={handleSearch} className='w-full'>
-            <div className='flex'>
-              <div className='flex-1 relative'>
-                <input
-                  type='text'
-                  placeholder='搜索影片、电视剧、综艺...'
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className='w-full h-10 px-4 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-l-full text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none transition-colors'
-                />
-              </div>
-              <button
-                type='submit'
-                className='px-4 h-10 bg-gray-200 dark:bg-gray-800 border border-l-0 border-gray-300 dark:border-gray-700 rounded-r-full hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors flex items-center justify-center'
-              >
-                <Search
-                  size={18}
-                  className='text-gray-600 dark:text-gray-400'
-                />
-              </button>
-            </div>
-          </form>
-        </div>
+        <form
+          role='search'
+          onSubmit={handleSearch}
+          className='mx-auto flex max-w-3xl flex-1 items-center rounded-full border border-white/10 bg-white/5 p-1 shadow-ui-soft'
+        >
+          <div className='flex-1'>
+            <input
+              type='text'
+              placeholder='搜索影片、电视剧、综艺...'
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className='h-11 w-full rounded-full border-0 bg-transparent px-5 text-sm text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))] focus:outline-none focus:ring-0'
+            />
+          </div>
+          <button
+            type='submit'
+            aria-label='提交搜索'
+            className='inline-flex h-9 w-9 items-center justify-center rounded-full bg-[rgb(var(--ui-accent))] text-white transition hover:brightness-110'
+          >
+            <Search size={18} />
+          </button>
+        </form>
 
-        {/* 右侧工具栏 - 主题切换和用户菜单 */}
-        <div className='flex-shrink-0 ml-4 lg:ml-6 flex items-center gap-1 sm:gap-2'>
+        <div className='flex flex-shrink-0 items-center gap-1 sm:gap-2'>
           <ThemeToggle />
           <UserMenu />
         </div>
       </div>
-    </div>
+    </header>
   );
 };
 

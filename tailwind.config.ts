@@ -25,6 +25,11 @@ const config: Config = {
       fontFamily: {
         primary: ['Inter', ...defaultTheme.fontFamily.sans],
       },
+      borderRadius: {
+        'ui-sm': 'var(--ui-radius-sm)',
+        'ui-md': 'var(--ui-radius-md)',
+        'ui-lg': 'var(--ui-radius-lg)',
+      },
       colors: {
         primary: {
           50: '#f0f9ff',
@@ -39,6 +44,10 @@ const config: Config = {
           900: '#0c4a6e',
         },
         dark: '#222222',
+      },
+      boxShadow: {
+        'ui-soft': 'var(--ui-shadow-soft)',
+        'ui-strong': 'var(--ui-shadow-strong)',
       },
       keyframes: {
         flicker: {
