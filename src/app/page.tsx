@@ -2,10 +2,7 @@
 
 'use client';
 
-export const runtime = 'edge';
-
 import { ChevronRight } from 'lucide-react';
-import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 
 // 客户端收藏 API
@@ -18,12 +15,20 @@ import {
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
+import { homeTabMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
 import PageLayout from '@/components/PageLayout';
 import { useSite } from '@/components/SiteProvider';
+import ActionLink from '@/components/ui/ActionLink';
+import PageHeader from '@/components/ui/PageHeader';
+import PosterGrid from '@/components/ui/PosterGrid';
+import SectionHeader from '@/components/ui/SectionHeader';
+import Surface from '@/components/ui/Surface';
 import VideoCard from '@/components/VideoCard';
+
+export const runtime = 'edge';
 
 // 主内容区大型 KatelyaTV Logo 组件 - 已隐藏但保留代码以备后用
 /*
@@ -204,48 +209,102 @@ function HomeClient() {
     localStorage.setItem('hasSeenAnnouncement', announcement); // 记录已查看弹窗
   };
 
+  const currentHeaderMeta =
+    activeTab === 'favorites' ? homeTabMeta.favorites : homeTabMeta.home;
+
+  const renderHomeSection = ({
+    href,
+    items,
+    title,
+    type,
+  }: {
+    href: string;
+    items: DoubanItem[];
+    title: string;
+    type?: string;
+  }) => (
+    <section className='space-y-4'>
+      <SectionHeader
+        action={
+          <ActionLink href={href}>
+            {pageSectionLabels.viewMore}
+            <ChevronRight className='h-4 w-4' />
+          </ActionLink>
+        }
+        title={title}
+      />
+      <PosterGrid className='grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6'>
+        {loading
+          ? Array.from({ length: 12 }).map((_, index) => (
+              <div key={index} className='w-full'>
+                <Surface className='overflow-hidden' variant='plain'>
+                  <div className='relative aspect-[2/3] w-full animate-pulse bg-white/5'>
+                    <div className='absolute inset-0 bg-white/10'></div>
+                  </div>
+                </Surface>
+                <div className='mt-3 h-4 animate-pulse rounded-full bg-white/10'></div>
+              </div>
+            ))
+          : items.map((item, index) => (
+              <div key={`${item.id}-${index}`} className='w-full'>
+                <VideoCard
+                  douban_id={item.id}
+                  from='douban'
+                  poster={item.poster}
+                  rate={item.rate}
+                  size='small'
+                  title={item.title}
+                  type={type}
+                  year={item.year}
+                />
+              </div>
+            ))}
+      </PosterGrid>
+    </section>
+  );
+
   return (
     <PageLayout>
-      <div className='sm:px-8 lg:px-12 sm:py-8 overflow-visible'>
+      <div className='space-y-8 overflow-visible sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
         {/* 主内容区大型 KatelyaTV Logo - 仅在首页显示 */}
         {/* {activeTab === 'home' && <MainKatelyaLogo />} */}
 
-        {/* 顶部 Tab 切换 */}
-        <div className='mb-8 flex justify-center'>
-          <CapsuleSwitch
-            options={[
-              { label: '首页', value: 'home' },
-              { label: '收藏夹', value: 'favorites' },
-            ]}
-            active={activeTab}
-            onChange={(value) => setActiveTab(value as 'home' | 'favorites')}
-          />
-        </div>
+        <PageHeader
+          action={
+            <CapsuleSwitch
+              options={[
+                { label: '首页', value: 'home' },
+                { label: '收藏夹', value: 'favorites' },
+              ]}
+              active={activeTab}
+              onChange={(value) => setActiveTab(value as 'home' | 'favorites')}
+            />
+          }
+          subtitle={currentHeaderMeta.subtitle}
+          title={currentHeaderMeta.title}
+        />
 
-        {/* 主内容区域 - 优化为完全居中布局 */}
-        <div className='w-full max-w-none mx-auto'>
+        <div className='mx-auto w-full max-w-none'>
           {activeTab === 'favorites' ? (
             // 收藏夹视图
             <>
-              <section className='mb-8'>
-                <div className='mb-4 flex items-center justify-between'>
-                  <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-                    我的收藏
-                  </h2>
-                  {favoriteItems.length > 0 && (
-                    <button
-                      className='text-sm text-gray-500 hover:text-blue-700 dark:text-gray-400 dark:hover:text-blue-300 transition-colors'
-                      onClick={async () => {
-                        await clearAllFavorites();
-                        setFavoriteItems([]);
-                      }}
-                    >
-                      清空
-                    </button>
-                  )}
-                </div>
-                {/* 优化收藏夹网格布局，确保在新的居中布局下完美对齐 */}
-                <div className='grid grid-cols-3 gap-x-2 gap-y-6 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-6 lg:gap-x-8 justify-items-center'>
+              <section className='space-y-4'>
+                <SectionHeader
+                  action={
+                    favoriteItems.length > 0 ? (
+                      <ActionLink
+                        onClick={async () => {
+                          await clearAllFavorites();
+                          setFavoriteItems([]);
+                        }}
+                      >
+                        清空
+                      </ActionLink>
+                    ) : null
+                  }
+                  title={pageSectionLabels.favoriteItems}
+                />
+                <PosterGrid className='grid-cols-3 justify-items-center gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-6 sm:gap-y-20 sm:px-2 lg:gap-x-8'>
                   {favoriteItems.map((item) => (
                     <div
                       key={item.id + item.source}
@@ -260,11 +319,11 @@ function HomeClient() {
                     </div>
                   ))}
                   {favoriteItems.length === 0 && (
-                    <div className='col-span-full text-center text-gray-500 py-8 dark:text-gray-400'>
+                    <div className='col-span-full py-8 text-center text-gray-500 dark:text-gray-400'>
                       暂无收藏内容
                     </div>
                   )}
-                </div>
+                </PosterGrid>
               </section>
 
               {/* 收藏夹页面底部 Logo */}
@@ -276,132 +335,22 @@ function HomeClient() {
               {/* 继续观看 */}
               <ContinueWatching />
 
-              {/* 热门电影 */}
-              <section className='mb-8'>
-                <div className='mb-4 flex items-center justify-between'>
-                  <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-                    热门电影
-                  </h2>
-                  <Link
-                    href='/douban?type=movie'
-                    className='flex items-center text-sm text-gray-500 hover:text-blue-700 dark:text-gray-400 dark:hover:text-blue-300 transition-colors'
-                  >
-                    查看更多
-                    <ChevronRight className='w-4 h-4 ml-1' />
-                  </Link>
-                </div>
-                <div className='grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3'>
-                  {loading
-                    ? // 加载状态显示灰色占位数据 (显示12个，2行x6列)
-                      Array.from({ length: 12 }).map((_, index) => (
-                        <div key={index} className='w-full'>
-                          <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
-                            <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
-                          </div>
-                          <div className='mt-2 h-4 bg-purple-200 rounded animate-pulse dark:bg-purple-800'></div>
-                        </div>
-                      ))
-                    : // 显示真实数据，只显示前12个实现2行布局
-                      hotMovies.slice(0, 12).map((movie, index) => (
-                        <div key={index} className='w-full'>
-                          <VideoCard
-                            from='douban'
-                            title={movie.title}
-                            poster={movie.poster}
-                            douban_id={movie.id}
-                            rate={movie.rate}
-                            year={movie.year}
-                            type='movie'
-                            size='small'
-                          />
-                        </div>
-                      ))}
-                </div>
-              </section>
-
-              {/* 热门剧集 */}
-              <section className='mb-8'>
-                <div className='mb-4 flex items-center justify-between'>
-                  <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-                    热门剧集
-                  </h2>
-                  <Link
-                    href='/douban?type=tv'
-                    className='flex items-center text-sm text-gray-500 hover:text-blue-700 dark:text-gray-400 dark:hover:text-blue-300 transition-colors'
-                  >
-                    查看更多
-                    <ChevronRight className='w-4 h-4 ml-1' />
-                  </Link>
-                </div>
-                <div className='grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3'>
-                  {loading
-                    ? // 加载状态显示灰色占位数据 (显示12个，2行x6列)
-                      Array.from({ length: 12 }).map((_, index) => (
-                        <div key={index} className='w-full'>
-                          <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
-                            <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
-                          </div>
-                          <div className='mt-2 h-4 bg-purple-200 rounded animate-pulse dark:bg-purple-800'></div>
-                        </div>
-                      ))
-                    : // 显示真实数据，只显示前10个实现2行布局
-                      hotTvShows.slice(0, 10).map((show, index) => (
-                        <div key={index} className='w-full'>
-                          <VideoCard
-                            from='douban'
-                            title={show.title}
-                            poster={show.poster}
-                            douban_id={show.id}
-                            rate={show.rate}
-                            year={show.year}
-                            size='small'
-                          />
-                        </div>
-                      ))}
-                </div>
-              </section>
-
-              {/* 热门综艺 */}
-              <section className='mb-8'>
-                <div className='mb-4 flex items-center justify-between'>
-                  <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-                    热门综艺
-                  </h2>
-                  <Link
-                    href='/douban?type=show'
-                    className='flex items-center text-sm text-gray-500 hover:text-blue-700 dark:text-gray-400 dark:hover:text-blue-300 transition-colors'
-                  >
-                    查看更多
-                    <ChevronRight className='w-4 h-4 ml-1' />
-                  </Link>
-                </div>
-                <div className='grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3'>
-                  {loading
-                    ? // 加载状态显示灰色占位数据 (显示12个，2行x6列)
-                      Array.from({ length: 12 }).map((_, index) => (
-                        <div key={index} className='w-full'>
-                          <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
-                            <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
-                          </div>
-                          <div className='mt-2 h-4 bg-purple-200 rounded animate-pulse dark:bg-purple-800'></div>
-                        </div>
-                      ))
-                    : // 显示真实数据，只显示前10个实现2行布局
-                      hotVarietyShows.slice(0, 10).map((show, index) => (
-                        <div key={index} className='w-full'>
-                          <VideoCard
-                            from='douban'
-                            title={show.title}
-                            poster={show.poster}
-                            douban_id={show.id}
-                            rate={show.rate}
-                            year={show.year}
-                            size='small'
-                          />
-                        </div>
-                      ))}
-                </div>
-              </section>
+              {renderHomeSection({
+                href: '/douban?type=movie',
+                items: hotMovies.slice(0, 12),
+                title: pageSectionLabels.popularMovies,
+                type: 'movie',
+              })}
+              {renderHomeSection({
+                href: '/douban?type=tv',
+                items: hotTvShows.slice(0, 10),
+                title: pageSectionLabels.popularShows,
+              })}
+              {renderHomeSection({
+                href: '/douban?type=show',
+                items: hotVarietyShows.slice(0, 10),
+                title: pageSectionLabels.popularVariety,
+              })}
 
               {/* 首页底部 Logo */}
               <BottomKatelyaLogo />

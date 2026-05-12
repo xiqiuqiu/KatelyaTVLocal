@@ -1,8 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any */
 'use client';
 
-export const runtime = 'edge';
-
 import { ChevronUp, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
@@ -15,9 +13,17 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
+import { pageMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
 import PageLayout from '@/components/PageLayout';
+import ActionLink from '@/components/ui/ActionLink';
+import PageHeader from '@/components/ui/PageHeader';
+import PosterGrid from '@/components/ui/PosterGrid';
+import SectionHeader from '@/components/ui/SectionHeader';
+import Surface from '@/components/ui/Surface';
 import VideoCard from '@/components/VideoCard';
+
+export const runtime = 'edge';
 
 function SearchPageClient() {
   // 搜索历史
@@ -217,136 +223,160 @@ function SearchPageClient() {
     }
   };
 
+  const searchHeaderTitle = showResults
+    ? pageSectionLabels.searchResults
+    : pageMeta['/search'].title;
+  const searchHeaderSubtitle = showResults
+    ? searchQuery
+      ? `当前关键词：${searchQuery}`
+      : pageMeta['/search'].subtitle
+    : pageMeta['/search'].subtitle;
+  const displayedResultCount =
+    viewMode === 'agg' ? aggregatedResults.length : searchResults.length;
+
   return (
     <PageLayout activePath='/search'>
-      <div className='sm:px-10 sm:py-8 overflow-visible mb-10'>
-        {/* 搜索结果或搜索历史 */}
-        <div className='max-w-[95%] mx-auto mt-12 overflow-visible'>
+      <div className='mb-10 space-y-8 overflow-visible sm:px-10 sm:py-8'>
+        <PageHeader
+          action={
+            showResults ? (
+              <label className='inline-flex cursor-pointer items-center gap-3 rounded-full border border-white/10 bg-[rgba(var(--ui-surface-strong),0.72)] px-3 py-2 text-sm text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md'>
+                <span>聚合</span>
+                <div className='relative'>
+                  <input
+                    type='checkbox'
+                    className='peer sr-only'
+                    checked={viewMode === 'agg'}
+                    onChange={() =>
+                      setViewMode(viewMode === 'agg' ? 'all' : 'agg')
+                    }
+                  />
+                  <div className='h-5 w-9 rounded-full bg-white/15 transition-colors peer-checked:bg-[rgb(var(--ui-accent))]' />
+                  <div className='absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-4' />
+                </div>
+              </label>
+            ) : null
+          }
+          subtitle={searchHeaderSubtitle}
+          title={searchHeaderTitle}
+        />
+
+        <div className='mx-auto max-w-[95%] overflow-visible'>
           {isLoading ? (
-            <div className='flex justify-center items-center h-40'>
-              <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-green-500'></div>
+            <div className='flex h-40 items-center justify-center'>
+              <div className='h-8 w-8 animate-spin rounded-full border-b-2 border-green-500'></div>
             </div>
           ) : showResults ? (
-            <section className='mb-12'>
-              {/* 标题 + 聚合开关 */}
-              <div className='mb-8 flex items-center justify-between'>
-                <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-                  搜索结果
-                </h2>
-                {/* 聚合开关 */}
-                <label className='flex items-center gap-2 cursor-pointer select-none'>
-                  <span className='text-sm text-gray-700 dark:text-gray-300'>
-                    聚合
-                  </span>
-                  <div className='relative'>
-                    <input
-                      type='checkbox'
-                      className='sr-only peer'
-                      checked={viewMode === 'agg'}
-                      onChange={() =>
-                        setViewMode(viewMode === 'agg' ? 'all' : 'agg')
-                      }
-                    />
-                    <div className='w-9 h-5 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600'></div>
-                    <div className='absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4'></div>
-                  </div>
-                </label>
-              </div>
-              <div
-                key={`search-results-${viewMode}`}
-                className='justify-start grid grid-cols-3 gap-x-2 gap-y-6 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'
-              >
-                {viewMode === 'agg'
-                  ? aggregatedResults.map(([mapKey, group]) => {
-                      return (
-                        <div key={`agg-${mapKey}`} className='w-full'>
+            <section className='space-y-4'>
+              <SectionHeader
+                subtitle={`当前显示 ${displayedResultCount} 条${
+                  viewMode === 'agg' ? '聚合结果' : '原始结果'
+                }`}
+                title={pageSectionLabels.searchResults}
+              />
+              {searchResults.length > 0 ? (
+                <PosterGrid
+                  key={`search-results-${viewMode}`}
+                  className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'
+                >
+                  {viewMode === 'agg'
+                    ? aggregatedResults.map(([mapKey, group]) => {
+                        return (
+                          <div key={`agg-${mapKey}`} className='w-full'>
+                            <VideoCard
+                              from='search'
+                              items={group}
+                              query={
+                                searchQuery.trim() !== group[0].title
+                                  ? searchQuery.trim()
+                                  : ''
+                              }
+                            />
+                          </div>
+                        );
+                      })
+                    : searchResults.map((item) => (
+                        <div
+                          key={`all-${item.source}-${item.id}`}
+                          className='w-full'
+                        >
                           <VideoCard
-                            from='search'
-                            items={group}
+                            id={item.id}
+                            title={item.title}
+                            poster={item.poster}
+                            episodes={item.episodes.length}
+                            source={item.source}
+                            source_name={item.source_name}
+                            douban_id={item.douban_id?.toString()}
                             query={
-                              searchQuery.trim() !== group[0].title
+                              searchQuery.trim() !== item.title
                                 ? searchQuery.trim()
                                 : ''
                             }
+                            year={item.year}
+                            from='search'
+                            type={item.episodes.length > 1 ? 'tv' : 'movie'}
                           />
                         </div>
-                      );
-                    })
-                  : searchResults.map((item) => (
-                      <div
-                        key={`all-${item.source}-${item.id}`}
-                        className='w-full'
-                      >
-                        <VideoCard
-                          id={item.id}
-                          title={item.title}
-                          poster={item.poster}
-                          episodes={item.episodes.length}
-                          source={item.source}
-                          source_name={item.source_name}
-                          douban_id={item.douban_id?.toString()}
-                          query={
-                            searchQuery.trim() !== item.title
-                              ? searchQuery.trim()
-                              : ''
-                          }
-                          year={item.year}
-                          from='search'
-                          type={item.episodes.length > 1 ? 'tv' : 'movie'}
-                        />
-                      </div>
-                    ))}
-                {searchResults.length === 0 && (
-                  <div className='col-span-full text-center text-gray-500 py-8 dark:text-gray-400'>
-                    未找到相关结果
-                  </div>
-                )}
-              </div>
+                      ))}
+                </PosterGrid>
+              ) : (
+                <Surface
+                  className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
+                  variant='plain'
+                >
+                  未找到相关结果
+                </Surface>
+              )}
             </section>
           ) : searchHistory.length > 0 ? (
             // 搜索历史
-            <section className='mb-12'>
-              <h2 className='mb-4 text-xl font-bold text-gray-800 text-left dark:text-gray-200'>
-                搜索历史
-                {searchHistory.length > 0 && (
-                  <button
-                    onClick={() => {
-                      clearSearchHistory(); // 事件监听会自动更新界面
-                    }}
-                    className='ml-3 text-sm text-gray-500 hover:text-red-500 transition-colors dark:text-gray-400 dark:hover:text-red-500'
-                  >
-                    清空
-                  </button>
-                )}
-              </h2>
-              <div className='flex flex-wrap gap-2'>
-                {searchHistory.map((item) => (
-                  <div key={item} className='relative group'>
-                    <button
+            <section className='space-y-4'>
+              <SectionHeader
+                action={
+                  searchHistory.length > 0 ? (
+                    <ActionLink
                       onClick={() => {
-                        router.push(
-                          `/search?q=${encodeURIComponent(item.trim())}`
-                        );
+                        clearSearchHistory(); // 事件监听会自动更新界面
                       }}
-                      className='px-4 py-2 bg-gray-500/10 hover:bg-gray-300 rounded-full text-sm text-gray-700 transition-colors duration-200 dark:bg-gray-700/50 dark:hover:bg-gray-600 dark:text-gray-300'
                     >
-                      {item}
-                    </button>
-                    {/* 删除按钮 */}
-                    <button
-                      aria-label='删除搜索历史'
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        deleteSearchHistory(item); // 事件监听会自动更新界面
-                      }}
-                      className='absolute -top-1 -right-1 w-4 h-4 opacity-0 group-hover:opacity-100 bg-gray-400 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] transition-colors'
-                    >
-                      <X className='w-3 h-3' />
-                    </button>
-                  </div>
-                ))}
-              </div>
+                      清空
+                    </ActionLink>
+                  ) : null
+                }
+                title={pageSectionLabels.searchHistory}
+              />
+              <Surface className='p-4 sm:p-5' variant='plain'>
+                <div className='flex flex-wrap gap-2'>
+                  {searchHistory.map((item) => (
+                    <div key={item} className='group relative'>
+                      <button
+                        onClick={() => {
+                          router.push(
+                            `/search?q=${encodeURIComponent(item.trim())}`
+                          );
+                        }}
+                        className='rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-[rgb(var(--ui-text))] transition-colors duration-200 hover:bg-white/10'
+                        type='button'
+                      >
+                        {item}
+                      </button>
+                      <button
+                        aria-label='删除搜索历史'
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          deleteSearchHistory(item); // 事件监听会自动更新界面
+                        }}
+                        className='absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-white/25 text-[10px] text-white opacity-0 transition-colors group-hover:opacity-100 hover:bg-red-500'
+                        type='button'
+                      >
+                        <X className='h-3 w-3' />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </Surface>
             </section>
           ) : null}
         </div>
