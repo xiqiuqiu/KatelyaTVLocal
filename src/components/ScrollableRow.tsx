@@ -3,11 +3,15 @@ import { useEffect, useRef, useState } from 'react';
 
 interface ScrollableRowProps {
   children: React.ReactNode;
+  className?: string;
+  contentClassName?: string;
   scrollDistance?: number;
 }
 
 export default function ScrollableRow({
   children,
+  className,
+  contentClassName,
   scrollDistance = 1000,
 }: ScrollableRowProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -92,7 +96,7 @@ export default function ScrollableRow({
 
   return (
     <div
-      className='relative'
+      className={`relative ${className || ''}`}
       onMouseEnter={() => {
         setIsHovered(true);
         // 当鼠标进入时重新检查一次
@@ -102,66 +106,40 @@ export default function ScrollableRow({
     >
       <div
         ref={containerRef}
-        className='flex space-x-6 overflow-x-auto scrollbar-hide py-1 sm:py-2 pb-12 sm:pb-14 px-4 sm:px-6'
+        className={`flex gap-4 overflow-x-auto scrollbar-hide px-1 py-1 pb-6 sm:gap-5 ${contentClassName || ''}`}
         onScroll={checkScroll}
       >
         {children}
       </div>
       {showLeftScroll && (
         <div
-          className={`hidden sm:flex absolute left-0 top-0 bottom-0 w-16 items-center justify-center z-[600] transition-opacity duration-200 ${
+          className={`absolute inset-y-0 left-0 z-[600] hidden w-20 items-center justify-start bg-gradient-to-r from-[rgba(var(--ui-bg-elevated),0.92)] via-[rgba(var(--ui-bg-elevated),0.42)] to-transparent pl-2 transition-opacity duration-200 sm:flex ${
             isHovered ? 'opacity-100' : 'opacity-0'
           }`}
-          style={{
-            background: 'transparent',
-            pointerEvents: 'none', // 允许点击穿透
-          }}
         >
-          <div
-            className='absolute inset-0 flex items-center justify-center'
-            style={{
-              top: '40%',
-              bottom: '60%',
-              left: '-4.5rem',
-              pointerEvents: 'auto',
-            }}
+          <button
+            className='pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[rgba(var(--ui-surface-strong),0.88)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition duration-200 hover:scale-[1.04] hover:border-white/20 hover:bg-[rgba(var(--ui-surface-strong),0.98)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40'
+            onClick={handleScrollLeftClick}
+            type='button'
           >
-            <button
-              onClick={handleScrollLeftClick}
-              className='w-12 h-12 bg-white/95 rounded-full shadow-lg flex items-center justify-center hover:bg-white border border-gray-200 transition-transform hover:scale-105 dark:bg-gray-800/90 dark:hover:bg-gray-700 dark:border-gray-600'
-            >
-              <ChevronLeft className='w-6 h-6 text-gray-600 dark:text-gray-300' />
-            </button>
-          </div>
+            <ChevronLeft className='h-5 w-5' />
+          </button>
         </div>
       )}
 
       {showRightScroll && (
         <div
-          className={`hidden sm:flex absolute right-0 top-0 bottom-0 w-16 items-center justify-center z-[600] transition-opacity duration-200 ${
+          className={`absolute inset-y-0 right-0 z-[600] hidden w-20 items-center justify-end bg-gradient-to-l from-[rgba(var(--ui-bg-elevated),0.92)] via-[rgba(var(--ui-bg-elevated),0.42)] to-transparent pr-2 transition-opacity duration-200 sm:flex ${
             isHovered ? 'opacity-100' : 'opacity-0'
           }`}
-          style={{
-            background: 'transparent',
-            pointerEvents: 'none', // 允许点击穿透
-          }}
         >
-          <div
-            className='absolute inset-0 flex items-center justify-center'
-            style={{
-              top: '40%',
-              bottom: '60%',
-              right: '-4.5rem',
-              pointerEvents: 'auto',
-            }}
+          <button
+            className='pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[rgba(var(--ui-surface-strong),0.88)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition duration-200 hover:scale-[1.04] hover:border-white/20 hover:bg-[rgba(var(--ui-surface-strong),0.98)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40'
+            onClick={handleScrollRightClick}
+            type='button'
           >
-            <button
-              onClick={handleScrollRightClick}
-              className='w-12 h-12 bg-white/95 rounded-full shadow-lg flex items-center justify-center hover:bg-white border border-gray-200 transition-transform hover:scale-105 dark:bg-gray-800/90 dark:hover:bg-gray-700 dark:border-gray-600'
-            >
-              <ChevronRight className='w-6 h-6 text-gray-600 dark:text-gray-300' />
-            </button>
-          </div>
+            <ChevronRight className='h-5 w-5' />
+          </button>
         </div>
       )}
     </div>

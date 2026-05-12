@@ -16,6 +16,8 @@ import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
+import CardActions from '@/components/ui/CardActions';
+import Surface from '@/components/ui/Surface';
 
 interface VideoCardProps {
   id?: string;
@@ -58,21 +60,24 @@ export default function VideoCard({
 }: VideoCardProps) {
   const router = useRouter();
   const [favorited, setFavorited] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [hasImageLoaded, setHasImageLoaded] = useState(false);
 
   const isAggregate = from === 'search' && !!items?.length;
 
   const aggregateData = useMemo(() => {
     if (!isAggregate || !items) return null;
+
     const countMap = new Map<string | number, number>();
     const episodeCountMap = new Map<number, number>();
+
     items.forEach((item) => {
       if (item.douban_id && item.douban_id !== 0) {
         countMap.set(item.douban_id, (countMap.get(item.douban_id) || 0) + 1);
       }
-      const len = item.episodes?.length || 0;
-      if (len > 0) {
-        episodeCountMap.set(len, (episodeCountMap.get(len) || 0) + 1);
+
+      const length = item.episodes?.length || 0;
+      if (length > 0) {
+        episodeCountMap.set(length, (episodeCountMap.get(length) || 0) + 1);
       }
     });
 
@@ -81,12 +86,14 @@ export default function VideoCard({
     ) => {
       let maxCount = 0;
       let result: T | undefined;
-      map.forEach((cnt, key) => {
-        if (cnt > maxCount) {
-          maxCount = cnt;
+
+      map.forEach((count, key) => {
+        if (count > maxCount) {
+          maxCount = count;
           result = key;
         }
       });
+
       return result;
     };
 
@@ -113,14 +120,13 @@ export default function VideoCard({
       : 'tv'
     : type;
 
-  // 获取收藏状态
   useEffect(() => {
     if (from === 'douban' || !actualSource || !actualId) return;
 
     const fetchFavoriteStatus = async () => {
       try {
-        const fav = await isFavorited(actualSource, actualId);
-        setFavorited(fav);
+        const nextFavorited = await isFavorited(actualSource, actualId);
+        setFavorited(nextFavorited);
       } catch (err) {
         throw new Error('检查收藏状态失败');
       }
@@ -128,14 +134,11 @@ export default function VideoCard({
 
     fetchFavoriteStatus();
 
-    // 监听收藏状态更新事件
     const storageKey = generateStorageKey(actualSource, actualId);
     const unsubscribe = subscribeToDataUpdates(
       'favoritesUpdated',
       (newFavorites: Record<string, Favorite>) => {
-        // 检查当前项目是否在新的收藏列表中
-        const isNowFavorited = !!newFavorites[storageKey];
-        setFavorited(isNowFavorited);
+        setFavorited(!!newFavorites[storageKey]);
       }
     );
 
@@ -143,17 +146,17 @@ export default function VideoCard({
   }, [from, actualSource, actualId]);
 
   const handleToggleFavorite = useCallback(
-    async (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
+    async (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
       if (from === 'douban' || !actualSource || !actualId) return;
+
       try {
         if (favorited) {
-          // 如果已收藏，删除收藏
           await deleteFavorite(actualSource, actualId);
           setFavorited(false);
         } else {
-          // 如果未收藏，添加收藏
           await saveFavorite(actualSource, actualId, {
             title: actualTitle,
             source_name: source_name || '',
@@ -169,23 +172,25 @@ export default function VideoCard({
       }
     },
     [
-      from,
-      actualSource,
-      actualId,
-      actualTitle,
-      source_name,
-      actualYear,
-      actualPoster,
       actualEpisodes,
+      actualId,
+      actualPoster,
+      actualSource,
+      actualTitle,
+      actualYear,
       favorited,
+      from,
+      source_name,
     ]
   );
 
   const handleDeleteRecord = useCallback(
-    async (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
+    async (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
       if (from !== 'playrecord' || !actualSource || !actualId) return;
+
       try {
         await deletePlayRecord(actualSource, actualId);
         onDelete?.();
@@ -193,7 +198,7 @@ export default function VideoCard({
         throw new Error('删除播放记录失败');
       }
     },
-    [from, actualSource, actualId, onDelete]
+    [actualId, actualSource, from, onDelete]
   );
 
   const handleClick = useCallback(() => {
@@ -203,7 +208,10 @@ export default function VideoCard({
           actualYear ? `&year=${actualYear}` : ''
         }${actualSearchType ? `&stype=${actualSearchType}` : ''}`
       );
-    } else if (actualSource && actualId) {
+      return;
+    }
+
+    if (actualSource && actualId) {
       router.push(
         `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(
           actualTitle
@@ -215,15 +223,15 @@ export default function VideoCard({
       );
     }
   }, [
-    from,
-    actualSource,
     actualId,
-    router,
-    actualTitle,
-    actualYear,
-    isAggregate,
     actualQuery,
     actualSearchType,
+    actualSource,
+    actualTitle,
+    actualYear,
+    from,
+    isAggregate,
+    router,
   ]);
 
   const config = useMemo(() => {
@@ -265,155 +273,157 @@ export default function VideoCard({
         showRating: !!rate,
       },
     };
+
     return configs[from] || configs.search;
-  }, [from, isAggregate, actualDoubanId, rate]);
+  }, [actualDoubanId, from, isAggregate, rate]);
 
   const isSmall = size === 'small';
+  const badgeSizeClass = isSmall ? 'text-[10px] px-2 py-1' : 'text-xs px-2.5 py-1';
+  const iconButtonClass =
+    'inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white shadow-lg backdrop-blur-md transition duration-200 hover:scale-[1.04] hover:border-white/20 hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
+  const posterActionLabel = `打开 ${actualTitle} 海报`;
+  const titleActionLabel = `打开 ${actualTitle}`;
 
   return (
-    <div
-      className={`group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-300 ease-in-out hover:scale-[1] hover:z-[500] ${
-        isSmall ? 'scale-75 origin-top-left' : ''
+    <article
+      className={`group relative w-full transition-all duration-300 ease-in-out hover:z-[500] ${
+        isSmall ? 'origin-top-left scale-75' : ''
       }`}
-      onClick={handleClick}
     >
-      {/* 海报容器 */}
-      <div className='relative aspect-[2/3] overflow-hidden rounded-lg'>
-        {/* 骨架屏 */}
-        {!isLoading && <ImagePlaceholder aspectRatio='aspect-[2/3]' />}
-        {/* 图片 */}
-        <Image
-          src={processImageUrl(actualPoster)}
-          alt={actualTitle}
-          fill
-          className='object-cover'
-          referrerPolicy='no-referrer'
-          onLoad={() => setIsLoading(true)}
-        />
+      <Surface className='relative overflow-hidden' variant='raised'>
+        <div className='relative aspect-[2/3] overflow-hidden rounded-[inherit]'>
+          {!hasImageLoaded ? (
+            <ImagePlaceholder aspectRatio='aspect-[2/3]' />
+          ) : null}
 
-        {/* 悬浮遮罩 */}
-        <div className='absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 transition-opacity duration-300 ease-in-out group-hover:opacity-100' />
+          <Image
+            alt={actualTitle}
+            className='object-cover'
+            fill
+            onLoad={() => setHasImageLoaded(true)}
+            referrerPolicy='no-referrer'
+            src={processImageUrl(actualPoster)}
+          />
 
-        {/* 播放按钮 */}
-        {config.showPlayButton && (
-          <div className='absolute inset-0 flex items-center justify-center opacity-0 transition-all duration-300 ease-in-out delay-75 group-hover:opacity-100 group-hover:scale-100'>
-            <PlayCircleIcon
-              size={isSmall ? 30 : 50}
-              strokeWidth={0.8}
-              className='text-white fill-transparent transition-all duration-300 ease-out hover:fill-green-500 hover:scale-[1.1]'
-            />
-          </div>
-        )}
+          <button
+            aria-label={posterActionLabel}
+            className='absolute inset-0 z-10 rounded-[inherit]'
+            onClick={handleClick}
+            type='button'
+          />
 
-        {/* 操作按钮 */}
-        {(config.showHeart || config.showCheckCircle) && (
-          <div className='absolute bottom-3 right-3 flex gap-3 opacity-0 translate-y-2 transition-all duration-300 ease-in-out group-hover:opacity-100 group-hover:translate-y-0'>
-            {config.showCheckCircle && (
-              <span className='inline-flex p-1.5'>
-                <CheckCircle
-                  onClick={handleDeleteRecord}
-                  size={isSmall ? 20 : 24}
-                  className='text-white transition-all duration-300 ease-out hover:stroke-green-500 hover:scale-[1.1]'
-                />
-              </span>
-            )}
-            {config.showHeart && (
-              <span className='inline-flex p-1.5'>
-                <Heart
-                  onClick={handleToggleFavorite}
-                  size={isSmall ? 20 : 24}
-                  className={`transition-all duration-300 ease-out ${
-                    favorited
-                      ? 'fill-red-600 stroke-red-600'
-                      : 'fill-transparent stroke-white hover:stroke-red-400'
-                  } hover:scale-[1.1]`}
-                />
-              </span>
-            )}
-          </div>
-        )}
+          <div className='pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 transition-opacity duration-300 group-hover:opacity-100' />
 
-        {/* 徽章 */}
-        {config.showRating && rate && (
-          <div
-            className={`absolute top-2 right-2 bg-pink-500 text-white font-bold rounded-full flex items-center justify-center shadow-md transition-all duration-300 ease-out group-hover:scale-110 ${
-              isSmall ? 'text-[10px] w-6 h-6' : 'text-sm w-9 h-9'
-            }`}
-          >
-            {rate}
-          </div>
-        )}
-
-        {actualEpisodes && actualEpisodes > 1 && (
-          <div
-            className={`absolute top-2 right-2 bg-green-500 text-white font-semibold rounded-md shadow-md transition-all duration-300 ease-out group-hover:scale-110 ${
-              isSmall ? 'text-[10px] px-1 py-0.5' : 'text-xs px-2 py-1'
-            }`}
-          >
-            {currentEpisode
-              ? `${currentEpisode}/${actualEpisodes}`
-              : actualEpisodes}
-          </div>
-        )}
-
-        {/* 豆瓣链接 */}
-        {config.showDoubanLink && actualDoubanId && (
-          <a
-            href={`https://movie.douban.com/subject/${actualDoubanId}`}
-            target='_blank'
-            rel='noopener noreferrer'
-            onClick={(e) => e.stopPropagation()}
-            className='absolute top-2 left-2 opacity-0 -translate-x-2 transition-all duration-300 ease-in-out delay-100 group-hover:opacity-100 group-hover:translate-x-0'
-          >
-            <div
-              className={`bg-green-500 text-white font-bold rounded-full flex items-center justify-center shadow-md hover:bg-green-600 hover:scale-[1.1] transition-all duration-300 ease-out ${
-                isSmall ? 'text-[10px] w-6 h-6' : 'text-sm w-9 h-9'
-              }`}
-            >
-              <Link size={isSmall ? 14 : 18} />
+          {config.showPlayButton ? (
+            <div className='pointer-events-none absolute inset-0 z-10 flex items-center justify-center opacity-0 transition-all duration-300 ease-in-out delay-75 group-hover:opacity-100'>
+              <PlayCircleIcon
+                className='fill-transparent text-white drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out'
+                size={isSmall ? 34 : 52}
+                strokeWidth={0.9}
+              />
             </div>
-          </a>
-        )}
-      </div>
+          ) : null}
 
-      {/* 进度条 */}
-      {config.showProgress && progress !== undefined && (
-        <div className='mt-1 h-1 w-full bg-gray-200 rounded-full overflow-hidden'>
+          {config.showDoubanLink && actualDoubanId ? (
+            <a
+              aria-label='打开豆瓣页面'
+              className='absolute left-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-emerald-500/90 text-white shadow-lg backdrop-blur-md transition duration-200 hover:scale-[1.04] hover:bg-emerald-400'
+              href={`https://movie.douban.com/subject/${actualDoubanId}`}
+              onClick={(event) => event.stopPropagation()}
+              rel='noopener noreferrer'
+              target='_blank'
+            >
+              <Link size={isSmall ? 14 : 16} />
+            </a>
+          ) : null}
+
+          <div className='absolute right-3 top-3 z-20 flex flex-col items-end gap-2'>
+            {config.showRating && rate ? (
+              <span
+                className={`inline-flex items-center justify-center rounded-full bg-pink-500 font-semibold text-white shadow-lg ${badgeSizeClass}`}
+              >
+                {rate}
+              </span>
+            ) : null}
+
+            {actualEpisodes && actualEpisodes > 1 ? (
+              <span
+                className={`inline-flex items-center justify-center rounded-full bg-emerald-500/90 font-semibold text-white shadow-lg ${badgeSizeClass}`}
+              >
+                {currentEpisode
+                  ? `${currentEpisode}/${actualEpisodes}`
+                  : actualEpisodes}
+              </span>
+            ) : null}
+          </div>
+
+          {config.showHeart || config.showCheckCircle ? (
+            <CardActions>
+              {config.showCheckCircle ? (
+                <button
+                  aria-label='删除播放记录'
+                  className={iconButtonClass}
+                  onClick={handleDeleteRecord}
+                  type='button'
+                >
+                  <CheckCircle size={isSmall ? 18 : 20} />
+                </button>
+              ) : null}
+
+              {config.showHeart ? (
+                <button
+                  aria-label='切换收藏'
+                  className={`${iconButtonClass} ${
+                    favorited ? 'border-red-400/40 bg-red-500/20 text-red-300' : ''
+                  }`}
+                  onClick={handleToggleFavorite}
+                  type='button'
+                >
+                  <Heart
+                    className={favorited ? 'fill-current' : ''}
+                    size={isSmall ? 18 : 20}
+                  />
+                </button>
+              ) : null}
+            </CardActions>
+          ) : null}
+        </div>
+      </Surface>
+
+      {config.showProgress ? (
+        <div className='mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10'>
           <div
-            className='h-full bg-green-500 transition-all duration-500 ease-out'
+            className='h-full rounded-full bg-emerald-400 transition-all duration-500 ease-out'
             style={{ width: `${progress}%` }}
           />
         </div>
-      )}
+      ) : null}
 
-      {/* 标题与来源 */}
-      <div className={`text-center ${isSmall ? 'mt-1' : 'mt-2'}`}>
-        <div className='relative'>
+      <div className={`text-center ${isSmall ? 'mt-2' : 'mt-3'}`}>
+        <button
+          aria-label={titleActionLabel}
+          className={`block w-full truncate font-semibold text-[rgb(var(--ui-text))] transition-colors duration-300 hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent ${
+            isSmall ? 'text-xs' : 'text-sm'
+          }`}
+          onClick={handleClick}
+          title={actualTitle}
+          type='button'
+        >
+          {actualTitle}
+        </button>
+
+        {config.showSourceName && source_name ? (
           <span
-            className={`block font-semibold truncate text-gray-900 dark:text-gray-100 transition-colors duration-300 ease-in-out group-hover:text-green-600 dark:group-hover:text-green-400 peer ${
-              isSmall ? 'text-xs' : 'text-sm'
+            className={`mt-1 block text-[rgb(var(--ui-text-muted))] ${
+              isSmall ? 'text-[10px]' : 'text-xs'
             }`}
           >
-            {actualTitle}
-          </span>
-          {/* 自定义 tooltip */}
-          <div className='absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-800 text-white text-xs rounded-md shadow-lg opacity-0 invisible peer-hover:opacity-100 peer-hover:visible transition-all duration-200 ease-out delay-100 whitespace-nowrap pointer-events-none'>
-            {actualTitle}
-            <div className='absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800'></div>
-          </div>
-        </div>
-        {config.showSourceName && source_name && (
-          <span
-            className={`block text-gray-500 dark:text-gray-400 ${
-              isSmall ? 'text-[10px] mt-0.5' : 'text-xs mt-1'
-            }`}
-          >
-            <span className='inline-block border rounded px-2 py-0.5 border-gray-500/60 dark:border-gray-400/60 transition-all duration-300 ease-in-out group-hover:border-green-500/60 group-hover:text-green-600 dark:group-hover:text-green-400'>
+            <span className='inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 transition-colors duration-300 group-hover:border-emerald-400/30 group-hover:text-emerald-200'>
               {source_name}
             </span>
           </span>
-        )}
+        ) : null}
       </div>
-    </div>
+    </article>
   );
 }
