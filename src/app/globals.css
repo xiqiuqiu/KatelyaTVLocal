@@ -1,4 +1,4 @@
-/* 加载骨架屏淡紫色主题 */
+/* 加载骨架屏主题 */
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
@@ -29,18 +29,14 @@
   animation: fadeInUp 0.6s ease-out forwards;
 }
 
-/* KatelyaTV Logo 彩虹渐变动画 - 简化版本 */
+/* KatelyaTV Logo 渐变动画 - token 驱动版本 */
 .katelya-logo {
   background: linear-gradient(
     45deg,
-    #ff6b6b,
-    #4ecdc4,
-    #45b7d1,
-    #96ceb4,
-    #ffc645,
-    #fd79a8,
-    #6c5ce7,
-    #a29bfe
+    rgb(var(--ui-accent)),
+    rgb(var(--ui-accent-warm)),
+    rgb(var(--ui-success)),
+    rgb(var(--ui-accent))
   );
   background-size: 400% 400%;
   background-clip: text;
@@ -84,9 +80,9 @@
   height: 400px;
   background: radial-gradient(
     ellipse,
-    rgba(147, 112, 219, 0.15) 0%,
-    rgba(255, 107, 107, 0.1) 30%,
-    rgba(76, 205, 196, 0.08) 60%,
+    rgba(var(--ui-accent), 0.16) 0%,
+    rgba(var(--ui-accent-warm), 0.1) 36%,
+    rgba(var(--ui-success), 0.08) 64%,
     transparent 100%
   );
   animation: glow-pulse 4s ease-in-out infinite;
@@ -112,15 +108,10 @@
   font-weight: 900;
   background: linear-gradient(
     45deg,
-    #ff6b6b,
-    #4ecdc4,
-    #45b7d1,
-    #96ceb4,
-    #ffc645,
-    #fd79a8,
-    #6c5ce7,
-    #a29bfe,
-    #ff6b6b
+    rgb(var(--ui-accent)),
+    rgb(var(--ui-accent-warm)),
+    rgb(var(--ui-success)),
+    rgb(var(--ui-accent))
   );
   background-size: 600% 600%;
   background-clip: text;
@@ -130,7 +121,7 @@
   position: relative;
   z-index: 2;
   letter-spacing: 0.02em;
-  text-shadow: 0 10px 30px rgba(147, 112, 219, 0.3);
+  text-shadow: 0 10px 30px rgba(var(--ui-accent), 0.28);
   cursor: default;
   user-select: none;
 }
@@ -155,14 +146,10 @@
 .main-logo-subtitle {
   font-size: 1.1rem;
   font-weight: 500;
-  color: rgba(147, 112, 219, 0.8);
+  color: rgba(var(--ui-text-muted), 0.9);
   position: relative;
   z-index: 2;
   letter-spacing: 0.1em;
-}
-
-.dark .main-logo-subtitle {
-  color: rgba(196, 181, 253, 0.8);
 }
 
 /* 装饰性粒子效果 - 简化版本 */
@@ -188,7 +175,11 @@
   right: 20%;
   width: 8px;
   height: 8px;
-  background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+  background: linear-gradient(
+    45deg,
+    rgb(var(--ui-accent)),
+    rgb(var(--ui-success))
+  );
   animation-delay: -2s;
 }
 
@@ -197,7 +188,11 @@
   left: 20%;
   width: 6px;
   height: 6px;
-  background: linear-gradient(45deg, #45b7d1, #96ceb4);
+  background: linear-gradient(
+    45deg,
+    rgb(var(--ui-accent)),
+    rgb(var(--ui-success))
+  );
   animation-delay: -3s;
 }
 
@@ -206,7 +201,11 @@
   left: 25%;
   width: 10px;
   height: 10px;
-  background: linear-gradient(45deg, #96ceb4, #ffc645);
+  background: linear-gradient(
+    45deg,
+    rgb(var(--ui-success)),
+    rgb(var(--ui-accent-warm))
+  );
   animation-delay: -4s;
 }
 
@@ -215,7 +214,11 @@
   right: 30%;
   width: 5px;
   height: 5px;
-  background: linear-gradient(45deg, #6c5ce7, #a29bfe);
+  background: linear-gradient(
+    45deg,
+    rgb(var(--ui-accent)),
+    rgb(var(--ui-text-muted))
+  );
   animation-delay: -1s;
 }
 
@@ -224,7 +227,11 @@
   left: 10%;
   width: 7px;
   height: 7px;
-  background: linear-gradient(45deg, #fd79a8, #ffc645);
+  background: linear-gradient(
+    45deg,
+    rgb(var(--ui-accent-warm)),
+    rgb(var(--ui-accent))
+  );
   animation-delay: -3s;
 }
 
@@ -233,7 +240,11 @@
   right: 15%;
   width: 9px;
   height: 9px;
-  background: linear-gradient(45deg, #a29bfe, #ff6b6b);
+  background: linear-gradient(
+    45deg,
+    rgb(var(--ui-text-muted)),
+    rgb(var(--ui-accent-warm))
+  );
   animation-delay: -5s;
 }
 
@@ -329,7 +340,11 @@
   left: 10%;
   width: 20px;
   height: 20px;
-  background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+  background: linear-gradient(
+    45deg,
+    rgb(var(--ui-accent)),
+    rgb(var(--ui-success))
+  );
   animation-delay: -1s;
 }
 
@@ -338,7 +353,11 @@
   right: 15%;
   width: 15px;
   height: 15px;
-  background: linear-gradient(45deg, #45b7d1, #96ceb4);
+  background: linear-gradient(
+    45deg,
+    rgb(var(--ui-accent)),
+    rgb(var(--ui-success))
+  );
   animation-delay: -3s;
 }
 
@@ -347,7 +366,11 @@
   left: 20%;
   width: 25px;
   height: 25px;
-  background: linear-gradient(45deg, #ffc645, #fd79a8);
+  background: linear-gradient(
+    45deg,
+    rgb(var(--ui-accent-warm)),
+    rgb(var(--ui-accent))
+  );
   animation-delay: -2s;
 }
 
@@ -356,7 +379,11 @@
   right: 25%;
   width: 18px;
   height: 18px;
-  background: linear-gradient(45deg, #6c5ce7, #a29bfe);
+  background: linear-gradient(
+    45deg,
+    rgb(var(--ui-accent)),
+    rgb(var(--ui-text-muted))
+  );
   animation-delay: -4s;
 }
 
@@ -386,14 +413,10 @@
   font-weight: 700;
   background: linear-gradient(
     45deg,
-    #ff6b6b,
-    #4ecdc4,
-    #45b7d1,
-    #96ceb4,
-    #ffc645,
-    #fd79a8,
-    #6c5ce7,
-    #a29bfe
+    rgb(var(--ui-accent)),
+    rgb(var(--ui-accent-warm)),
+    rgb(var(--ui-success)),
+    rgb(var(--ui-accent))
   );
   background-size: 400% 400%;
   background-clip: text;
@@ -514,17 +537,17 @@ img {
 
 /* 选择文本样式 */
 ::selection {
-  background: rgba(147, 112, 219, 0.3);
+  background: rgba(var(--ui-accent), 0.28);
   color: inherit;
 }
 
 .dark ::selection {
-  background: rgba(196, 181, 253, 0.3);
+  background: rgba(var(--ui-accent), 0.34);
 }
 
 /* 焦点样式 */
 :focus {
-  outline: 2px solid rgba(147, 112, 219, 0.5);
+  outline: 2px solid rgba(var(--ui-accent), 0.55);
   outline-offset: 2px;
 }
 
