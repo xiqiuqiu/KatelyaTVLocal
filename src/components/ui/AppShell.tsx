@@ -16,7 +16,7 @@ export default function AppShell({
   activePath = '/',
 }: AppShellProps) {
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
   const desktopOffsetClass = useMemo(() => {
     if (!isSidebarVisible) {

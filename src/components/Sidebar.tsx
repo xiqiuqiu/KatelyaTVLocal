@@ -24,7 +24,7 @@ interface SidebarContextType {
 }
 
 const SidebarContext = createContext<SidebarContextType>({
-  isCollapsed: false,
+  isCollapsed: true,
 });
 
 export const useSidebar = () => useContext(SidebarContext);
@@ -66,7 +66,7 @@ const Sidebar = ({
     ) {
       return window.__sidebarCollapsed;
     }
-    return false; // 默认展开
+    return true; // 默认使用设计图中的紧凑图标栏
   });
 
   // 首次挂载时读取 localStorage，以便刷新后仍保持上次的折叠状态
@@ -149,17 +149,21 @@ const Sidebar = ({
       <div className='hidden md:flex'>
         <aside
           data-sidebar
+          data-testid='desktop-sidebar'
+          data-collapsed={isCollapsed}
           className={`fixed inset-y-0 left-0 z-40 flex h-screen flex-col border-r border-white/10 bg-[rgba(12,16,24,0.86)] pt-[calc(4rem+env(safe-area-inset-top))] shadow-ui-strong backdrop-blur-2xl transition-all duration-300 ${
             isCollapsed ? 'w-20' : 'w-64'
           } ${
-            visible ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0'
+            visible
+              ? 'translate-x-0 opacity-100'
+              : '-translate-x-full opacity-0'
           }`}
         >
           <div className='flex h-full flex-col px-3 pb-6'>
             <div className='relative flex h-16 items-center'>
               <button
                 onClick={handleToggle}
-                aria-label='折叠侧边栏'
+                aria-label={isCollapsed ? '展开侧边栏' : '折叠侧边栏'}
                 className={`absolute top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-ui-sm border border-white/10 bg-white/5 text-[rgb(var(--ui-text-muted))] transition hover:bg-white/10 hover:text-[rgb(var(--ui-text))] ${
                   isCollapsed ? 'left-1/2 -translate-x-1/2' : 'left-3'
                 }`}
