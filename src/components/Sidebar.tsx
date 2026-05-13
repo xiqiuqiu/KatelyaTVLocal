@@ -33,6 +33,8 @@ interface SidebarProps {
   onToggle?: (collapsed: boolean) => void;
   activePath?: string;
   visible?: boolean;
+  collapsed?: boolean;
+  showCollapseToggle?: boolean;
 }
 
 // 在浏览器环境下通过全局变量缓存折叠状态，避免组件重新挂载时出现初始值闪烁
@@ -55,11 +57,14 @@ const Sidebar = ({
   onToggle,
   activePath = '/',
   visible = true,
+  collapsed,
+  showCollapseToggle = true,
 }: SidebarProps) => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+  const isControlled = typeof collapsed === 'boolean';
+  const [localCollapsed, setLocalCollapsed] = useState<boolean>(() => {
     if (
       typeof window !== 'undefined' &&
       typeof window.__sidebarCollapsed === 'boolean'
@@ -68,16 +73,19 @@ const Sidebar = ({
     }
     return true; // 默认使用设计图中的紧凑图标栏
   });
+  const isCollapsed = isControlled ? collapsed : localCollapsed;
 
   // 首次挂载时读取 localStorage，以便刷新后仍保持上次的折叠状态
   useLayoutEffect(() => {
+    if (isControlled) return;
+
     const saved = localStorage.getItem('sidebarCollapsed');
     if (saved !== null) {
       const val = JSON.parse(saved);
-      setIsCollapsed(val);
+      setLocalCollapsed(val);
       window.__sidebarCollapsed = val;
     }
-  }, []);
+  }, [isControlled]);
 
   // 当折叠状态变化时，同步到 <html> data 属性，供首屏 CSS 使用
   useLayoutEffect(() => {
@@ -111,11 +119,14 @@ const Sidebar = ({
 
   const handleToggle = () => {
     const newState = !isCollapsed;
-    setIsCollapsed(newState);
+    if (!isControlled) {
+      setLocalCollapsed(newState);
+    }
     localStorage.setItem('sidebarCollapsed', JSON.stringify(newState));
     if (typeof window !== 'undefined') {
       window.__sidebarCollapsed = newState;
     }
+    onToggle?.(newState);
   };
 
   const contextValue = {
@@ -161,15 +172,17 @@ const Sidebar = ({
         >
           <div className='flex h-full flex-col px-3 pb-6'>
             <div className='relative flex h-16 items-center'>
-              <button
-                onClick={handleToggle}
-                aria-label={isCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-                className={`absolute top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-ui-sm border border-white/10 bg-white/5 text-[rgb(var(--ui-text-muted))] transition hover:bg-white/10 hover:text-[rgb(var(--ui-text))] ${
-                  isCollapsed ? 'left-1/2 -translate-x-1/2' : 'left-3'
-                }`}
-              >
-                <Menu className='h-4 w-4' />
-              </button>
+              {showCollapseToggle && (
+                <button
+                  onClick={handleToggle}
+                  aria-label={isCollapsed ? '展开侧边栏' : '折叠侧边栏'}
+                  className={`absolute top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-ui-sm border border-white/10 bg-white/5 text-[rgb(var(--ui-text-muted))] transition hover:bg-white/10 hover:text-[rgb(var(--ui-text))] ${
+                    isCollapsed ? 'left-1/2 -translate-x-1/2' : 'left-3'
+                  }`}
+                >
+                  <Menu className='h-4 w-4' />
+                </button>
+              )}
             </div>
 
             <nav className='mt-4 space-y-2'>

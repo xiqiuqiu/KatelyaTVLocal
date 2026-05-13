@@ -9,12 +9,12 @@ import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
 
 interface TopSearchBarProps {
-  isSidebarVisible?: boolean;
+  isSidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
 }
 
 const TopSearchBar = ({
-  isSidebarVisible = true,
+  isSidebarCollapsed = true,
   onToggleSidebar,
 }: TopSearchBarProps) => {
   const router = useRouter();
@@ -42,8 +42,8 @@ const TopSearchBar = ({
         <div className='flex-shrink-0'>
           <button
             onClick={onToggleSidebar}
-            aria-pressed={isSidebarVisible}
-            aria-label='切换侧边栏'
+            aria-pressed={!isSidebarCollapsed}
+            aria-label={isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
             className='inline-flex h-11 w-11 items-center justify-center rounded-ui-sm border border-white/10 bg-white/5 text-[rgb(var(--ui-text-muted))] transition hover:bg-white/10 hover:text-[rgb(var(--ui-text))]'
           >
             <Menu size={20} />

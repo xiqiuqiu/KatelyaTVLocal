@@ -15,33 +15,52 @@ export default function AppShell({
   children,
   activePath = '/',
 }: AppShellProps) {
-  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
-
-  const desktopOffsetClass = useMemo(() => {
-    if (!isSidebarVisible) {
-      return 'md:pl-0';
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.__sidebarCollapsed === 'boolean'
+    ) {
+      return window.__sidebarCollapsed;
     }
 
+    if (typeof window !== 'undefined') {
+      const saved = window.localStorage.getItem('sidebarCollapsed');
+      if (saved !== null) {
+        return JSON.parse(saved);
+      }
+    }
+
+    return true;
+  });
+
+  const desktopOffsetClass = useMemo(() => {
     return isSidebarCollapsed ? 'md:pl-20' : 'md:pl-64';
-  }, [isSidebarCollapsed, isSidebarVisible]);
+  }, [isSidebarCollapsed]);
+
+  const handleToggleSidebar = () => {
+    setIsSidebarCollapsed((current) => {
+      const next = !current;
+      if (typeof window !== 'undefined') {
+        window.__sidebarCollapsed = next;
+        window.localStorage.setItem('sidebarCollapsed', JSON.stringify(next));
+      }
+      return next;
+    });
+  };
 
   return (
     <div className='ui-app-bg min-h-screen text-[rgb(var(--ui-text))]'>
       <TopSearchBar
-        isSidebarVisible={isSidebarVisible}
-        onToggleSidebar={() => setIsSidebarVisible((current) => !current)}
+        isSidebarCollapsed={isSidebarCollapsed}
+        onToggleSidebar={handleToggleSidebar}
       />
       <div className='relative min-h-[calc(100vh-4rem)]'>
-        <div
-          className={`hidden md:block transition-all duration-300 ${
-            isSidebarVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
-          }`}
-        >
+        <div className='hidden md:block transition-all duration-300'>
           <Sidebar
             activePath={activePath}
             onToggle={setIsSidebarCollapsed}
-            visible={isSidebarVisible}
+            collapsed={isSidebarCollapsed}
+            showCollapseToggle={false}
           />
         </div>
         <main

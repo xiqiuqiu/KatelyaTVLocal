@@ -36,4 +36,18 @@ describe('Sidebar shell density', () => {
     expect(screen.getByText('首页')).toBeInTheDocument();
     expect(window.localStorage.getItem('sidebarCollapsed')).toBe('false');
   });
+
+  it('can hide the internal collapse button when the shell owns the control', () => {
+    render(
+      <Sidebar activePath='/' collapsed={true} showCollapseToggle={false} />
+    );
+
+    expect(screen.getByTestId('desktop-sidebar')).toHaveAttribute(
+      'data-collapsed',
+      'true'
+    );
+    expect(
+      screen.queryByRole('button', { name: '展开侧边栏' })
+    ).not.toBeInTheDocument();
+  });
 });
