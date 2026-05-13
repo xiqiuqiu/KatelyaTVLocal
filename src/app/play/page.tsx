@@ -2012,11 +2012,11 @@ function PlayPageClient() {
         />
 
         <div className='grid gap-6 2xl:grid-cols-[minmax(0,1fr)_380px]'>
-          <Surface variant='raised' className='overflow-hidden p-3'>
+          <Surface variant='raised' className='min-w-0 overflow-hidden p-3'>
             <div className='relative aspect-video min-h-[260px] w-full overflow-hidden md:min-h-[360px] lg:min-h-[460px] 2xl:min-h-[620px]'>
               <div
                 ref={artRef}
-                className='h-full w-full overflow-hidden rounded-ui-md bg-black shadow-ui-strong'
+                className='play-page-player h-full w-full overflow-hidden rounded-ui-md bg-black shadow-ui-strong'
               ></div>
 
               {/* 跳过片头片尾控制器 */}
@@ -2075,7 +2075,7 @@ function PlayPageClient() {
             </div>
           </Surface>
 
-          <PlayerSidebar className='2xl:sticky 2xl:top-24 2xl:self-start'>
+          <PlayerSidebar className='min-w-0 2xl:sticky 2xl:top-24 2xl:self-start'>
             <div className='mb-4 flex items-center justify-between gap-3'>
               <div>
                 <p className='text-xs font-semibold uppercase tracking-[0.2em] text-[rgb(var(--ui-accent-warm))]'>

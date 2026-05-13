@@ -12,8 +12,8 @@ export default function PlayerHeader({
   actions,
 }: PlayerHeaderProps) {
   return (
-    <div className='flex flex-col gap-4 rounded-ui-lg border border-white/10 bg-[rgba(var(--ui-surface),0.56)] p-5 shadow-ui-soft backdrop-blur-xl lg:flex-row lg:items-start lg:justify-between'>
-      <div className='min-w-0'>
+    <div className='flex items-start justify-between gap-3 rounded-ui-lg border border-white/10 bg-[rgba(var(--ui-surface),0.56)] p-5 shadow-ui-soft backdrop-blur-xl sm:gap-4'>
+      <div className='min-w-0 flex-1'>
         <p className='mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-[rgb(var(--ui-accent-warm))]'>
           正在播放
         </p>
@@ -27,7 +27,7 @@ export default function PlayerHeader({
         ) : null}
       </div>
       {actions ? (
-        <div className='flex flex-wrap items-center gap-2'>{actions}</div>
+        <div className='flex shrink-0 items-start gap-2'>{actions}</div>
       ) : null}
     </div>
   );

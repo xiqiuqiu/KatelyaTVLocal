@@ -551,6 +551,41 @@ img {
   outline-offset: 2px;
 }
 
+/* 播放页移动端控制栏收缩，避免小屏设备把整页宽度撑大 */
+@media (max-width: 420px) {
+  .play-page-player .art-video-player,
+  .play-page-player .art-bottom,
+  .play-page-player .art-controls,
+  .play-page-player .art-controls-left,
+  .play-page-player .art-controls-right,
+  .play-page-player .art-control-progress {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+
+  .play-page-player .art-controls-left {
+    flex: 1 1 auto !important;
+  }
+
+  .play-page-player .art-controls-right {
+    flex: 0 0 auto !important;
+  }
+
+  .play-page-player .art-control-setting,
+  .play-page-player .art-control-pip,
+  .play-page-player .art-control-fullscreenWeb {
+    display: none !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .play-page-player .art-control-volume,
+  .play-page-player .art-control-time {
+    display: none !important;
+  }
+}
+
 /* 减少动画偏好 */
 @media (prefers-reduced-motion: reduce) {
   *,
