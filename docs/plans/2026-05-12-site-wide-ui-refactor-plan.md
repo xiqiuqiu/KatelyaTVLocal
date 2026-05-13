@@ -4,7 +4,7 @@
 
 **Goal:** Rebuild the KatelyaTV UI into one consistent visual and interaction system across login, homepage, search, category browsing, playback, and settings without breaking the current playback and data flows.
 
-**Architecture:** Keep existing page routes, data fetching, and playback business logic in place wherever possible, but extract the UI into a shared shell plus shared surface primitives so every page consumes the same rules. The implementation should separate visual structure from business logic first, then migrate page-by-page onto the new shell and primitives. Playback-specific logic in `/play` remains intact unless a UI requirement clearly forces a contained front-end interaction refactor.
+**Architecture:** Keep existing page routes, data fetching, and playback business logic in place wherever possible, but extract the UI into a shared shell plus shared surface primitives so every page consumes the same rules. The implementation should separate visual structure from business logic first, then migrate page-by-page onto the new shell and primitives. The design reference is used as a phased alignment target, not as a reason to blindly replace working flows; any UI change that touches business behavior must first be isolated, reviewed, and verified.
 
 **Tech Stack:** Next.js 14 App Router, React 18, Tailwind CSS, Testing Library + Jest, Lucide React, existing client-side localStorage/session flows.
 
@@ -14,6 +14,7 @@
 
 This plan implements:
 
+- A phased design-reference alignment pass against `UI_1.0_web.png`, with explicit business-impact checks before changing behavior
 - A shared visual token layer for color, spacing, border radius, shadow, panel opacity, and motion
 - A shared app shell for header, desktop navigation, mobile navigation, and page content width rules
 - Shared content primitives for section headers, content grids, list states, action links, and card behaviors
@@ -49,6 +50,24 @@ The highest-risk files are:
 
 Those files mix visual structure with business behavior, so they should be refactored in contained slices instead of rewritten wholesale.
 
+## Design Alignment Policy
+
+`UI_1.0_web.png` is the visual direction and acceptance reference for the web redesign, but implementation must stay grounded in the current codebase. Alignment happens in phases:
+
+- First align low-risk foundations: tokens, shared surfaces, spacing rhythm, button hierarchy, and typography rules
+- Then align shell structure where route behavior and navigation state can stay unchanged
+- Then align page sections using existing data sources before introducing new data assumptions
+- Only then evaluate deeper layout changes that require moving state, changing component ownership, or changing interaction behavior
+
+Every design-reference gap must be classified before implementation:
+
+- `visual-only`: tokens, spacing, color, radius, typography, card chrome, hover states
+- `structural`: layout placement, section order, shell density, card grid/list shape, responsive behavior
+- `behavioral`: navigation target, route/query preservation, source switching, resume behavior, settings persistence
+- `data-contract`: new fields, new ranking rules, new API data, or extra derived metadata required by the design
+
+Implementation order should prefer `visual-only` and `structural` changes that preserve the current route and data contracts. `behavioral` and `data-contract` changes need their own task, test, and verification path.
+
 ## Workload Estimate
 
 This is the working estimate for one engineer already familiar with the repo:
@@ -75,21 +94,25 @@ Use this checklist as the top-level rollout tracker. Detailed implementation ste
 - [ ] Confirm the current baseline passes `pnpm build`
 - [ ] Capture current browser screenshots for `/login`, `/`, `/search?q=庆余年`, `/douban?type=movie`, and `/play`
 - [ ] Freeze the redesign direction: dark cinematic shell, one card system, one action hierarchy, one overlay language
+- [ ] Treat `UI_1.0_web.png` as the phased visual acceptance reference for web layout, tokens, card states, and page density
+- [ ] For each design-reference gap, classify it as `visual-only`, `structural`, `behavioral`, or `data-contract` before implementation
+- [ ] Do not start a behavioral or data-contract change until the current business flow and rollback risk are documented
 
 ### Phase 1: Lock shared design rules
 
-- [ ] Add shared UI tokens for background, surface, border, text, accent, radius, shadow, and motion
+- [ ] Add shared UI tokens for background, surface, border, text, accent, radius, shadow, and motion using the exact web design-reference values
 - [ ] Import the token layer into the app root
 - [ ] Extend Tailwind with shared UI radii and shadows
 - [ ] Define the canonical nav item list in one shared file
 - [ ] Define shared page titles and section labels in one shared file
 - [ ] Add a shared shell component contract
+- [ ] Remove or quarantine legacy purple/rainbow/global styles that conflict with the design-reference token system
 
 ### Phase 2: Replace the global shell
 
 - [ ] Convert `PageLayout` into a thin wrapper around the new shell
 - [ ] Rebuild the top header with one consistent search region and tool region
-- [ ] Restyle the desktop sidebar to the new shell rules
+- [ ] Restyle the desktop sidebar toward the compact icon rail shown in `UI_1.0_web.png`, while keeping active-route and navigation behavior unchanged
 - [ ] Restyle the mobile bottom nav to the new shell rules
 - [ ] Keep active-route behavior unchanged during the visual migration
 - [ ] Add or update shell tests before continuing to page-level work
@@ -117,8 +140,12 @@ Use this checklist as the top-level rollout tracker. Detailed implementation ste
 ### Phase 5: Migrate browse pages
 
 - [ ] Refactor the homepage onto shared page and section primitives
+- [ ] Evaluate the homepage hero/recommendation area from `UI_1.0_web.png` against current available data before implementation
+- [ ] Restore the homepage hero/recommendation area using existing fetched content first; if new ranking/data is needed, split it into a separate data-contract task
+- [ ] Restore the `继续观看` row near the top of the homepage, using existing play-record data and the same card density as the design reference
 - [ ] Replace homepage ad-hoc section actions with the shared `查看更多` action component
 - [ ] Refactor the search page onto shared page and grid primitives
+- [ ] Rebuild the search result page with category tabs, filter/action row, compact result cards, and selected-card state only after confirming current query, aggregation, and result-routing behavior stays unchanged
 - [ ] Keep the `聚合` toggle behavior in place while restyling it
 - [ ] Refactor the Douban page onto shared page header, filter surface, and poster grid primitives
 - [ ] Normalize page spacing and content width across homepage, search, and Douban pages
@@ -128,7 +155,9 @@ Use this checklist as the top-level rollout tracker. Detailed implementation ste
 
 - [ ] Create a visual-only playback header wrapper
 - [ ] Create a visual-only playback sidebar wrapper
-- [ ] Move the playback page layout onto the new two-column shell without rewriting source logic
+- [ ] Move the playback page layout onto the design-reference playback structure without rewriting source logic
+- [ ] Keep the player as the primary visual block, but move source chips, episode grid, detail card, and recommendations in stages so source switching, episode switching, resume, and favorite state ownership do not change accidentally
+- [ ] If matching the design requires moving `EpisodeSelector` state or source-switching ownership, split that into a separate behavioral task with focused tests before changing layout
 - [ ] Restyle loading, empty, and error states to match the global surface system
 - [ ] Add explicit labels and stable structure to `EpisodeSelector` tabs and controls
 - [ ] Keep source switching, episode switching, resume, and favorite flows unchanged
@@ -153,6 +182,8 @@ Use this checklist as the top-level rollout tracker. Detailed implementation ste
 - [ ] Check that `查看更多`, card clicks, `继续观看`, `聚合`, `线路`, and `选集` all follow the agreed interaction rules
 - [ ] Remove any one-off colors, radii, shadows, or button styles that escaped the token system
 - [ ] Capture after screenshots for the same key pages used in the baseline
+- [ ] Compare after screenshots against `UI_1.0_web.png` for token match, shell density, homepage hero, search result layout, playback page structure, and shared card states
+- [ ] Document any deliberate design-reference deviation with the reason: current data limitation, business-flow risk, responsive constraint, or staged follow-up
 - [ ] Prepare the implementation summary and any remaining follow-up items
 
 ## File Structure
@@ -217,6 +248,8 @@ The refactor should introduce a small UI layer instead of continuing to scatter 
 
 These rules are part of the implementation, not optional polish:
 
+- `UI_1.0_web.png` is the web visual reference until a newer design reference replaces it; it guides phased alignment, not blind page replacement
+- The web shell should move toward the compact icon rail and dense cinematic content layout, but route behavior and current navigation state must remain stable during each step
 - One shell language across all pages:
   sticky top header, desktop side rail, lighter mobile bottom bar, fixed content width behavior
 - One surface language:
@@ -232,6 +265,23 @@ These rules are part of the implementation, not optional polish:
 - One motion language:
   `120ms` hover, `180ms` open/close, `240ms` page section reveal
 
+## Design Reference Tokens
+
+These values come from `UI_1.0_web.png` and are the target token values for the next low-risk alignment pass before more page-level migration:
+
+- Background main: `#0B0F14`
+- Background elevated: `#121820`
+- Card background: `#161D27`
+- Border/divider: `#232A36`
+- Primary blue: `#3B82F6`
+- Warm accent/rating: `#FFB020`
+- Success: `#22C55E`
+- Primary text: `#E8EDF3`
+- Secondary text: `#A3ACB8`
+- Radius scale: `8px`, `12px`, `16px`, `20px`
+
+Current implementation values should be treated as drift if they do not map back to these tokens and no deliberate exception is documented.
+
 ## Interaction Rules To Lock Before Coding
 
 - “查看更多” always navigates to the matching list page and preserves context
@@ -245,6 +295,8 @@ These rules are part of the implementation, not optional polish:
 
 ## Risk Controls
 
+- Design-reference matching does not override working business flows; preserve current behavior unless a task explicitly says otherwise
+- Before changing a layout that owns state, identify where the state currently lives and whether the change is visual-only, structural, behavioral, or data-contract
 - Do not rewrite source probing, playback resume, favorites, or search APIs during the UI pass
 - Do not replace `VideoCard` in one jump; extract shared visual pieces first
 - Do not split `src/app/play/page.tsx` until visual wrappers exist and tests cover the sidebar interactions
