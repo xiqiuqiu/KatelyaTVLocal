@@ -45,7 +45,10 @@ import {
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
+import PlayerHeader from '@/components/player/PlayerHeader';
+import PlayerSidebar from '@/components/player/PlayerSidebar';
 import SkipController from '@/components/SkipController';
+import Surface from '@/components/ui/Surface';
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
@@ -1816,11 +1819,14 @@ function PlayPageClient() {
   if (loading) {
     return (
       <PageLayout activePath='/play'>
-        <div className='flex items-center justify-center min-h-screen bg-transparent'>
-          <div className='text-center max-w-md mx-auto px-6'>
+        <div className='flex min-h-[70vh] items-center justify-center'>
+          <Surface
+            variant='frosted'
+            className='mx-auto w-full max-w-lg px-6 py-8 text-center'
+          >
             {/* 动画影院图标 */}
             <div className='relative mb-8'>
-              <div className='relative mx-auto w-24 h-24 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl shadow-2xl flex items-center justify-center transform hover:scale-105 transition-transform duration-300'>
+              <div className='relative mx-auto flex h-24 w-24 items-center justify-center rounded-ui-lg bg-[rgb(var(--ui-accent))] shadow-2xl transition-transform duration-300 hover:scale-105'>
                 <div className='text-white text-4xl'>
                   {loadingStage === 'searching' && '🔍'}
                   {loadingStage === 'preferring' && '⚡'}
@@ -1828,7 +1834,7 @@ function PlayPageClient() {
                   {loadingStage === 'ready' && '✨'}
                 </div>
                 {/* 旋转光环 */}
-                <div className='absolute -inset-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl opacity-20 animate-spin'></div>
+                <div className='absolute -inset-2 animate-spin rounded-ui-lg bg-[rgb(var(--ui-accent))] opacity-20'></div>
               </div>
 
               {/* 浮动粒子效果 */}
@@ -1846,40 +1852,40 @@ function PlayPageClient() {
             </div>
 
             {/* 进度指示器 */}
-            <div className='mb-6 w-80 mx-auto'>
+            <div className='mx-auto mb-6 w-full max-w-sm'>
               <div className='flex justify-center space-x-2 mb-4'>
                 <div
                   className={`w-3 h-3 rounded-full transition-all duration-500 ${
                     loadingStage === 'searching' || loadingStage === 'fetching'
-                      ? 'bg-green-500 scale-125'
+                      ? 'bg-[rgb(var(--ui-accent))] scale-125'
                       : loadingStage === 'preferring' ||
                         loadingStage === 'ready'
-                      ? 'bg-green-500'
-                      : 'bg-gray-300'
+                      ? 'bg-[rgb(var(--ui-accent))]'
+                      : 'bg-white/20'
                   }`}
                 ></div>
                 <div
                   className={`w-3 h-3 rounded-full transition-all duration-500 ${
                     loadingStage === 'preferring'
-                      ? 'bg-green-500 scale-125'
+                      ? 'bg-[rgb(var(--ui-accent))] scale-125'
                       : loadingStage === 'ready'
-                      ? 'bg-green-500'
-                      : 'bg-gray-300'
+                      ? 'bg-[rgb(var(--ui-accent))]'
+                      : 'bg-white/20'
                   }`}
                 ></div>
                 <div
                   className={`w-3 h-3 rounded-full transition-all duration-500 ${
                     loadingStage === 'ready'
-                      ? 'bg-green-500 scale-125'
-                      : 'bg-gray-300'
+                      ? 'bg-[rgb(var(--ui-accent))] scale-125'
+                      : 'bg-white/20'
                   }`}
                 ></div>
               </div>
 
               {/* 进度条 */}
-              <div className='w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden'>
+              <div className='h-2 w-full overflow-hidden rounded-full bg-white/10'>
                 <div
-                  className='h-full bg-gradient-to-r from-green-500 to-emerald-600 rounded-full transition-all duration-1000 ease-out'
+                  className='h-full rounded-full bg-[rgb(var(--ui-accent))] transition-all duration-1000 ease-out'
                   style={{
                     width:
                       loadingStage === 'searching' ||
@@ -1895,11 +1901,14 @@ function PlayPageClient() {
 
             {/* 加载消息 */}
             <div className='space-y-2'>
-              <p className='text-xl font-semibold text-gray-800 dark:text-gray-200 animate-pulse'>
+              <p className='animate-pulse text-xl font-semibold text-[rgb(var(--ui-text))]'>
                 {loadingMessage}
               </p>
+              <p className='mt-2 text-sm text-[rgb(var(--ui-text-muted))]'>
+                正在准备播放环境，请稍候
+              </p>
             </div>
-          </div>
+          </Surface>
         </div>
       </PageLayout>
     );
@@ -1908,14 +1917,17 @@ function PlayPageClient() {
   if (error) {
     return (
       <PageLayout activePath='/play'>
-        <div className='flex items-center justify-center min-h-screen bg-transparent'>
-          <div className='text-center max-w-md mx-auto px-6'>
+        <div className='flex min-h-[70vh] items-center justify-center'>
+          <Surface
+            variant='frosted'
+            className='mx-auto w-full max-w-lg px-6 py-8 text-center'
+          >
             {/* 错误图标 */}
             <div className='relative mb-8'>
-              <div className='relative mx-auto w-24 h-24 bg-gradient-to-r from-red-500 to-orange-500 rounded-2xl shadow-2xl flex items-center justify-center transform hover:scale-105 transition-transform duration-300'>
+              <div className='relative mx-auto flex h-24 w-24 items-center justify-center rounded-ui-lg bg-red-500 shadow-2xl transition-transform duration-300 hover:scale-105'>
                 <div className='text-white text-4xl'>😵</div>
                 {/* 脉冲效果 */}
-                <div className='absolute -inset-2 bg-gradient-to-r from-red-500 to-orange-500 rounded-2xl opacity-20 animate-pulse'></div>
+                <div className='absolute -inset-2 animate-pulse rounded-ui-lg bg-red-500 opacity-20'></div>
               </div>
 
               {/* 浮动错误粒子 */}
@@ -1933,16 +1945,14 @@ function PlayPageClient() {
             </div>
 
             {/* 错误信息 */}
-            <div className='space-y-4 mb-8'>
-              <h2 className='text-2xl font-bold text-gray-800 dark:text-gray-200'>
+            <div className='mb-8 space-y-4'>
+              <h2 className='text-2xl font-bold text-[rgb(var(--ui-text))]'>
                 哎呀，出现了一些问题
               </h2>
-              <div className='bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4'>
-                <p className='text-red-600 dark:text-red-400 font-medium'>
-                  {error}
-                </p>
+              <div className='rounded-ui-md border border-red-500/25 bg-red-500/10 p-4'>
+                <p className='font-medium text-red-200'>{error}</p>
               </div>
-              <p className='text-sm text-gray-500 dark:text-gray-400'>
+              <p className='text-sm text-[rgb(var(--ui-text-muted))]'>
                 请检查网络连接或尝试刷新页面
               </p>
             </div>
@@ -1955,19 +1965,19 @@ function PlayPageClient() {
                     ? router.push(`/search?q=${encodeURIComponent(videoTitle)}`)
                     : router.back()
                 }
-                className='w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-medium hover:from-green-600 hover:to-emerald-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl'
+                className='w-full rounded-ui-md bg-[rgb(var(--ui-accent))] px-6 py-3 font-medium text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110'
               >
                 {videoTitle ? '🔍 返回搜索' : '← 返回上页'}
               </button>
 
               <button
                 onClick={() => window.location.reload()}
-                className='w-full px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200'
+                className='w-full rounded-ui-md border border-white/10 bg-white/5 px-6 py-3 font-medium text-[rgb(var(--ui-text))] transition-colors duration-200 hover:bg-white/10'
               >
                 🔄 重新尝试
               </button>
             </div>
-          </div>
+          </Surface>
         </div>
       </PageLayout>
     );
@@ -1975,31 +1985,38 @@ function PlayPageClient() {
 
   return (
     <PageLayout activePath='/play'>
-      <div className='flex flex-col gap-3 py-4 px-5 lg:px-[3rem] 2xl:px-20'>
-        {/* 第一行：影片标题和操作按钮 */}
-        <div className='py-1 flex items-center justify-between'>
-          <h1 className='text-xl font-semibold text-gray-900 dark:text-gray-100'>
-            {videoTitle || '影片标题'}
-            {totalEpisodes > 1 && (
-              <span className='text-gray-500 dark:text-gray-400'>
-                {` > 第 ${currentEpisodeIndex + 1} 集`}
-              </span>
-            )}
-          </h1>
+      <div className='space-y-6'>
+        <PlayerHeader
+          title={videoTitle || '影片标题'}
+          subtitle={[
+            totalEpisodes > 1 ? `第 ${currentEpisodeIndex + 1} 集` : null,
+            detail?.source_name || null,
+            detail?.year || videoYear || null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+          actions={
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleToggleFavorite();
+              }}
+              className='inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-[rgb(var(--ui-text))] transition hover:bg-white/10'
+              aria-label={favorited ? '取消收藏' : '收藏影片'}
+              type='button'
+            >
+              <FavoriteIcon filled={favorited} />
+              <span>{favorited ? '已收藏' : '收藏'}</span>
+            </button>
+          }
+        />
 
-          {/* 跳过设置按钮 */}
-          {/* {currentSource && currentId && (
-            <SkipSettingsButton onClick={() => setIsSkipSettingMode(true)} />
-          )} */}
-        </div>
-        {/* 第二行：播放器 */}
-        <div className='space-y-4'>
-          {/* 视频播放器 */}
-          <div className='w-full'>
-            <div className='relative w-full h-[300px] md:h-[400px] lg:h-[500px] xl:h-[650px] 2xl:h-[750px]'>
+        <div className='grid gap-6 2xl:grid-cols-[minmax(0,1fr)_380px]'>
+          <Surface variant='raised' className='overflow-hidden p-3'>
+            <div className='relative aspect-video min-h-[260px] w-full overflow-hidden md:min-h-[360px] lg:min-h-[460px] 2xl:min-h-[620px]'>
               <div
                 ref={artRef}
-                className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
+                className='h-full w-full overflow-hidden rounded-ui-md bg-black shadow-ui-strong'
               ></div>
 
               {/* 跳过片头片尾控制器 */}
@@ -2019,14 +2036,14 @@ function PlayPageClient() {
 
               {/* 换源加载蒙层 */}
               {isVideoLoading && (
-                <div className='absolute inset-0 bg-black/85 backdrop-blur-sm rounded-xl flex items-center justify-center z-[500] transition-all duration-300'>
-                  <div className='text-center max-w-md mx-auto px-6'>
+                <div className='absolute inset-0 z-[500] flex items-center justify-center rounded-ui-md bg-black/85 backdrop-blur-md transition-all duration-300'>
+                  <div className='mx-auto max-w-md px-6 text-center'>
                     {/* 动画影院图标 */}
-                    <div className='relative mb-8'>
-                      <div className='relative mx-auto w-24 h-24 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl shadow-2xl flex items-center justify-center transform hover:scale-105 transition-transform duration-300'>
+                    <div className='relative mb-6'>
+                      <div className='relative mx-auto flex h-20 w-20 items-center justify-center rounded-ui-lg bg-[rgb(var(--ui-accent))] shadow-2xl transition-transform duration-300 hover:scale-105'>
                         <div className='text-white text-4xl'>🎬</div>
                         {/* 旋转光环 */}
-                        <div className='absolute -inset-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl opacity-20 animate-spin'></div>
+                        <div className='absolute -inset-2 animate-spin rounded-ui-lg bg-[rgb(var(--ui-accent))] opacity-20'></div>
                       </div>
 
                       {/* 浮动粒子效果 */}
@@ -2050,50 +2067,43 @@ function PlayPageClient() {
                           ? '🔄 切换播放源...'
                           : '🔄 视频加载中...'}
                       </p>
+                      <p className='text-sm text-white/60'>正在连接当前线路</p>
                     </div>
                   </div>
                 </div>
               )}
             </div>
-          </div>
+          </Surface>
 
-          {/* 选集和换源面板 - 位于播放器下方 */}
-          <div
-            className={`transition-all duration-300 ease-in-out ${
-              isEpisodeSelectorCollapsed ? 'hidden' : 'block'
-            }`}
-          >
-            {/* 折叠控制按钮 */}
-            {!isEpisodeSelectorCollapsed && (
-              <div className='flex justify-end mb-2'>
+          <PlayerSidebar className='2xl:sticky 2xl:top-24 2xl:self-start'>
+            <div className='mb-4 flex items-center justify-between gap-3'>
+              <div>
+                <p className='text-xs font-semibold uppercase tracking-[0.2em] text-[rgb(var(--ui-accent-warm))]'>
+                  播放控制
+                </p>
+                <h2 className='mt-1 text-lg font-semibold text-[rgb(var(--ui-text))]'>
+                  选集与线路
+                </h2>
+              </div>
+              {!isEpisodeSelectorCollapsed && (
                 <button
                   onClick={() =>
                     setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
                   }
-                  className='group relative flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 hover:bg-white dark:bg-gray-800/80 dark:hover:bg-gray-800 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-200'
+                  className='rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-[rgb(var(--ui-text-muted))] transition hover:bg-white/10 hover:text-[rgb(var(--ui-text))]'
                   title='隐藏选集面板'
+                  type='button'
                 >
-                  <svg
-                    className='w-3.5 h-3.5 text-gray-500 dark:text-gray-400 transition-transform duration-200'
-                    fill='none'
-                    stroke='currentColor'
-                    viewBox='0 0 24 24'
-                  >
-                    <path
-                      strokeLinecap='round'
-                      strokeLinejoin='round'
-                      strokeWidth='2'
-                      d='M6 18L18 6M6 6l12 12'
-                    />
-                  </svg>
-                  <span className='text-xs font-medium text-gray-600 dark:text-gray-300'>
-                    隐藏
-                  </span>
+                  隐藏
                 </button>
-              </div>
-            )}
+              )}
+            </div>
 
-            <div className='w-full'>
+            <div
+              className={`transition-all duration-300 ease-in-out ${
+                isEpisodeSelectorCollapsed ? 'hidden' : 'block'
+              }`}
+            >
               <EpisodeSelector
                 totalEpisodes={totalEpisodes}
                 value={currentEpisodeIndex + 1}
@@ -2109,55 +2119,31 @@ function PlayPageClient() {
                 precomputedSourceStatuses={precomputedSourceStatuses}
               />
             </div>
-          </div>
 
-          {/* 显示选集面板按钮 - 仅在折叠状态下显示 */}
-          {isEpisodeSelectorCollapsed && (
-            <div className='flex justify-center'>
+            {isEpisodeSelectorCollapsed && (
               <button
                 onClick={() => setIsEpisodeSelectorCollapsed(false)}
-                className='group relative flex items-center space-x-2 px-4 py-2 rounded-full bg-green-500/90 hover:bg-green-500 text-white backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-200'
+                className='w-full rounded-ui-md border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-[rgb(var(--ui-text))] transition hover:bg-white/10'
                 title='显示选集面板'
+                type='button'
               >
-                <svg
-                  className='w-4 h-4 transition-transform duration-200 group-hover:scale-110'
-                  fill='none'
-                  stroke='currentColor'
-                  viewBox='0 0 24 24'
-                >
-                  <path
-                    strokeLinecap='round'
-                    strokeLinejoin='round'
-                    strokeWidth='2'
-                    d='M19 9l-7 7-7-7'
-                  />
-                </svg>
-                <span className='text-sm font-medium'>显示选集</span>
-
-                {/* 精致的状态指示点 */}
-                <div className='absolute -top-1 -right-1 w-3 h-3 bg-orange-400 rounded-full animate-pulse border-2 border-white'></div>
+                显示选集
               </button>
-            </div>
-          )}
+            )}
+          </PlayerSidebar>
         </div>
 
         {/* 详情展示 */}
-        <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
+        <Surface
+          variant='plain'
+          className='grid grid-cols-1 gap-4 overflow-hidden p-4 md:grid-cols-4'
+        >
           {/* 文字区 */}
           <div className='md:col-span-3'>
             <div className='p-6 flex flex-col min-h-0'>
               {/* 标题 */}
               <h1 className='text-3xl font-bold mb-2 tracking-wide flex items-center flex-shrink-0 text-center md:text-left w-full'>
                 {videoTitle || '影片标题'}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggleFavorite();
-                  }}
-                  className='ml-3 flex-shrink-0 hover:opacity-80 transition-opacity'
-                >
-                  <FavoriteIcon filled={favorited} />
-                </button>
               </h1>
 
               {/* 关键信息行 */}
@@ -2197,7 +2183,7 @@ function PlayPageClient() {
                   <img
                     src={processImageUrl(videoCover)}
                     alt={videoTitle}
-                    className='w-full h-full object-cover'
+                    className='h-full w-full object-cover'
                   />
                 ) : (
                   <span className='text-gray-600 dark:text-gray-400'>
@@ -2207,7 +2193,7 @@ function PlayPageClient() {
               </div>
             </div>
           </div>
-        </div>
+        </Surface>
       </div>
     </PageLayout>
   );

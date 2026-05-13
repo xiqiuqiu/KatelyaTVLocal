@@ -154,7 +154,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           ? existingStatus
           : rememberedStatus;
 
-      if (knownStatus?.kind === 'proxy' || knownStatus?.kind === 'unavailable') {
+      if (
+        knownStatus?.kind === 'proxy' ||
+        knownStatus?.kind === 'unavailable'
+      ) {
         return knownStatus;
       }
 
@@ -218,7 +221,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           sourceKey,
           createSourceStatus('probing', {
             reason: '正在检测浏览器是否可直连',
-            domain: serverProbeResult.domain || rememberedStatus?.domain || null,
+            domain:
+              serverProbeResult.domain || rememberedStatus?.domain || null,
           })
         );
         return next;
@@ -541,42 +545,52 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   );
 
   return (
-    <div className='md:ml-2 px-4 py-0 min-h-[200px] max-h-[600px] rounded-xl bg-black/10 dark:bg-white/5 flex flex-col border border-white/0 dark:border-white/30 overflow-hidden'>
+    <div className='flex max-h-[640px] min-h-[260px] flex-col overflow-hidden rounded-ui-md border border-white/10 bg-[rgba(var(--ui-surface-strong),0.48)] px-4 py-0 text-[rgb(var(--ui-text))]'>
       {/* 主要的 Tab 切换 - 无缝融入设计 */}
-      <div className='flex mb-1 -mx-6 flex-shrink-0'>
+      <div
+        className='-mx-4 mb-1 flex flex-shrink-0 border-b border-white/10'
+        role='tablist'
+        aria-label='播放控制'
+      >
         {totalEpisodes > 1 && (
-          <div
+          <button
+            type='button'
+            role='tab'
+            aria-selected={activeTab === 'episodes'}
             onClick={() => setActiveTab('episodes')}
-            className={`flex-1 py-3 px-6 text-center cursor-pointer transition-all duration-200 font-medium
+            className={`flex-1 py-3 px-6 text-center text-sm font-medium transition-all duration-200
                 ${
                   activeTab === 'episodes'
-                    ? 'text-green-600 dark:text-green-400'
-                    : 'text-gray-700 hover:text-green-600 bg-black/5 dark:bg-white/5 dark:text-gray-300 dark:hover:text-green-400 hover:bg-black/3 dark:hover:bg-white/3'
+                    ? 'bg-white/10 text-[rgb(var(--ui-text))]'
+                    : 'bg-white/[0.03] text-[rgb(var(--ui-text-muted))] hover:bg-white/[0.06] hover:text-[rgb(var(--ui-text))]'
                 }
             `.trim()}
           >
             选集
-          </div>
+          </button>
         )}
-        <div
+        <button
+          type='button'
+          role='tab'
+          aria-selected={activeTab === 'sources'}
           onClick={handleSourceTabClick}
-          className={`flex-1 py-3 px-6 text-center cursor-pointer transition-all duration-200 font-medium
+          className={`flex-1 py-3 px-6 text-center text-sm font-medium transition-all duration-200
                 ${
                   activeTab === 'sources'
-                    ? 'text-green-600 dark:text-green-400'
-                    : 'text-gray-700 hover:text-green-600 bg-black/5 dark:bg-white/5 dark:text-gray-300 dark:hover:text-green-400 hover:bg-black/3 dark:hover:bg-white/3'
+                    ? 'bg-white/10 text-[rgb(var(--ui-text))]'
+                    : 'bg-white/[0.03] text-[rgb(var(--ui-text-muted))] hover:bg-white/[0.06] hover:text-[rgb(var(--ui-text))]'
                 }
             `.trim()}
         >
-          换源
-        </div>
+          线路
+        </button>
       </div>
 
       {/* 选集 Tab 内容 */}
       {activeTab === 'episodes' && (
         <div className='flex flex-col flex-1 min-h-0'>
           {/* 分类标签 */}
-          <div className='flex items-center gap-4 mb-4 border-b border-gray-300 dark:border-gray-700 -mx-6 px-6 flex-shrink-0'>
+          <div className='-mx-4 mb-4 flex flex-shrink-0 items-center gap-4 border-b border-white/10 px-4'>
             <div className='flex-1 relative overflow-hidden'>
               {/* 滾動容器 */}
               <div
@@ -610,11 +624,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                           buttonRefs.current[idx] = el;
                         }}
                         onClick={() => handleCategoryClick(idx)}
-                        className={`${buttonWidth} relative py-2 px-1 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 text-center
+                        className={`${buttonWidth} relative flex-shrink-0 whitespace-nowrap px-1 py-2 text-center text-sm font-medium transition-colors
                           ${
                             isActive
-                              ? 'text-green-500 dark:text-green-400'
-                              : 'text-gray-700 hover:text-green-600 dark:text-gray-300 dark:hover:text-green-400'
+                              ? 'text-[rgb(var(--ui-accent-warm))]'
+                              : 'text-[rgb(var(--ui-text-muted))] hover:text-[rgb(var(--ui-text))]'
                           }
                         `.trim()}
                         title={`第 ${idx * episodesPerPage + 1}-${Math.min(
@@ -624,7 +638,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                       >
                         <span className='block truncate'>{label}</span>
                         {isActive && (
-                          <div className='absolute bottom-0 left-0 right-0 h-0.5 bg-green-500 dark:bg-green-400' />
+                          <div className='absolute bottom-0 left-0 right-0 h-0.5 bg-[rgb(var(--ui-accent-warm))]' />
                         )}
                       </button>
                     );
@@ -634,7 +648,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             </div>
             {/* 向上/向下按钮 */}
             <button
-              className='flex-shrink-0 w-10 h-10 rounded-md flex items-center justify-center text-gray-700 hover:text-green-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:text-green-400 dark:hover:bg-white/20 transition-colors transform translate-y-[-4px]'
+              className='flex h-10 w-10 flex-shrink-0 translate-y-[-4px] items-center justify-center rounded-ui-sm text-[rgb(var(--ui-text-muted))] transition-colors hover:bg-white/10 hover:text-[rgb(var(--ui-text))]'
+              aria-label='切换集数排序'
               onClick={() => {
                 // 切换集数排序（正序/倒序）
                 setDescending((prev) => !prev);
@@ -674,13 +689,14 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     e.stopPropagation();
                     handleEpisodeClick(episodeNumber);
                   }}
-                  className={`w-full h-10 flex items-center justify-center text-sm font-medium rounded-md transition-all duration-200 cursor-pointer
+                  className={`flex h-10 w-full cursor-pointer items-center justify-center rounded-ui-sm text-sm font-medium transition-all duration-200
                     ${
                       isActive
-                        ? 'bg-green-500 text-white shadow-lg shadow-green-500/25 dark:bg-green-600'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:scale-105 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20'
+                        ? 'bg-[rgb(var(--ui-accent))] text-white shadow-lg shadow-black/20'
+                        : 'bg-white/10 text-[rgb(var(--ui-text-muted))] hover:scale-105 hover:bg-white/15 hover:text-[rgb(var(--ui-text))]'
                     }`.trim()}
                   type='button'
+                  aria-label={`第${episodeNumber}集`}
                 >
                   {episodeNumber}
                 </button>
@@ -729,7 +745,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           {!sourceSearchLoading &&
             !sourceSearchError &&
             availableSources.length > 0 && (
-              <div className='flex-1 overflow-y-auto space-y-2 pb-4'>
+              <div className='flex-1 space-y-2 overflow-y-auto pb-4'>
                 {availableSources
                   .sort((a, b) => {
                     const aIsCurrent =
@@ -790,12 +806,12 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                       <div
                         key={sourceKey}
                         onClick={() => isClickable && handleSourceClick(source)}
-                        className={`flex items-start gap-3 px-2 py-3 rounded-lg transition-all select-none duration-200 relative
+                        className={`relative flex items-start gap-3 rounded-ui-sm px-2 py-3 transition-all duration-200 select-none
                           ${
                             isCurrentSource
-                              ? 'bg-green-500/10 dark:bg-green-500/20 border-green-500/30 border'
+                              ? 'border border-[rgba(var(--ui-accent),0.45)] bg-[rgba(var(--ui-accent),0.14)]'
                               : isClickable
-                              ? 'hover:bg-gray-200/50 dark:hover:bg-white/10 hover:scale-[1.02] cursor-pointer'
+                              ? 'cursor-pointer hover:scale-[1.02] hover:bg-white/10'
                               : 'opacity-70 cursor-not-allowed'
                           }`.trim()}
                       >
@@ -819,7 +835,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                           {/* 标题和分辨率 - 顶部 */}
                           <div className='flex items-start justify-between gap-3 h-6'>
                             <div className='flex-1 min-w-0 relative group/title'>
-                              <h3 className='font-medium text-base truncate text-gray-900 dark:text-gray-100 leading-none'>
+                              <h3 className='truncate text-base font-medium leading-none text-[rgb(var(--ui-text))]'>
                                 {source.title}
                               </h3>
                               {/* 标题级别的 tooltip - 第一个元素不显示 */}
@@ -909,7 +925,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                               if (sourceStatus?.kind === 'playable') {
                                 return (
                                   <div className='text-amber-600 dark:text-amber-400 font-medium text-xs'>
-                                    {sourceStatus.reason || '测速失败，可尝试播放'}
+                                    {sourceStatus.reason ||
+                                      '测速失败，可尝试播放'}
                                   </div>
                                 );
                               }
