@@ -35,14 +35,14 @@ export function ThemeToggle() {
     // 检查当前主题，如果 resolvedTheme 为 undefined，默认切换到 dark
     const currentTheme = resolvedTheme || 'light';
     const targetTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    
+
     setThemeColor(targetTheme);
-    
+
     // 使用更好的类型定义
     const documentWithTransition = document as Document & {
       startViewTransition?: (callback: () => void) => void;
     };
-    
+
     if (!documentWithTransition.startViewTransition) {
       setTheme(targetTheme);
       return;
@@ -56,7 +56,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className='w-11 h-11 p-2 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200/50 dark:text-gray-300 dark:hover:bg-gray-700/50 transition-colors'
+      className='flex h-11 w-11 items-center justify-center rounded-ui-sm border border-white/10 bg-white/5 p-2 text-[rgb(var(--ui-text-muted))] shadow-ui-soft transition-colors hover:bg-white/10 hover:text-[rgb(var(--ui-text))]'
       aria-label='Toggle theme'
     >
       {(resolvedTheme || 'light') === 'dark' ? (
