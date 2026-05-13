@@ -50,4 +50,17 @@ describe('Sidebar shell density', () => {
       screen.queryByRole('button', { name: '展开侧边栏' })
     ).not.toBeInTheDocument();
   });
+
+  it('shows favorites as a sidebar destination and marks it active', () => {
+    render(<Sidebar activePath='/?tab=favorites' collapsed={false} />);
+
+    const favoriteLink = screen.getByRole('link', { name: /收藏夹/ });
+
+    expect(favoriteLink).toHaveAttribute('href', '/?tab=favorites');
+    expect(favoriteLink).toHaveAttribute('data-active', 'true');
+    expect(screen.getByRole('link', { name: /首页/ })).toHaveAttribute(
+      'data-active',
+      'false'
+    );
+  });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { Clover, Film, Home, Search, Tv } from 'lucide-react';
+import { Clover, Film, Heart, Home, Search, Tv } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -20,6 +20,7 @@ const iconMap: Record<NavigationIcon, typeof Home> = {
   film: Film,
   tv: Tv,
   clover: Clover,
+  heart: Heart,
   settings: Home,
 };
 

@@ -4,6 +4,7 @@ export type NavigationIcon =
   | 'film'
   | 'tv'
   | 'clover'
+  | 'heart'
   | 'settings';
 
 export interface NavigationItem {
@@ -19,6 +20,11 @@ export const primaryNavigationItems: readonly NavigationItem[] = [
   { key: 'movie', label: '电影', href: '/douban?type=movie', icon: 'film' },
   { key: 'tv', label: '剧集', href: '/douban?type=tv', icon: 'tv' },
   { key: 'show', label: '综艺', href: '/douban?type=show', icon: 'clover' },
+] as const;
+
+export const sidebarNavigationItems: readonly NavigationItem[] = [
+  ...primaryNavigationItems,
+  { key: 'favorites', label: '收藏夹', href: '/?tab=favorites', icon: 'heart' },
 ] as const;
 
 export const secondaryNavigationItems: readonly NavigationItem[] = [

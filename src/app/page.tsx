@@ -3,6 +3,7 @@
 'use client';
 
 import { ChevronRight } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
 // 客户端收藏 API
@@ -17,7 +18,6 @@ import { getDoubanCategories } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
 import { homeTabMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
-import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
 import PageLayout from '@/components/PageLayout';
 import { useSite } from '@/components/SiteProvider';
@@ -76,7 +76,9 @@ const BottomKatelyaLogo = () => {
 };
 
 function HomeClient() {
-  const [activeTab, setActiveTab] = useState<'home' | 'favorites'>('home');
+  const searchParams = useSearchParams();
+  const activeTab =
+    searchParams.get('tab') === 'favorites' ? 'favorites' : 'home';
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
@@ -264,22 +266,14 @@ function HomeClient() {
   );
 
   return (
-    <PageLayout>
+    <PageLayout
+      activePath={activeTab === 'favorites' ? '/?tab=favorites' : '/'}
+    >
       <div className='space-y-8 overflow-visible sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
         {/* 主内容区大型 KatelyaTV Logo - 仅在首页显示 */}
         {/* {activeTab === 'home' && <MainKatelyaLogo />} */}
 
         <PageHeader
-          action={
-            <CapsuleSwitch
-              options={[
-                { label: '首页', value: 'home' },
-                { label: '收藏夹', value: 'favorites' },
-              ]}
-              active={activeTab}
-              onChange={(value) => setActiveTab(value as 'home' | 'favorites')}
-            />
-          }
           subtitle={currentHeaderMeta.subtitle}
           title={currentHeaderMeta.title}
         />

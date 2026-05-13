@@ -1,6 +1,15 @@
 'use client';
 
-import { Clover, Film, Home, Menu, Search, Settings, Tv } from 'lucide-react';
+import {
+  Clover,
+  Film,
+  Heart,
+  Home,
+  Menu,
+  Search,
+  Settings,
+  Tv,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
@@ -15,8 +24,8 @@ import {
   type NavigationIcon,
   type NavigationItem,
   isNavigationItemActive,
-  primaryNavigationItems,
   secondaryNavigationItems,
+  sidebarNavigationItems,
 } from '@/lib/ui/navigation';
 
 interface SidebarContextType {
@@ -50,6 +59,7 @@ const iconMap: Record<NavigationIcon, typeof Home> = {
   film: Film,
   tv: Tv,
   clover: Clover,
+  heart: Heart,
   settings: Settings,
 };
 
@@ -186,12 +196,12 @@ const Sidebar = ({
             </div>
 
             <nav className='mt-4 space-y-2'>
-              {primaryNavigationItems.slice(0, 2).map(renderNavItem)}
+              {sidebarNavigationItems.slice(0, 2).map(renderNavItem)}
             </nav>
 
             <div className='mt-6 flex-1 overflow-y-auto'>
               <div className='space-y-2'>
-                {primaryNavigationItems.slice(2).map(renderNavItem)}
+                {sidebarNavigationItems.slice(2).map(renderNavItem)}
               </div>
               <div className='mt-6 space-y-2 border-t border-white/10 pt-6'>
                 {secondaryNavigationItems.map(renderNavItem)}
