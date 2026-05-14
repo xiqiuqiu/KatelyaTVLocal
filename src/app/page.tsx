@@ -30,29 +30,6 @@ import VideoCard from '@/components/VideoCard';
 
 export const runtime = 'edge';
 
-// 主内容区大型 KatelyaTV Logo 组件 - 已隐藏但保留代码以备后用
-/*
-const MainKatelyaLogo = () => {
-  return (
-    <div className='main-logo-container'>
-      <div className='logo-background-glow'></div>
-      <div className='main-katelya-logo'>KatelyaTV</div>
-      <div className='mt-3 text-center'>
-        <div className='main-logo-subtitle'>极致影视体验，尽在指尖</div>
-      </div>
-      <div className='logo-particles'>
-        <div className='particle particle-1'></div>
-        <div className='particle particle-2'></div>
-        <div className='particle particle-3'></div>
-        <div className='particle particle-4'></div>
-        <div className='particle particle-5'></div>
-        <div className='particle particle-6'></div>
-      </div>
-    </div>
-  );
-};
-*/
-
 // KatelyaTV 底部 Logo 组件
 const BottomKatelyaLogo = () => {
   return (
@@ -239,7 +216,10 @@ function HomeClient() {
         {loading
           ? Array.from({ length: 12 }).map((_, index) => (
               <div key={index} className='w-full'>
-                <SkeletonPosterCard delayIndex={index} widths={['78%', '54%']} />
+                <SkeletonPosterCard
+                  delayIndex={index}
+                  widths={['78%', '54%']}
+                />
               </div>
             ))
           : items.map((item, index) => (
@@ -406,7 +386,10 @@ const HomeFallback = () => {
               <PosterGrid className='grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6'>
                 {Array.from({ length: 12 }).map((_, index) => (
                   <div key={index} className='w-full'>
-                    <SkeletonPosterCard delayIndex={index} widths={['78%', '54%']} />
+                    <SkeletonPosterCard
+                      delayIndex={index}
+                      widths={['78%', '54%']}
+                    />
                   </div>
                 ))}
               </PosterGrid>
