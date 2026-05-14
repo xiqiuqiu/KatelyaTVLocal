@@ -17,6 +17,7 @@ import { pageMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
 import PageLayout from '@/components/PageLayout';
 import ActionLink from '@/components/ui/ActionLink';
+import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
 import PageHeader from '@/components/ui/PageHeader';
 import PosterGrid from '@/components/ui/PosterGrid';
 import SectionHeader from '@/components/ui/SectionHeader';
@@ -263,9 +264,19 @@ function SearchPageClient() {
 
         <div className='mx-auto max-w-[95%] overflow-visible'>
           {isLoading ? (
-            <div className='flex h-40 items-center justify-center'>
-              <div className='h-8 w-8 animate-spin rounded-full border-b-2 border-green-500'></div>
-            </div>
+            <section className='space-y-4'>
+              <SectionHeader
+                subtitle='正在整理结果与可用线路'
+                title={pageSectionLabels.searchResults}
+              />
+              <PosterGrid className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
+                {Array.from({ length: 12 }).map((_, index) => (
+                  <div key={`search-skeleton-${index}`} className='w-full'>
+                    <SkeletonPosterCard delayIndex={index} widths={['80%', '58%']} />
+                  </div>
+                ))}
+              </PosterGrid>
+            </section>
           ) : showResults ? (
             <section className='space-y-4'>
               <SectionHeader
@@ -398,9 +409,37 @@ function SearchPageClient() {
   );
 }
 
+const SearchFallback = () => {
+  return (
+    <PageLayout activePath='/search'>
+      <div className='space-y-4 sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
+        <PageHeader
+          subtitle={pageMeta['/search'].subtitle}
+          title={pageMeta['/search'].title}
+        />
+        <div className='mx-auto max-w-[95%] overflow-visible'>
+          <section className='space-y-4'>
+            <SectionHeader
+              subtitle='正在整理结果与可用线路'
+              title={pageSectionLabels.searchResults}
+            />
+            <PosterGrid className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
+              {Array.from({ length: 12 }).map((_, index) => (
+                <div key={`search-skeleton-fallback-${index}`} className='w-full'>
+                  <SkeletonPosterCard delayIndex={index} widths={['80%', '58%']} />
+                </div>
+              ))}
+            </PosterGrid>
+          </section>
+        </div>
+      </div>
+    </PageLayout>
+  );
+};
+
 export default function SearchPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<SearchFallback />}>
       <SearchPageClient />
     </Suspense>
   );

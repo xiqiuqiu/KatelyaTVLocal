@@ -16,18 +16,19 @@ export default function AppShell({
   activePath = '/',
 }: AppShellProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
-    if (
-      typeof window !== 'undefined' &&
-      typeof window.__sidebarCollapsed === 'boolean'
-    ) {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+
+    if (typeof window.__sidebarCollapsed === 'boolean') {
       return window.__sidebarCollapsed;
     }
 
-    if (typeof window !== 'undefined') {
-      const saved = window.localStorage.getItem('sidebarCollapsed');
-      if (saved !== null) {
-        return JSON.parse(saved);
-      }
+    const saved = window.localStorage.getItem('sidebarCollapsed');
+    if (saved !== null) {
+      const parsed = JSON.parse(saved);
+      window.__sidebarCollapsed = parsed;
+      return parsed;
     }
 
     return true;

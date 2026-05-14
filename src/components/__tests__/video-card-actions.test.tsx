@@ -123,6 +123,32 @@ describe('VideoCard', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it('play record cards can delegate delete handling for grouped records', async () => {
+    const onDeleteRecord = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <VideoCard
+        id='1'
+        source='test'
+        title='示例影片'
+        poster='https://example.com/poster.jpg'
+        episodes={12}
+        source_name='测试源'
+        year='2026'
+        from='playrecord'
+        onDeleteRecord={onDeleteRecord}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '删除播放记录' }));
+
+    await waitFor(() => {
+      expect(onDeleteRecord).toHaveBeenCalledTimes(1);
+    });
+    expect(dbClient.deletePlayRecord).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it('aggregate search cards still route on the primary click target', () => {
     const items: SearchResult[] = [
       {
