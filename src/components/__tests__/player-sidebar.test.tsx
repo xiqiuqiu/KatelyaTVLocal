@@ -45,6 +45,7 @@ describe('EpisodeSelector playback sidebar controls', () => {
         source_name: 'A源',
       },
     ];
+    const handleSourceChange = jest.fn();
 
     render(
       <EpisodeSelector
@@ -52,6 +53,7 @@ describe('EpisodeSelector playback sidebar controls', () => {
         value={3}
         availableSources={availableSources}
         precomputedSourceStatuses={sourceStatuses}
+        onSourceChange={handleSourceChange}
       />
     );
 
@@ -62,5 +64,13 @@ describe('EpisodeSelector playback sidebar controls', () => {
     fireEvent.click(screen.getByRole('tab', { name: '线路' }));
 
     expect(screen.getByText('A源')).toBeInTheDocument();
+    const unavailableSourceButton = screen.getByRole('button', {
+      name: '切换线路 A源',
+    });
+    expect(unavailableSourceButton).toBeDisabled();
+
+    fireEvent.click(unavailableSourceButton);
+
+    expect(handleSourceChange).not.toHaveBeenCalled();
   });
 });

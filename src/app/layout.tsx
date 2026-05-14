@@ -31,7 +31,11 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     title: siteName,
-    description: '影视聚合',
+    description: '影视聚合搜索与在线播放',
+    icons: {
+      icon: '/favicon.ico',
+      apple: '/logo.png',
+    },
     manifest: '/manifest.json',
   };
 }
@@ -40,7 +44,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#000000',
+  themeColor: '#0B0F14',
 };
 
 const FloatingShapes = () => {

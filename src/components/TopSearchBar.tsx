@@ -1,6 +1,7 @@
 'use client';
 
 import { Menu, Search } from 'lucide-react';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -53,9 +54,17 @@ const TopSearchBar = ({
         <div className='hidden flex-shrink-0 md:flex'>
           <button
             onClick={() => router.push('/')}
-            className='text-sm font-semibold uppercase tracking-[0.24em] text-[rgb(var(--ui-text))] transition hover:text-[rgb(var(--ui-accent-warm))]'
+            className='inline-flex items-center gap-2 rounded-full px-2 py-1 text-sm font-semibold tracking-[0.08em] text-[rgb(var(--ui-text))] transition hover:bg-white/[0.06] hover:text-[rgb(var(--ui-accent))]'
           >
-            {siteName}
+            <Image
+              src='/logo.png'
+              alt=''
+              width={28}
+              height={28}
+              className='h-7 w-7 rounded-ui-xs object-cover'
+              aria-hidden='true'
+            />
+            <span>{siteName}</span>
           </button>
         </div>
 

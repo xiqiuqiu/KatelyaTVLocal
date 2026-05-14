@@ -10,18 +10,40 @@ const projectRoot = path.resolve(__dirname, '..');
 const publicDir = path.join(projectRoot, 'public');
 const manifestPath = path.join(publicDir, 'manifest.json');
 
+function getEnvValue(key) {
+  for (const fileName of ['.env.local', '.env']) {
+    const envPath = path.join(projectRoot, fileName);
+    if (!fs.existsSync(envPath)) {
+      continue;
+    }
+
+    const match = fs
+      .readFileSync(envPath, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.match(new RegExp(`^${key}=(.*)$`)))
+      .find(Boolean);
+
+    if (match) {
+      return match[1].replace(/^['"]|['"]$/g, '').trim();
+    }
+  }
+
+  return '';
+}
+
 // 从环境变量获取站点名称
-const siteName = process.env.SITE_NAME || 'KatelyaTV';
+const siteName =
+  process.env.SITE_NAME || getEnvValue('SITE_NAME') || 'KatelyaTV';
 
 // manifest.json 模板
 const manifestTemplate = {
   name: siteName,
   short_name: siteName,
-  description: '影视聚合',
+  description: '影视聚合搜索与在线播放',
   start_url: '/',
   scope: '/',
   display: 'standalone',
-  background_color: '#000000',
+  background_color: '#0B0F14',
   'apple-mobile-web-app-capable': 'yes',
   'apple-mobile-web-app-status-bar-style': 'black',
   icons: [

@@ -66,9 +66,9 @@ const BottomKatelyaLogo = () => {
       </div>
 
       <div className='text-center'>
-        <div className='bottom-logo'>ZOTUBE</div>
+        <div className='bottom-logo'>KatelyaTV</div>
         <div className='mt-2 text-sm text-gray-500 dark:text-gray-400 opacity-75'>
-          Powered by ZOTUBE Core
+          影视聚合搜索与在线播放
         </div>
       </div>
     </div>
