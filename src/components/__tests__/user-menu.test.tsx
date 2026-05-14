@@ -12,16 +12,6 @@ jest.mock('@/lib/auth', () => ({
   getRuntimeCurrentUser: () => ({ username: 'tester', role: 'user' }),
 }));
 
-jest.mock('@/lib/version', () => ({
-  CURRENT_VERSION: '0.0.0-test',
-  UpdateStatus: {
-    FETCH_FAILED: 'FETCH_FAILED',
-    HAS_UPDATE: 'HAS_UPDATE',
-    NO_UPDATE: 'NO_UPDATE',
-  },
-  checkForUpdates: jest.fn().mockResolvedValue('NO_UPDATE'),
-}));
-
 describe('UserMenu', () => {
   beforeEach(() => {
     push.mockClear();

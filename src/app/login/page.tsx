@@ -2,75 +2,12 @@
 
 export const runtime = 'edge';
 
-import { AlertCircle, CheckCircle } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
-
-import { checkForUpdates, CURRENT_VERSION, UpdateStatus } from '@/lib/version';
 
 import IOSCompatibility from '@/components/IOSCompatibility';
 import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
-
-// 版本显示组件
-function VersionDisplay() {
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
-  const [isChecking, setIsChecking] = useState(true);
-
-  useEffect(() => {
-    const checkUpdate = async () => {
-      try {
-        const status = await checkForUpdates();
-        setUpdateStatus(status);
-      } catch (_) {
-        // do nothing
-      } finally {
-        setIsChecking(false);
-      }
-    };
-
-    checkUpdate();
-  }, []);
-
-  return (
-    <button
-      onClick={() =>
-        window.open(
-          process.env.NEXT_PUBLIC_REPO_URL ||
-            'https://github.com/katelya77/KatelyaTV',
-          '_blank'
-        )
-      }
-      className='absolute bottom-4 left-1/2 flex -translate-x-1/2 transform cursor-pointer items-center gap-2 text-xs text-[rgb(var(--ui-text-muted))] transition-colors hover:text-[rgb(var(--ui-text))]'
-    >
-      <span className='font-mono'>v{CURRENT_VERSION}</span>
-      {!isChecking && updateStatus !== UpdateStatus.FETCH_FAILED && (
-        <div
-          className={`flex items-center gap-1.5 ${
-            updateStatus === UpdateStatus.HAS_UPDATE
-              ? 'text-[rgb(var(--ui-accent-warm))]'
-              : updateStatus === UpdateStatus.NO_UPDATE
-              ? 'text-[rgb(var(--ui-accent))]'
-              : ''
-          }`}
-        >
-          {updateStatus === UpdateStatus.HAS_UPDATE && (
-            <>
-              <AlertCircle className='w-3.5 h-3.5' />
-              <span className='font-semibold text-xs'>有新版本</span>
-            </>
-          )}
-          {updateStatus === UpdateStatus.NO_UPDATE && (
-            <>
-              <CheckCircle className='w-3.5 h-3.5' />
-              <span className='font-semibold text-xs'>已是最新</span>
-            </>
-          )}
-        </div>
-      )}
-    </button>
-  );
-}
 
 function LoginPageClient() {
   const searchParams = useSearchParams();
@@ -250,9 +187,6 @@ function LoginPageClient() {
             )}
           </form>
         </div>
-
-        {/* 版本信息显示 */}
-        <VersionDisplay />
       </div>
     </IOSCompatibility>
   );
