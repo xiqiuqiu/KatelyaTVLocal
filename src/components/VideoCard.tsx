@@ -33,6 +33,7 @@ interface VideoCardProps {
   currentEpisode?: number;
   douban_id?: string;
   onDelete?: () => void;
+  onDeleteRecord?: () => Promise<void> | void;
   rate?: string;
   items?: SearchResult[];
   type?: string;
@@ -53,6 +54,7 @@ export default function VideoCard({
   currentEpisode,
   douban_id,
   onDelete,
+  onDeleteRecord,
   rate,
   items,
   type = '',
@@ -192,13 +194,17 @@ export default function VideoCard({
       if (from !== 'playrecord' || !actualSource || !actualId) return;
 
       try {
-        await deletePlayRecord(actualSource, actualId);
+        if (onDeleteRecord) {
+          await onDeleteRecord();
+        } else {
+          await deletePlayRecord(actualSource, actualId);
+        }
         onDelete?.();
       } catch (err) {
         throw new Error('删除播放记录失败');
       }
     },
-    [actualId, actualSource, from, onDelete]
+    [actualId, actualSource, from, onDelete, onDeleteRecord]
   );
 
   const handleClick = useCallback(() => {

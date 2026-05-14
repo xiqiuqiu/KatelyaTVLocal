@@ -274,10 +274,6 @@ function DoubanPageClient() {
         />
 
         <section className='space-y-4'>
-          <SectionHeader
-            subtitle='切换榜单与地区，保留现有的筛选与翻页行为'
-            title={pageSectionLabels.doubanFilters}
-          />
           <Surface className='p-4 sm:p-6' variant='frosted'>
             <DoubanSelector
               type={type as 'movie' | 'tv' | 'show'}
@@ -299,7 +295,9 @@ function DoubanPageClient() {
           <PosterGrid className='grid-cols-3 gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fit,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
             {loading || !selectorsReady
               ? // 显示骨架屏
-                  skeletonData.map((index) => <DoubanCardSkeleton key={index} index={index} />)
+                skeletonData.map((index) => (
+                  <DoubanCardSkeleton key={index} index={index} />
+                ))
               : // 显示实际数据
                 doubanData.map((item, index) => (
                   <div key={`${item.title}-${index}`} className='w-full'>

@@ -3,12 +3,14 @@
 
 import { useEffect, useState } from 'react';
 
-import type { PlayRecord } from '@/lib/db.client';
 import {
   clearAllPlayRecords,
+  deletePlayRecord,
   getAllPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import type { PlayRecord } from '@/lib/db.client';
+import { buildContinueWatchingRecords } from '@/lib/play-records';
 
 import ScrollableRow from '@/components/ScrollableRow';
 import ActionLink from '@/components/ui/ActionLink';
@@ -22,7 +24,7 @@ interface ContinueWatchingProps {
 
 export default function ContinueWatching({ className }: ContinueWatchingProps) {
   const [playRecords, setPlayRecords] = useState<
-    (PlayRecord & { key: string })[]
+    (PlayRecord & { key: string; groupedKeys: string[] })[]
   >([]);
   const [loading, setLoading] = useState(true);
   const cardWidthClass =
@@ -30,18 +32,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
 
   // 处理播放记录数据更新的函数
   const updatePlayRecords = (allRecords: Record<string, PlayRecord>) => {
-    // 将记录转换为数组并根据 save_time 由近到远排序
-    const recordsArray = Object.entries(allRecords).map(([key, record]) => ({
-      ...record,
-      key,
-    }));
-
-    // 按 save_time 降序排序（最新的在前面）
-    const sortedRecords = recordsArray.sort(
-      (a, b) => b.save_time - a.save_time
-    );
-
-    setPlayRecords(sortedRecords);
+    setPlayRecords(buildContinueWatchingRecords(allRecords));
   };
 
   useEffect(() => {
@@ -86,7 +77,9 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
 
   // 从 key 中解析 source 和 id
   const parseKey = (key: string) => {
-    const [source, id] = key.split('+');
+    const plusIndex = key.indexOf('+');
+    const source = plusIndex >= 0 ? key.slice(0, plusIndex) : key;
+    const id = plusIndex >= 0 ? key.slice(plusIndex + 1) : '';
     return { source, id };
   };
 
@@ -133,6 +126,21 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
                     currentEpisode={record.index}
                     query={record.search_title}
                     from='playrecord'
+                    onDeleteRecord={async () => {
+                      const secondaryKeys = record.groupedKeys.filter(
+                        (groupedKey) => groupedKey !== record.key
+                      );
+                      const keysToDelete = [...secondaryKeys, record.key];
+
+                      for (const groupedKey of keysToDelete) {
+                        const { source: groupedSource, id: groupedId } =
+                          parseKey(groupedKey);
+                        if (!groupedSource || !groupedId) {
+                          continue;
+                        }
+                        await deletePlayRecord(groupedSource, groupedId);
+                      }
+                    }}
                     onDelete={() =>
                       setPlayRecords((prev) =>
                         prev.filter((r) => r.key !== record.key)
