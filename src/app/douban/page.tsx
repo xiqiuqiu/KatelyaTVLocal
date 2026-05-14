@@ -13,6 +13,7 @@ import { getDoubanPageMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import DoubanSelector from '@/components/DoubanSelector';
 import PageLayout from '@/components/PageLayout';
+import { LoadingRing } from '@/components/ui/LoadingPrimitives';
 import PageHeader from '@/components/ui/PageHeader';
 import PosterGrid from '@/components/ui/PosterGrid';
 import SectionHeader from '@/components/ui/SectionHeader';
@@ -298,7 +299,7 @@ function DoubanPageClient() {
           <PosterGrid className='grid-cols-3 gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fit,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
             {loading || !selectorsReady
               ? // 显示骨架屏
-                skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
+                  skeletonData.map((index) => <DoubanCardSkeleton key={index} index={index} />)
               : // 显示实际数据
                 doubanData.map((item, index) => (
                   <div key={`${item.title}-${index}`} className='w-full'>
@@ -328,9 +329,9 @@ function DoubanPageClient() {
               className='flex justify-center mt-12 py-8'
             >
               {isLoadingMore && (
-                <div className='flex items-center gap-2'>
-                  <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-green-500'></div>
-                  <span className='text-gray-600'>加载中...</span>
+                <div className='flex items-center gap-3 rounded-full border border-white/10 bg-[rgba(var(--ui-surface),0.58)] px-4 py-2 text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md'>
+                  <LoadingRing className='h-5 w-5' />
+                  <span className='text-sm'>加载中...</span>
                 </div>
               )}
             </div>
@@ -361,9 +362,34 @@ function DoubanPageClient() {
   );
 }
 
+const DoubanFallback = () => {
+  return (
+    <PageLayout activePath='/douban'>
+      <div className='space-y-4 sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
+        <PageHeader
+          subtitle={getDoubanPageMeta('movie').subtitle}
+          title={getDoubanPageMeta('movie').title}
+        />
+        <div className='mx-auto max-w-[95%] overflow-visible'>
+          <Surface
+            variant='frosted'
+            className='min-h-[70vh] rounded-ui-xl bg-transparent sm:min-h-[500px] sm:bg-[rgba(var(--ui-surface),0.3)] sm:p-8 sm:shadow-ui-soft'
+          >
+            <PosterGrid className='grid-cols-3 gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fit,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
+              {Array.from({ length: 25 }, (_, index) => index).map((index) => (
+                <DoubanCardSkeleton key={index} index={index} />
+              ))}
+            </PosterGrid>
+          </Surface>
+        </div>
+      </div>
+    </PageLayout>
+  );
+};
+
 export default function DoubanPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<DoubanFallback />}>
       <DoubanPageClient />
     </Suspense>
   );

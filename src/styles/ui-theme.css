@@ -3,6 +3,10 @@
   --ui-bg-elevated: 18 24 32;
   --ui-surface: 22 29 39;
   --ui-surface-strong: 35 42 54;
+  --ui-loading-surface: 16 22 31;
+  --ui-loading-base: 42 52 68;
+  --ui-loading-highlight: 86 105 140;
+  --ui-loading-border: 68 84 109;
   --ui-border: 35 42 54;
   --ui-border-alpha: 1;
   --ui-text: 232 237 243;
@@ -45,4 +49,73 @@
   border: 1px solid rgba(var(--ui-border), var(--ui-border-alpha));
   box-shadow: var(--ui-shadow-soft);
   backdrop-filter: blur(24px);
+}
+
+.ui-loading-panel {
+  background:
+    radial-gradient(
+      circle at top,
+      rgba(var(--ui-accent), 0.14),
+      transparent 55%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(var(--ui-bg-elevated), 0.96),
+      rgba(var(--ui-loading-surface), 0.92)
+    );
+  border: 1px solid rgba(var(--ui-loading-border), 0.42);
+  box-shadow: var(--ui-shadow-strong);
+  backdrop-filter: blur(24px);
+}
+
+.ui-skeleton-block {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(var(--ui-loading-border), 0.34);
+  background: linear-gradient(
+    180deg,
+    rgba(var(--ui-loading-base), 0.9),
+    rgba(var(--ui-loading-base), 0.58)
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.ui-skeleton-block::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--ui-loading-highlight), 0.02) 22%,
+    rgba(var(--ui-loading-highlight), 0.34) 50%,
+    rgba(var(--ui-loading-highlight), 0.02) 78%,
+    transparent 100%
+  );
+  animation: ui-loading-shimmer 1.7s ease-in-out infinite;
+  animation-delay: var(--shimmer-delay, 0s);
+}
+
+.ui-loading-ring {
+  border: 2px solid rgba(var(--ui-loading-highlight), 0.16);
+  border-top-color: rgb(var(--ui-accent));
+  border-right-color: rgba(var(--ui-accent), 0.68);
+  border-radius: 9999px;
+  box-shadow:
+    0 0 0 1px rgba(var(--ui-accent), 0.08),
+    0 0 24px rgba(var(--ui-accent), 0.18);
+  animation: ui-loading-spin 900ms linear infinite;
+}
+
+@keyframes ui-loading-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes ui-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import MobileBottomNav from '@/components/MobileBottomNav';
 import Sidebar from '@/components/Sidebar';
@@ -15,23 +15,27 @@ export default function AppShell({
   children,
   activePath = '/',
 }: AppShellProps) {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
-    if (
-      typeof window !== 'undefined' &&
-      typeof window.__sidebarCollapsed === 'boolean'
-    ) {
-      return window.__sidebarCollapsed;
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
     }
 
-    if (typeof window !== 'undefined') {
+    let next = true;
+
+    if (typeof window.__sidebarCollapsed === 'boolean') {
+      next = window.__sidebarCollapsed;
+    } else {
       const saved = window.localStorage.getItem('sidebarCollapsed');
       if (saved !== null) {
-        return JSON.parse(saved);
+        next = JSON.parse(saved);
       }
+      window.__sidebarCollapsed = next;
     }
 
-    return true;
-  });
+    setIsSidebarCollapsed(next);
+  }, []);
 
   const desktopOffsetClass = useMemo(() => {
     return isSidebarCollapsed ? 'md:pl-20' : 'md:pl-64';

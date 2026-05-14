@@ -22,10 +22,10 @@ import ContinueWatching from '@/components/ContinueWatching';
 import PageLayout from '@/components/PageLayout';
 import { useSite } from '@/components/SiteProvider';
 import ActionLink from '@/components/ui/ActionLink';
+import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
 import PageHeader from '@/components/ui/PageHeader';
 import PosterGrid from '@/components/ui/PosterGrid';
 import SectionHeader from '@/components/ui/SectionHeader';
-import Surface from '@/components/ui/Surface';
 import VideoCard from '@/components/VideoCard';
 
 export const runtime = 'edge';
@@ -239,12 +239,7 @@ function HomeClient() {
         {loading
           ? Array.from({ length: 12 }).map((_, index) => (
               <div key={index} className='w-full'>
-                <Surface className='overflow-hidden' variant='plain'>
-                  <div className='relative aspect-[2/3] w-full animate-pulse bg-white/5'>
-                    <div className='absolute inset-0 bg-white/10'></div>
-                  </div>
-                </Surface>
-                <div className='mt-3 h-4 animate-pulse rounded-full bg-white/10'></div>
+                <SkeletonPosterCard delayIndex={index} widths={['78%', '54%']} />
               </div>
             ))
           : items.map((item, index) => (
@@ -390,9 +385,44 @@ function HomeClient() {
   );
 }
 
+const HomeFallback = () => {
+  return (
+    <PageLayout activePath='/'>
+      <div className='space-y-8 overflow-visible sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
+        <PageHeader
+          subtitle={homeTabMeta.home.subtitle}
+          title={homeTabMeta.home.title}
+        />
+        <div className='mx-auto w-full max-w-none'>
+          <ContinueWatching />
+
+          {[
+            pageSectionLabels.popularMovies,
+            pageSectionLabels.popularShows,
+            pageSectionLabels.popularVariety,
+          ].map((title, sectionIndex) => (
+            <section key={sectionIndex} className='space-y-4 mt-8'>
+              <SectionHeader title={title} />
+              <PosterGrid className='grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6'>
+                {Array.from({ length: 12 }).map((_, index) => (
+                  <div key={index} className='w-full'>
+                    <SkeletonPosterCard delayIndex={index} widths={['78%', '54%']} />
+                  </div>
+                ))}
+              </PosterGrid>
+            </section>
+          ))}
+
+          <BottomKatelyaLogo />
+        </div>
+      </div>
+    </PageLayout>
+  );
+};
+
 export default function Home() {
   return (
-    <Suspense>
+    <Suspense fallback={<HomeFallback />}>
       <HomeClient />
     </Suspense>
   );

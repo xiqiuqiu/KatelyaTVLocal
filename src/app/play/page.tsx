@@ -45,7 +45,9 @@ import {
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
+import InitialLoadingOverlay from '@/components/player/InitialLoadingOverlay';
 import PlayerHeader from '@/components/player/PlayerHeader';
+import PlayerLoadingOverlay from '@/components/player/PlayerLoadingOverlay';
 import PlayerSidebar from '@/components/player/PlayerSidebar';
 import SkipController from '@/components/SkipController';
 import Surface from '@/components/ui/Surface';
@@ -941,8 +943,8 @@ function PlayPageClient() {
       setLoadingStage(currentSource && currentId ? 'fetching' : 'searching');
       setLoadingMessage(
         currentSource && currentId
-          ? '🎬 正在获取视频详情...'
-          : '🔍 正在搜索播放源...'
+          ? '正在获取视频详情...'
+          : '正在搜索播放源...'
       );
 
       let sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
@@ -982,7 +984,7 @@ function PlayPageClient() {
         optimizationEnabled
       ) {
         setLoadingStage('preferring');
-        setLoadingMessage('⚡ 正在优选最佳播放源...');
+        setLoadingMessage('正在优选最佳播放源...');
 
         detailData = await preferBestSource(sourcesInfo);
       }
@@ -1010,7 +1012,7 @@ function PlayPageClient() {
       window.history.replaceState({}, '', newUrl.toString());
 
       setLoadingStage('ready');
-      setLoadingMessage('✨ 准备就绪，即将开始播放...');
+  setLoadingMessage('准备就绪，即将开始播放...');
 
       // 短暂延迟让用户看到完成状态
       setTimeout(() => {
@@ -1819,97 +1821,7 @@ function PlayPageClient() {
   if (loading) {
     return (
       <PageLayout activePath='/play'>
-        <div className='flex min-h-[70vh] items-center justify-center'>
-          <Surface
-            variant='frosted'
-            className='mx-auto w-full max-w-lg px-6 py-8 text-center'
-          >
-            {/* 动画影院图标 */}
-            <div className='relative mb-8'>
-              <div className='relative mx-auto flex h-24 w-24 items-center justify-center rounded-ui-lg bg-[rgb(var(--ui-accent))] shadow-2xl transition-transform duration-300 hover:scale-105'>
-                <div className='text-white text-4xl'>
-                  {loadingStage === 'searching' && '🔍'}
-                  {loadingStage === 'preferring' && '⚡'}
-                  {loadingStage === 'fetching' && '🎬'}
-                  {loadingStage === 'ready' && '✨'}
-                </div>
-                {/* 旋转光环 */}
-                <div className='absolute -inset-2 animate-spin rounded-ui-lg bg-[rgb(var(--ui-accent))] opacity-20'></div>
-              </div>
-
-              {/* 浮动粒子效果 */}
-              <div className='absolute top-0 left-0 w-full h-full pointer-events-none'>
-                <div className='absolute top-2 left-2 w-2 h-2 bg-green-400 rounded-full animate-bounce'></div>
-                <div
-                  className='absolute top-4 right-4 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce'
-                  style={{ animationDelay: '0.5s' }}
-                ></div>
-                <div
-                  className='absolute bottom-3 left-6 w-1 h-1 bg-lime-400 rounded-full animate-bounce'
-                  style={{ animationDelay: '1s' }}
-                ></div>
-              </div>
-            </div>
-
-            {/* 进度指示器 */}
-            <div className='mx-auto mb-6 w-full max-w-sm'>
-              <div className='flex justify-center space-x-2 mb-4'>
-                <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
-                    loadingStage === 'searching' || loadingStage === 'fetching'
-                      ? 'bg-[rgb(var(--ui-accent))] scale-125'
-                      : loadingStage === 'preferring' ||
-                        loadingStage === 'ready'
-                      ? 'bg-[rgb(var(--ui-accent))]'
-                      : 'bg-white/20'
-                  }`}
-                ></div>
-                <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
-                    loadingStage === 'preferring'
-                      ? 'bg-[rgb(var(--ui-accent))] scale-125'
-                      : loadingStage === 'ready'
-                      ? 'bg-[rgb(var(--ui-accent))]'
-                      : 'bg-white/20'
-                  }`}
-                ></div>
-                <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
-                    loadingStage === 'ready'
-                      ? 'bg-[rgb(var(--ui-accent))] scale-125'
-                      : 'bg-white/20'
-                  }`}
-                ></div>
-              </div>
-
-              {/* 进度条 */}
-              <div className='h-2 w-full overflow-hidden rounded-full bg-white/10'>
-                <div
-                  className='h-full rounded-full bg-[rgb(var(--ui-accent))] transition-all duration-1000 ease-out'
-                  style={{
-                    width:
-                      loadingStage === 'searching' ||
-                      loadingStage === 'fetching'
-                        ? '33%'
-                        : loadingStage === 'preferring'
-                        ? '66%'
-                        : '100%',
-                  }}
-                ></div>
-              </div>
-            </div>
-
-            {/* 加载消息 */}
-            <div className='space-y-2'>
-              <p className='animate-pulse text-xl font-semibold text-[rgb(var(--ui-text))]'>
-                {loadingMessage}
-              </p>
-              <p className='mt-2 text-sm text-[rgb(var(--ui-text-muted))]'>
-                正在准备播放环境，请稍候
-              </p>
-            </div>
-          </Surface>
-        </div>
+        <InitialLoadingOverlay message={loadingMessage} stage={loadingStage} />
       </PageLayout>
     );
   }
@@ -2036,41 +1948,7 @@ function PlayPageClient() {
 
               {/* 换源加载蒙层 */}
               {isVideoLoading && (
-                <div className='absolute inset-0 z-[500] flex items-center justify-center rounded-ui-md bg-black/85 backdrop-blur-md transition-all duration-300'>
-                  <div className='mx-auto max-w-md px-6 text-center'>
-                    {/* 动画影院图标 */}
-                    <div className='relative mb-6'>
-                      <div className='relative mx-auto flex h-20 w-20 items-center justify-center rounded-ui-lg bg-[rgb(var(--ui-accent))] shadow-2xl transition-transform duration-300 hover:scale-105'>
-                        <div className='text-white text-4xl'>🎬</div>
-                        {/* 旋转光环 */}
-                        <div className='absolute -inset-2 animate-spin rounded-ui-lg bg-[rgb(var(--ui-accent))] opacity-20'></div>
-                      </div>
-
-                      {/* 浮动粒子效果 */}
-                      <div className='absolute top-0 left-0 w-full h-full pointer-events-none'>
-                        <div className='absolute top-2 left-2 w-2 h-2 bg-green-400 rounded-full animate-bounce'></div>
-                        <div
-                          className='absolute top-4 right-4 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce'
-                          style={{ animationDelay: '0.5s' }}
-                        ></div>
-                        <div
-                          className='absolute bottom-3 left-6 w-1 h-1 bg-lime-400 rounded-full animate-bounce'
-                          style={{ animationDelay: '1s' }}
-                        ></div>
-                      </div>
-                    </div>
-
-                    {/* 换源消息 */}
-                    <div className='space-y-2'>
-                      <p className='text-xl font-semibold text-white animate-pulse'>
-                        {videoLoadingStage === 'sourceChanging'
-                          ? '🔄 切换播放源...'
-                          : '🔄 视频加载中...'}
-                      </p>
-                      <p className='text-sm text-white/60'>正在连接当前线路</p>
-                    </div>
-                  </div>
-                </div>
+                <PlayerLoadingOverlay stage={videoLoadingStage} />
               )}
             </div>
           </Surface>
@@ -2224,9 +2102,17 @@ const FavoriteIcon = ({ filled }: { filled: boolean }) => {
   );
 };
 
+const PlayFallback = () => {
+  return (
+    <PageLayout activePath='/play'>
+      <InitialLoadingOverlay message='正在准备播放环境...' stage='searching' />
+    </PageLayout>
+  );
+};
+
 export default function PlayPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<PlayFallback />}>
       <PlayPageClient />
     </Suspense>
   );

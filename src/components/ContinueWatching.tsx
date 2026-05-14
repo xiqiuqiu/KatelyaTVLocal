@@ -12,8 +12,8 @@ import {
 
 import ScrollableRow from '@/components/ScrollableRow';
 import ActionLink from '@/components/ui/ActionLink';
+import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
 import SectionHeader from '@/components/ui/SectionHeader';
-import Surface from '@/components/ui/Surface';
 import VideoCard from '@/components/VideoCard';
 
 interface ContinueWatchingProps {
@@ -113,13 +113,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
           ? // 加载状态显示灰色占位数据
             Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className={cardWidthClass}>
-                <Surface className='overflow-hidden' variant='plain'>
-                  <div className='relative aspect-[2/3] w-full animate-pulse bg-white/5'>
-                    <div className='absolute inset-0 bg-white/10'></div>
-                  </div>
-                </Surface>
-                <div className='mt-3 h-4 animate-pulse rounded-full bg-white/10'></div>
-                <div className='mt-2 h-3 animate-pulse rounded-full bg-white/5'></div>
+                <SkeletonPosterCard delayIndex={index} widths={['84%', '62%']} />
               </div>
             ))
           : // 显示真实数据
