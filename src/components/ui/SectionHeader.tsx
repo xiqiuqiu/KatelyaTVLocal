@@ -15,7 +15,7 @@ export default function SectionHeader({
 }: SectionHeaderProps) {
   return (
     <div
-      className={`flex items-end justify-between gap-3 ${className}`.trim()}
+      className={`flex items-end justify-between gap-3 rounded-ui-md border border-[rgb(var(--ui-border)/0.24)] bg-[rgb(var(--ui-surface)/0.18)] px-3 py-2 backdrop-blur-sm ${className}`.trim()}
     >
       <div className='min-w-0'>
         <h2 className='text-lg font-semibold tracking-tight text-[rgb(var(--ui-text))] sm:text-xl'>

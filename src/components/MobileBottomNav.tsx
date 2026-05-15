@@ -31,7 +31,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
 
   return (
     <nav
-      className='fixed inset-x-0 bottom-0 z-[600] border-t border-white/10 bg-[rgba(10,14,20,0.9)] shadow-ui-strong backdrop-blur-2xl md:hidden'
+      className='ui-glass-strong fixed inset-x-0 bottom-0 z-[600] rounded-none border-x-0 border-b-0 md:hidden'
       style={{
         paddingBottom: 'env(safe-area-inset-bottom)',
       }}
@@ -53,7 +53,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
                 }`}
               >
                 {active && (
-                  <div className='absolute inset-x-2 inset-y-1 rounded-ui-md border border-white/10 bg-white/7' />
+                  <div className='absolute inset-x-2 inset-y-1 rounded-ui-md border border-[rgb(var(--ui-accent)/0.24)] bg-[rgb(var(--ui-surface-strong)/0.48)] shadow-ui-soft' />
                 )}
 
                 <Icon

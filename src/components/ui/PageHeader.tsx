@@ -15,7 +15,7 @@ export default function PageHeader({
 }: PageHeaderProps) {
   return (
     <div
-      className={`flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between ${className}`.trim()}
+      className={`ui-page-hero flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between ${className}`.trim()}
     >
       <div className='min-w-0'>
         <h1 className='text-2xl font-semibold tracking-tight text-[rgb(var(--ui-text))] sm:text-3xl'>

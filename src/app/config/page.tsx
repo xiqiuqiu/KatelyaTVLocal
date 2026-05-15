@@ -1,6 +1,11 @@
 'use client';
 
+import { Check, Clipboard, FileJson, Link2, MonitorPlay } from 'lucide-react';
 import { useCallback, useState } from 'react';
+
+import PageLayout from '@/components/PageLayout';
+import PageHeader from '@/components/ui/PageHeader';
+import Surface from '@/components/ui/Surface';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
@@ -26,100 +31,133 @@ export default function ConfigPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-4xl mx-auto p-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-8">
-          TVBox 配置
-        </h1>
-        
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-            配置链接
-          </h2>
-          
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              格式类型
+    <PageLayout activePath='/config'>
+      <div className='mx-auto max-w-5xl space-y-6 sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
+        <PageHeader
+          subtitle='复制配置链接，在 TVBox 中接入当前站点的视频聚合能力'
+          title='TVBox 配置'
+        />
+
+        <Surface className='p-5 sm:p-6' variant='frosted'>
+          <div className='mb-5 flex items-center gap-3'>
+            <div className='flex h-11 w-11 items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-surface)/0.42)] text-[rgb(var(--ui-accent))]'>
+              <Link2 className='h-5 w-5' />
+            </div>
+            <div>
+              <h2 className='text-xl font-semibold text-[rgb(var(--ui-text))]'>
+                配置链接
+              </h2>
+              <p className='mt-1 text-sm text-[rgb(var(--ui-text-muted))]'>
+                根据播放器支持情况选择 JSON 或 Base64
+              </p>
+            </div>
+          </div>
+
+          <div className='grid gap-4 md:grid-cols-[14rem_1fr]'>
+            <label className='block'>
+              <span className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text-muted))]'>
+                格式类型
+              </span>
+              <select
+                value={format}
+                onChange={(e) => setFormat(e.target.value as 'json' | 'base64')}
+                className='w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.62)] bg-[rgb(var(--ui-bg-elevated)/0.74)] px-3 py-3 text-[rgb(var(--ui-text))] shadow-ui-soft focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.32)]'
+              >
+                <option value='json'>JSON 格式</option>
+                <option value='base64'>Base64 格式</option>
+              </select>
             </label>
-            <select
-              value={format}
-              onChange={(e) => setFormat(e.target.value as 'json' | 'base64')}
-              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            >
-              <option value="json">JSON 格式</option>
-              <option value="base64">Base64 格式</option>
-            </select>
-          </div>
 
-          <div className="flex items-center space-x-2">
-            <input
-              type="text"
-              readOnly
-              value={getConfigUrl()}
-              className="flex-1 p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
-            />
-            <button
-              onClick={handleCopy}
-              className={`px-4 py-3 rounded-md font-medium transition-colors ${
-                copied
-                  ? 'bg-green-500 text-white'
-                  : 'bg-blue-500 hover:bg-blue-600 text-white'
-              }`}
-            >
-              {copied ? '已复制' : '复制'}
-            </button>
+            <div>
+              <span className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text-muted))]'>
+                当前链接
+              </span>
+              <div className='flex flex-col gap-3 sm:flex-row'>
+                <input
+                  type='text'
+                  readOnly
+                  value={getConfigUrl()}
+                  className='min-w-0 flex-1 rounded-ui-sm border border-[rgb(var(--ui-border)/0.62)] bg-[rgb(var(--ui-bg-elevated)/0.74)] px-4 py-3 font-mono text-sm text-[rgb(var(--ui-text))] shadow-ui-soft focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.32)]'
+                />
+                <button
+                  onClick={handleCopy}
+                  className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-ui-sm px-5 font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition hover:scale-[1.02] ${
+                    copied
+                      ? 'bg-[rgb(var(--ui-success))]'
+                      : 'bg-[rgb(var(--ui-accent))] hover:brightness-110'
+                  }`}
+                  type='button'
+                >
+                  {copied ? (
+                    <>
+                      <Check className='h-4 w-4' />
+                      已复制
+                    </>
+                  ) : (
+                    <>
+                      <Clipboard className='h-4 w-4' />
+                      复制
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+        </Surface>
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-            使用说明
-          </h2>
-          
-          <div className="space-y-4 text-gray-700 dark:text-gray-300">
-            <div>
-              <h3 className="font-semibold text-lg mb-2">1. 获取配置链接</h3>
-              <p>复制上方的配置链接，支持 JSON 和 Base64 两种格式。</p>
+        <div className='grid gap-6 lg:grid-cols-[1.1fr_0.9fr]'>
+          <Surface className='p-5 sm:p-6' variant='raised'>
+            <div className='mb-5 flex items-center gap-3'>
+              <FileJson className='h-5 w-5 text-[rgb(var(--ui-accent-warm))]' />
+              <h2 className='text-xl font-semibold text-[rgb(var(--ui-text))]'>
+                使用说明
+              </h2>
             </div>
-            
-            <div>
-              <h3 className="font-semibold text-lg mb-2">2. 导入 TVBox</h3>
-              <p>打开 TVBox 应用，在配置管理中添加新的接口配置，粘贴复制的链接。</p>
+            <div className='space-y-4 text-sm leading-6 text-[rgb(var(--ui-text-muted))]'>
+              {[
+                ['获取配置链接', '复制上方配置链接，支持 JSON 和 Base64 两种格式。'],
+                ['导入 TVBox', '打开 TVBox 应用，在配置管理中添加新的接口配置。'],
+                ['开始使用', '配置导入成功后，即可浏览和观看本站的视频内容。'],
+              ].map(([title, desc], index) => (
+                <div
+                  key={title}
+                  className='rounded-ui-sm border border-[rgb(var(--ui-border)/0.3)] bg-[rgb(var(--ui-surface)/0.22)] p-4'
+                >
+                  <h3 className='font-semibold text-[rgb(var(--ui-text))]'>
+                    {index + 1}. {title}
+                  </h3>
+                  <p className='mt-1'>{desc}</p>
+                </div>
+              ))}
             </div>
-            
-            <div>
-              <h3 className="font-semibold text-lg mb-2">3. 开始使用</h3>
-              <p>配置导入成功后，即可在 TVBox 中浏览和观看本站的视频内容。</p>
-            </div>
-          </div>
-        </div>
+          </Surface>
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-          <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-            支持功能
-          </h2>
-          
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <h3 className="font-semibold text-gray-900 dark:text-white">视频解析</h3>
-              <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                <li>• 支持多种视频源</li>
-                <li>• 自动解析视频链接</li>
-                <li>• 高清视频播放</li>
-              </ul>
+          <Surface className='p-5 sm:p-6' variant='raised'>
+            <div className='mb-5 flex items-center gap-3'>
+              <MonitorPlay className='h-5 w-5 text-[rgb(var(--ui-success))]' />
+              <h2 className='text-xl font-semibold text-[rgb(var(--ui-text))]'>
+                支持功能
+              </h2>
             </div>
-            
-            <div className="space-y-2">
-              <h3 className="font-semibold text-gray-900 dark:text-white">兼容性</h3>
-              <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                <li>• 完全兼容 TVBox</li>
-                <li>• 支持自定义配置</li>
-                <li>• 实时更新内容</li>
-              </ul>
+            <div className='grid gap-4 text-sm text-[rgb(var(--ui-text-muted))]'>
+              {[
+                ['视频解析', '多源聚合、自动解析、高清播放'],
+                ['兼容性', '兼容 TVBox、自定义配置、实时更新内容'],
+              ].map(([title, desc]) => (
+                <div
+                  key={title}
+                  className='rounded-ui-sm border border-[rgb(var(--ui-border)/0.3)] bg-[rgb(var(--ui-surface)/0.22)] p-4'
+                >
+                  <h3 className='font-semibold text-[rgb(var(--ui-text))]'>
+                    {title}
+                  </h3>
+                  <p className='mt-1 leading-6'>{desc}</p>
+                </div>
+              ))}
             </div>
-          </div>
+          </Surface>
         </div>
       </div>
-    </div>
+    </PageLayout>
   );
 }

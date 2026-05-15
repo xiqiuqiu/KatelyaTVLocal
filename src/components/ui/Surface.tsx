@@ -9,11 +9,9 @@ interface SurfaceProps {
 
 const variantClassNames: Record<NonNullable<SurfaceProps['variant']>, string> =
   {
-    plain:
-      'border border-white/10 bg-[rgba(var(--ui-surface),0.44)] shadow-none',
-    raised:
-      'border border-white/10 bg-[rgba(var(--ui-surface-strong),0.84)] shadow-ui-soft',
-    frosted: 'ui-shell-panel',
+    plain: 'ui-glass-subtle shadow-none',
+    raised: 'ui-glass transition duration-300 hover:-translate-y-1 hover:border-[rgb(var(--ui-accent)/0.34)] hover:shadow-ui-strong',
+    frosted: 'ui-glass-strong',
   };
 
 export default function Surface({

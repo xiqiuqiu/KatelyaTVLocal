@@ -34,14 +34,6 @@ export const runtime = 'edge';
 const BottomKatelyaLogo = () => {
   return (
     <div className='bottom-logo-container'>
-      {/* 浮动几何形状装饰 */}
-      <div className='floating-shapes'>
-        <div className='shape'></div>
-        <div className='shape'></div>
-        <div className='shape'></div>
-        <div className='shape'></div>
-      </div>
-
       <div className='text-center'>
         <div className='bottom-logo'>KatelyaTV</div>
         <div className='mt-2 text-sm text-[rgb(var(--ui-text-muted))] opacity-75'>

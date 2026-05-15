@@ -286,7 +286,9 @@ export default function VideoCard({
   const isSmall = size === 'small';
   const badgeSizeClass = isSmall ? 'text-[10px] px-2 py-1' : 'text-xs px-2.5 py-1';
   const iconButtonClass =
-    'inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-[rgba(var(--ui-bg),0.45)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition duration-200 hover:scale-[1.04] hover:border-white/20 hover:bg-[rgba(var(--ui-bg),0.6)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
+    'inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.46)] bg-[rgb(var(--ui-bg)/0.45)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition duration-200 hover:scale-[1.06] hover:border-[rgb(var(--ui-accent)/0.32)] hover:bg-[rgb(var(--ui-surface-strong)/0.62)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
+  const doubanLinkClass =
+    'absolute left-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-bg)/0.48)] text-[rgb(var(--ui-success))] shadow-ui-glass backdrop-blur-xl transition duration-200 hover:scale-[1.06] hover:border-[rgb(var(--ui-success)/0.48)] hover:bg-[rgb(var(--ui-surface-strong)/0.68)] hover:text-[rgb(var(--ui-on-accent))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
   const posterActionLabel = `打开 ${actualTitle} 海报`;
   const titleActionLabel = `打开 ${actualTitle}`;
 
@@ -318,7 +320,7 @@ export default function VideoCard({
             type='button'
           />
 
-          <div className='pointer-events-none absolute inset-0 bg-gradient-to-t from-[rgba(var(--ui-bg),0.9)] via-[rgba(var(--ui-bg),0.2)] to-transparent opacity-80 transition-opacity duration-300 group-hover:opacity-100' />
+          <div className='pointer-events-none absolute inset-0 bg-gradient-to-t from-[rgb(var(--ui-bg)/0.9)] via-[rgb(var(--ui-bg)/0.2)] to-transparent opacity-80 transition-opacity duration-300 group-hover:opacity-100' />
 
           {config.showPlayButton ? (
             <div className='pointer-events-none absolute inset-0 z-10 flex items-center justify-center opacity-0 transition-all duration-300 ease-in-out delay-75 group-hover:opacity-100'>
@@ -333,7 +335,7 @@ export default function VideoCard({
           {config.showDoubanLink && actualDoubanId ? (
             <a
               aria-label='打开豆瓣页面'
-              className='absolute left-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-[rgba(var(--ui-success),0.9)] text-[rgb(var(--ui-on-accent))] shadow-ui-soft backdrop-blur-md transition duration-200 hover:scale-[1.04] hover:brightness-110'
+              className={doubanLinkClass}
               href={`https://movie.douban.com/subject/${actualDoubanId}`}
               onClick={(event) => event.stopPropagation()}
               rel='noopener noreferrer'
@@ -354,7 +356,7 @@ export default function VideoCard({
 
             {actualEpisodes && actualEpisodes > 1 ? (
               <span
-                className={`inline-flex items-center justify-center rounded-full bg-[rgba(var(--ui-success),0.9)] font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft ${badgeSizeClass}`}
+                className={`inline-flex items-center justify-center rounded-full bg-[rgb(var(--ui-success)/0.9)] font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft ${badgeSizeClass}`}
               >
                 {currentEpisode
                   ? `${currentEpisode}/${actualEpisodes}`
@@ -380,7 +382,9 @@ export default function VideoCard({
                 <button
                   aria-label='切换收藏'
                   className={`${iconButtonClass} ${
-                    favorited ? 'border-red-400/40 bg-red-500/20 text-red-300' : ''
+                    favorited
+                      ? 'border-[rgb(var(--ui-critical)/0.42)] bg-[rgb(var(--ui-critical)/0.2)] text-[rgb(var(--ui-critical))]'
+                      : ''
                   }`}
                   onClick={handleToggleFavorite}
                   type='button'

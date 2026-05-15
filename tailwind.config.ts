@@ -23,7 +23,7 @@ const config: Config = {
         '16': 'repeat(16, minmax(0, 1fr))',
       },
       fontFamily: {
-        primary: ['Inter', ...defaultTheme.fontFamily.sans],
+        primary: ['var(--font-primary)', ...defaultTheme.fontFamily.sans],
       },
       borderRadius: {
         'ui-sm': 'var(--ui-radius-sm)',
@@ -48,6 +48,7 @@ const config: Config = {
       boxShadow: {
         'ui-soft': 'var(--ui-shadow-soft)',
         'ui-strong': 'var(--ui-shadow-strong)',
+        'ui-glass': 'var(--ui-shadow-glass)',
       },
       keyframes: {
         flicker: {

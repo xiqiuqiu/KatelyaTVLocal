@@ -14,7 +14,7 @@ import { parseSessionCookieValue } from '@/lib/security/session';
 import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({ subsets: ['latin'], variable: '--font-primary' });
 const defaultImageProxy = '/api/image-proxy?url=';
 const defaultSourceProbe = '/api/source-probe?url=';
 const defaultHlsProxy = '/api/hls-proxy?url=';
@@ -45,17 +45,6 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: 'cover',
   themeColor: 'rgb(11 15 20)',
-};
-
-const FloatingShapes = () => {
-  return (
-    <div className='floating-shapes'>
-      <div className='shape'></div>
-      <div className='shape'></div>
-      <div className='shape'></div>
-      <div className='shape'></div>
-    </div>
-  );
 };
 
 export default async function RootLayout({
@@ -125,9 +114,8 @@ export default async function RootLayout({
         />
       </head>
       <body
-        className={`${inter.className} min-h-screen bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text))]`}
+        className={`${inter.className} ${inter.variable} min-h-screen bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text))]`}
       >
-        <FloatingShapes />
         <ThemeProvider attribute='class' defaultTheme='system' enableSystem>
           <SiteProvider siteName={siteName} announcement={announcement}>
             {children}
