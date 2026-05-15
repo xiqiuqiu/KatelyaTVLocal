@@ -50,12 +50,12 @@ export default function AppShell({
   };
 
   return (
-    <div className='ui-app-bg min-h-screen text-[rgb(var(--ui-text))]'>
+    <div className='ui-app-bg ui-breathing-canvas min-h-screen text-[rgb(var(--ui-text))]'>
       <TopSearchBar
         isSidebarCollapsed={isSidebarCollapsed}
         onToggleSidebar={handleToggleSidebar}
       />
-      <div className='relative min-h-[calc(100vh-4rem)]'>
+      <div className='relative z-10 min-h-screen overflow-x-hidden pt-[calc(4rem+env(safe-area-inset-top))]'>
         <div className='hidden md:block transition-all duration-300'>
           <Sidebar
             activePath={activePath}
@@ -68,7 +68,7 @@ export default function AppShell({
           className={`min-w-0 transition-[padding] duration-300 ${desktopOffsetClass}`}
         >
           <div
-            className='mx-auto w-full max-w-[1600px] px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-8'
+            className='ui-reveal mx-auto w-full max-w-[1600px] px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-8'
             style={{
               paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))',
             }}
