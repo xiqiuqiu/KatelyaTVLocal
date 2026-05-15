@@ -36,22 +36,22 @@ const TopSearchBar = ({
 
   return (
     <header
-      className='ui-glass-strong fixed inset-x-0 top-0 z-[9999] rounded-none border-x-0 border-t-0 shadow-[0_1px_0_rgb(255_255_255/0.04)]'
+      className='ui-topbar-glass fixed inset-x-0 top-0 z-[9999]'
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
-      <div className='mx-auto flex h-16 max-w-[1600px] items-center gap-3 px-4 md:px-6 lg:px-8'>
-        <div className='flex-shrink-0'>
+      <div className='relative z-10 grid h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 md:block md:px-0'>
+        <div className='flex flex-shrink-0 justify-center md:absolute md:left-0 md:top-0 md:h-16 md:w-20 md:items-center'>
           <button
             onClick={onToggleSidebar}
             aria-pressed={!isSidebarCollapsed}
             aria-label={isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-            className='inline-flex h-11 w-11 items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-surface)/0.42)] text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md transition hover:-translate-y-0.5 hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.52)] hover:text-[rgb(var(--ui-text))]'
+            className='inline-flex h-11 w-11 items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-surface)/0.42)] text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md transition hover:-translate-y-0.5 hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.52)] hover:text-[rgb(var(--ui-text))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent'
           >
             <Menu size={20} />
           </button>
         </div>
 
-        <div className='hidden flex-shrink-0 md:flex'>
+        <div className='hidden min-w-0 flex-shrink-0 md:absolute md:left-24 md:top-1/2 md:flex md:-translate-y-1/2'>
           <button
             onClick={() => router.push('/')}
             className='inline-flex items-center gap-2 rounded-full px-2 py-1 text-sm font-semibold tracking-[0.08em] text-[rgb(var(--ui-text))] transition hover:bg-[rgb(var(--ui-surface)/0.42)] hover:text-[rgb(var(--ui-accent))]'
@@ -71,7 +71,7 @@ const TopSearchBar = ({
         <form
           role='search'
           onSubmit={handleSearch}
-          className='mx-auto flex max-w-3xl flex-1 items-center rounded-full border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-surface)/0.42)] p-1 shadow-ui-soft backdrop-blur-xl transition duration-300 focus-within:border-[rgb(var(--ui-accent)/0.44)] focus-within:bg-[rgb(var(--ui-surface-strong)/0.5)]'
+          className='flex min-w-0 items-center rounded-full border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-surface)/0.42)] p-1 shadow-ui-soft backdrop-blur-xl transition duration-300 focus-within:border-[rgb(var(--ui-accent)/0.44)] focus-within:bg-[rgb(var(--ui-surface-strong)/0.5)] md:absolute md:left-1/2 md:top-1/2 md:w-[min(56rem,calc(100vw-32rem))] md:-translate-x-1/2 md:-translate-y-1/2'
         >
           <div className='flex-1'>
             <input
@@ -91,7 +91,7 @@ const TopSearchBar = ({
           </button>
         </form>
 
-        <div className='flex flex-shrink-0 items-center gap-1 sm:gap-2'>
+        <div className='flex flex-shrink-0 items-center gap-1 sm:gap-2 md:absolute md:right-8 md:top-1/2 md:-translate-y-1/2'>
           <ThemeToggle />
           <UserMenu />
         </div>

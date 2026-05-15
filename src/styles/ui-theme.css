@@ -90,6 +90,39 @@
   position: relative;
 }
 
+.ui-topbar-glass {
+  overflow: hidden;
+  border-bottom: 1px solid rgb(var(--ui-border) / 0.72);
+  background:
+    linear-gradient(
+      90deg,
+      rgb(var(--ui-bg-elevated) / 0.86),
+      rgb(var(--ui-bg-elevated) / 0.7) 44%,
+      rgb(var(--ui-bg-elevated) / 0.82)
+    ),
+    rgb(var(--ui-bg) / 0.78);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.045) inset,
+    0 20px 46px rgb(0 0 0 / 0.3);
+  backdrop-filter: blur(30px) saturate(1.24);
+}
+
+.ui-topbar-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.07), transparent 58%),
+    linear-gradient(
+      90deg,
+      rgb(var(--ui-accent) / 0.08),
+      transparent 28%,
+      rgb(var(--ui-accent-warm) / 0.06) 72%,
+      transparent
+    );
+}
+
 .ui-glass-subtle {
   border: 1px solid rgb(var(--ui-border) / 0.48);
   background: rgb(var(--ui-surface) / 0.38);
