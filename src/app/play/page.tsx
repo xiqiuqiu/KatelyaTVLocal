@@ -8,6 +8,12 @@ import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
+import type { CastStatus } from '@/lib/cast';
+import {
+  castControlIcon,
+  requestCastPlayback,
+  resolveCastMediaUrl,
+} from '@/lib/cast';
 import {
   deleteFavorite,
   deletePlayRecord,
@@ -267,6 +273,7 @@ function PlayPageClient() {
 
   // 跳过设置状态
   const [isSkipSettingMode, setIsSkipSettingMode] = useState<boolean>(false);
+  const [castStatus, setCastStatus] = useState<CastStatus>('idle');
 
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
@@ -822,6 +829,22 @@ function PlayPageClient() {
     }
   };
 
+  const showPlayerNotice = (art: any, message: string) => {
+    if (art?.notice) {
+      art.notice.show = message;
+    }
+  };
+
+  const updateCastControlElement = (
+    element: HTMLElement | undefined,
+    status: CastStatus,
+    label: string
+  ) => {
+    if (!element) return;
+    element.dataset.castStatus = status;
+    element.setAttribute('aria-label', label);
+  };
+
   const createCustomHlsJsLoader = (HlsModule: any) =>
     class CustomHlsJsLoader extends HlsModule.DefaultConfig.loader {
       constructor(config: any) {
@@ -942,9 +965,7 @@ function PlayPageClient() {
       setPrecomputedSourceStatuses(new Map());
       setLoadingStage(currentSource && currentId ? 'fetching' : 'searching');
       setLoadingMessage(
-        currentSource && currentId
-          ? '正在获取视频详情...'
-          : '正在搜索播放源...'
+        currentSource && currentId ? '正在获取视频详情...' : '正在搜索播放源...'
       );
 
       let sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
@@ -1012,7 +1033,7 @@ function PlayPageClient() {
       window.history.replaceState({}, '', newUrl.toString());
 
       setLoadingStage('ready');
-  setLoadingMessage('准备就绪，即将开始播放...');
+      setLoadingMessage('准备就绪，即将开始播放...');
 
       // 短暂延迟让用户看到完成状态
       setTimeout(() => {
@@ -1630,6 +1651,67 @@ function PlayPageClient() {
               tooltip: '播放下一集',
               click: function () {
                 handleNextEpisode();
+              },
+            },
+            {
+              position: 'right',
+              index: 9,
+              html: castControlIcon,
+              tooltip:
+                castStatus === 'connected'
+                  ? '已投屏'
+                  : castStatus === 'connecting'
+                  ? '正在连接投屏'
+                  : '投屏',
+              click: async function (this: any, component: any) {
+                const castControlElement = component?.$parent as
+                  | HTMLElement
+                  | undefined;
+                const directUrl = originalVideoUrlRef.current;
+                const playbackUrl = videoUrlRef.current;
+                const proxyUrl = buildHlsProxyUrl(directUrl);
+                const castMediaUrl = resolveCastMediaUrl({
+                  directUrl,
+                  proxyUrl,
+                  playbackUrl,
+                });
+
+                setCastStatus('connecting');
+                updateCastControlElement(
+                  castControlElement,
+                  'connecting',
+                  '正在连接投屏'
+                );
+
+                if (this.video && castMediaUrl.url) {
+                  ensureVideoSource(
+                    this.video as HTMLVideoElement,
+                    castMediaUrl.url
+                  );
+                }
+
+                const result = await requestCastPlayback({
+                  video: this.video as HTMLVideoElement | null | undefined,
+                  media: {
+                    title: videoTitleRef.current || videoTitle || '正在播放',
+                    subtitle: `第 ${currentEpisodeIndexRef.current + 1} 集 · ${
+                      detailRef.current?.source_name || ''
+                    }`.trim(),
+                    poster: detailRef.current?.poster || videoCover,
+                    directUrl,
+                    proxyUrl,
+                    playbackUrl,
+                  },
+                  onNotice: (message) => showPlayerNotice(this, message),
+                });
+
+                setCastStatus(result.status);
+                updateCastControlElement(
+                  castControlElement,
+                  result.status,
+                  result.status === 'connected' ? '已投屏' : '投屏'
+                );
+                showPlayerNotice(this, result.message);
               },
             },
           ],
