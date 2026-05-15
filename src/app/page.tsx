@@ -44,7 +44,7 @@ const BottomKatelyaLogo = () => {
 
       <div className='text-center'>
         <div className='bottom-logo'>KatelyaTV</div>
-        <div className='mt-2 text-sm text-gray-500 dark:text-gray-400 opacity-75'>
+        <div className='mt-2 text-sm text-[rgb(var(--ui-text-muted))] opacity-75'>
           影视聚合搜索与在线播放
         </div>
       </div>
@@ -288,7 +288,7 @@ function HomeClient() {
                     </div>
                   ))}
                   {favoriteItems.length === 0 && (
-                    <div className='col-span-full py-8 text-center text-gray-500 dark:text-gray-400'>
+                    <div className='col-span-full py-8 text-center text-[rgb(var(--ui-text-muted))]'>
                       暂无收藏内容
                     </div>
                   )}
@@ -333,28 +333,30 @@ function HomeClient() {
             showAnnouncement ? '' : 'opacity-0 pointer-events-none'
           }`}
         >
-          <div className='w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-900 transform transition-all duration-300 hover:shadow-2xl'>
-            <div className='flex justify-between items-start mb-4'>
-              <h3 className='text-2xl font-bold tracking-tight text-gray-800 dark:text-white border-b border-blue-500 pb-1'>
+          <div className='w-full max-w-md transform rounded-ui-lg border border-white/10 bg-[rgba(var(--ui-surface-strong),0.96)] p-6 text-[rgb(var(--ui-text))] shadow-ui-strong backdrop-blur-xl transition-all duration-300'>
+            <div className='mb-4 flex items-start justify-between'>
+              <h3 className='border-b border-[rgb(var(--ui-accent))] pb-1 text-2xl font-bold tracking-tight text-[rgb(var(--ui-text))]'>
                 提示
               </h3>
               <button
                 onClick={() => handleCloseAnnouncement(announcement)}
-                className='text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-white transition-colors'
+                className='text-[rgb(var(--ui-text-muted))] transition-colors hover:text-[rgb(var(--ui-text))]'
                 aria-label='关闭'
-              ></button>
+              >
+                ×
+              </button>
             </div>
             <div className='mb-6'>
-              <div className='relative overflow-hidden rounded-lg mb-4 bg-blue-50 dark:bg-blue-900/20'>
-                <div className='absolute inset-y-0 left-0 w-1.5 bg-blue-500 dark:bg-blue-400'></div>
-                <p className='ml-4 text-gray-600 dark:text-gray-300 leading-relaxed'>
+              <div className='relative mb-4 overflow-hidden rounded-ui-md border border-white/10 bg-[rgba(var(--ui-accent),0.1)]'>
+                <div className='absolute inset-y-0 left-0 w-1.5 bg-[rgb(var(--ui-accent))]'></div>
+                <p className='ml-4 p-4 leading-relaxed text-[rgb(var(--ui-text))]'>
                   {announcement}
                 </p>
               </div>
             </div>
             <button
               onClick={() => handleCloseAnnouncement(announcement)}
-              className='w-full rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3 text-white font-medium shadow-md hover:shadow-lg hover:from-blue-700 hover:to-blue-800 dark:from-blue-600 dark:to-blue-700 dark:hover:from-blue-700 dark:hover:to-blue-800 transition-all duration-300 transform hover:-translate-y-0.5'
+              className='w-full rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-3 font-medium text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-300 hover:-translate-y-0.5 hover:brightness-110'
             >
               我知道了
             </button>

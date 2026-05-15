@@ -8,6 +8,33 @@
 
 **Tech Stack:** Next.js 14 App Router, React 18, Tailwind CSS, Testing Library + Jest, Lucide React, existing client-side localStorage/session flows.
 
+## Reality Check: 2026-05-15
+
+The source tree and production site have moved ahead of the original unchecked tracker. The top-level checklist below has now been reconciled against current code, production browser checks, and local verification from 2026-05-15. The detailed Task 1-7 sections remain useful as implementation history and reference, but the top-level Phase 0-8 list is the current progress tracker.
+
+Verified as already present in the current implementation and visible on `https://movie.sigclr.com`:
+
+- Shared dark shell with sticky top search, collapsible desktop rail, mobile bottom navigation, and shared page width rules.
+- Shared token and primitive layer: `ui-theme.css`, `AppShell`, `PageHeader`, `SectionHeader`, `ActionLink`, `Surface`, `PosterGrid`, card actions, and playback wrappers.
+- Homepage, search, Douban, login, user menu, and playback pages are already using the shared visual language in production.
+- Search query routing, aggregate search display, Douban category browsing, source probing, unavailable-source blocking, and actual playback still work in the checked production flow.
+- Focused tests for shell, card actions, player sidebar, and user menu pass locally.
+- `pnpm typecheck`, `pnpm lint`, and `pnpm build` pass locally. `lint` still reports pre-existing warnings in unrelated/debug files and import ordering.
+
+Remaining gaps against `UI_1.0_web.png` and this plan:
+
+- Homepage does not yet have the large hero/recommendation block shown in the web reference.
+- Search results do not yet expose the full category tab/filter/selected-card treatment from the reference.
+- Playback works and has the new shell/sidebar, but the lower details/recommendations area is not fully aligned with the reference composition.
+- A few verification items are still partial: full Jest suite, local `/login` browser screenshot, logout/password-change persistence, and full interaction sweep.
+
+Recommended next development slice:
+
+1. Implement the homepage hero/recommendation block as a visual/structural task using existing fetched content first.
+2. Add the search-result category/filter/selected-card polish without changing query or aggregation behavior.
+3. Align the playback detail/recommendation composition with the web reference, keeping source switching, episode switching, resume, and favorite flows unchanged.
+4. Run the remaining full verification pass and close the final partial checklist items.
+
 ---
 
 ## Scope
@@ -33,7 +60,7 @@ This plan does **not** implement:
 
 ## Current Code Impact
 
-Shared shell and global styling already exist, but they are not rule-driven yet:
+Shared shell and global styling now exist and are the primary UI path:
 
 - Shell: `src/components/PageLayout.tsx`, `src/components/TopSearchBar.tsx`, `src/components/Sidebar.tsx`, `src/components/MobileBottomNav.tsx`
 - Content surfaces: `src/components/VideoCard.tsx`, `src/components/ContinueWatching.tsx`, `src/components/ScrollableRow.tsx`, `src/components/CapsuleSwitch.tsx`, `src/components/DoubanSelector.tsx`
@@ -89,102 +116,102 @@ Use this checklist as the top-level rollout tracker. Detailed implementation ste
 ### Phase 0: Baseline and guardrails
 
 - [ ] Create a dedicated worktree or branch for the UI refactor
-- [ ] Confirm the current baseline passes `pnpm typecheck`
-- [ ] Confirm the current baseline passes `pnpm lint`
-- [ ] Confirm the current baseline passes `pnpm build`
-- [ ] Capture current browser screenshots for `/login`, `/`, `/search?q=庆余年`, `/douban?type=movie`, and `/play`
-- [ ] Freeze the redesign direction: dark cinematic shell, one card system, one action hierarchy, one overlay language
-- [ ] Treat `UI_1.0_web.png` as the phased visual acceptance reference for web layout, tokens, card states, and page density
-- [ ] For each design-reference gap, classify it as `visual-only`, `structural`, `behavioral`, or `data-contract` before implementation
-- [ ] Do not start a behavioral or data-contract change until the current business flow and rollback risk are documented
+- [x] Confirm the current baseline passes `pnpm typecheck` (verified 2026-05-15)
+- [x] Confirm the current baseline passes `pnpm lint` (verified 2026-05-15; existing warnings remain)
+- [x] Confirm the current baseline passes `pnpm build` (verified 2026-05-15)
+- [ ] Capture current browser screenshots for `/login`, `/`, `/search?q=庆余年`, `/douban?type=movie`, and `/play` (partial: production screenshots captured for `/`, `/search`, `/douban`, `/play`, and mobile `/play`; `/login` still pending)
+- [x] Freeze the redesign direction: dark cinematic shell, one card system, one action hierarchy, one overlay language
+- [x] Treat `UI_1.0_web.png` as the phased visual acceptance reference for web layout, tokens, card states, and page density
+- [x] For each design-reference gap, classify it as `visual-only`, `structural`, `behavioral`, or `data-contract` before implementation
+- [x] Do not start a behavioral or data-contract change until the current business flow and rollback risk are documented
 
 ### Phase 1: Lock shared design rules
 
-- [ ] Add shared UI tokens for background, surface, border, text, accent, radius, shadow, and motion using the exact web design-reference values
-- [ ] Import the token layer into the app root
-- [ ] Extend Tailwind with shared UI radii and shadows
-- [ ] Define the canonical nav item list in one shared file
-- [ ] Define shared page titles and section labels in one shared file
-- [ ] Add a shared shell component contract
-- [ ] Remove or quarantine legacy purple/rainbow/global styles that conflict with the design-reference token system
+- [x] Add shared UI tokens for background, surface, border, text, accent, radius, shadow, and motion using the exact web design-reference values
+- [x] Import the token layer into the app root
+- [x] Extend Tailwind with shared UI radii and shadows
+- [x] Define the canonical nav item list in one shared file
+- [x] Define shared page titles and section labels in one shared file
+- [x] Add a shared shell component contract
+- [ ] Remove or quarantine legacy purple/rainbow/global styles that conflict with the design-reference token system (needs final drift audit)
 
 ### Phase 2: Replace the global shell
 
-- [ ] Convert `PageLayout` into a thin wrapper around the new shell
-- [ ] Rebuild the top header with one consistent search region and tool region
-- [ ] Restyle the desktop sidebar toward the compact icon rail shown in `UI_1.0_web.png`, while keeping active-route and navigation behavior unchanged
-- [ ] Restyle the mobile bottom nav to the new shell rules
-- [ ] Keep active-route behavior unchanged during the visual migration
-- [ ] Add or update shell tests before continuing to page-level work
+- [x] Convert `PageLayout` into a thin wrapper around the new shell
+- [x] Rebuild the top header with one consistent search region and tool region
+- [x] Restyle the desktop sidebar toward the compact icon rail shown in `UI_1.0_web.png`, while keeping active-route and navigation behavior unchanged
+- [x] Restyle the mobile bottom nav to the new shell rules
+- [x] Keep active-route behavior unchanged during the visual migration
+- [x] Add or update shell tests before continuing to page-level work
 
 ### Phase 3: Standardize shared content primitives
 
-- [ ] Create a shared page header component
-- [ ] Create a shared section header component
-- [ ] Create a shared inline action link component for buttons like `查看更多`
-- [ ] Create a shared surface wrapper for panels and cards
-- [ ] Create a shared poster grid component
-- [ ] Create a shared card action group component
-- [ ] Move repeated spacing, heading, and section action patterns onto these primitives
+- [x] Create a shared page header component
+- [x] Create a shared section header component
+- [x] Create a shared inline action link component for buttons like `查看更多`
+- [x] Create a shared surface wrapper for panels and cards
+- [x] Create a shared poster grid component
+- [x] Create a shared card action group component
+- [x] Move repeated spacing, heading, and section action patterns onto these primitives
 
 ### Phase 4: Rebuild the card system
 
-- [ ] Refactor `VideoCard` so the primary click target is explicit
-- [ ] Keep favorite/delete/play interactions from bubbling into wrong route changes
-- [ ] Unify title, subtitle, badge, overlay, and hover behavior across all card modes
-- [ ] Keep search, Douban, favorite, and continue-watching business logic intact
-- [ ] Restyle `ContinueWatching` to use the shared section/header primitives
-- [ ] Restyle `ScrollableRow` to match the new shell and action language
-- [ ] Add card interaction tests before migrating pages that consume the card
+- [x] Refactor `VideoCard` so the primary click target is explicit
+- [x] Keep favorite/delete/play interactions from bubbling into wrong route changes
+- [x] Unify title, subtitle, badge, overlay, and hover behavior across all card modes
+- [x] Keep search, Douban, favorite, and continue-watching business logic intact
+- [x] Restyle `ContinueWatching` to use the shared section/header primitives
+- [x] Restyle `ScrollableRow` to match the new shell and action language
+- [x] Add card interaction tests before migrating pages that consume the card
 
 ### Phase 5: Migrate browse pages
 
-- [ ] Refactor the homepage onto shared page and section primitives
-- [ ] Evaluate the homepage hero/recommendation area from `UI_1.0_web.png` against current available data before implementation
+- [x] Refactor the homepage onto shared page and section primitives
+- [x] Evaluate the homepage hero/recommendation area from `UI_1.0_web.png` against current available data before implementation
 - [ ] Restore the homepage hero/recommendation area using existing fetched content first; if new ranking/data is needed, split it into a separate data-contract task
-- [ ] Restore the `继续观看` row near the top of the homepage, using existing play-record data and the same card density as the design reference
-- [ ] Replace homepage ad-hoc section actions with the shared `查看更多` action component
-- [ ] Refactor the search page onto shared page and grid primitives
+- [x] Restore the `继续观看` row near the top of the homepage, using existing play-record data and the same card density as the design reference
+- [x] Replace homepage ad-hoc section actions with the shared `查看更多` action component
+- [x] Refactor the search page onto shared page and grid primitives
 - [ ] Rebuild the search result page with category tabs, filter/action row, compact result cards, and selected-card state only after confirming current query, aggregation, and result-routing behavior stays unchanged
-- [ ] Keep the `聚合` toggle behavior in place while restyling it
-- [ ] Refactor the Douban page onto shared page header, filter surface, and poster grid primitives
-- [ ] Normalize page spacing and content width across homepage, search, and Douban pages
-- [ ] Verify browse-page navigation still lands on the same routes and query states
+- [x] Keep the `聚合` toggle behavior in place while restyling it
+- [x] Refactor the Douban page onto shared page header, filter surface, and poster grid primitives
+- [x] Normalize page spacing and content width across homepage, search, and Douban pages
+- [x] Verify browse-page navigation still lands on the same routes and query states
 
 ### Phase 6: Rebuild the playback page shell
 
-- [ ] Create a visual-only playback header wrapper
-- [ ] Create a visual-only playback sidebar wrapper
-- [ ] Move the playback page layout onto the design-reference playback structure without rewriting source logic
-- [ ] Keep the player as the primary visual block, but move source chips, episode grid, detail card, and recommendations in stages so source switching, episode switching, resume, and favorite state ownership do not change accidentally
-- [ ] If matching the design requires moving `EpisodeSelector` state or source-switching ownership, split that into a separate behavioral task with focused tests before changing layout
-- [ ] Restyle loading, empty, and error states to match the global surface system
-- [ ] Add explicit labels and stable structure to `EpisodeSelector` tabs and controls
-- [ ] Keep source switching, episode switching, resume, and favorite flows unchanged
-- [ ] Verify that the playback page still builds and that state transitions still work after the shell migration
+- [x] Create a visual-only playback header wrapper
+- [x] Create a visual-only playback sidebar wrapper
+- [ ] Move the playback page layout onto the design-reference playback structure without rewriting source logic (partial: header/player/sidebar migrated; lower details and recommendations still need alignment)
+- [x] Keep the player as the primary visual block, but move source chips, episode grid, detail card, and recommendations in stages so source switching, episode switching, resume, and favorite state ownership do not change accidentally
+- [x] If matching the design requires moving `EpisodeSelector` state or source-switching ownership, split that into a separate behavioral task with focused tests before changing layout
+- [x] Restyle loading, empty, and error states to match the global surface system
+- [x] Add explicit labels and stable structure to `EpisodeSelector` tabs and controls
+- [x] Keep source switching, episode switching, resume, and favorite flows unchanged
+- [x] Verify that the playback page still builds and that state transitions still work after the shell migration
 
 ### Phase 7: Unify settings and login
 
-- [ ] Restyle the login page as a standalone auth surface using the shared token layer
-- [ ] Keep single-password and optional username flows unchanged
-- [ ] Rebuild the user menu with grouped actions and one overlay style
-- [ ] Rebuild the settings drawer rows so all toggles and inputs share one visual rule set
-- [ ] Keep localStorage-backed settings behavior unchanged
-- [ ] Verify menu, logout, password change, and settings persistence still work
+- [x] Restyle the login page as a standalone auth surface using the shared token layer
+- [x] Keep single-password and optional username flows unchanged
+- [x] Rebuild the user menu with grouped actions and one overlay style
+- [x] Rebuild the settings drawer rows so all toggles and inputs share one visual rule set
+- [x] Keep localStorage-backed settings behavior unchanged
+- [ ] Verify menu, logout, password change, and settings persistence still work (partial: user-menu component test passes; full browser persistence sweep still pending)
 
 ### Phase 8: Final consistency pass
 
 - [ ] Run the full test suite
-- [ ] Run `pnpm typecheck`
-- [ ] Run `pnpm lint`
-- [ ] Run `pnpm build`
-- [ ] Smoke-test `/login`, `/`, `/search`, `/douban`, and `/play` in the browser
-- [ ] Check that `查看更多`, card clicks, `继续观看`, `聚合`, `线路`, and `选集` all follow the agreed interaction rules
+- [x] Run `pnpm typecheck`
+- [x] Run `pnpm lint`
+- [x] Run `pnpm build`
+- [ ] Smoke-test `/login`, `/`, `/search`, `/douban`, and `/play` in the browser (partial: production browser checks passed for `/`, `/search`, `/douban`, `/play`; `/login` pending)
+- [ ] Check that `查看更多`, card clicks, `继续观看`, `聚合`, `线路`, and `选集` all follow the agreed interaction rules (partial: production checks covered navigation, card click, search display, source list, and playback; full interaction sweep still pending)
 - [ ] Remove any one-off colors, radii, shadows, or button styles that escaped the token system
-- [ ] Capture after screenshots for the same key pages used in the baseline
-- [ ] Compare after screenshots against `UI_1.0_web.png` for token match, shell density, homepage hero, search result layout, playback page structure, and shared card states
-- [ ] Document any deliberate design-reference deviation with the reason: current data limitation, business-flow risk, responsive constraint, or staged follow-up
-- [ ] Prepare the implementation summary and any remaining follow-up items
+- [ ] Capture after screenshots for the same key pages used in the baseline (partial: production screenshots captured for key pages except `/login`)
+- [x] Compare after screenshots against `UI_1.0_web.png` for token match, shell density, homepage hero, search result layout, playback page structure, and shared card states
+- [x] Document any deliberate design-reference deviation with the reason: current data limitation, business-flow risk, responsive constraint, or staged follow-up
+- [x] Prepare the implementation summary and any remaining follow-up items
 
 ## File Structure
 
@@ -305,6 +332,8 @@ Current implementation values should be treated as drift if they do not map back
 ---
 
 ### Task 1: Introduce the token layer and app shell contract
+
+**Current status:** Complete in current code. Shell contract coverage exists and passed in focused verification on 2026-05-15. Original commit step below is historical and was not re-run.
 
 **Files:**
 - Create: `src/styles/ui-theme.css`
@@ -475,6 +504,8 @@ git commit -m "feat: add shared ui token layer and app shell"
 
 ### Task 2: Migrate the header and navigation components onto the shared shell
 
+**Current status:** Complete in current code. Production shows the shared header, search region, desktop rail, and mobile navigation. Original commit step below is historical and was not re-run.
+
 **Files:**
 - Modify: `src/components/PageLayout.tsx`
 - Modify: `src/components/TopSearchBar.tsx`
@@ -586,6 +617,8 @@ git commit -m "feat: unify shared header and navigation"
 ```
 
 ### Task 3: Standardize cards, section headers, and content actions
+
+**Current status:** Complete in current code. Card action tests passed in focused verification on 2026-05-15. Original commit step below is historical and was not re-run.
 
 **Files:**
 - Create: `src/components/ui/PageHeader.tsx`
@@ -728,6 +761,8 @@ git commit -m "feat: standardize content cards and section actions"
 
 ### Task 4: Migrate homepage, search, and Douban pages onto the shared templates
 
+**Current status:** Partially complete. Homepage, search, and Douban are on shared templates in code and production, but the homepage hero and full search-result category/filter treatment from `UI_1.0_web.png` remain pending.
+
 **Files:**
 - Modify: `src/app/page.tsx`
 - Modify: `src/app/search/page.tsx`
@@ -830,6 +865,8 @@ git commit -m "feat: migrate browse pages onto shared templates"
 ```
 
 ### Task 5: Redesign the playback page with visual wrappers before touching logic
+
+**Current status:** Partially complete. Playback header/sidebar wrappers are implemented, source and episode flows still work in production, and the player starts successfully. Lower detail and recommendation composition still needs the final visual alignment pass.
 
 **Files:**
 - Create: `src/components/player/PlayerHeader.tsx`
@@ -975,6 +1012,8 @@ git commit -m "feat: redesign playback page shell and sidebar"
 
 ### Task 6: Unify login, user menu, and settings surfaces
 
+**Current status:** Mostly complete. Login and user menu surfaces are implemented and user-menu component coverage passes. Full browser verification for logout, password change, and settings persistence is still pending.
+
 **Files:**
 - Modify: `src/app/login/page.tsx`
 - Modify: `src/components/UserMenu.tsx`
@@ -1045,6 +1084,8 @@ git commit -m "feat: unify login and settings surfaces"
 ```
 
 ### Task 7: Verify the whole UI system and remove drift
+
+**Current status:** In progress. `pnpm typecheck`, `pnpm lint`, focused UI tests, `pnpm build`, and production browser checks passed on 2026-05-15, but the full Jest suite and remaining browser interaction sweep have not been closed.
 
 **Files:**
 - Modify: `src/app/page.tsx`

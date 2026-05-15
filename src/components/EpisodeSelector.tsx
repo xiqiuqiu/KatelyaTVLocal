@@ -543,21 +543,21 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     totalEpisodes
   );
   const stateActiveClass =
-    'border-[#3882F6] bg-[#3882F6]/10 text-[#E8EDF3] shadow-[inset_0_1px_0_rgba(232,237,243,0.08),0_8px_20px_rgba(0,0,0,0.18)]';
+    'border-[rgb(var(--ui-accent))] bg-[rgba(var(--ui-accent),0.1)] text-[rgb(var(--ui-text))] shadow-[inset_0_1px_0_rgba(var(--ui-text),0.08),0_8px_20px_rgba(0,0,0,0.18)]';
   const stateIdleClass =
-    'border-[#232A36] bg-[#161D27] text-[#A3ACB8] hover:border-[#3882F6]/45 hover:bg-[#1A2433] hover:text-[#E8EDF3]';
+    'border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] hover:border-[rgba(var(--ui-accent),0.45)] hover:bg-[rgba(var(--ui-surface-strong),0.82)] hover:text-[rgb(var(--ui-text))]';
   const stateMutedClass =
-    'border-[#232A36] bg-[#161D27]/70 text-[#A3ACB8] opacity-60';
+    'border-[rgb(var(--ui-border))] bg-[rgba(var(--ui-surface),0.7)] text-[rgb(var(--ui-text-muted))] opacity-60';
   const currentChipClass =
-    'rounded-full bg-[#232A36] px-1.5 py-0.5 text-[9px] font-bold leading-none text-[#E8EDF3] ring-1 ring-[#2C3442]';
+    'rounded-full bg-[rgb(var(--ui-border))] px-1.5 py-0.5 text-[9px] font-bold leading-none text-[rgb(var(--ui-text))] ring-1 ring-[rgba(var(--ui-text),0.1)]';
   const metaChipClass =
-    'rounded-full bg-[#232A36] px-2 py-0.5 text-[11px] font-medium text-[#A3ACB8]';
+    'rounded-full bg-[rgb(var(--ui-border))] px-2 py-0.5 text-[11px] font-medium text-[rgb(var(--ui-text-muted))]';
 
   return (
     <div className='flex max-h-[640px] min-h-[260px] flex-col overflow-hidden rounded-ui-lg border border-white/10 bg-[linear-gradient(180deg,rgba(var(--ui-surface-strong),0.64),rgba(var(--ui-surface),0.42))] p-3 text-[rgb(var(--ui-text))] shadow-[0_18px_48px_rgba(0,0,0,0.18)] sm:p-4'>
       {/* 主要的 Tab 切换 */}
       <div
-        className={`mb-3 grid flex-shrink-0 gap-1 rounded-ui-md border border-[#232A36] bg-[#121820] p-1 ${
+        className={`mb-3 grid flex-shrink-0 gap-1 rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-bg-elevated))] p-1 ${
           totalEpisodes > 1 ? 'grid-cols-2' : 'grid-cols-1'
         }`}
         role='tablist'
@@ -572,8 +572,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-all duration-200
                 ${
                   activeTab === 'episodes'
-                    ? 'bg-[#3882F6] text-white shadow-[0_8px_20px_rgba(0,0,0,0.2)]'
-                    : 'text-[#A3ACB8] hover:bg-[#161D27] hover:text-[#E8EDF3]'
+                    ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
+                    : 'text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface))] hover:text-[rgb(var(--ui-text))]'
                 }
             `.trim()}
           >
@@ -588,8 +588,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-all duration-200
                 ${
                   activeTab === 'sources'
-                    ? 'bg-[#3882F6] text-white shadow-[0_8px_20px_rgba(0,0,0,0.2)]'
-                    : 'text-[#A3ACB8] hover:bg-[#161D27] hover:text-[#E8EDF3]'
+                    ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
+                    : 'text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface))] hover:text-[rgb(var(--ui-text))]'
                 }
             `.trim()}
         >
@@ -602,7 +602,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         <div className='flex min-h-0 flex-1 flex-col'>
           {/* 分类标签 */}
           <div className='mb-3 flex flex-shrink-0 items-center gap-2'>
-            <div className='relative min-w-0 flex-1 overflow-hidden rounded-ui-md border border-[#232A36] bg-[#121820]'>
+            <div className='relative min-w-0 flex-1 overflow-hidden rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-bg-elevated))]'>
               {/* 滾動容器 */}
               <div
                 className='snap-x snap-mandatory overflow-x-auto overflow-y-hidden scroll-smooth scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 hover:scrollbar-thumb-white/35 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 hover:[&::-webkit-scrollbar-thumb]:bg-white/35 [&::-webkit-scrollbar-track]:bg-transparent'
@@ -664,7 +664,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             </div>
             {/* 向上/向下按钮 */}
             <button
-              className='flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-ui-md border border-[#232A36] bg-[#161D27] text-[#A3ACB8] transition-all duration-200 hover:border-[#3882F6]/45 hover:bg-[#1A2433] hover:text-[#E8EDF3]'
+              className='flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] transition-all duration-200 hover:border-[rgba(var(--ui-accent),0.45)] hover:bg-[rgba(var(--ui-surface-strong),0.82)] hover:text-[rgb(var(--ui-text))]'
               aria-label='切换集数排序'
               title={descending ? '切换为正序' : '切换为倒序'}
               onClick={() => {
@@ -709,7 +709,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                   className={`flex h-10 w-full cursor-pointer items-center justify-center rounded-ui-sm border text-sm font-medium transition-all duration-200
                     ${
                       isActive
-                        ? 'border border-[#3882F6] bg-[#3882F6] text-white shadow-[0_8px_20px_rgba(0,0,0,0.2)]'
+                        ? 'border border-[rgb(var(--ui-accent))] bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
                         : stateIdleClass
                     }`.trim()}
                   type='button'
@@ -803,22 +803,22 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
                       const statusClassName = (() => {
                         if (!sourceStatus) {
-                          return 'bg-[#232A36] text-[#A3ACB8]';
+                          return 'bg-[rgb(var(--ui-border))] text-[rgb(var(--ui-text-muted))]';
                         }
 
                         switch (sourceStatus.kind) {
                           case 'direct':
-                            return 'bg-[#063B2B] text-[#22C55E] ring-1 ring-[#145A40]';
+                            return 'bg-[rgba(var(--ui-success),0.16)] text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]';
                           case 'proxy':
-                            return 'bg-[#10294E] text-[#7CB2FF] ring-1 ring-[#244D86]';
+                            return 'bg-[rgba(var(--ui-accent),0.16)] text-[rgb(var(--ui-accent))] ring-1 ring-[rgba(var(--ui-accent),0.38)]';
                           case 'playable':
-                            return 'bg-[#3A2608] text-[#FFB020] ring-1 ring-[#6A4512]';
+                            return 'bg-[rgba(var(--ui-accent-warm),0.16)] text-[rgb(var(--ui-accent-warm))] ring-1 ring-[rgba(var(--ui-accent-warm),0.38)]';
                           case 'unavailable':
-                            return 'bg-[#2A1A1A] text-[#F87171] ring-1 ring-[#5A2B2B]';
+                            return 'bg-[rgba(var(--ui-critical),0.16)] text-[rgb(var(--ui-critical))] ring-1 ring-[rgba(var(--ui-critical),0.38)]';
                           case 'probing':
-                            return 'bg-[#3A2608] text-[#FFB020] ring-1 ring-[#6A4512]';
+                            return 'bg-[rgba(var(--ui-accent-warm),0.16)] text-[rgb(var(--ui-accent-warm))] ring-1 ring-[rgba(var(--ui-accent-warm),0.38)]';
                           default:
-                            return 'bg-[#232A36] text-[#A3ACB8]';
+                            return 'bg-[rgb(var(--ui-border))] text-[rgb(var(--ui-text-muted))]';
                         }
                       })();
 
@@ -903,7 +903,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
                           <div className='mt-3 flex flex-wrap items-center gap-1.5'>
                             {qualityLabel && (
-                              <span className='rounded-full bg-[#063B2B] px-2 py-0.5 text-[11px] font-semibold text-[#22C55E] ring-1 ring-[#145A40]'>
+                              <span className='rounded-full bg-[rgba(var(--ui-success),0.16)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]'>
                                 {qualityLabel}
                               </span>
                             )}

@@ -2,29 +2,36 @@
 
 import { Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
   const { setTheme, resolvedTheme } = useTheme();
 
-  const setThemeColor = (theme?: string) => {
+  const setThemeColor = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const rootStyle = window.getComputedStyle(document.documentElement);
+    const themeColor =
+      rootStyle.getPropertyValue('--ui-browser-bg').trim() ||
+      `rgb(${rootStyle.getPropertyValue('--ui-bg').trim()})`;
     const meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) {
       const meta = document.createElement('meta');
       meta.name = 'theme-color';
-      meta.content = theme === 'dark' ? '#0c111c' : '#f9fbfe';
+      meta.content = themeColor;
       document.head.appendChild(meta);
     } else {
-      const newContent = theme === 'dark' ? '#0c111c' : '#f9fbfe';
-      meta.setAttribute('content', newContent);
+      meta.setAttribute('content', themeColor);
     }
-  };
+  }, []);
 
   useEffect(() => {
     setMounted(true);
-    setThemeColor(resolvedTheme);
-  }, [resolvedTheme]);
+    setThemeColor();
+  }, [resolvedTheme, setThemeColor]);
 
   if (!mounted) {
     // 渲染一个占位符以避免布局偏移
@@ -36,7 +43,7 @@ export function ThemeToggle() {
     const currentTheme = resolvedTheme || 'light';
     const targetTheme = currentTheme === 'dark' ? 'light' : 'dark';
 
-    setThemeColor(targetTheme);
+    setThemeColor();
 
     // 使用更好的类型定义
     const documentWithTransition = document as Document & {

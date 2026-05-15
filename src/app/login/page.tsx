@@ -2,6 +2,15 @@
 
 export const runtime = 'edge';
 
+import {
+  ArrowRight,
+  Clapperboard,
+  KeyRound,
+  Loader2,
+  ShieldCheck,
+  UserRound,
+} from 'lucide-react';
+import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -92,109 +101,245 @@ function LoginPageClient() {
 
   return (
     <IOSCompatibility>
-      <div className='ui-app-bg relative flex min-h-screen items-center justify-center overflow-hidden px-4 text-[rgb(var(--ui-text))]'>
-        <div className='pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent_0%,rgba(255,255,255,0.06)_42%,transparent_68%)] opacity-60' />
+      <main className='relative min-h-screen overflow-hidden bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text))]'>
+        <div className='pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent_0%,rgb(255_255_255/0.055)_42%,transparent_68%)] opacity-70' />
+        <div className='pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgb(var(--ui-accent)/0.8),rgb(var(--ui-accent-warm)/0.58),transparent)]' />
+        <div className='pointer-events-none absolute inset-0 opacity-[0.18] [background-image:linear-gradient(rgb(var(--ui-border)/0.34)_1px,transparent_1px),linear-gradient(90deg,rgb(var(--ui-border)/0.26)_1px,transparent_1px)] [background-size:72px_72px]' />
 
-        <div className='absolute top-4 right-4'>
+        <div className='absolute right-4 top-4 z-20 sm:right-6 sm:top-6'>
           <ThemeToggle />
         </div>
 
-        <div className='ui-shell-panel relative z-10 w-full max-w-md rounded-ui-lg border border-white/10 p-8 shadow-ui-strong sm:p-10'>
-          <div className='mb-8 text-center'>
-            <p className='mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-[rgb(var(--ui-accent-warm))]'>
-              KatelyaTV
-            </p>
-            <h1 className='text-3xl font-semibold tracking-tight text-[rgb(var(--ui-text))]'>
-              {siteName}
-            </h1>
-            <p className='mt-3 text-sm text-[rgb(var(--ui-text-muted))]'>
-              输入访问凭证后继续观看
-            </p>
-          </div>
-
-          <h2 className='sr-only'>登录</h2>
-
-          <form onSubmit={handleSubmit} className='space-y-8'>
-            {shouldAskUsername && (
-              <div>
-                <label htmlFor='username' className='sr-only'>
-                  用户名
-                </label>
-                <input
-                  id='username'
-                  type='text'
-                  autoComplete='username'
-                  className='block w-full rounded-ui-sm border border-white/10 bg-white/5 px-4 py-3 text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgba(var(--ui-accent),0.34)] sm:text-base'
-                  placeholder='输入用户名'
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                />
-              </div>
-            )}
-
-            <div>
-              <label htmlFor='password' className='sr-only'>
-                密码
-              </label>
-              <input
-                id='password'
-                type='password'
-                autoComplete='current-password'
-                className='block w-full rounded-ui-sm border border-white/10 bg-white/5 px-4 py-3 text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgba(var(--ui-accent),0.34)] sm:text-base'
-                placeholder='输入访问密码'
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+        <div className='relative z-10 mx-auto grid min-h-screen w-full max-w-6xl items-center gap-8 px-4 py-24 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8'>
+          <section className='relative hidden min-h-[560px] overflow-hidden rounded-ui-lg border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg-elevated)/0.62)] shadow-ui-strong backdrop-blur-2xl lg:block'>
+            <div className='absolute inset-0 bg-[linear-gradient(135deg,rgb(var(--ui-accent)/0.2),transparent_34%,rgb(var(--ui-accent-warm)/0.12)_76%,transparent)]' />
+            <div className='absolute inset-x-8 top-8 flex items-center justify-between text-xs font-semibold text-[rgb(var(--ui-text-muted))]'>
+              <span>PRIVATE SCREENING</span>
+              <span>ACCESS GATE</span>
             </div>
 
-            {error && (
-              <p className='rounded-ui-sm border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200'>
-                {error}
-              </p>
-            )}
+            <div className='absolute left-8 top-24 h-[420px] w-1 rounded-full bg-[linear-gradient(180deg,rgb(var(--ui-accent)),rgb(var(--ui-accent)/0.08))]' />
 
-            {/* 登录 / 注册按钮 */}
-            {shouldAskUsername && enableRegister ? (
-              <div className='flex gap-4'>
-                <button
-                  type='button'
-                  onClick={handleRegister}
-                  disabled={!password || !username || loading}
-                  className='inline-flex flex-1 justify-center rounded-ui-sm border border-white/10 bg-white/10 py-3 text-base font-semibold text-[rgb(var(--ui-text))] shadow-ui-soft transition-all duration-200 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50'
-                >
-                  {loading ? '注册中...' : '注册'}
-                </button>
-                <button
-                  type='submit'
-                  disabled={
-                    !password || loading || (shouldAskUsername && !username)
-                  }
-                  className='inline-flex flex-1 justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] py-3 text-base font-semibold text-white shadow-ui-soft transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50'
-                >
-                  {loading ? '登录中...' : '登录'}
-                </button>
+            <div className='relative flex h-full flex-col justify-between p-10 pt-24'>
+              <div className='max-w-lg'>
+                <div className='mb-8 flex h-20 w-20 items-center justify-center rounded-ui-lg border border-[rgb(var(--ui-border)/0.8)] bg-[rgb(var(--ui-surface)/0.82)] shadow-ui-soft'>
+                  <Image
+                    src='/logo.png'
+                    alt=''
+                    width={56}
+                    height={56}
+                    priority
+                    className='h-14 w-14 rounded-ui-sm object-cover'
+                  />
+                </div>
+
+                <p className='mb-4 text-sm font-semibold uppercase text-[rgb(var(--ui-accent-warm))]'>
+                  KatelyaTV
+                </p>
+                <h1 className='max-w-xl text-5xl font-semibold leading-tight text-[rgb(var(--ui-text))]'>
+                  {siteName}
+                </h1>
+                <p className='mt-5 max-w-md text-base leading-7 text-[rgb(var(--ui-text-muted))]'>
+                  进入你的私人影视空间，继续上次停下的片刻。
+                </p>
               </div>
-            ) : (
-              <button
-                type='submit'
-                disabled={
-                  !password || loading || (shouldAskUsername && !username)
-                }
-                className='inline-flex w-full justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] py-3 text-base font-semibold text-white shadow-ui-soft transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50'
-              >
-                {loading ? '登录中...' : '登录'}
-              </button>
-            )}
-          </form>
+
+              <div className='grid grid-cols-3 gap-3'>
+                {[
+                  ['聚合', '片源'],
+                  ['继续', '观看'],
+                  ['私密', '访问'],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className='rounded-ui-sm border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-surface)/0.54)] p-4 shadow-ui-soft'
+                  >
+                    <p className='text-xs text-[rgb(var(--ui-text-muted))]'>
+                      {label}
+                    </p>
+                    <p className='mt-2 text-lg font-semibold text-[rgb(var(--ui-text))]'>
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <div className='mx-auto w-full max-w-md lg:max-w-none'>
+            <div className='mb-6 flex items-center gap-4 lg:hidden'>
+              <div className='flex h-14 w-14 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border)/0.8)] bg-[rgb(var(--ui-surface)/0.8)] shadow-ui-soft'>
+                <Image
+                  src='/logo.png'
+                  alt=''
+                  width={40}
+                  height={40}
+                  priority
+                  className='h-10 w-10 rounded-ui-sm object-cover'
+                />
+              </div>
+              <div>
+                <p className='text-sm font-semibold text-[rgb(var(--ui-accent-warm))]'>
+                  KatelyaTV
+                </p>
+                <h1 className='text-2xl font-semibold text-[rgb(var(--ui-text))]'>
+                  {siteName}
+                </h1>
+              </div>
+            </div>
+
+            <div className='ui-shell-panel relative overflow-hidden rounded-ui-lg p-6 shadow-ui-strong sm:p-8'>
+              <div className='pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgb(var(--ui-accent)/0.78),transparent)]' />
+
+              <div className='mb-8 flex items-start justify-between gap-4'>
+                <div>
+                  <div className='mb-5 inline-flex items-center gap-2 rounded-ui-sm border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg-elevated)/0.68)] px-3 py-2 text-xs font-semibold text-[rgb(var(--ui-text-muted))]'>
+                    <ShieldCheck className='h-4 w-4 text-[rgb(var(--ui-success))]' />
+                    安全访问
+                  </div>
+                  <h2 className='text-2xl font-semibold text-[rgb(var(--ui-text))]'>
+                    登录
+                  </h2>
+                  <p className='mt-2 text-sm leading-6 text-[rgb(var(--ui-text-muted))]'>
+                    输入访问凭证后继续观看
+                  </p>
+                </div>
+
+                <div className='hidden h-12 w-12 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg-elevated)/0.68)] text-[rgb(var(--ui-accent))] sm:flex'>
+                  <Clapperboard className='h-6 w-6' />
+                </div>
+              </div>
+
+              <form onSubmit={handleSubmit} className='space-y-5'>
+                {shouldAskUsername && (
+                  <div>
+                    <label
+                      htmlFor='username'
+                      className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text-muted))]'
+                    >
+                      用户名
+                    </label>
+                    <div className='relative'>
+                      <UserRound className='pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
+                      <input
+                        id='username'
+                        type='text'
+                        autoComplete='username'
+                        className='block w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg-elevated)/0.76)] py-3 pl-12 pr-4 text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.34)] sm:text-base'
+                        placeholder='输入用户名'
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label
+                    htmlFor='password'
+                    className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text-muted))]'
+                  >
+                    访问密码
+                  </label>
+                  <div className='relative'>
+                    <KeyRound className='pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
+                    <input
+                      id='password'
+                      type='password'
+                      autoComplete='current-password'
+                      className='block w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg-elevated)/0.76)] py-3 pl-12 pr-4 text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.34)] sm:text-base'
+                      placeholder='输入访问密码'
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {error && (
+                  <p
+                    role='alert'
+                    className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'
+                  >
+                    {error}
+                  </p>
+                )}
+
+                {shouldAskUsername && enableRegister ? (
+                  <div className='grid gap-3 sm:grid-cols-2'>
+                    <button
+                      type='button'
+                      onClick={handleRegister}
+                      disabled={!password || !username || loading}
+                      className='inline-flex min-h-12 items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-surface-strong)/0.7)] px-4 py-3 text-base font-semibold text-[rgb(var(--ui-text))] shadow-ui-soft transition-all duration-200 hover:bg-[rgb(var(--ui-surface-strong)/0.92)] disabled:cursor-not-allowed disabled:opacity-50'
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                          注册中...
+                        </>
+                      ) : (
+                        '注册'
+                      )}
+                    </button>
+                    <button
+                      type='submit'
+                      disabled={
+                        !password || loading || (shouldAskUsername && !username)
+                      }
+                      className='inline-flex min-h-12 items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-3 text-base font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50'
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                          登录中...
+                        </>
+                      ) : (
+                        <>
+                          登录
+                          <ArrowRight className='ml-2 h-4 w-4' />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type='submit'
+                    disabled={
+                      !password || loading || (shouldAskUsername && !username)
+                    }
+                    className='inline-flex min-h-12 w-full items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-3 text-base font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50'
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                        登录中...
+                      </>
+                    ) : (
+                      <>
+                        登录
+                        <ArrowRight className='ml-2 h-4 w-4' />
+                      </>
+                    )}
+                  </button>
+                )}
+              </form>
+            </div>
+          </div>
         </div>
-      </div>
+      </main>
     </IOSCompatibility>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className='flex min-h-screen items-center justify-center bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text-muted))]'>
+          Loading...
+        </div>
+      }
+    >
       <LoginPageClient />
     </Suspense>
   );

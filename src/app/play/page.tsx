@@ -1520,7 +1520,7 @@ function PlayPageClient() {
           playsInline: true,
           autoPlayback: false,
           airplay: true,
-          theme: '#22c55e',
+          theme: 'rgb(var(--ui-success))',
           lang: 'zh-cn',
           hotkey: false,
           fastForward: true,
@@ -1596,7 +1596,7 @@ function PlayPageClient() {
           settings: [
             {
               html: '去广告',
-              icon: '<text x="50%" y="50%" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">AD</text>',
+              icon: '<text x="50%" y="50%" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="rgb(var(--ui-on-accent))">AD</text>',
               tooltip: blockAdEnabled ? '已开启' : '已关闭',
               onClick() {
                 const newVal = !blockAdEnabled;
@@ -1877,7 +1877,7 @@ function PlayPageClient() {
                     ? router.push(`/search?q=${encodeURIComponent(videoTitle)}`)
                     : router.back()
                 }
-                className='w-full rounded-ui-md bg-[rgb(var(--ui-accent))] px-6 py-3 font-medium text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:brightness-110'
+                className='w-full rounded-ui-md bg-[rgb(var(--ui-accent))] px-6 py-3 font-medium text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-200 hover:scale-[1.02] hover:brightness-110'
               >
                 {videoTitle ? '🔍 返回搜索' : '← 返回上页'}
               </button>
@@ -2027,7 +2027,7 @@ function PlayPageClient() {
               {/* 关键信息行 */}
               <div className='flex flex-wrap items-center gap-3 text-base mb-4 opacity-80 flex-shrink-0'>
                 {detail?.class && (
-                  <span className='text-green-600 font-semibold'>
+                  <span className='font-semibold text-[rgb(var(--ui-success))]'>
                     {detail.class}
                   </span>
                 )}
@@ -2035,7 +2035,7 @@ function PlayPageClient() {
                   <span>{detail?.year || videoYear}</span>
                 )}
                 {detail?.source_name && (
-                  <span className='border border-gray-500/60 px-2 py-[1px] rounded'>
+                  <span className='rounded border border-[rgba(var(--ui-text-muted),0.6)] px-2 py-[1px]'>
                     {detail.source_name}
                   </span>
                 )}
@@ -2056,7 +2056,7 @@ function PlayPageClient() {
           {/* 封面展示 */}
           <div className='hidden md:block md:col-span-1 md:order-first'>
             <div className='pl-0 py-4 pr-6'>
-              <div className='bg-gray-300 dark:bg-gray-700 aspect-[2/3] flex items-center justify-center rounded-xl overflow-hidden'>
+              <div className='flex aspect-[2/3] items-center justify-center overflow-hidden rounded-ui-md bg-[rgb(var(--ui-surface))]'>
                 {videoCover ? (
                   <img
                     src={processImageUrl(videoCover)}
@@ -2064,7 +2064,7 @@ function PlayPageClient() {
                     className='h-full w-full object-cover'
                   />
                 ) : (
-                  <span className='text-gray-600 dark:text-gray-400'>
+                  <span className='text-[rgb(var(--ui-text-muted))]'>
                     封面图片
                   </span>
                 )}
@@ -2082,14 +2082,14 @@ const FavoriteIcon = ({ filled }: { filled: boolean }) => {
   if (filled) {
     return (
       <svg
-        className='h-7 w-7'
+        className='h-7 w-7 text-[rgb(var(--ui-critical))]'
         viewBox='0 0 24 24'
         xmlns='http://www.w3.org/2000/svg'
       >
         <path
           d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'
-          fill='#ef4444' /* Tailwind red-500 */
-          stroke='#ef4444'
+          fill='currentColor'
+          stroke='currentColor'
           strokeWidth='2'
           strokeLinecap='round'
           strokeLinejoin='round'
@@ -2098,7 +2098,7 @@ const FavoriteIcon = ({ filled }: { filled: boolean }) => {
     );
   }
   return (
-    <Heart className='h-7 w-7 stroke-[1] text-gray-600 dark:text-gray-300' />
+    <Heart className='h-7 w-7 stroke-[1] text-[rgb(var(--ui-text-muted))]' />
   );
 };
 

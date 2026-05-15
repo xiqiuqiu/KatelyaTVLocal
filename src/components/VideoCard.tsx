@@ -286,7 +286,7 @@ export default function VideoCard({
   const isSmall = size === 'small';
   const badgeSizeClass = isSmall ? 'text-[10px] px-2 py-1' : 'text-xs px-2.5 py-1';
   const iconButtonClass =
-    'inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white shadow-lg backdrop-blur-md transition duration-200 hover:scale-[1.04] hover:border-white/20 hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
+    'inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-[rgba(var(--ui-bg),0.45)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition duration-200 hover:scale-[1.04] hover:border-white/20 hover:bg-[rgba(var(--ui-bg),0.6)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
   const posterActionLabel = `打开 ${actualTitle} 海报`;
   const titleActionLabel = `打开 ${actualTitle}`;
 
@@ -318,12 +318,12 @@ export default function VideoCard({
             type='button'
           />
 
-          <div className='pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 transition-opacity duration-300 group-hover:opacity-100' />
+          <div className='pointer-events-none absolute inset-0 bg-gradient-to-t from-[rgba(var(--ui-bg),0.9)] via-[rgba(var(--ui-bg),0.2)] to-transparent opacity-80 transition-opacity duration-300 group-hover:opacity-100' />
 
           {config.showPlayButton ? (
             <div className='pointer-events-none absolute inset-0 z-10 flex items-center justify-center opacity-0 transition-all duration-300 ease-in-out delay-75 group-hover:opacity-100'>
               <PlayCircleIcon
-                className='fill-transparent text-white drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out'
+                className='fill-transparent text-[rgb(var(--ui-text))] drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out'
                 size={isSmall ? 34 : 52}
                 strokeWidth={0.9}
               />
@@ -333,7 +333,7 @@ export default function VideoCard({
           {config.showDoubanLink && actualDoubanId ? (
             <a
               aria-label='打开豆瓣页面'
-              className='absolute left-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-emerald-500/90 text-white shadow-lg backdrop-blur-md transition duration-200 hover:scale-[1.04] hover:bg-emerald-400'
+              className='absolute left-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-[rgba(var(--ui-success),0.9)] text-[rgb(var(--ui-on-accent))] shadow-ui-soft backdrop-blur-md transition duration-200 hover:scale-[1.04] hover:brightness-110'
               href={`https://movie.douban.com/subject/${actualDoubanId}`}
               onClick={(event) => event.stopPropagation()}
               rel='noopener noreferrer'
@@ -346,7 +346,7 @@ export default function VideoCard({
           <div className='absolute right-3 top-3 z-20 flex flex-col items-end gap-2'>
             {config.showRating && rate ? (
               <span
-                className={`inline-flex items-center justify-center rounded-full bg-pink-500 font-semibold text-white shadow-lg ${badgeSizeClass}`}
+                className={`inline-flex items-center justify-center rounded-full bg-[rgb(var(--ui-accent-warm))] font-semibold text-[rgb(var(--ui-bg))] shadow-ui-soft ${badgeSizeClass}`}
               >
                 {rate}
               </span>
@@ -354,7 +354,7 @@ export default function VideoCard({
 
             {actualEpisodes && actualEpisodes > 1 ? (
               <span
-                className={`inline-flex items-center justify-center rounded-full bg-emerald-500/90 font-semibold text-white shadow-lg ${badgeSizeClass}`}
+                className={`inline-flex items-center justify-center rounded-full bg-[rgba(var(--ui-success),0.9)] font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft ${badgeSizeClass}`}
               >
                 {currentEpisode
                   ? `${currentEpisode}/${actualEpisodes}`
@@ -399,7 +399,7 @@ export default function VideoCard({
       {config.showProgress ? (
         <div className='mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10'>
           <div
-            className='h-full rounded-full bg-emerald-400 transition-all duration-500 ease-out'
+            className='h-full rounded-full bg-[rgb(var(--ui-success))] transition-all duration-500 ease-out'
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -408,7 +408,7 @@ export default function VideoCard({
       <div className={`text-center ${isSmall ? 'mt-2' : 'mt-3'}`}>
         <button
           aria-label={titleActionLabel}
-          className={`block w-full truncate font-semibold text-[rgb(var(--ui-text))] transition-colors duration-300 hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent ${
+          className={`block w-full truncate font-semibold text-[rgb(var(--ui-text))] transition-colors duration-300 hover:text-[rgb(var(--ui-success))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent ${
             isSmall ? 'text-xs' : 'text-sm'
           }`}
           onClick={handleClick}
@@ -424,7 +424,7 @@ export default function VideoCard({
               isSmall ? 'text-[10px]' : 'text-xs'
             }`}
           >
-            <span className='inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 transition-colors duration-300 group-hover:border-emerald-400/30 group-hover:text-emerald-200'>
+            <span className='inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 transition-colors duration-300 group-hover:border-[rgba(var(--ui-success),0.3)] group-hover:text-[rgb(var(--ui-success))]'>
               {source_name}
             </span>
           </span>

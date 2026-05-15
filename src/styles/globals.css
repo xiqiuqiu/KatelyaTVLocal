@@ -3,28 +3,16 @@
 @tailwind utilities;
 
 :root {
-  /* #region  /**=========== Primary Color =========== */
-  --tw-color-primary-50: 239 246 255;
-  --tw-color-primary-100: 219 234 254;
-  --tw-color-primary-200: 191 219 254;
-  --tw-color-primary-300: 147 197 253;
-  --tw-color-primary-400: 96 165 250;
-  --tw-color-primary-500: 59 130 246;
-  --tw-color-primary-600: 37 99 235;
-  --tw-color-primary-700: 29 78 216;
-  --tw-color-primary-800: 30 64 175;
-  --tw-color-primary-900: 30 58 138;
-  --color-primary-50: rgb(var(--tw-color-primary-50)); /* #eff6ff */
-  --color-primary-100: rgb(var(--tw-color-primary-100)); /* #dbeafe */
-  --color-primary-200: rgb(var(--tw-color-primary-200)); /* #bfdbfe */
-  --color-primary-300: rgb(var(--tw-color-primary-300)); /* #93c5fd */
-  --color-primary-400: rgb(var(--tw-color-primary-400)); /* #60a5fa */
-  --color-primary-500: rgb(var(--tw-color-primary-500)); /* #3b82f6 */
-  --color-primary-600: rgb(var(--tw-color-primary-600)); /* #2563eb */
-  --color-primary-700: rgb(var(--tw-color-primary-700)); /* #1d4ed8 */
-  --color-primary-800: rgb(var(--tw-color-primary-800)); /* #1e40af */
-  --color-primary-900: rgb(var(--tw-color-primary-900)); /* #1e3a8a */
-  /* #endregion  /**======== Primary Color =========== */
+  --color-primary-50: rgb(var(--ui-accent));
+  --color-primary-100: rgb(var(--ui-accent));
+  --color-primary-200: rgb(var(--ui-accent));
+  --color-primary-300: rgb(var(--ui-accent));
+  --color-primary-400: rgb(var(--ui-accent));
+  --color-primary-500: rgb(var(--ui-accent));
+  --color-primary-600: rgb(var(--ui-accent));
+  --color-primary-700: rgb(var(--ui-accent));
+  --color-primary-800: rgb(var(--ui-accent));
+  --color-primary-900: rgb(var(--ui-accent));
 }
 
 @layer base {
@@ -82,7 +70,11 @@
   }
 
   .bg-dark a.custom-link {
-    @apply border-gray-200 hover:border-gray-200/0;
+    border-color: rgb(var(--ui-border));
+  }
+
+  .bg-dark a.custom-link:hover {
+    border-color: transparent;
   }
 
   /* Class to adjust with sticky footer */
@@ -93,7 +85,7 @@
 
 @layer utilities {
   .animated-underline {
-    background-image: linear-gradient(#33333300, #33333300),
+    background-image: linear-gradient(transparent, transparent),
       linear-gradient(
         to right,
         var(--color-primary-400),

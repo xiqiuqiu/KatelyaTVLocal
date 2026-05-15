@@ -14,6 +14,9 @@
   --ui-accent: 59 130 246;
   --ui-accent-warm: 255 176 32;
   --ui-success: 34 197 94;
+  --ui-critical: 239 68 68;
+  --ui-on-accent: 255 255 255;
+  --ui-browser-bg: rgb(11 15 20);
   --ui-radius-xs: 8px;
   --ui-radius-sm: 12px;
   --ui-radius-md: 16px;

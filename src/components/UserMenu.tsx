@@ -21,7 +21,7 @@ const menuItemClassName =
   'flex w-full items-center gap-2.5 rounded-ui-sm px-3 py-2.5 text-left text-sm font-medium text-[rgb(var(--ui-text-muted))] transition hover:bg-white/10 hover:text-[rgb(var(--ui-text))]';
 
 const dangerMenuItemClassName =
-  'flex w-full items-center gap-2.5 rounded-ui-sm px-3 py-2.5 text-left text-sm font-medium text-red-300 transition hover:bg-red-500/15 hover:text-red-200';
+  'flex w-full items-center gap-2.5 rounded-ui-sm px-3 py-2.5 text-left text-sm font-medium text-[rgb(var(--ui-critical))] transition hover:bg-[rgba(var(--ui-critical),0.15)] hover:text-[rgb(var(--ui-critical))]';
 
 const modalPanelClassName =
   'fixed left-1/2 top-1/2 z-[1001] max-h-[90vh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-ui-lg border border-white/10 bg-[rgba(var(--ui-surface),0.9)] p-6 text-[rgb(var(--ui-text))] shadow-ui-strong backdrop-blur-2xl';
@@ -348,10 +348,10 @@ export const UserMenu: React.FC = () => {
               <span
                 className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
                   (authInfo?.role || 'user') === 'owner'
-                    ? 'border-[rgba(var(--ui-accent),0.45)] bg-[rgba(var(--ui-accent),0.14)] text-blue-200'
+                    ? 'border-[rgba(var(--ui-accent),0.45)] bg-[rgba(var(--ui-accent),0.14)] text-[rgb(var(--ui-accent))]'
                     : (authInfo?.role || 'user') === 'admin'
-                    ? 'border-[rgba(var(--ui-accent),0.45)] bg-[rgba(var(--ui-accent),0.14)] text-blue-200'
-                    : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'
+                    ? 'border-[rgba(var(--ui-accent),0.45)] bg-[rgba(var(--ui-accent),0.14)] text-[rgb(var(--ui-accent))]'
+                    : 'border-[rgba(var(--ui-success),0.3)] bg-[rgba(var(--ui-success),0.1)] text-[rgb(var(--ui-success))]'
                 }`}
               >
                 {getRoleText(authInfo?.role || 'user')}

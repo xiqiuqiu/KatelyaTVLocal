@@ -44,7 +44,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#0B0F14',
+  themeColor: 'rgb(11 15 20)',
 };
 
 const FloatingShapes = () => {
