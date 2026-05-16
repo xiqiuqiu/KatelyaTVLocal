@@ -27,9 +27,39 @@ interface ChatCompletionResponse {
   };
 }
 
-function normalizeToolCalls(
-  toolCalls: RawToolCall[] = []
-): AiModelToolCall[] {
+function serializeMessages(messages: AiModelMessage[]) {
+  return messages.map((message) => {
+    if (message.role === 'assistant' && message.tool_calls?.length) {
+      return {
+        role: 'assistant' as const,
+        content: message.content,
+        tool_calls: message.tool_calls.map((toolCall) => ({
+          id: toolCall.id,
+          type: 'function' as const,
+          function: {
+            name: toolCall.name,
+            arguments: toolCall.arguments,
+          },
+        })),
+      };
+    }
+
+    if (message.role === 'tool') {
+      return {
+        role: 'tool' as const,
+        tool_call_id: message.tool_call_id,
+        content: message.content ?? '',
+      };
+    }
+
+    return {
+      role: message.role,
+      content: message.content,
+    };
+  });
+}
+
+function normalizeToolCalls(toolCalls: RawToolCall[] = []): AiModelToolCall[] {
   return toolCalls
     .map((toolCall, index) => ({
       id: toolCall.id || `tool-call-${index}`,
@@ -63,7 +93,7 @@ export async function callOpenAiCompatibleChat({
       },
       body: JSON.stringify({
         model: config.model,
-        messages,
+        messages: serializeMessages(messages),
         tools: tools && tools.length > 0 ? tools : undefined,
         tool_choice: tools && tools.length > 0 ? 'auto' : undefined,
         temperature: config.temperature,
@@ -71,9 +101,9 @@ export async function callOpenAiCompatibleChat({
       signal: controller.signal,
     });
 
-    const payload = (await response.json().catch(() => null)) as
-      | ChatCompletionResponse
-      | null;
+    const payload = (await response
+      .json()
+      .catch(() => null)) as ChatCompletionResponse | null;
 
     if (!response.ok) {
       throw new Error(

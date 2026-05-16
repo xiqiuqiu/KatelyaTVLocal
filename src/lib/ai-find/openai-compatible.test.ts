@@ -98,5 +98,69 @@ describe('OpenAI-compatible client', () => {
       arguments: '{"query":"test"}',
     });
   });
-});
 
+  it('serializes assistant tool calls for follow-up requests', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: '{"answer":"ok"}',
+            },
+          },
+        ],
+      }),
+    });
+
+    await callOpenAiCompatibleChat({
+      config,
+      messages: [
+        { role: 'user', content: 'hello' },
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            {
+              id: 'call-1',
+              name: 'search_katelya_sources',
+              arguments: '{"query":"隐秘的角落"}',
+            },
+          ],
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'call-1',
+          content: '{"results":[]}',
+        },
+      ],
+    });
+
+    const request = (global.fetch as jest.Mock).mock.calls[0][1] as {
+      body: string;
+    };
+    const payload = JSON.parse(request.body) as {
+      messages: Array<Record<string, unknown>>;
+    };
+
+    expect(payload.messages[1]).toEqual({
+      role: 'assistant',
+      content: null,
+      tool_calls: [
+        {
+          id: 'call-1',
+          type: 'function',
+          function: {
+            name: 'search_katelya_sources',
+            arguments: '{"query":"隐秘的角落"}',
+          },
+        },
+      ],
+    });
+    expect(payload.messages[2]).toEqual({
+      role: 'tool',
+      tool_call_id: 'call-1',
+      content: '{"results":[]}',
+    });
+  });
+});
