@@ -1,61 +1,23 @@
+import { getWebSearchProviderAdapter } from './web-search-providers';
+import { getAiFindCache, setAiFindCache } from '../cache';
 import type { AiFindConfig, WebSearchResult } from '../types';
 
-interface GenericWebSearchPayload {
-  results?: Array<Partial<WebSearchResult>>;
-  items?: Array<Partial<WebSearchResult>>;
-  webPages?: {
-    value?: Array<{
-      name?: string;
-      snippet?: string;
-      url?: string;
-    }>;
-  };
-}
-
-function isPrivateHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  return (
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host === '0.0.0.0' ||
-    host.startsWith('10.') ||
-    host.startsWith('192.168.') ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+function buildWebSearchCacheKey({
+  provider,
+  endpoint,
+  query,
+  reason,
+  locale,
+}: {
+  provider: string;
+  endpoint: string;
+  query: string;
+  reason: string;
+  locale: string;
+}): string {
+  return ['ai-find:web-search', provider, endpoint, query, reason, locale].join(
+    ':'
   );
-}
-
-function assertPublicEndpoint(endpoint: string): void {
-  const url = new URL(endpoint);
-  if (!['https:', 'http:'].includes(url.protocol)) {
-    throw new Error('Web search endpoint must be HTTP or HTTPS');
-  }
-
-  if (isPrivateHost(url.hostname)) {
-    throw new Error('Web search endpoint cannot point to a private host');
-  }
-}
-
-function normalizeResults(payload: GenericWebSearchPayload): WebSearchResult[] {
-  const rawResults =
-    payload.results ||
-    payload.items ||
-    payload.webPages?.value?.map((item) => ({
-      title: item.name || '',
-      snippet: item.snippet || '',
-      url: item.url || '',
-      source: undefined,
-    })) ||
-    [];
-
-  return rawResults
-    .map((item) => ({
-      title: item.title || '',
-      snippet: item.snippet || '',
-      url: item.url || '',
-      source: item.source,
-    }))
-    .filter((item) => item.title && item.url)
-    .slice(0, 5);
 }
 
 export async function webSearchMedia({
@@ -73,33 +35,34 @@ export async function webSearchMedia({
     return [];
   }
 
-  if (!config.webSearchEndpoint) {
-    throw new Error('AI_WEB_SEARCH_ENDPOINT is required when web search is enabled');
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) {
+    return [];
   }
 
-  assertPublicEndpoint(config.webSearchEndpoint);
-
-  const response = await fetch(config.webSearchEndpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(config.webSearchApiKey
-        ? { Authorization: `Bearer ${config.webSearchApiKey}` }
-        : {}),
-    },
-    body: JSON.stringify({
-      query,
-      reason,
-      locale,
-    }),
+  const normalizedReason = reason.trim();
+  const normalizedLocale = locale.trim() || 'zh-CN';
+  const provider = getWebSearchProviderAdapter(config);
+  const cacheKey = buildWebSearchCacheKey({
+    provider: provider.name,
+    endpoint: config.webSearchEndpoint,
+    query: normalizedQuery,
+    reason: normalizedReason,
+    locale: normalizedLocale,
   });
-
-  if (!response.ok) {
-    throw new Error(`Web search failed: ${response.status}`);
+  const cached = getAiFindCache<WebSearchResult[]>(cacheKey);
+  if (cached) {
+    return cached;
   }
 
-  const payload = (await response.json()) as GenericWebSearchPayload;
-  return normalizeResults(payload);
+  const results = await provider.search({
+    query: normalizedQuery,
+    reason: normalizedReason,
+    locale: normalizedLocale,
+  });
+  setAiFindCache(cacheKey, results, config.cacheTtlSeconds);
+
+  return results;
 }
 
 export const webSearchMediaToolSchema = {

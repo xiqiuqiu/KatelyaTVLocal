@@ -2,6 +2,7 @@ import { getAvailableApiSites } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
 import type { SearchResult } from '@/lib/types';
 
+import { rankSearchResultGroupItems } from './rank-playable-results';
 import { getAiFindCache, setAiFindCache } from '../cache';
 import type {
   AiFindAggregatedResult,
@@ -18,10 +19,45 @@ function getSearchResultType(item: SearchResult): string {
 }
 
 function getAggregateKey(item: SearchResult): string {
-  return `${normalizeTitle(item.title)}-${item.year || 'unknown'}-${getSearchResultType(item)}`;
+  return `${normalizeTitle(item.title)}-${
+    item.year || 'unknown'
+  }-${getSearchResultType(item)}`;
 }
 
-function sortSearchResults(query: string, results: SearchResult[]): SearchResult[] {
+function matchesRequestedType(
+  item: SearchResult,
+  type: 'movie' | 'tv' | 'show' | 'unknown' | undefined
+): boolean {
+  if (!type || type === 'unknown') return true;
+  if (type === 'movie') return getSearchResultType(item) === 'movie';
+  return getSearchResultType(item) === 'tv';
+}
+
+function matchesRequestedYear(item: SearchResult, year?: string): boolean {
+  if (!year) return true;
+  return item.year === year;
+}
+
+function filterSearchResults(
+  results: SearchResult[],
+  {
+    type,
+    year,
+  }: {
+    type?: 'movie' | 'tv' | 'show' | 'unknown';
+    year?: string;
+  }
+): SearchResult[] {
+  return results.filter(
+    (item) =>
+      matchesRequestedType(item, type) && matchesRequestedYear(item, year)
+  );
+}
+
+function sortSearchResults(
+  query: string,
+  results: SearchResult[]
+): SearchResult[] {
   const normalizedQuery = normalizeTitle(query);
 
   return [...results].sort((a, b) => {
@@ -85,33 +121,136 @@ export async function searchKatelyaSources({
   if (cached) return cached;
 
   const apiSites = await getAvailableApiSites();
-  const results = (await Promise.all(
-    apiSites.map((site) => searchFromApi(site, normalizedQuery))
-  )).flat();
+  const results = (
+    await Promise.all(
+      apiSites.map((site) => searchFromApi(site, normalizedQuery))
+    )
+  ).flat();
   const sorted = sortSearchResults(normalizedQuery, results).slice(0, limit);
 
   setAiFindCache(cacheKey, sorted, cacheTtlSeconds);
   return sorted;
 }
 
+export async function searchKatelyaSourcesTool({
+  query,
+  type = 'unknown',
+  year,
+  limit = 20,
+  cacheTtlSeconds = 1800,
+}: {
+  query: string;
+  type?: 'movie' | 'tv' | 'show' | 'unknown';
+  year?: string;
+  limit?: number;
+  cacheTtlSeconds?: number;
+}): Promise<
+  Array<{
+    sourceKey: string;
+    sourceName: string;
+    id: string;
+    title: string;
+    year: string;
+    type: string;
+    poster: string;
+    episodeCount: number;
+    firstEpisodeUrl: string | null;
+  }>
+> {
+  const rawResults = await searchKatelyaSources({
+    query,
+    limit: Math.min(Math.max(limit, 1), 30),
+    cacheTtlSeconds,
+  });
+
+  return filterSearchResults(rawResults, { type, year })
+    .slice(0, limit)
+    .map((item) => ({
+      sourceKey: item.source,
+      sourceName: item.source_name,
+      id: item.id,
+      title: item.title,
+      year: item.year || 'unknown',
+      type: getSearchResultType(item),
+      poster: item.poster,
+      episodeCount: item.episodes.length,
+      firstEpisodeUrl: item.episodes[0] || null,
+    }));
+}
+
+export const searchKatelyaSourcesToolSchema = {
+  type: 'function' as const,
+  function: {
+    name: 'search_katelya_sources',
+    description:
+      'Search KatelyaTV configured sources for a single candidate title or phrase and return compact, searchable source results.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'The candidate title or phrase to search inside KatelyaTV sources.',
+        },
+        type: {
+          type: 'string',
+          enum: ['movie', 'tv', 'show', 'unknown'],
+          description: 'Expected media type when known.',
+        },
+        year: {
+          type: 'string',
+          description: 'Expected release year when known.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of source results to return.',
+        },
+      },
+      required: ['query'],
+    },
+  },
+};
+
 export async function buildAiFindResultGroup({
   candidate,
   maxGroups,
   cacheTtlSeconds,
+  requestOrigin,
+  prefer,
 }: {
   candidate: AiFindCandidateQuery;
   maxGroups: number;
   cacheTtlSeconds: number;
+  requestOrigin?: string;
+  prefer?: 'stable' | 'fast' | 'quality';
 }): Promise<AiFindResultGroup> {
   const rawResults = await searchKatelyaSources({
     query: candidate.query,
     limit: 30,
     cacheTtlSeconds,
   });
-  const groups = aggregateSearchResults(candidate.query, rawResults).slice(
-    0,
-    maxGroups
-  );
+  const aggregatedGroups = aggregateSearchResults(
+    candidate.query,
+    rawResults
+  ).slice(0, maxGroups);
+  const groups = requestOrigin
+    ? await Promise.all(
+        aggregatedGroups.map(async (group) => {
+          const rankedGroup = await rankSearchResultGroupItems({
+            items: group.items,
+            origin: requestOrigin,
+            prefer,
+          });
+
+          return {
+            ...group,
+            items: rankedGroup.items,
+            playbackHint: rankedGroup.playbackHint,
+          };
+        })
+      )
+    : aggregatedGroups;
 
   return {
     query: candidate.query,
@@ -123,4 +262,3 @@ export async function buildAiFindResultGroup({
     notFound: groups.length === 0,
   };
 }
-

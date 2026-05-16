@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAiFindConfig } from '@/lib/ai-find/config';
+import { getAiFindConfig, getAiFindConfigError } from '@/lib/ai-find/config';
 import { runAiFind } from '@/lib/ai-find/orchestrator';
 import { checkAiFindRateLimit } from '@/lib/ai-find/rate-limit';
 import type { AiFindRequest } from '@/lib/ai-find/types';
@@ -61,6 +61,12 @@ export async function POST(request: NextRequest) {
   }
 
   const config = getAiFindConfig();
+  const configError = getAiFindConfigError(config);
+  if (configError) {
+    const response = NextResponse.json({ error: configError }, { status: 503 });
+    return addCorsHeaders(response);
+  }
+
   const authInfo = await getAuthInfoFromCookie(request);
   const rateLimit = checkAiFindRateLimit({
     key: getClientIdentity(request, authInfo?.username),
@@ -78,9 +84,11 @@ export async function POST(request: NextRequest) {
     return addCorsHeaders(response);
   }
 
+  const requestUrl = new URL(request.url);
   const result = await runAiFind({
     config,
     request: aiFindRequest,
+    requestOrigin: request.headers.get('origin') || requestUrl.origin,
   });
 
   const response = NextResponse.json(result, {
@@ -91,4 +99,3 @@ export async function POST(request: NextRequest) {
   });
   return addCorsHeaders(response);
 }
-

@@ -38,6 +38,7 @@ function SearchPageClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchMode, setSearchMode] = useState<'normal' | 'ai'>('normal');
 
   // 从 URL 参数获取搜索词
   const searchQuery = searchParams.get('q') || '';
@@ -241,7 +242,7 @@ function SearchPageClient() {
       <div className='mb-10 space-y-8 overflow-visible sm:px-10 sm:py-8'>
         <PageHeader
           action={
-            showResults ? (
+            searchMode === 'normal' && showResults ? (
               <label className='inline-flex cursor-pointer items-center gap-3 rounded-full border border-white/10 bg-[rgba(var(--ui-surface-strong),0.72)] px-3 py-2 text-sm text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md'>
                 <span>聚合</span>
                 <div className='relative'>
@@ -264,11 +265,38 @@ function SearchPageClient() {
         />
 
         <div className='mx-auto max-w-[95%] overflow-visible'>
-          <div className='mb-8'>
-            <AiFindPanel />
-          </div>
+          <Surface className='mb-8 p-2' variant='plain'>
+            <div className='grid grid-cols-2 gap-2'>
+              <button
+                aria-pressed={searchMode === 'normal'}
+                className={`rounded-xl px-4 py-3 text-sm font-medium transition ${
+                  searchMode === 'normal'
+                    ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))]'
+                    : 'bg-white/5 text-[rgb(var(--ui-text-muted))] hover:bg-white/10'
+                }`}
+                onClick={() => setSearchMode('normal')}
+                type='button'
+              >
+                普通搜索
+              </button>
+              <button
+                aria-pressed={searchMode === 'ai'}
+                className={`rounded-xl px-4 py-3 text-sm font-medium transition ${
+                  searchMode === 'ai'
+                    ? 'bg-[rgb(var(--ui-success))] text-[rgb(var(--ui-on-accent))]'
+                    : 'bg-white/5 text-[rgb(var(--ui-text-muted))] hover:bg-white/10'
+                }`}
+                onClick={() => setSearchMode('ai')}
+                type='button'
+              >
+                AI 找片
+              </button>
+            </div>
+          </Surface>
 
-          {isLoading ? (
+          {searchMode === 'ai' ? (
+            <AiFindPanel />
+          ) : isLoading ? (
             <section className='space-y-4'>
               <SectionHeader
                 subtitle='正在整理结果与可用线路'
@@ -277,7 +305,10 @@ function SearchPageClient() {
               <PosterGrid className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
                 {Array.from({ length: 12 }).map((_, index) => (
                   <div key={`search-skeleton-${index}`} className='w-full'>
-                    <SkeletonPosterCard delayIndex={index} widths={['80%', '58%']} />
+                    <SkeletonPosterCard
+                      delayIndex={index}
+                      widths={['80%', '58%']}
+                    />
                   </div>
                 ))}
               </PosterGrid>
@@ -430,8 +461,14 @@ const SearchFallback = () => {
             />
             <PosterGrid className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
               {Array.from({ length: 12 }).map((_, index) => (
-                <div key={`search-skeleton-fallback-${index}`} className='w-full'>
-                  <SkeletonPosterCard delayIndex={index} widths={['80%', '58%']} />
+                <div
+                  key={`search-skeleton-fallback-${index}`}
+                  className='w-full'
+                >
+                  <SkeletonPosterCard
+                    delayIndex={index}
+                    widths={['80%', '58%']}
+                  />
                 </div>
               ))}
             </PosterGrid>
