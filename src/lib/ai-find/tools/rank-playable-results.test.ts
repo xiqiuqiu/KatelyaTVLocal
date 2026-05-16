@@ -127,4 +127,47 @@ describe('rank playable results', () => {
     expect(rankedGroup.items[0].source).toBe('beta');
     expect(rankedGroup.playbackHint).toBe('direct');
   });
+
+  it('marks a source unavailable when a playback probe is aborted', async () => {
+    mockedProbeSourcePlaybackWithCache.mockImplementation(async (targetUrl) => {
+      if (targetUrl.includes('alpha')) {
+        throw new Error('The operation was aborted');
+      }
+
+      return {
+        kind: 'direct',
+        reason: '可直连',
+        probeTimeMs: 90,
+        cacheState: 'miss',
+      };
+    });
+
+    const ranked = await rankPlayableResults({
+      items: [
+        {
+          sourceKey: 'alpha',
+          id: '1',
+          episodeUrl: 'https://alpha.example/1.m3u8',
+        },
+        {
+          sourceKey: 'beta',
+          id: '2',
+          episodeUrl: 'https://beta.example/1.m3u8',
+        },
+      ],
+      origin: 'https://app.example.com',
+    });
+
+    expect(ranked.orderedItems.map((item) => item.sourceKey)).toEqual([
+      'beta',
+      'alpha',
+    ]);
+    expect(ranked.orderedItems[1]).toEqual(
+      expect.objectContaining({
+        sourceKey: 'alpha',
+        kind: 'unavailable',
+        reason: 'The operation was aborted',
+      })
+    );
+  });
 });

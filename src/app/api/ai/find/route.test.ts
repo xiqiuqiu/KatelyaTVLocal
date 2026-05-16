@@ -174,4 +174,48 @@ describe('AI find route', () => {
     expect(mockedCheckAiFindRateLimit).not.toHaveBeenCalled();
     expect(mockedRunAiFind).not.toHaveBeenCalled();
   });
+
+  it('returns a JSON error when ai find execution aborts unexpectedly', async () => {
+    mockedGetAiFindConfig.mockReturnValue({
+      enabled: true,
+      baseUrl: 'https://ai.example/v1',
+      apiKey: 'key',
+      model: 'model',
+      debug: false,
+      temperature: 0.2,
+      maxToolRounds: 4,
+      requestTimeoutMs: 20000,
+      maxResults: 5,
+      webSearchEnabled: false,
+      webSearchProvider: 'none',
+      webSearchEndpoint: '',
+      webSearchApiKey: '',
+      dailyLimitPerUser: 20,
+      cacheTtlSeconds: 1800,
+    });
+    mockedGetAuthInfoFromCookie.mockResolvedValue(null as never);
+    mockedCheckAiFindRateLimit.mockReturnValue({
+      allowed: true,
+      remaining: 19,
+      resetAt: Date.now() + 1000,
+    });
+    mockedRunAiFind.mockRejectedValue(new Error('The operation was aborted'));
+
+    const response = await POST(
+      new Request('https://app.example.com/api/ai/find', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: '想看节奏快一点的国产悬疑剧',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: 'AI 找片暂时不可用，请稍后再试',
+    });
+  });
 });

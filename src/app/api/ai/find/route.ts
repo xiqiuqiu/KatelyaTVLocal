@@ -85,17 +85,33 @@ export async function POST(request: NextRequest) {
   }
 
   const requestUrl = new URL(request.url);
-  const result = await runAiFind({
-    config,
-    request: aiFindRequest,
-    requestOrigin: request.headers.get('origin') || requestUrl.origin,
-  });
 
-  const response = NextResponse.json(result, {
-    status: 200,
-    headers: {
-      'Cache-Control': 'no-store',
-    },
-  });
-  return addCorsHeaders(response);
+  try {
+    const result = await runAiFind({
+      config,
+      request: aiFindRequest,
+      requestOrigin: request.headers.get('origin') || requestUrl.origin,
+    });
+
+    const response = NextResponse.json(result, {
+      status: 200,
+      headers: {
+        'Cache-Control': 'no-store',
+      },
+    });
+    return addCorsHeaders(response);
+  } catch (error) {
+    console.error('[ai-find] request failed', error);
+
+    const response = NextResponse.json(
+      { error: 'AI 找片暂时不可用，请稍后再试' },
+      {
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      }
+    );
+    return addCorsHeaders(response);
+  }
 }

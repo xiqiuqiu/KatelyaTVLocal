@@ -4,7 +4,10 @@ import {
 } from '@/lib/source-preference';
 import type { SearchResult, SourcePreferenceResult } from '@/lib/types';
 
+import { mapWithConcurrency } from '../concurrency';
+
 type RankPreference = 'stable' | 'fast' | 'quality';
+const AI_FIND_PLAYBACK_PROBE_CONCURRENCY = 4;
 
 export interface RankPlayableResultInputItem {
   sourceKey: string;
@@ -45,8 +48,10 @@ export async function rankPlayableResults({
 }): Promise<RankedPlayableResults> {
   normalizePreference(prefer);
 
-  const probedResults = await Promise.all(
-    items.map(async (item): Promise<RankedPlayableResultItem> => {
+  const probedResults = await mapWithConcurrency(
+    items,
+    AI_FIND_PLAYBACK_PROBE_CONCURRENCY,
+    async (item): Promise<RankedPlayableResultItem> => {
       const normalizedSourceKey = item.sourceKey.trim();
 
       if (!normalizedSourceKey) {
@@ -69,18 +74,28 @@ export async function rankPlayableResults({
         };
       }
 
-      const probeResult = await probeSourcePlaybackWithCache(
-        item.episodeUrl,
-        origin
-      );
+      try {
+        const probeResult = await probeSourcePlaybackWithCache(
+          item.episodeUrl,
+          origin
+        );
 
-      return {
-        sourceKey: normalizedSourceKey,
-        id: item.id,
-        episodeUrl: item.episodeUrl,
-        ...probeResult,
-      };
-    })
+        return {
+          sourceKey: normalizedSourceKey,
+          id: item.id,
+          episodeUrl: item.episodeUrl,
+          ...probeResult,
+        };
+      } catch (error) {
+        return {
+          sourceKey: normalizedSourceKey,
+          id: item.id,
+          episodeUrl: item.episodeUrl,
+          kind: 'unavailable',
+          reason: error instanceof Error ? error.message : '播放源探测失败',
+        };
+      }
+    }
   );
 
   const orderedItems = sortSourcePreferenceResults(probedResults);

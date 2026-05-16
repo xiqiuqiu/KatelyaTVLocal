@@ -120,4 +120,71 @@ describe('AI find orchestrator', () => {
     expect(result.candidateQueries[0].query).toBe('国产悬疑剧');
     expect(result.toolTrace).toEqual([]);
   });
+
+  it('normalizes numeric year fields from AI candidate output', async () => {
+    mockedCallOpenAiCompatibleChat.mockResolvedValue({
+      role: 'assistant',
+      content:
+        '{"answer":"已识别候选片名","candidates":[{"query":"漫长的季节","reason":"年代与类型匹配","confidence":"high","year":2023,"type":"tv"}],"suggestions":["漫长的季节"]}',
+    });
+
+    const result = await runAiFind({
+      config,
+      request: {
+        query: '想看近几年的国产犯罪悬疑剧',
+      },
+      requestOrigin: 'https://app.example.com',
+    });
+
+    expect(result.degraded).not.toBe(true);
+    expect(result.candidateQueries).toEqual([
+      expect.objectContaining({
+        query: '漫长的季节',
+        year: '2023',
+        confidence: 'high',
+      }),
+    ]);
+  });
+
+  it('degrades instead of rejecting when one candidate group build is aborted', async () => {
+    mockedCallOpenAiCompatibleChat.mockResolvedValue({
+      role: 'assistant',
+      content:
+        '{"answer":"已识别出更可能的片名","candidates":[{"query":"隐秘的角落","reason":"国产犯罪悬疑剧匹配度高","confidence":"high","type":"tv"},{"query":"漫长的季节","reason":"同类型高口碑国产悬疑剧","confidence":"medium","type":"tv"}],"suggestions":["隐秘的角落","漫长的季节"]}',
+    });
+    mockedBuildAiFindResultGroup.mockReset();
+    mockedBuildAiFindResultGroup
+      .mockResolvedValueOnce({
+        query: '隐秘的角落',
+        reason: '命中站内结果',
+        confidence: 'high',
+        rawCount: 1,
+        groupedCount: 1,
+        groups: [],
+      })
+      .mockRejectedValueOnce(new Error('The operation was aborted'));
+
+    const result = await runAiFind({
+      config,
+      request: {
+        query: '想看节奏快一点的国产悬疑剧',
+      },
+      requestOrigin: 'https://app.example.com',
+    });
+
+    expect(mockedBuildAiFindResultGroup).toHaveBeenCalledTimes(2);
+    expect(result.degraded).toBe(true);
+    expect(result.errorMessage).toContain('部分候选片名');
+    expect(result.groups).toEqual([
+      expect.objectContaining({
+        query: '隐秘的角落',
+        groupedCount: 1,
+      }),
+      expect.objectContaining({
+        query: '漫长的季节',
+        groupedCount: 0,
+        notFound: true,
+      }),
+    ]);
+  });
 });

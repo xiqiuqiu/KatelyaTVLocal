@@ -4,11 +4,16 @@ import type { SearchResult } from '@/lib/types';
 
 import { rankSearchResultGroupItems } from './rank-playable-results';
 import { getAiFindCache, setAiFindCache } from '../cache';
+import { mapWithConcurrency } from '../concurrency';
 import type {
   AiFindAggregatedResult,
   AiFindCandidateQuery,
   AiFindResultGroup,
 } from '../types';
+
+const AI_FIND_SOURCE_SEARCH_CONCURRENCY = 4;
+const AI_FIND_GROUP_RANKING_CONCURRENCY = 3;
+type SearchSite = Parameters<typeof searchFromApi>[0];
 
 function normalizeTitle(title: string): string {
   return title.replaceAll(' ', '').trim();
@@ -104,6 +109,17 @@ export function aggregateSearchResults(
   }));
 }
 
+async function searchSiteResults(
+  site: SearchSite,
+  query: string
+): Promise<SearchResult[]> {
+  try {
+    return await searchFromApi(site, query);
+  } catch {
+    return [];
+  }
+}
+
 export async function searchKatelyaSources({
   query,
   limit = 30,
@@ -122,8 +138,10 @@ export async function searchKatelyaSources({
 
   const apiSites = await getAvailableApiSites();
   const results = (
-    await Promise.all(
-      apiSites.map((site) => searchFromApi(site, normalizedQuery))
+    await mapWithConcurrency(
+      apiSites,
+      AI_FIND_SOURCE_SEARCH_CONCURRENCY,
+      async (site) => searchSiteResults(site, normalizedQuery)
     )
   ).flat();
   const sorted = sortSearchResults(normalizedQuery, results).slice(0, limit);
@@ -235,20 +253,26 @@ export async function buildAiFindResultGroup({
     rawResults
   ).slice(0, maxGroups);
   const groups = requestOrigin
-    ? await Promise.all(
-        aggregatedGroups.map(async (group) => {
-          const rankedGroup = await rankSearchResultGroupItems({
-            items: group.items,
-            origin: requestOrigin,
-            prefer,
-          });
+    ? await mapWithConcurrency(
+        aggregatedGroups,
+        AI_FIND_GROUP_RANKING_CONCURRENCY,
+        async (group) => {
+          try {
+            const rankedGroup = await rankSearchResultGroupItems({
+              items: group.items,
+              origin: requestOrigin,
+              prefer,
+            });
 
-          return {
-            ...group,
-            items: rankedGroup.items,
-            playbackHint: rankedGroup.playbackHint,
-          };
-        })
+            return {
+              ...group,
+              items: rankedGroup.items,
+              playbackHint: rankedGroup.playbackHint,
+            };
+          } catch {
+            return group;
+          }
+        }
       )
     : aggregatedGroups;
 

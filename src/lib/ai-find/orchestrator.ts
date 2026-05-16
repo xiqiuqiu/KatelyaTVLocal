@@ -1,3 +1,4 @@
+import { mapWithConcurrency } from './concurrency';
 import { getAiFindConfigError } from './config';
 import { callOpenAiCompatibleChat } from './openai-compatible';
 import { AI_FIND_SYSTEM_PROMPT, buildAiFindUserPrompt } from './prompt';
@@ -16,6 +17,8 @@ interface CandidatePayload {
   candidates?: Partial<AiFindCandidateQuery>[];
   suggestions?: string[];
 }
+
+const AI_FIND_CANDIDATE_CONCURRENCY = 2;
 
 function logAiFindDebug(
   config: AiFindConfig,
@@ -40,6 +43,19 @@ function normalizeType(value: unknown): AiFindCandidateQuery['type'] {
     : 'unknown';
 }
 
+function normalizeOptionalText(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return undefined;
+}
+
 function dedupeCandidates(
   candidates: Partial<AiFindCandidateQuery>[],
   maxResults: number
@@ -59,8 +75,8 @@ function dedupeCandidates(
       query,
       reason: candidate.reason?.trim() || '根据你的描述生成的候选片名',
       confidence: normalizeConfidence(candidate.confidence),
-      verifiedTitle: candidate.verifiedTitle?.trim() || undefined,
-      year: candidate.year?.trim() || undefined,
+      verifiedTitle: normalizeOptionalText(candidate.verifiedTitle),
+      year: normalizeOptionalText(candidate.year),
       type: normalizeType(candidate.type),
     });
   });
@@ -223,26 +239,67 @@ export async function runAiFind({
     config,
     request,
   });
-  const groups = await Promise.all(
-    candidateResult.candidates.map((candidate) =>
-      buildAiFindResultGroup({
-        candidate,
-        maxGroups: 8,
-        cacheTtlSeconds: config.cacheTtlSeconds,
-        requestOrigin,
-        prefer: request.userPreference?.prefer,
-      })
-    )
+  const groupResults = await mapWithConcurrency(
+    candidateResult.candidates,
+    AI_FIND_CANDIDATE_CONCURRENCY,
+    async (candidate) => {
+      try {
+        const group = await buildAiFindResultGroup({
+          candidate,
+          maxGroups: 8,
+          cacheTtlSeconds: config.cacheTtlSeconds,
+          requestOrigin,
+          prefer: request.userPreference?.prefer,
+        });
+
+        return {
+          group,
+          failed: false,
+        };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : '候选片名处理失败';
+
+        logAiFindDebug(config, 'candidate group degraded', {
+          query: candidate.query,
+          errorMessage,
+        });
+
+        return {
+          group: {
+            query: candidate.query,
+            reason: candidate.reason,
+            confidence: candidate.confidence,
+            rawCount: 0,
+            groupedCount: 0,
+            groups: [],
+            notFound: true,
+          },
+          failed: true,
+        };
+      }
+    }
   );
+  const groups = groupResults.map((item) => item.group);
+  const partialFailureCount = groupResults.filter((item) => item.failed).length;
   const foundCount = groups.reduce(
     (count, group) => count + group.groupedCount,
     0
   );
+  const partialFailureMessage =
+    partialFailureCount > 0
+      ? '部分候选片名在站内搜索或可播探测阶段失败，已返回其余可用结果。'
+      : undefined;
+  const errorMessages = [
+    candidateResult.errorMessage,
+    partialFailureMessage,
+  ].filter(Boolean) as string[];
 
   logAiFindDebug(config, 'ai find completed', {
     candidateCount: candidateResult.candidates.length,
     foundCount,
-    degraded: Boolean(candidateResult.degraded),
+    degraded: Boolean(candidateResult.degraded || partialFailureCount > 0),
+    partialFailureCount,
     toolTraceCount: toolTrace.length,
   });
 
@@ -250,13 +307,16 @@ export async function runAiFind({
     answer:
       foundCount > 0
         ? candidateResult.answer
+        : partialFailureCount > 0
+        ? '部分候选片名查询失败，当前仅返回可用结果。'
         : '已搜索候选片名，但当前资源站没有找到可播放结果。',
     candidateQueries: candidateResult.candidates,
     groups,
     suggestions: candidateResult.suggestions,
     toolTrace,
     generatedAt: Date.now(),
-    degraded: candidateResult.degraded,
-    errorMessage: candidateResult.errorMessage,
+    degraded: candidateResult.degraded || partialFailureCount > 0,
+    errorMessage:
+      errorMessages.length > 0 ? errorMessages.join('；') : undefined,
   };
 }
