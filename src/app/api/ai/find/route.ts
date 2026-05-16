@@ -1,0 +1,94 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+import { getAiFindConfig } from '@/lib/ai-find/config';
+import { runAiFind } from '@/lib/ai-find/orchestrator';
+import { checkAiFindRateLimit } from '@/lib/ai-find/rate-limit';
+import type { AiFindRequest } from '@/lib/ai-find/types';
+import { getAuthInfoFromCookie } from '@/lib/auth';
+import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
+
+export const runtime = 'edge';
+
+function getClientIdentity(request: NextRequest, username?: string): string {
+  if (username) return `user:${username}`;
+
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  const ip = forwardedFor?.split(',')[0]?.trim() || 'anonymous';
+  return `ip:${ip}`;
+}
+
+function validatePayload(payload: unknown): AiFindRequest | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const candidate = payload as Partial<AiFindRequest>;
+  if (typeof candidate.query !== 'string' || !candidate.query.trim()) {
+    return null;
+  }
+
+  return {
+    query: candidate.query.trim().slice(0, 200),
+    mode: candidate.mode === 'browse' ? 'browse' : 'find',
+    userPreference: candidate.userPreference,
+  };
+}
+
+export async function OPTIONS() {
+  return handleOptionsRequest();
+}
+
+export async function POST(request: NextRequest) {
+  let payload: unknown;
+
+  try {
+    payload = await request.json();
+  } catch {
+    const response = NextResponse.json(
+      { error: 'Invalid JSON payload' },
+      { status: 400 }
+    );
+    return addCorsHeaders(response);
+  }
+
+  const aiFindRequest = validatePayload(payload);
+  if (!aiFindRequest) {
+    const response = NextResponse.json(
+      { error: 'Missing query' },
+      { status: 400 }
+    );
+    return addCorsHeaders(response);
+  }
+
+  const config = getAiFindConfig();
+  const authInfo = await getAuthInfoFromCookie(request);
+  const rateLimit = checkAiFindRateLimit({
+    key: getClientIdentity(request, authInfo?.username),
+    limit: config.dailyLimitPerUser,
+  });
+
+  if (!rateLimit.allowed) {
+    const response = NextResponse.json(
+      {
+        error: 'AI 找片次数已达到今日上限',
+        resetAt: rateLimit.resetAt,
+      },
+      { status: 429 }
+    );
+    return addCorsHeaders(response);
+  }
+
+  const result = await runAiFind({
+    config,
+    request: aiFindRequest,
+  });
+
+  const response = NextResponse.json(result, {
+    status: 200,
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  });
+  return addCorsHeaders(response);
+}
+

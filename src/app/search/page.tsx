@@ -15,6 +15,7 @@ import {
 import { SearchResult } from '@/lib/types';
 import { pageMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
+import AiFindPanel from '@/components/AiFindPanel';
 import PageLayout from '@/components/PageLayout';
 import ActionLink from '@/components/ui/ActionLink';
 import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
@@ -263,6 +264,10 @@ function SearchPageClient() {
         />
 
         <div className='mx-auto max-w-[95%] overflow-visible'>
+          <div className='mb-8'>
+            <AiFindPanel />
+          </div>
+
           {isLoading ? (
             <section className='space-y-4'>
               <SectionHeader
