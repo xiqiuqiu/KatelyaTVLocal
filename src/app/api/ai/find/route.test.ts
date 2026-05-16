@@ -135,6 +135,7 @@ describe('AI find route', () => {
       baseUrl: 'https://ai.example/v1',
       apiKey: '',
       model: '',
+      debug: false,
       temperature: 0.2,
       maxToolRounds: 4,
       requestTimeoutMs: 20000,

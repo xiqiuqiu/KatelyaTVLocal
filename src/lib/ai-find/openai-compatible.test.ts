@@ -6,6 +6,7 @@ const config: AiFindConfig = {
   baseUrl: 'https://ai.example/v1',
   apiKey: 'key',
   model: 'model',
+  debug: false,
   temperature: 0.2,
   maxToolRounds: 4,
   requestTimeoutMs: 5000,
@@ -33,6 +34,7 @@ describe('OpenAI-compatible client', () => {
         choices: [
           {
             message: {
+              reasoning_content: '先分析用户意图',
               content: '{"answer":"ok"}',
             },
           },
@@ -46,6 +48,7 @@ describe('OpenAI-compatible client', () => {
     });
 
     expect(response.content).toBe('{"answer":"ok"}');
+    expect(response.reasoning_content).toBe('先分析用户意图');
     expect(global.fetch).toHaveBeenCalledWith(
       'https://ai.example/v1/chat/completions',
       expect.objectContaining({
@@ -119,6 +122,7 @@ describe('OpenAI-compatible client', () => {
         { role: 'user', content: 'hello' },
         {
           role: 'assistant',
+          reasoning_content: '先整理站内候选片名',
           content: null,
           tool_calls: [
             {
@@ -145,6 +149,7 @@ describe('OpenAI-compatible client', () => {
 
     expect(payload.messages[1]).toEqual({
       role: 'assistant',
+      reasoning_content: '先整理站内候选片名',
       content: null,
       tool_calls: [
         {

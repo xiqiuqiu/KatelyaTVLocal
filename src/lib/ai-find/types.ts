@@ -65,6 +65,7 @@ export interface AiFindConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  debug: boolean;
   temperature: number;
   maxToolRounds: number;
   requestTimeoutMs: number;
@@ -86,6 +87,7 @@ export interface AiModelToolCall {
 export interface AiModelMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
+  reasoning_content?: string | null;
   tool_calls?: AiModelToolCall[];
   tool_call_id?: string;
 }
@@ -105,4 +107,3 @@ export interface WebSearchResult {
   url: string;
   source?: string;
 }
-

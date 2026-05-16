@@ -34,6 +34,7 @@ const config = {
   baseUrl: 'https://ai.example/v1',
   apiKey: 'key',
   model: 'model',
+  debug: false,
   temperature: 0.2,
   maxToolRounds: 4,
   requestTimeoutMs: 5000,

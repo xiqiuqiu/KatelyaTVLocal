@@ -29,9 +29,15 @@ export function getAiFindConfig(
     baseUrl: normalizeBaseUrl(env.AI_BASE_URL),
     apiKey: env.AI_API_KEY?.trim() || '',
     model: env.AI_MODEL?.trim() || '',
+    debug: parseBoolean(env.AI_FIND_DEBUG, false),
     temperature: parseNumber(env.AI_TEMPERATURE, 0.2, 0, 2),
     maxToolRounds: parseNumber(env.AI_MAX_TOOL_ROUNDS, 4, 0, 8),
-    requestTimeoutMs: parseNumber(env.AI_REQUEST_TIMEOUT_MS, 20000, 3000, 60000),
+    requestTimeoutMs: parseNumber(
+      env.AI_REQUEST_TIMEOUT_MS,
+      20000,
+      3000,
+      60000
+    ),
     maxResults: parseNumber(env.AI_MAX_RESULTS, 5, 1, 10),
     webSearchEnabled: parseBoolean(env.AI_WEB_SEARCH_ENABLED, false),
     webSearchProvider: env.AI_WEB_SEARCH_PROVIDER?.trim() || 'none',
@@ -57,4 +63,3 @@ export function getAiFindConfigError(config: AiFindConfig): string | null {
 
   return null;
 }
-

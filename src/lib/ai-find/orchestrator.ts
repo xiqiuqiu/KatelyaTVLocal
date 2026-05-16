@@ -27,6 +27,15 @@ interface CandidatePayload {
   suggestions?: string[];
 }
 
+function logAiFindDebug(
+  config: AiFindConfig,
+  event: string,
+  details: Record<string, unknown>
+): void {
+  if (!config.debug) return;
+  console.log(`[ai-find] ${event}`, details);
+}
+
 function normalizeConfidence(
   value: unknown
 ): AiFindCandidateQuery['confidence'] {
@@ -256,6 +265,11 @@ async function executeToolCall({
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Invalid tool arguments';
+    logAiFindDebug(config, 'tool arguments invalid', {
+      toolName: toolCall.name,
+      toolCallId: toolCall.id,
+      errorMessage: message,
+    });
     toolTrace.push({
       name: toolCall.name,
       input: toolCall.arguments,
@@ -270,11 +284,23 @@ async function executeToolCall({
   }
 
   try {
+    logAiFindDebug(config, 'tool execution started', {
+      toolName: toolCall.name,
+      toolCallId: toolCall.id,
+      args,
+    });
+
     if (toolCall.name === 'search_katelya_sources') {
       const input = parseSearchToolInput(args);
       const results = await searchKatelyaSourcesTool({
         ...input,
         cacheTtlSeconds: config.cacheTtlSeconds,
+      });
+
+      logAiFindDebug(config, 'tool execution completed', {
+        toolName: toolCall.name,
+        toolCallId: toolCall.id,
+        outputCount: results.length,
       });
 
       toolTrace.push({
@@ -302,6 +328,12 @@ async function executeToolCall({
         prefer: input.prefer || prefer,
       });
 
+      logAiFindDebug(config, 'tool execution completed', {
+        toolName: toolCall.name,
+        toolCallId: toolCall.id,
+        outputCount: results.orderedItems.length,
+      });
+
       toolTrace.push({
         name: toolCall.name,
         input,
@@ -322,6 +354,12 @@ async function executeToolCall({
         query: input.query,
         reason: input.reason,
         locale: input.locale,
+      });
+
+      logAiFindDebug(config, 'tool execution completed', {
+        toolName: toolCall.name,
+        toolCallId: toolCall.id,
+        outputCount: results.length,
       });
 
       toolTrace.push({
@@ -351,6 +389,11 @@ async function executeToolCall({
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Tool failed';
+    logAiFindDebug(config, 'tool execution failed', {
+      toolName: toolCall.name,
+      toolCallId: toolCall.id,
+      errorMessage: message,
+    });
     toolTrace.push({
       name: toolCall.name,
       input: args,
@@ -385,6 +428,9 @@ async function generateCandidates({
 }> {
   const configError = getAiFindConfigError(config);
   if (configError) {
+    logAiFindDebug(config, 'candidate generation skipped', {
+      reason: configError,
+    });
     return {
       answer: 'AI 找片暂时不可用，已使用原始输入进行搜索。',
       candidates: buildFallbackCandidates(request, config.maxResults),
@@ -412,15 +458,33 @@ async function generateCandidates({
       rankPlayableResultsToolSchema,
       ...(config.webSearchEnabled ? [webSearchMediaToolSchema] : []),
     ];
+    logAiFindDebug(config, 'candidate generation started', {
+      query: request.query,
+      toolNames: tools.map((tool) => tool.function.name),
+      maxToolRounds: config.maxToolRounds,
+    });
     let toolRounds = 0;
     let malformedToolCount = 0;
     let shouldContinue = true;
 
     while (shouldContinue) {
+      const round = toolRounds + 1;
+      logAiFindDebug(config, 'model round started', {
+        round,
+        messageCount: messages.length,
+      });
+
       lastMessage = await callOpenAiCompatibleChat({
         config,
         messages,
         tools,
+      });
+
+      logAiFindDebug(config, 'model round completed', {
+        round,
+        toolCallCount: lastMessage.tool_calls?.length ?? 0,
+        contentLength: lastMessage.content?.length ?? 0,
+        reasoningLength: lastMessage.reasoning_content?.length ?? 0,
       });
 
       messages.push(lastMessage);
@@ -431,6 +495,10 @@ async function generateCandidates({
       }
 
       if (toolRounds >= config.maxToolRounds) {
+        logAiFindDebug(config, 'candidate generation degraded', {
+          reason: 'AI tool round limit reached',
+          toolRounds,
+        });
         return {
           answer: 'AI 推理轮次已达上限，已使用原始输入搜索。',
           candidates: buildFallbackCandidates(request, config.maxResults),
@@ -460,6 +528,10 @@ async function generateCandidates({
       messages.push(...toolResults.map((result) => result.message));
 
       if (malformedToolCount > 1) {
+        logAiFindDebug(config, 'candidate generation degraded', {
+          reason: 'Repeated invalid tool arguments',
+          malformedToolCount,
+        });
         return {
           answer: 'AI 工具参数异常，已使用原始输入搜索。',
           candidates: buildFallbackCandidates(request, config.maxResults),
@@ -477,6 +549,11 @@ async function generateCandidates({
     );
 
     if (candidates.length === 0) {
+      logAiFindDebug(config, 'candidate generation degraded', {
+        reason: 'AI did not return candidate queries',
+        suggestions:
+          payload.suggestions || getDefaultSuggestions(request.query),
+      });
       return {
         answer: payload.answer || '没有识别出明确片名，已使用原始输入搜索。',
         candidates: buildFallbackCandidates(request, config.maxResults),
@@ -487,12 +564,20 @@ async function generateCandidates({
       };
     }
 
+    logAiFindDebug(config, 'candidate generation completed', {
+      candidateCount: candidates.length,
+      suggestions: payload.suggestions || getDefaultSuggestions(request.query),
+    });
+
     return {
       answer: payload.answer || '已根据你的描述生成候选搜索词。',
       candidates,
       suggestions: payload.suggestions || getDefaultSuggestions(request.query),
     };
   } catch (error) {
+    logAiFindDebug(config, 'candidate generation degraded', {
+      reason: error instanceof Error ? error.message : 'AI request failed',
+    });
     return {
       answer: 'AI 找片暂时不可用，已使用原始输入进行搜索。',
       candidates: buildFallbackCandidates(request, config.maxResults),
@@ -535,6 +620,13 @@ export async function runAiFind({
     (count, group) => count + group.groupedCount,
     0
   );
+
+  logAiFindDebug(config, 'ai find completed', {
+    candidateCount: candidateResult.candidates.length,
+    foundCount,
+    degraded: Boolean(candidateResult.degraded),
+    toolTraceCount: toolTrace.length,
+  });
 
   return {
     answer:

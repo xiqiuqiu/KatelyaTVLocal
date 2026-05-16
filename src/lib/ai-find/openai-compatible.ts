@@ -16,6 +16,7 @@ interface RawToolCall {
 interface ChatChoice {
   message?: {
     content?: string | null;
+    reasoning_content?: string | null;
     tool_calls?: RawToolCall[];
   };
 }
@@ -27,13 +28,33 @@ interface ChatCompletionResponse {
   };
 }
 
+function logAiFindDebug(
+  enabled: boolean,
+  event: string,
+  details: Record<string, unknown>
+): void {
+  if (!enabled) return;
+  console.log(`[ai-find] ${event}`, details);
+}
+
+function summarizeMessage(message: AiModelMessage) {
+  return {
+    role: message.role,
+    contentLength: message.content?.length ?? 0,
+    reasoningLength: message.reasoning_content?.length ?? 0,
+    toolCallNames: message.tool_calls?.map((toolCall) => toolCall.name) ?? [],
+    hasToolCallId: Boolean(message.tool_call_id),
+  };
+}
+
 function serializeMessages(messages: AiModelMessage[]) {
   return messages.map((message) => {
-    if (message.role === 'assistant' && message.tool_calls?.length) {
+    if (message.role === 'assistant') {
       return {
         role: 'assistant' as const,
         content: message.content,
-        tool_calls: message.tool_calls.map((toolCall) => ({
+        reasoning_content: message.reasoning_content,
+        tool_calls: message.tool_calls?.map((toolCall) => ({
           id: toolCall.id,
           type: 'function' as const,
           function: {
@@ -59,8 +80,12 @@ function serializeMessages(messages: AiModelMessage[]) {
   });
 }
 
-function normalizeToolCalls(toolCalls: RawToolCall[] = []): AiModelToolCall[] {
-  return toolCalls
+function normalizeToolCalls(
+  toolCalls?: RawToolCall[] | null
+): AiModelToolCall[] {
+  const safeToolCalls = Array.isArray(toolCalls) ? toolCalls : [];
+
+  return safeToolCalls
     .map((toolCall, index) => ({
       id: toolCall.id || `tool-call-${index}`,
       name: toolCall.function?.name || '',
@@ -85,6 +110,14 @@ export async function callOpenAiCompatibleChat({
   );
 
   try {
+    logAiFindDebug(config.debug, 'chat completion request', {
+      model: config.model,
+      baseUrl: config.baseUrl,
+      messageCount: messages.length,
+      toolCount: tools?.length ?? 0,
+      messages: messages.map(summarizeMessage),
+    });
+
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -106,9 +139,13 @@ export async function callOpenAiCompatibleChat({
       .catch(() => null)) as ChatCompletionResponse | null;
 
     if (!response.ok) {
-      throw new Error(
-        payload?.error?.message || `AI request failed: ${response.status}`
-      );
+      const errorMessage =
+        payload?.error?.message || `AI request failed: ${response.status}`;
+      logAiFindDebug(config.debug, 'chat completion response error', {
+        status: response.status,
+        errorMessage,
+      });
+      throw new Error(errorMessage);
     }
 
     const message = payload?.choices?.[0]?.message;
@@ -116,11 +153,24 @@ export async function callOpenAiCompatibleChat({
       throw new Error('AI response did not include a message');
     }
 
+    logAiFindDebug(config.debug, 'chat completion response', {
+      contentLength: message.content?.length ?? 0,
+      reasoningLength: message.reasoning_content?.length ?? 0,
+      toolCallCount: message.tool_calls?.length ?? 0,
+    });
+
     return {
       role: 'assistant',
       content: message.content ?? null,
+      reasoning_content: message.reasoning_content ?? null,
       tool_calls: normalizeToolCalls(message.tool_calls),
     };
+  } catch (error) {
+    logAiFindDebug(config.debug, 'chat completion request failed', {
+      errorMessage:
+        error instanceof Error ? error.message : 'Unknown AI request failure',
+    });
+    throw error;
   } finally {
     clearTimeout(timeoutId);
   }

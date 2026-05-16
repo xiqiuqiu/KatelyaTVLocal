@@ -17,6 +17,7 @@ AI_FIND_ENABLED=false
 AI_BASE_URL=https://api.openai.com/v1
 AI_API_KEY=
 AI_MODEL=
+AI_FIND_DEBUG=false
 AI_TEMPERATURE=0.2
 AI_MAX_TOOL_ROUNDS=4
 AI_REQUEST_TIMEOUT_MS=20000
@@ -30,6 +31,8 @@ AI_CACHE_TTL_SECONDS=1800
 ```
 
 `AI_BASE_URL` must point to an OpenAI-compatible `/v1` API root. The first version uses Chat Completions with tool calling.
+
+`AI_FIND_DEBUG=true` enables server-side debug logs for model rounds, tool execution, and degraded fallbacks.
 
 ## Web Search
 
@@ -81,4 +84,3 @@ or
 - AI-generated candidates that do not exist in KatelyaTV source search are shown as not found.
 - Web search endpoints cannot point to private or localhost addresses.
 - Tool rounds, timeout, result count, and daily usage are capped.
-
