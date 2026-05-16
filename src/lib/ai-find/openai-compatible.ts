@@ -4,6 +4,8 @@ import type {
   AiModelToolCall,
   AiModelToolSchema,
 } from './types';
+import type { AiFindDebugContext } from './debug';
+import { logAiFindDebug } from './debug';
 
 interface RawToolCall {
   id?: string;
@@ -26,15 +28,6 @@ interface ChatCompletionResponse {
   error?: {
     message?: string;
   };
-}
-
-function logAiFindDebug(
-  enabled: boolean,
-  event: string,
-  details: Record<string, unknown>
-): void {
-  if (!enabled) return;
-  console.log(`[ai-find] ${event}`, details);
 }
 
 function summarizeMessage(message: AiModelMessage) {
@@ -98,10 +91,12 @@ export async function callOpenAiCompatibleChat({
   config,
   messages,
   tools,
+  debugContext,
 }: {
   config: AiFindConfig;
   messages: AiModelMessage[];
   tools?: AiModelToolSchema[];
+  debugContext?: AiFindDebugContext;
 }): Promise<AiModelMessage> {
   const controller = new AbortController();
   const timeoutId = setTimeout(
@@ -110,12 +105,17 @@ export async function callOpenAiCompatibleChat({
   );
 
   try {
-    logAiFindDebug(config.debug, 'chat completion request', {
-      model: config.model,
-      baseUrl: config.baseUrl,
-      messageCount: messages.length,
-      toolCount: tools?.length ?? 0,
-      messages: messages.map(summarizeMessage),
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'chat completion request',
+      details: {
+        model: config.model,
+        baseUrl: config.baseUrl,
+        messageCount: messages.length,
+        toolCount: tools?.length ?? 0,
+        messages: messages.map(summarizeMessage),
+      },
     });
 
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
@@ -141,9 +141,14 @@ export async function callOpenAiCompatibleChat({
     if (!response.ok) {
       const errorMessage =
         payload?.error?.message || `AI request failed: ${response.status}`;
-      logAiFindDebug(config.debug, 'chat completion response error', {
-        status: response.status,
-        errorMessage,
+      logAiFindDebug({
+        configDebug: config.debug,
+        context: debugContext,
+        event: 'chat completion response error',
+        details: {
+          status: response.status,
+          errorMessage,
+        },
       });
       throw new Error(errorMessage);
     }
@@ -153,10 +158,15 @@ export async function callOpenAiCompatibleChat({
       throw new Error('AI response did not include a message');
     }
 
-    logAiFindDebug(config.debug, 'chat completion response', {
-      contentLength: message.content?.length ?? 0,
-      reasoningLength: message.reasoning_content?.length ?? 0,
-      toolCallCount: message.tool_calls?.length ?? 0,
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'chat completion response',
+      details: {
+        contentLength: message.content?.length ?? 0,
+        reasoningLength: message.reasoning_content?.length ?? 0,
+        toolCallCount: message.tool_calls?.length ?? 0,
+      },
     });
 
     return {
@@ -166,9 +176,14 @@ export async function callOpenAiCompatibleChat({
       tool_calls: normalizeToolCalls(message.tool_calls),
     };
   } catch (error) {
-    logAiFindDebug(config.debug, 'chat completion request failed', {
-      errorMessage:
-        error instanceof Error ? error.message : 'Unknown AI request failure',
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'chat completion request failed',
+      details: {
+        errorMessage:
+          error instanceof Error ? error.message : 'Unknown AI request failure',
+      },
     });
     throw error;
   } finally {

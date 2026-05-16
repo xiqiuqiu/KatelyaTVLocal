@@ -218,4 +218,64 @@ describe('AI find route', () => {
       error: 'AI 找片暂时不可用，请稍后再试',
     });
   });
+
+  it('propagates request id and per-request debug flag to the orchestrator', async () => {
+    mockedGetAiFindConfig.mockReturnValue({
+      enabled: true,
+      baseUrl: 'https://ai.example/v1',
+      apiKey: 'key',
+      model: 'model',
+      debug: false,
+      temperature: 0.2,
+      maxToolRounds: 4,
+      requestTimeoutMs: 20000,
+      maxResults: 5,
+      webSearchEnabled: false,
+      webSearchProvider: 'none',
+      webSearchEndpoint: '',
+      webSearchApiKey: '',
+      dailyLimitPerUser: 20,
+      cacheTtlSeconds: 1800,
+    });
+    mockedGetAuthInfoFromCookie.mockResolvedValue(null as never);
+    mockedCheckAiFindRateLimit.mockReturnValue({
+      allowed: true,
+      remaining: 19,
+      resetAt: Date.now() + 1000,
+    });
+    mockedRunAiFind.mockResolvedValue({
+      answer: 'ok',
+      candidateQueries: [],
+      groups: [],
+      suggestions: [],
+      toolTrace: [],
+      generatedAt: Date.now(),
+    });
+
+    const response = await POST(
+      new Request('https://app.example.com/api/ai/find?aiDebug=1', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-ai-find-request-id': 'af-test-123',
+          'x-ai-find-debug': '1',
+        },
+        body: JSON.stringify({
+          query: '想看节奏快一点的国产悬疑剧',
+        }),
+      })
+    );
+
+    expect(mockedRunAiFind).toHaveBeenCalledWith(
+      expect.objectContaining({
+        debugContext: expect.objectContaining({
+          enabled: true,
+          requestId: 'af-test-123',
+          scope: 'server',
+        }),
+      })
+    );
+    expect(response.headers.get('x-ai-find-request-id')).toBe('af-test-123');
+    expect(response.headers.get('x-ai-find-debug-enabled')).toBe('1');
+  });
 });

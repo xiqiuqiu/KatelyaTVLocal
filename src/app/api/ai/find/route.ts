@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAiFindConfig, getAiFindConfigError } from '@/lib/ai-find/config';
+import {
+  AI_FIND_DEBUG_RESPONSE_HEADER,
+  AI_FIND_REQUEST_ID_HEADER,
+  createAiFindRequestId,
+  getAiFindRequestId,
+  isAiFindDebugRequested,
+  logAiFindDebug,
+  sanitizeAiFindDebugText,
+  shouldLogAiFindDebug,
+} from '@/lib/ai-find/debug';
 import { runAiFind } from '@/lib/ai-find/orchestrator';
 import { checkAiFindRateLimit } from '@/lib/ai-find/rate-limit';
 import type { AiFindRequest } from '@/lib/ai-find/types';
@@ -39,69 +49,180 @@ export async function OPTIONS() {
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
+  const requestUrl = new URL(request.url);
+  const requestId =
+    getAiFindRequestId(request.headers) || createAiFindRequestId();
+  const initialDebugContext = {
+    enabled: isAiFindDebugRequested(request.headers, requestUrl.searchParams),
+    requestId,
+    scope: 'server' as const,
+  };
+  let debugEnabled = Boolean(initialDebugContext.enabled);
   let payload: unknown;
+
+  const createResponse = (
+    body: Record<string, unknown>,
+    init?: { status?: number; headers?: Record<string, string> }
+  ) => {
+    const response = NextResponse.json(body, init);
+    response.headers.set(AI_FIND_REQUEST_ID_HEADER, requestId);
+    response.headers.set(
+      AI_FIND_DEBUG_RESPONSE_HEADER,
+      debugEnabled ? '1' : '0'
+    );
+    return addCorsHeaders(response);
+  };
 
   try {
     payload = await request.json();
   } catch {
-    const response = NextResponse.json(
-      { error: 'Invalid JSON payload' },
-      { status: 400 }
-    );
-    return addCorsHeaders(response);
+    logAiFindDebug({
+      context: initialDebugContext,
+      event: 'invalid json payload',
+      details: {
+        method: request.method,
+        contentType: request.headers.get('content-type') || 'unknown',
+        origin: request.headers.get('origin') || requestUrl.origin,
+      },
+    });
+
+    return createResponse({ error: 'Invalid JSON payload' }, { status: 400 });
   }
 
   const aiFindRequest = validatePayload(payload);
   if (!aiFindRequest) {
-    const response = NextResponse.json(
-      { error: 'Missing query' },
-      { status: 400 }
-    );
-    return addCorsHeaders(response);
+    logAiFindDebug({
+      context: initialDebugContext,
+      event: 'payload validation failed',
+      details: {
+        payloadType: typeof payload,
+        query: sanitizeAiFindDebugText(
+          typeof (payload as { query?: unknown } | null)?.query === 'string'
+            ? (payload as { query?: string }).query ?? null
+            : null
+        ),
+      },
+    });
+
+    return createResponse({ error: 'Missing query' }, { status: 400 });
   }
 
+  logAiFindDebug({
+    context: initialDebugContext,
+    event: 'request received',
+    details: {
+      method: request.method,
+      mode: aiFindRequest.mode || 'find',
+      query: sanitizeAiFindDebugText(aiFindRequest.query),
+      queryLength: aiFindRequest.query.length,
+      hasUserPreference: Boolean(aiFindRequest.userPreference),
+      origin: request.headers.get('origin') || requestUrl.origin,
+    },
+  });
+
   const config = getAiFindConfig();
+  debugEnabled = shouldLogAiFindDebug(config.debug, initialDebugContext);
+  const debugContext = {
+    ...initialDebugContext,
+    enabled: debugEnabled,
+  };
   const configError = getAiFindConfigError(config);
   if (configError) {
-    const response = NextResponse.json({ error: configError }, { status: 503 });
-    return addCorsHeaders(response);
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'request blocked by config',
+      details: {
+        errorMessage: configError,
+      },
+    });
+
+    return createResponse({ error: configError }, { status: 503 });
   }
 
   const authInfo = await getAuthInfoFromCookie(request);
+  const clientIdentity = getClientIdentity(request, authInfo?.username);
   const rateLimit = checkAiFindRateLimit({
-    key: getClientIdentity(request, authInfo?.username),
+    key: clientIdentity,
     limit: config.dailyLimitPerUser,
   });
 
+  logAiFindDebug({
+    configDebug: config.debug,
+    context: debugContext,
+    event: 'rate limit evaluated',
+    details: {
+      allowed: rateLimit.allowed,
+      remaining: rateLimit.remaining,
+      resetAt: rateLimit.resetAt,
+      identity: clientIdentity,
+    },
+  });
+
   if (!rateLimit.allowed) {
-    const response = NextResponse.json(
+    return createResponse(
       {
         error: 'AI 找片次数已达到今日上限',
         resetAt: rateLimit.resetAt,
       },
       { status: 429 }
     );
-    return addCorsHeaders(response);
   }
 
-  const requestUrl = new URL(request.url);
-
   try {
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'orchestrator started',
+      details: {
+        requestOrigin: request.headers.get('origin') || requestUrl.origin,
+      },
+    });
+
     const result = await runAiFind({
       config,
       request: aiFindRequest,
       requestOrigin: request.headers.get('origin') || requestUrl.origin,
+      debugContext,
     });
 
-    const response = NextResponse.json(result, {
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'request completed',
+      details: {
+        durationMs: Date.now() - startedAt,
+        candidateCount: result.candidateQueries.length,
+        groupCount: result.groups.length,
+        foundCount: result.groups.reduce(
+          (count, group) => count + group.groupedCount,
+          0
+        ),
+        degraded: Boolean(result.degraded),
+        errorMessage: result.errorMessage,
+      },
+    });
+
+    return createResponse(result, {
       status: 200,
       headers: {
         'Cache-Control': 'no-store',
       },
     });
-    return addCorsHeaders(response);
-  } catch {
-    const response = NextResponse.json(
+  } catch (error) {
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'request failed',
+      details: {
+        durationMs: Date.now() - startedAt,
+        errorMessage:
+          error instanceof Error ? error.message : 'Unknown AI find failure',
+      },
+    });
+
+    return createResponse(
       { error: 'AI 找片暂时不可用，请稍后再试' },
       {
         status: 500,
@@ -110,6 +231,5 @@ export async function POST(request: NextRequest) {
         },
       }
     );
-    return addCorsHeaders(response);
   }
 }

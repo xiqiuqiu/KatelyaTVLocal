@@ -4,6 +4,13 @@ import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 
+import {
+  AI_FIND_DEBUG_HEADER,
+  AI_FIND_DEBUG_RESPONSE_HEADER,
+  AI_FIND_REQUEST_ID_HEADER,
+  createAiFindRequestId,
+  sanitizeAiFindDebugText,
+} from '@/lib/ai-find/debug';
 import type { AiFindResponse } from '@/lib/ai-find/types';
 
 import PosterGrid from '@/components/ui/PosterGrid';
@@ -22,11 +29,60 @@ function getLoadingText(startedAt: number | null): string {
   if (!startedAt) return loadingSteps[0];
 
   const elapsed = Date.now() - startedAt;
-  const index = Math.min(
-    loadingSteps.length - 1,
-    Math.floor(elapsed / 1800)
-  );
+  const index = Math.min(loadingSteps.length - 1, Math.floor(elapsed / 1800));
   return loadingSteps[index];
+}
+
+function isClientDebugEnabled(
+  searchParams: ReturnType<typeof useSearchParams>
+) {
+  if (process.env.NODE_ENV !== 'production') {
+    return true;
+  }
+
+  if (searchParams.get('aiDebug') === '1') {
+    return true;
+  }
+
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem('ai-find-debug') === '1';
+  } catch {
+    return false;
+  }
+}
+
+function logAiFindClientDebug(
+  enabled: boolean,
+  requestId: string,
+  event: string,
+  details: Record<string, unknown>
+) {
+  if (!enabled) {
+    return;
+  }
+
+  console.log(`[ai-find][client][${requestId}] ${event}`, details);
+}
+
+function summarizeResult(payload: AiFindResponse) {
+  return {
+    candidateCount: payload.candidateQueries.length,
+    candidateQueries: payload.candidateQueries.map(
+      (candidate) => candidate.query
+    ),
+    groupCount: payload.groups.length,
+    foundCount: payload.groups.reduce(
+      (count, group) => count + group.groupedCount,
+      0
+    ),
+    suggestionCount: payload.suggestions.length,
+    degraded: Boolean(payload.degraded),
+    errorMessage: payload.errorMessage,
+  };
 }
 
 export default function AiFindPanel() {
@@ -56,6 +112,22 @@ export default function AiFindPanel() {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) return;
 
+    const debugEnabled = isClientDebugEnabled(searchParams);
+    const clientRequestId = createAiFindRequestId();
+    const requestStartedAt = Date.now();
+    let activeRequestId = clientRequestId;
+    let activeDebugEnabled = debugEnabled;
+
+    logAiFindClientDebug(debugEnabled, clientRequestId, 'submit started', {
+      query: sanitizeAiFindDebugText(trimmedQuery),
+      queryLength: trimmedQuery.length,
+      pageQuery: searchParams.get('q') || '',
+      path:
+        typeof window !== 'undefined'
+          ? `${window.location.pathname}${window.location.search}`
+          : '/search',
+    });
+
     setLoading(true);
     setStartedAt(Date.now());
     setError(null);
@@ -66,23 +138,89 @@ export default function AiFindPanel() {
     }, 600);
 
     try {
+      logAiFindClientDebug(
+        debugEnabled,
+        clientRequestId,
+        'request dispatched',
+        {
+          endpoint: '/api/ai/find',
+          payload: {
+            query: sanitizeAiFindDebugText(trimmedQuery),
+          },
+        }
+      );
+
       const response = await fetch('/api/ai/find', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          [AI_FIND_REQUEST_ID_HEADER]: clientRequestId,
+          ...(debugEnabled ? { [AI_FIND_DEBUG_HEADER]: '1' } : {}),
         },
         body: JSON.stringify({
           query: trimmedQuery,
         }),
       });
 
-      const payload = await response.json();
+      const payload = (await response.json()) as
+        | AiFindResponse
+        | { error?: string; [key: string]: unknown };
+      const serverRequestId =
+        response.headers.get(AI_FIND_REQUEST_ID_HEADER) || clientRequestId;
+      const serverDebugEnabled =
+        response.headers.get(AI_FIND_DEBUG_RESPONSE_HEADER) === '1';
+
+      activeRequestId = serverRequestId;
+      activeDebugEnabled = debugEnabled || serverDebugEnabled;
+
+      logAiFindClientDebug(
+        activeDebugEnabled,
+        activeRequestId,
+        'response received',
+        {
+          status: response.status,
+          ok: response.ok,
+          durationMs: Date.now() - requestStartedAt,
+          serverDebugEnabled,
+          summary: response.ok
+            ? summarizeResult(payload as AiFindResponse)
+            : undefined,
+          error: !response.ok
+            ? (payload as { error?: string }).error
+            : undefined,
+        }
+      );
+
       if (!response.ok) {
-        throw new Error(payload.error || 'AI 找片失败');
+        throw new Error((payload as { error?: string }).error || 'AI 找片失败');
       }
 
       setResult(payload as AiFindResponse);
+
+      logAiFindClientDebug(
+        activeDebugEnabled,
+        activeRequestId,
+        'state updated',
+        {
+          hasResults: (payload as AiFindResponse).groups.some(
+            (group) => group.groups.length > 0
+          ),
+          candidateQueries: (payload as AiFindResponse).candidateQueries.map(
+            (candidate) => candidate.query
+          ),
+        }
+      );
     } catch (err) {
+      logAiFindClientDebug(
+        activeDebugEnabled,
+        activeRequestId,
+        'request failed',
+        {
+          durationMs: Date.now() - requestStartedAt,
+          errorMessage: err instanceof Error ? err.message : 'AI 找片失败',
+        }
+      );
+
       setError(err instanceof Error ? err.message : 'AI 找片失败');
     } finally {
       window.clearInterval(intervalId);

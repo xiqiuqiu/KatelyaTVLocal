@@ -1,5 +1,7 @@
 import { mapWithConcurrency } from './concurrency';
 import { getAiFindConfigError } from './config';
+import type { AiFindDebugContext } from './debug';
+import { logAiFindDebug } from './debug';
 import { callOpenAiCompatibleChat } from './openai-compatible';
 import { AI_FIND_SYSTEM_PROMPT, buildAiFindUserPrompt } from './prompt';
 import { buildAiFindResultGroup } from './tools/search-katelya-sources';
@@ -19,15 +21,6 @@ interface CandidatePayload {
 }
 
 const AI_FIND_CANDIDATE_CONCURRENCY = 2;
-
-function logAiFindDebug(
-  config: AiFindConfig,
-  event: string,
-  details: Record<string, unknown>
-): void {
-  if (!config.debug) return;
-  console.log(`[ai-find] ${event}`, details);
-}
 
 function normalizeConfidence(
   value: unknown
@@ -125,9 +118,11 @@ function getDefaultSuggestions(query: string): string[] {
 async function generateCandidates({
   config,
   request,
+  debugContext,
 }: {
   config: AiFindConfig;
   request: AiFindRequest;
+  debugContext?: AiFindDebugContext;
 }): Promise<{
   answer: string;
   candidates: AiFindCandidateQuery[];
@@ -137,8 +132,13 @@ async function generateCandidates({
 }> {
   const configError = getAiFindConfigError(config);
   if (configError) {
-    logAiFindDebug(config, 'candidate generation skipped', {
-      reason: configError,
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'candidate generation skipped',
+      details: {
+        reason: configError,
+      },
     });
     return {
       answer: 'AI 找片暂时不可用，已使用原始输入进行搜索。',
@@ -161,20 +161,31 @@ async function generateCandidates({
   ];
 
   try {
-    logAiFindDebug(config, 'candidate generation started', {
-      query: request.query,
-      mode: 'candidate-only',
-      maxResults: config.maxResults,
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'candidate generation started',
+      details: {
+        query: request.query,
+        mode: 'candidate-only',
+        maxResults: config.maxResults,
+      },
     });
     const response = await callOpenAiCompatibleChat({
       config,
       messages,
+      debugContext,
     });
 
-    logAiFindDebug(config, 'candidate generation response', {
-      contentLength: response.content?.length ?? 0,
-      reasoningLength: response.reasoning_content?.length ?? 0,
-      toolCallCount: response.tool_calls?.length ?? 0,
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'candidate generation response',
+      details: {
+        contentLength: response.content?.length ?? 0,
+        reasoningLength: response.reasoning_content?.length ?? 0,
+        toolCallCount: response.tool_calls?.length ?? 0,
+      },
     });
 
     const payload = parseCandidatePayload(response.content || null);
@@ -184,10 +195,15 @@ async function generateCandidates({
     );
 
     if (candidates.length === 0) {
-      logAiFindDebug(config, 'candidate generation degraded', {
-        reason: 'AI did not return candidate queries',
-        suggestions:
-          payload.suggestions || getDefaultSuggestions(request.query),
+      logAiFindDebug({
+        configDebug: config.debug,
+        context: debugContext,
+        event: 'candidate generation degraded',
+        details: {
+          reason: 'AI did not return candidate queries',
+          suggestions:
+            payload.suggestions || getDefaultSuggestions(request.query),
+        },
       });
       return {
         answer: payload.answer || '没有识别出明确片名，已使用原始输入搜索。',
@@ -199,10 +215,16 @@ async function generateCandidates({
       };
     }
 
-    logAiFindDebug(config, 'candidate generation completed', {
-      candidateCount: candidates.length,
-      candidateQueries: candidates.map((candidate) => candidate.query),
-      suggestions: payload.suggestions || getDefaultSuggestions(request.query),
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'candidate generation completed',
+      details: {
+        candidateCount: candidates.length,
+        candidateQueries: candidates.map((candidate) => candidate.query),
+        suggestions:
+          payload.suggestions || getDefaultSuggestions(request.query),
+      },
     });
 
     return {
@@ -211,8 +233,13 @@ async function generateCandidates({
       suggestions: payload.suggestions || getDefaultSuggestions(request.query),
     };
   } catch (error) {
-    logAiFindDebug(config, 'candidate generation degraded', {
-      reason: error instanceof Error ? error.message : 'AI request failed',
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'candidate generation degraded',
+      details: {
+        reason: error instanceof Error ? error.message : 'AI request failed',
+      },
     });
     return {
       answer: 'AI 找片暂时不可用，已使用原始输入进行搜索。',
@@ -229,20 +256,35 @@ export async function runAiFind({
   config,
   request,
   requestOrigin,
+  debugContext,
 }: {
   config: AiFindConfig;
   request: AiFindRequest;
   requestOrigin?: string;
+  debugContext?: AiFindDebugContext;
 }): Promise<AiFindResponse> {
   const toolTrace: AiFindToolTrace[] = [];
   const candidateResult = await generateCandidates({
     config,
     request,
+    debugContext,
   });
   const groupResults = await mapWithConcurrency(
     candidateResult.candidates,
     AI_FIND_CANDIDATE_CONCURRENCY,
     async (candidate) => {
+      logAiFindDebug({
+        configDebug: config.debug,
+        context: debugContext,
+        event: 'candidate group build started',
+        details: {
+          query: candidate.query,
+          confidence: candidate.confidence,
+          year: candidate.year,
+          type: candidate.type,
+        },
+      });
+
       try {
         const group = await buildAiFindResultGroup({
           candidate,
@@ -250,6 +292,19 @@ export async function runAiFind({
           cacheTtlSeconds: config.cacheTtlSeconds,
           requestOrigin,
           prefer: request.userPreference?.prefer,
+          debugContext,
+        });
+
+        logAiFindDebug({
+          configDebug: config.debug,
+          context: debugContext,
+          event: 'candidate group build completed',
+          details: {
+            query: candidate.query,
+            rawCount: group.rawCount,
+            groupedCount: group.groupedCount,
+            notFound: Boolean(group.notFound),
+          },
         });
 
         return {
@@ -260,9 +315,14 @@ export async function runAiFind({
         const errorMessage =
           error instanceof Error ? error.message : '候选片名处理失败';
 
-        logAiFindDebug(config, 'candidate group degraded', {
-          query: candidate.query,
-          errorMessage,
+        logAiFindDebug({
+          configDebug: config.debug,
+          context: debugContext,
+          event: 'candidate group degraded',
+          details: {
+            query: candidate.query,
+            errorMessage,
+          },
         });
 
         return {
@@ -295,12 +355,17 @@ export async function runAiFind({
     partialFailureMessage,
   ].filter(Boolean) as string[];
 
-  logAiFindDebug(config, 'ai find completed', {
-    candidateCount: candidateResult.candidates.length,
-    foundCount,
-    degraded: Boolean(candidateResult.degraded || partialFailureCount > 0),
-    partialFailureCount,
-    toolTraceCount: toolTrace.length,
+  logAiFindDebug({
+    configDebug: config.debug,
+    context: debugContext,
+    event: 'ai find completed',
+    details: {
+      candidateCount: candidateResult.candidates.length,
+      foundCount,
+      degraded: Boolean(candidateResult.degraded || partialFailureCount > 0),
+      partialFailureCount,
+      toolTraceCount: toolTrace.length,
+    },
   });
 
   return {

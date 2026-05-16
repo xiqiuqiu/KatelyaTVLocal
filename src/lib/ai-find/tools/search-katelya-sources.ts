@@ -5,6 +5,8 @@ import type { SearchResult } from '@/lib/types';
 import { rankSearchResultGroupItems } from './rank-playable-results';
 import { getAiFindCache, setAiFindCache } from '../cache';
 import { mapWithConcurrency } from '../concurrency';
+import type { AiFindDebugContext } from '../debug';
+import { logAiFindDebug, sanitizeAiFindDebugText } from '../debug';
 import type {
   AiFindAggregatedResult,
   AiFindCandidateQuery,
@@ -111,11 +113,53 @@ export function aggregateSearchResults(
 
 async function searchSiteResults(
   site: SearchSite,
-  query: string
+  query: string,
+  debugContext?: AiFindDebugContext
 ): Promise<SearchResult[]> {
+  const startedAt = Date.now();
+
+  logAiFindDebug({
+    context: debugContext,
+    event: 'source search started',
+    details: {
+      query: sanitizeAiFindDebugText(query),
+      sourceKey: site.key,
+      sourceName: site.name,
+    },
+  });
+
   try {
-    return await searchFromApi(site, query);
-  } catch {
+    const results = await searchFromApi(site, query, debugContext);
+
+    logAiFindDebug({
+      context: debugContext,
+      event: 'source search completed',
+      details: {
+        query: sanitizeAiFindDebugText(query),
+        sourceKey: site.key,
+        sourceName: site.name,
+        resultCount: results.length,
+        durationMs: Date.now() - startedAt,
+      },
+    });
+
+    return results;
+  } catch (error) {
+    logAiFindDebug({
+      context: debugContext,
+      event: 'source search failed',
+      details: {
+        query: sanitizeAiFindDebugText(query),
+        sourceKey: site.key,
+        sourceName: site.name,
+        durationMs: Date.now() - startedAt,
+        errorMessage:
+          error instanceof Error
+            ? error.message
+            : 'Unknown source search failure',
+      },
+    });
+
     return [];
   }
 }
@@ -124,27 +168,71 @@ export async function searchKatelyaSources({
   query,
   limit = 30,
   cacheTtlSeconds = 1800,
+  debugContext,
 }: {
   query: string;
   limit?: number;
   cacheTtlSeconds?: number;
+  debugContext?: AiFindDebugContext;
 }): Promise<SearchResult[]> {
   const normalizedQuery = query.trim();
   if (!normalizedQuery) return [];
 
   const cacheKey = `ai-find:search:${normalizedQuery}:${limit}`;
   const cached = getAiFindCache<SearchResult[]>(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    logAiFindDebug({
+      context: debugContext,
+      event: 'source search cache hit',
+      details: {
+        query: sanitizeAiFindDebugText(normalizedQuery),
+        limit,
+        cachedCount: cached.length,
+      },
+    });
+
+    return cached;
+  }
+
+  logAiFindDebug({
+    context: debugContext,
+    event: 'source search cache miss',
+    details: {
+      query: sanitizeAiFindDebugText(normalizedQuery),
+      limit,
+      cacheTtlSeconds,
+    },
+  });
 
   const apiSites = await getAvailableApiSites();
+  logAiFindDebug({
+    context: debugContext,
+    event: 'source site list loaded',
+    details: {
+      query: sanitizeAiFindDebugText(normalizedQuery),
+      siteCount: apiSites.length,
+      siteKeys: apiSites.map((site) => site.key),
+    },
+  });
+
   const results = (
     await mapWithConcurrency(
       apiSites,
       AI_FIND_SOURCE_SEARCH_CONCURRENCY,
-      async (site) => searchSiteResults(site, normalizedQuery)
+      async (site) => searchSiteResults(site, normalizedQuery, debugContext)
     )
   ).flat();
   const sorted = sortSearchResults(normalizedQuery, results).slice(0, limit);
+
+  logAiFindDebug({
+    context: debugContext,
+    event: 'source search aggregated',
+    details: {
+      query: sanitizeAiFindDebugText(normalizedQuery),
+      rawCount: results.length,
+      returnedCount: sorted.length,
+    },
+  });
 
   setAiFindCache(cacheKey, sorted, cacheTtlSeconds);
   return sorted;
@@ -236,17 +324,33 @@ export async function buildAiFindResultGroup({
   cacheTtlSeconds,
   requestOrigin,
   prefer,
+  debugContext,
 }: {
   candidate: AiFindCandidateQuery;
   maxGroups: number;
   cacheTtlSeconds: number;
   requestOrigin?: string;
   prefer?: 'stable' | 'fast' | 'quality';
+  debugContext?: AiFindDebugContext;
 }): Promise<AiFindResultGroup> {
+  logAiFindDebug({
+    context: debugContext,
+    event: 'candidate result group started',
+    details: {
+      query: candidate.query,
+      reason: candidate.reason,
+      confidence: candidate.confidence,
+      year: candidate.year,
+      type: candidate.type,
+      maxGroups,
+    },
+  });
+
   const rawResults = await searchKatelyaSources({
     query: candidate.query,
     limit: 30,
     cacheTtlSeconds,
+    debugContext,
   });
   const aggregatedGroups = aggregateSearchResults(
     candidate.query,
@@ -264,17 +368,54 @@ export async function buildAiFindResultGroup({
               prefer,
             });
 
+            logAiFindDebug({
+              context: debugContext,
+              event: 'group ranking completed',
+              details: {
+                query: candidate.query,
+                groupKey: group.groupKey,
+                itemCount: group.items.length,
+                playbackHint: rankedGroup.playbackHint,
+              },
+            });
+
             return {
               ...group,
               items: rankedGroup.items,
               playbackHint: rankedGroup.playbackHint,
             };
-          } catch {
+          } catch (error) {
+            logAiFindDebug({
+              context: debugContext,
+              event: 'group ranking failed',
+              details: {
+                query: candidate.query,
+                groupKey: group.groupKey,
+                itemCount: group.items.length,
+                errorMessage:
+                  error instanceof Error
+                    ? error.message
+                    : 'Unknown group ranking failure',
+              },
+            });
+
             return group;
           }
         }
       )
     : aggregatedGroups;
+
+  logAiFindDebug({
+    context: debugContext,
+    event: 'candidate result group completed',
+    details: {
+      query: candidate.query,
+      rawCount: rawResults.length,
+      aggregatedCount: aggregatedGroups.length,
+      groupedCount: groups.length,
+      requestOriginEnabled: Boolean(requestOrigin),
+    },
+  });
 
   return {
     query: candidate.query,
