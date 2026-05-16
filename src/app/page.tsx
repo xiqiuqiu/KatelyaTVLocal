@@ -20,7 +20,6 @@ import { homeTabMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
 import ContinueWatching from '@/components/ContinueWatching';
 import PageLayout from '@/components/PageLayout';
-import { useSite } from '@/components/SiteProvider';
 import ActionLink from '@/components/ui/ActionLink';
 import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
 import PageHeader from '@/components/ui/PageHeader';
@@ -52,21 +51,6 @@ function HomeClient() {
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const { announcement } = useSite();
-
-  const [showAnnouncement, setShowAnnouncement] = useState(false);
-
-  // 检查公告弹窗状态
-  useEffect(() => {
-    if (typeof window !== 'undefined' && announcement) {
-      const hasSeenAnnouncement = localStorage.getItem('hasSeenAnnouncement');
-      if (hasSeenAnnouncement !== announcement) {
-        setShowAnnouncement(true);
-      } else {
-        setShowAnnouncement(Boolean(!hasSeenAnnouncement && announcement));
-      }
-    }
-  }, [announcement]);
 
   // 收藏夹数据
   type FavoriteItem = {
@@ -174,11 +158,6 @@ function HomeClient() {
 
     return unsubscribe;
   }, [activeTab]);
-
-  const handleCloseAnnouncement = (announcement: string) => {
-    setShowAnnouncement(false);
-    localStorage.setItem('hasSeenAnnouncement', announcement); // 记录已查看弹窗
-  };
 
   const currentHeaderMeta =
     activeTab === 'favorites' ? homeTabMeta.favorites : homeTabMeta.home;
@@ -319,42 +298,6 @@ function HomeClient() {
           )}
         </div>
       </div>
-      {announcement && showAnnouncement && (
-        <div
-          className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm dark:bg-black/70 p-4 transition-opacity duration-300 ${
-            showAnnouncement ? '' : 'opacity-0 pointer-events-none'
-          }`}
-        >
-          <div className='w-full max-w-md transform rounded-ui-lg border border-white/10 bg-[rgba(var(--ui-surface-strong),0.96)] p-6 text-[rgb(var(--ui-text))] shadow-ui-strong backdrop-blur-xl transition-all duration-300'>
-            <div className='mb-4 flex items-start justify-between'>
-              <h3 className='border-b border-[rgb(var(--ui-accent))] pb-1 text-2xl font-bold tracking-tight text-[rgb(var(--ui-text))]'>
-                提示
-              </h3>
-              <button
-                onClick={() => handleCloseAnnouncement(announcement)}
-                className='text-[rgb(var(--ui-text-muted))] transition-colors hover:text-[rgb(var(--ui-text))]'
-                aria-label='关闭'
-              >
-                ×
-              </button>
-            </div>
-            <div className='mb-6'>
-              <div className='relative mb-4 overflow-hidden rounded-ui-md border border-white/10 bg-[rgba(var(--ui-accent),0.1)]'>
-                <div className='absolute inset-y-0 left-0 w-1.5 bg-[rgb(var(--ui-accent))]'></div>
-                <p className='ml-4 p-4 leading-relaxed text-[rgb(var(--ui-text))]'>
-                  {announcement}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => handleCloseAnnouncement(announcement)}
-              className='w-full rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-3 font-medium text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-300 hover:-translate-y-0.5 hover:brightness-110'
-            >
-              我知道了
-            </button>
-          </div>
-        </div>
-      )}
     </PageLayout>
   );
 }
