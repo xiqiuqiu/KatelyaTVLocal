@@ -12,7 +12,7 @@ export async function mapWithConcurrency<T, R>(
   let currentIndex = 0;
 
   const runWorker = async () => {
-    while (true) {
+    while (currentIndex < items.length) {
       const nextIndex = currentIndex;
       if (nextIndex >= items.length) {
         return;

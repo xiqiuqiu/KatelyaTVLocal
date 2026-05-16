@@ -100,9 +100,7 @@ export async function POST(request: NextRequest) {
       },
     });
     return addCorsHeaders(response);
-  } catch (error) {
-    console.error('[ai-find] request failed', error);
-
+  } catch {
     const response = NextResponse.json(
       { error: 'AI 找片暂时不可用，请稍后再试' },
       {
