@@ -1,4 +1,5 @@
 import { getAiFindConfig } from '@/lib/ai-find/config';
+import { AiFindUserFacingError } from '@/lib/ai-find/errors';
 import { runAiFind } from '@/lib/ai-find/orchestrator';
 import { checkAiFindRateLimit } from '@/lib/ai-find/rate-limit';
 import { getAuthInfoFromCookie } from '@/lib/auth';
@@ -216,6 +217,56 @@ describe('AI find route', () => {
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({
       error: 'AI 找片暂时不可用，请稍后再试',
+    });
+  });
+
+  it('returns a timeout error without running a raw-query fallback search', async () => {
+    mockedGetAiFindConfig.mockReturnValue({
+      enabled: true,
+      baseUrl: 'https://ai.example/v1',
+      apiKey: 'key',
+      model: 'model',
+      debug: false,
+      temperature: 0.2,
+      maxToolRounds: 4,
+      requestTimeoutMs: 20000,
+      maxResults: 5,
+      webSearchEnabled: false,
+      webSearchProvider: 'none',
+      webSearchEndpoint: '',
+      webSearchApiKey: '',
+      dailyLimitPerUser: 20,
+      cacheTtlSeconds: 1800,
+    });
+    mockedGetAuthInfoFromCookie.mockResolvedValue(null as never);
+    mockedCheckAiFindRateLimit.mockReturnValue({
+      allowed: true,
+      remaining: 19,
+      resetAt: Date.now() + 1000,
+    });
+    mockedRunAiFind.mockRejectedValue(
+      new AiFindUserFacingError({
+        message: 'The operation was aborted',
+        publicMessage: 'AI 找片请求超时，请稍后再试',
+        status: 504,
+      })
+    );
+
+    const response = await POST(
+      new Request('https://app.example.com/api/ai/find', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: '有部好莱坞电影，里面坏蛋在车门上装了炸弹',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(504);
+    await expect(response.json()).resolves.toEqual({
+      error: 'AI 找片请求超时，请稍后再试',
     });
   });
 

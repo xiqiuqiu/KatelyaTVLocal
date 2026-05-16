@@ -2,6 +2,7 @@ import { mapWithConcurrency } from './concurrency';
 import { getAiFindConfigError } from './config';
 import type { AiFindDebugContext } from './debug';
 import { logAiFindDebug } from './debug';
+import { AiFindUserFacingError } from './errors';
 import { callOpenAiCompatibleChat } from './openai-compatible';
 import { AI_FIND_SYSTEM_PROMPT, buildAiFindUserPrompt } from './prompt';
 import { buildAiFindResultGroup } from './tools/search-katelya-sources';
@@ -94,23 +95,6 @@ function parseCandidatePayload(content: string | null): CandidatePayload {
   }
 }
 
-function buildFallbackCandidates(
-  request: AiFindRequest,
-  maxResults: number
-): AiFindCandidateQuery[] {
-  return dedupeCandidates(
-    [
-      {
-        query: request.query,
-        reason: 'AI 暂时不可用，已直接使用原始输入搜索',
-        confidence: 'low',
-        type: request.userPreference?.type || 'unknown',
-      },
-    ],
-    maxResults
-  );
-}
-
 function getDefaultSuggestions(query: string): string[] {
   return [`${query} 电影`, `${query} 电视剧`, `${query} 综艺`].slice(0, 3);
 }
@@ -127,8 +111,6 @@ async function generateCandidates({
   answer: string;
   candidates: AiFindCandidateQuery[];
   suggestions: string[];
-  degraded?: boolean;
-  errorMessage?: string;
 }> {
   const configError = getAiFindConfigError(config);
   if (configError) {
@@ -140,13 +122,11 @@ async function generateCandidates({
         reason: configError,
       },
     });
-    return {
-      answer: 'AI 找片暂时不可用，已使用原始输入进行搜索。',
-      candidates: buildFallbackCandidates(request, config.maxResults),
-      suggestions: getDefaultSuggestions(request.query),
-      degraded: true,
-      errorMessage: configError,
-    };
+    throw new AiFindUserFacingError({
+      message: configError,
+      publicMessage: 'AI 找片暂时不可用，请稍后再试',
+      status: 503,
+    });
   }
 
   const messages: AiModelMessage[] = [
@@ -205,14 +185,11 @@ async function generateCandidates({
             payload.suggestions || getDefaultSuggestions(request.query),
         },
       });
-      return {
-        answer: payload.answer || '没有识别出明确片名，已使用原始输入搜索。',
-        candidates: buildFallbackCandidates(request, config.maxResults),
-        suggestions:
-          payload.suggestions || getDefaultSuggestions(request.query),
-        degraded: true,
-        errorMessage: 'AI did not return candidate queries',
-      };
+      throw new AiFindUserFacingError({
+        message: 'AI did not return candidate queries',
+        publicMessage: 'AI 暂时无法识别你的描述，请换一种说法再试',
+        status: 502,
+      });
     }
 
     logAiFindDebug({
@@ -233,22 +210,30 @@ async function generateCandidates({
       suggestions: payload.suggestions || getDefaultSuggestions(request.query),
     };
   } catch (error) {
+    if (error instanceof AiFindUserFacingError) {
+      throw error;
+    }
+
+    const errorMessage =
+      error instanceof Error ? error.message : 'AI request failed';
+
     logAiFindDebug({
       configDebug: config.debug,
       context: debugContext,
       event: 'candidate generation degraded',
       details: {
-        reason: error instanceof Error ? error.message : 'AI request failed',
+        reason: errorMessage,
       },
     });
-    return {
-      answer: 'AI 找片暂时不可用，已使用原始输入进行搜索。',
-      candidates: buildFallbackCandidates(request, config.maxResults),
-      suggestions: getDefaultSuggestions(request.query),
-      degraded: true,
-      errorMessage:
-        error instanceof Error ? error.message : 'AI request failed',
-    };
+
+    throw new AiFindUserFacingError({
+      message: errorMessage,
+      publicMessage:
+        errorMessage === 'The operation was aborted'
+          ? 'AI 找片请求超时，请稍后再试'
+          : 'AI 找片暂时不可用，请稍后再试',
+      status: errorMessage === 'The operation was aborted' ? 504 : 502,
+    });
   }
 }
 
@@ -350,10 +335,7 @@ export async function runAiFind({
     partialFailureCount > 0
       ? '部分候选片名在站内搜索或可播探测阶段失败，已返回其余可用结果。'
       : undefined;
-  const errorMessages = [
-    candidateResult.errorMessage,
-    partialFailureMessage,
-  ].filter(Boolean) as string[];
+  const errorMessages = [partialFailureMessage].filter(Boolean) as string[];
 
   logAiFindDebug({
     configDebug: config.debug,
@@ -362,7 +344,7 @@ export async function runAiFind({
     details: {
       candidateCount: candidateResult.candidates.length,
       foundCount,
-      degraded: Boolean(candidateResult.degraded || partialFailureCount > 0),
+      degraded: Boolean(partialFailureCount > 0),
       partialFailureCount,
       toolTraceCount: toolTrace.length,
     },
@@ -380,7 +362,7 @@ export async function runAiFind({
     suggestions: candidateResult.suggestions,
     toolTrace,
     generatedAt: Date.now(),
-    degraded: candidateResult.degraded || partialFailureCount > 0,
+    degraded: partialFailureCount > 0,
     errorMessage:
       errorMessages.length > 0 ? errorMessages.join('；') : undefined,
   };

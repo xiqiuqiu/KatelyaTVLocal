@@ -107,18 +107,20 @@ describe('AI find orchestrator', () => {
       content: 'not-json',
     });
 
-    const result = await runAiFind({
-      config,
-      request: {
-        query: '国产悬疑剧',
-      },
-      requestOrigin: 'https://app.example.com',
+    await expect(
+      runAiFind({
+        config,
+        request: {
+          query: '国产悬疑剧',
+        },
+        requestOrigin: 'https://app.example.com',
+      })
+    ).rejects.toMatchObject({
+      message: 'AI did not return candidate queries',
+      publicMessage: 'AI 暂时无法识别你的描述，请换一种说法再试',
+      status: 502,
     });
-
-    expect(result.degraded).toBe(true);
-    expect(result.errorMessage).toBe('AI did not return candidate queries');
-    expect(result.candidateQueries[0].query).toBe('国产悬疑剧');
-    expect(result.toolTrace).toEqual([]);
+    expect(mockedBuildAiFindResultGroup).not.toHaveBeenCalled();
   });
 
   it('normalizes numeric year fields from AI candidate output', async () => {
@@ -186,5 +188,26 @@ describe('AI find orchestrator', () => {
         notFound: true,
       }),
     ]);
+  });
+
+  it('rejects when AI request aborts instead of searching the raw user query', async () => {
+    mockedCallOpenAiCompatibleChat.mockRejectedValue(
+      new Error('The operation was aborted')
+    );
+
+    await expect(
+      runAiFind({
+        config,
+        request: {
+          query: '有部好莱坞电影，里面坏蛋在车门上装了炸弹',
+        },
+        requestOrigin: 'https://app.example.com',
+      })
+    ).rejects.toMatchObject({
+      message: 'The operation was aborted',
+      publicMessage: 'AI 找片请求超时，请稍后再试',
+      status: 504,
+    });
+    expect(mockedBuildAiFindResultGroup).not.toHaveBeenCalled();
   });
 });

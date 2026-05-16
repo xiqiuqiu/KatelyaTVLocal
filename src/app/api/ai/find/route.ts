@@ -11,6 +11,7 @@ import {
   sanitizeAiFindDebugText,
   shouldLogAiFindDebug,
 } from '@/lib/ai-find/debug';
+import { isAiFindUserFacingError } from '@/lib/ai-find/errors';
 import { runAiFind } from '@/lib/ai-find/orchestrator';
 import { checkAiFindRateLimit } from '@/lib/ai-find/rate-limit';
 import type { AiFindRequest } from '@/lib/ai-find/types';
@@ -211,6 +212,11 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    const status = isAiFindUserFacingError(error) ? error.status : 500;
+    const publicMessage = isAiFindUserFacingError(error)
+      ? error.publicMessage
+      : 'AI 找片暂时不可用，请稍后再试';
+
     logAiFindDebug({
       configDebug: config.debug,
       context: debugContext,
@@ -219,13 +225,14 @@ export async function POST(request: NextRequest) {
         durationMs: Date.now() - startedAt,
         errorMessage:
           error instanceof Error ? error.message : 'Unknown AI find failure',
+        status,
       },
     });
 
     return createResponse(
-      { error: 'AI 找片暂时不可用，请稍后再试' },
+      { error: publicMessage },
       {
-        status: 500,
+        status,
         headers: {
           'Cache-Control': 'no-store',
         },
