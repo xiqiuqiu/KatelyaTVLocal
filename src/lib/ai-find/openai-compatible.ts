@@ -1,3 +1,4 @@
+import { logAiFindDebug } from './debug';
 import type {
   AiFindConfig,
   AiModelMessage,
@@ -5,7 +6,6 @@ import type {
   AiModelToolSchema,
 } from './types';
 import type { AiFindDebugContext } from './debug';
-import { logAiFindDebug } from './debug';
 
 interface RawToolCall {
   id?: string;

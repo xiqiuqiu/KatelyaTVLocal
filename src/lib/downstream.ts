@@ -1,7 +1,7 @@
-import { API_CONFIG, ApiSite, getConfig } from '@/lib/config';
 import type { AiFindDebugContext } from '@/lib/ai-find/debug';
 import { logAiFindDebug, sanitizeAiFindDebugText } from '@/lib/ai-find/debug';
-import { SearchResult } from '@/lib/types';
+import { API_CONFIG, ApiSite, getConfig } from '@/lib/config';
+import type { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
 
 interface ApiSearchItem {

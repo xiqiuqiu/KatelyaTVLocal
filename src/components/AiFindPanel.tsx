@@ -65,6 +65,7 @@ function logAiFindClientDebug(
     return;
   }
 
+  // eslint-disable-next-line no-console
   console.log(`[ai-find][client][${requestId}] ${event}`, details);
 }
 

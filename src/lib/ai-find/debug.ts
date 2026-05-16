@@ -69,6 +69,7 @@ export function logAiFindDebug({
     prefix.push(`[${context.requestId}]`);
   }
 
+  // eslint-disable-next-line no-console
   console.log(`${prefix.join('')} ${event}`, details);
 }
 

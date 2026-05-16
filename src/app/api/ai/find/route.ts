@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
   let payload: unknown;
 
   const createResponse = (
-    body: Record<string, unknown>,
+    body: unknown,
     init?: { status?: number; headers?: Record<string, string> }
   ) => {
     const response = NextResponse.json(body, init);
