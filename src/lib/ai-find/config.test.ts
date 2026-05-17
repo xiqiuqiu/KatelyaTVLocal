@@ -26,6 +26,14 @@ describe('AI find config', () => {
     expect(config.requestTimeoutMs).toBe(3000);
   });
 
+  it('caps configured request timeout below edge runtime limits', () => {
+    const config = getAiFindConfig({
+      AI_REQUEST_TIMEOUT_MS: '45000',
+    });
+
+    expect(config.requestTimeoutMs).toBe(25000);
+  });
+
   it('reports missing required model config only when enabled', () => {
     expect(getAiFindConfigError(getAiFindConfig({}))).toBe(
       'AI find assistant is disabled'

@@ -36,7 +36,7 @@ export function getAiFindConfig(
       env.AI_REQUEST_TIMEOUT_MS,
       20000,
       3000,
-      60000
+      25000
     ),
     maxResults: parseNumber(env.AI_MAX_RESULTS, 5, 1, 10),
     webSearchEnabled: parseBoolean(env.AI_WEB_SEARCH_ENABLED, false),

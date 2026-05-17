@@ -1,11 +1,12 @@
+import type { AiFindDebugContext } from './debug';
 import { logAiFindDebug } from './debug';
+import { isAiFindAbortError } from './errors';
 import type {
   AiFindConfig,
   AiModelMessage,
   AiModelToolCall,
   AiModelToolSchema,
 } from './types';
-import type { AiFindDebugContext } from './debug';
 
 interface RawToolCall {
   id?: string;
@@ -98,6 +99,7 @@ export async function callOpenAiCompatibleChat({
   tools?: AiModelToolSchema[];
   debugContext?: AiFindDebugContext;
 }): Promise<AiModelMessage> {
+  const startedAt = Date.now();
   const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),
@@ -183,6 +185,9 @@ export async function callOpenAiCompatibleChat({
       details: {
         errorMessage:
           error instanceof Error ? error.message : 'Unknown AI request failure',
+        durationMs: Date.now() - startedAt,
+        timeoutMs: config.requestTimeoutMs,
+        timedOut: isAiFindAbortError(error),
       },
     });
     throw error;

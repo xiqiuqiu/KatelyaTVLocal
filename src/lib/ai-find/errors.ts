@@ -23,3 +23,19 @@ export function isAiFindUserFacingError(
 ): error is AiFindUserFacingError {
   return error instanceof AiFindUserFacingError;
 }
+
+export function isAiFindAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as { name?: unknown; message?: unknown };
+  if (candidate.name === 'AbortError') {
+    return true;
+  }
+
+  return (
+    typeof candidate.message === 'string' &&
+    /\babort(?:ed)?\b/i.test(candidate.message)
+  );
+}

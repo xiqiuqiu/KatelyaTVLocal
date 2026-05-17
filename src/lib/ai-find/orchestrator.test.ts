@@ -210,4 +210,24 @@ describe('AI find orchestrator', () => {
     });
     expect(mockedBuildAiFindResultGroup).not.toHaveBeenCalled();
   });
+
+  it('treats runtime AbortError shapes as AI request timeout', async () => {
+    mockedCallOpenAiCompatibleChat.mockRejectedValue(
+      new DOMException('This operation was aborted', 'AbortError')
+    );
+
+    await expect(
+      runAiFind({
+        config,
+        request: {
+          query: '有部好莱坞电影，车门炸弹，苍蝇救了一个人',
+        },
+        requestOrigin: 'https://app.example.com',
+      })
+    ).rejects.toMatchObject({
+      publicMessage: 'AI 找片请求超时，请稍后再试',
+      status: 504,
+    });
+    expect(mockedBuildAiFindResultGroup).not.toHaveBeenCalled();
+  });
 });

@@ -2,7 +2,7 @@ import { mapWithConcurrency } from './concurrency';
 import { getAiFindConfigError } from './config';
 import type { AiFindDebugContext } from './debug';
 import { logAiFindDebug } from './debug';
-import { AiFindUserFacingError } from './errors';
+import { AiFindUserFacingError, isAiFindAbortError } from './errors';
 import { callOpenAiCompatibleChat } from './openai-compatible';
 import { AI_FIND_SYSTEM_PROMPT, buildAiFindUserPrompt } from './prompt';
 import { buildAiFindResultGroup } from './tools/search-katelya-sources';
@@ -216,6 +216,7 @@ async function generateCandidates({
 
     const errorMessage =
       error instanceof Error ? error.message : 'AI request failed';
+    const timedOut = isAiFindAbortError(error);
 
     logAiFindDebug({
       configDebug: config.debug,
@@ -223,16 +224,17 @@ async function generateCandidates({
       event: 'candidate generation degraded',
       details: {
         reason: errorMessage,
+        timedOut,
       },
     });
 
     throw new AiFindUserFacingError({
       message: errorMessage,
       publicMessage:
-        errorMessage === 'The operation was aborted'
+        timedOut
           ? 'AI 找片请求超时，请稍后再试'
           : 'AI 找片暂时不可用，请稍后再试',
-      status: errorMessage === 'The operation was aborted' ? 504 : 502,
+      status: timedOut ? 504 : 502,
     });
   }
 }

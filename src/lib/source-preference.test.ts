@@ -172,4 +172,36 @@ describe('cloudflare-first source preference', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(cache.put).toHaveBeenCalledTimes(1);
   });
+
+  it('marks upstream probes unavailable when fetch exceeds the probe timeout', async () => {
+    jest.useFakeTimers();
+    try {
+      global.fetch = jest.fn((_url, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(
+              new DOMException('This operation was aborted', 'AbortError')
+            );
+          });
+        });
+      }) as jest.MockedFunction<typeof fetch>;
+
+      const resultPromise = probeSourcePlaybackWithCache(
+        'https://media.example.com/video.mp4',
+        'https://app.example.com',
+        { timeoutMs: 1000 }
+      );
+
+      jest.advanceTimersByTime(1000);
+
+      await expect(resultPromise).resolves.toEqual(
+        expect.objectContaining({
+          kind: 'unavailable',
+          cacheState: 'miss',
+        })
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

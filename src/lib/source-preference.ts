@@ -6,6 +6,7 @@ import {
 const SOURCE_PROBE_CACHE_VERSION = 'v1';
 const SOURCE_PROBE_POSITIVE_TTL_SECONDS = 10 * 60;
 const SOURCE_PROBE_NEGATIVE_TTL_SECONDS = 2 * 60;
+const SOURCE_PROBE_FETCH_TIMEOUT_MS = 5000;
 const PLAYLIST_CONTENT_TYPES = [
   'application/vnd.apple.mpegurl',
   'application/x-mpegurl',
@@ -20,6 +21,39 @@ export interface SourceProbeMetrics extends SourceProbeResult {
 
 export interface SourcePreferenceProbeResult extends SourceProbeMetrics {
   sourceKey: string;
+}
+
+export interface SourceProbeOptions {
+  timeoutMs?: number;
+}
+
+function normalizeProbeTimeoutMs(timeoutMs?: number): number {
+  if (!Number.isFinite(timeoutMs)) {
+    return SOURCE_PROBE_FETCH_TIMEOUT_MS;
+  }
+
+  return Math.min(10000, Math.max(1000, Math.floor(timeoutMs as number)));
+}
+
+async function fetchWithProbeTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  options?: SourceProbeOptions
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    normalizeProbeTimeoutMs(options?.timeoutMs)
+  );
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function isPlaylistResponse(
@@ -90,16 +124,21 @@ function getFirstPlaylistTarget(
 
 async function probeNestedTarget(
   targetUrl: string,
-  origin: string
+  origin: string,
+  options?: SourceProbeOptions
 ): Promise<{ ok: boolean; corsAccessible: boolean; status: number }> {
   const isNestedPlaylist = targetUrl.toLowerCase().includes('.m3u8');
-  const response = await fetch(targetUrl, {
-    headers: buildUpstreamHeaders(
-      targetUrl,
-      isNestedPlaylist ? null : 'bytes=0-1'
-    ),
-    redirect: 'follow',
-  });
+  const response = await fetchWithProbeTimeout(
+    targetUrl,
+    {
+      headers: buildUpstreamHeaders(
+        targetUrl,
+        isNestedPlaylist ? null : 'bytes=0-1'
+      ),
+      redirect: 'follow',
+    },
+    options
+  );
 
   return {
     ok: response.ok || response.status === 206,
@@ -150,15 +189,20 @@ function getProbeCacheTtl(result: SourceProbeResult): number {
 
 export async function probeSourcePlaybackUpstream(
   targetUrl: string,
-  origin: string
+  origin: string,
+  options?: SourceProbeOptions
 ): Promise<SourceProbeMetrics> {
   const startedAt = Date.now();
 
   try {
-    const upstreamResponse = await fetch(targetUrl, {
-      headers: buildUpstreamHeaders(targetUrl),
-      redirect: 'follow',
-    });
+    const upstreamResponse = await fetchWithProbeTimeout(
+      targetUrl,
+      {
+        headers: buildUpstreamHeaders(targetUrl),
+        redirect: 'follow',
+      },
+      options
+    );
 
     const probeTimeMs = Date.now() - startedAt;
     const domain = new URL(targetUrl).hostname.toLowerCase();
@@ -206,7 +250,7 @@ export async function probeSourcePlaybackUpstream(
       };
     }
 
-    const nestedProbe = await probeNestedTarget(nextTarget, origin);
+    const nestedProbe = await probeNestedTarget(nextTarget, origin, options);
 
     if (!nestedProbe.ok) {
       return {
@@ -239,7 +283,8 @@ export async function probeSourcePlaybackUpstream(
 
 export async function probeSourcePlaybackWithCache(
   targetUrl: string,
-  origin: string
+  origin: string,
+  options?: SourceProbeOptions
 ): Promise<SourceProbeMetrics> {
   const cache = getCloudflareCache();
   const cacheRequest = buildProbeCacheRequest(targetUrl, origin);
@@ -258,7 +303,11 @@ export async function probeSourcePlaybackWithCache(
     }
   }
 
-  const freshResult = await probeSourcePlaybackUpstream(targetUrl, origin);
+  const freshResult = await probeSourcePlaybackUpstream(
+    targetUrl,
+    origin,
+    options
+  );
 
   if (cache) {
     const ttl = getProbeCacheTtl(freshResult);
