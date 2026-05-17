@@ -69,6 +69,8 @@ export interface AiFindConfig {
   temperature: number;
   maxToolRounds: number;
   requestTimeoutMs: number;
+  maxTokens: number;
+  thinkingMode: 'auto' | 'enabled' | 'disabled';
   maxResults: number;
   webSearchEnabled: boolean;
   webSearchProvider: string;

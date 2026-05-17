@@ -10,6 +10,8 @@ const config: AiFindConfig = {
   temperature: 0.2,
   maxToolRounds: 4,
   requestTimeoutMs: 5000,
+  maxTokens: 800,
+  thinkingMode: 'auto',
   maxResults: 5,
   webSearchEnabled: false,
   webSearchProvider: 'none',
@@ -167,5 +169,37 @@ describe('OpenAI-compatible client', () => {
       tool_call_id: 'call-1',
       content: '{"results":[]}',
     });
+  });
+
+  it('sends bounded output and DeepSeek thinking controls when configured', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: '{"answer":"ok"}',
+            },
+          },
+        ],
+      }),
+    });
+
+    await callOpenAiCompatibleChat({
+      config: {
+        ...config,
+        maxTokens: 600,
+        thinkingMode: 'disabled',
+      },
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+
+    const request = (global.fetch as jest.Mock).mock.calls[0][1] as {
+      body: string;
+    };
+    const payload = JSON.parse(request.body) as Record<string, unknown>;
+
+    expect(payload.max_tokens).toBe(600);
+    expect(payload.thinking).toEqual({ type: 'disabled' });
   });
 });

@@ -20,12 +20,16 @@ AI_MODEL=
 AI_FIND_DEBUG=false
 AI_TEMPERATURE=0.2
 AI_REQUEST_TIMEOUT_MS=20000
+AI_MAX_TOKENS=800
+AI_THINKING_MODE=auto
 AI_MAX_RESULTS=5
 AI_DAILY_LIMIT_PER_USER=20
 AI_CACHE_TTL_SECONDS=1800
 ```
 
 `AI_BASE_URL` must point to an OpenAI-compatible `/v1` API root. The current version uses a single Chat Completions call to identify likely titles, then reuses KatelyaTV's normal search aggregation.
+
+`AI_MAX_TOKENS` limits how much text the title-recognition response can generate. `AI_THINKING_MODE` accepts `auto`, `enabled`, or `disabled`; when left as `auto`, DeepSeek V4 models are sent `thinking: { "type": "disabled" }` to avoid slow reasoning responses for this title-recognition flow.
 
 `AI_FIND_DEBUG=true` enables server-side debug logs for candidate generation and degraded fallbacks.
 

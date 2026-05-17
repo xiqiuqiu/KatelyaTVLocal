@@ -11,6 +11,8 @@ const baseConfig: AiFindConfig = {
   temperature: 0.2,
   maxToolRounds: 4,
   requestTimeoutMs: 5000,
+  maxTokens: 800,
+  thinkingMode: 'auto',
   maxResults: 5,
   webSearchEnabled: true,
   webSearchProvider: 'generic-http',

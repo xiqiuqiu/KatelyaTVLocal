@@ -24,6 +24,8 @@ const config = {
   temperature: 0.2,
   maxToolRounds: 4,
   requestTimeoutMs: 5000,
+  maxTokens: 800,
+  thinkingMode: 'auto',
   maxResults: 5,
   webSearchEnabled: false,
   webSearchProvider: 'none',

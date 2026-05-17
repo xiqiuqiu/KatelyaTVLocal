@@ -21,14 +21,38 @@ function normalizeBaseUrl(value: string | undefined): string {
   return baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 }
 
+function normalizeThinkingMode(
+  value: string | undefined,
+  baseUrl: string,
+  model: string
+): AiFindConfig['thinkingMode'] {
+  const normalized = value?.trim().toLowerCase();
+  if (
+    normalized === 'auto' ||
+    normalized === 'enabled' ||
+    normalized === 'disabled'
+  ) {
+    return normalized;
+  }
+
+  if (/deepseek/i.test(baseUrl) && /deepseek-v4/i.test(model)) {
+    return 'disabled';
+  }
+
+  return 'auto';
+}
+
 export function getAiFindConfig(
   env: Record<string, string | undefined> = process.env
 ): AiFindConfig {
+  const baseUrl = normalizeBaseUrl(env.AI_BASE_URL);
+  const model = env.AI_MODEL?.trim() || '';
+
   return {
     enabled: parseBoolean(env.AI_FIND_ENABLED, false),
-    baseUrl: normalizeBaseUrl(env.AI_BASE_URL),
+    baseUrl,
     apiKey: env.AI_API_KEY?.trim() || '',
-    model: env.AI_MODEL?.trim() || '',
+    model,
     debug: parseBoolean(env.AI_FIND_DEBUG, false),
     temperature: parseNumber(env.AI_TEMPERATURE, 0.2, 0, 2),
     maxToolRounds: parseNumber(env.AI_MAX_TOOL_ROUNDS, 4, 0, 8),
@@ -38,6 +62,8 @@ export function getAiFindConfig(
       3000,
       25000
     ),
+    maxTokens: parseNumber(env.AI_MAX_TOKENS, 800, 128, 4096),
+    thinkingMode: normalizeThinkingMode(env.AI_THINKING_MODE, baseUrl, model),
     maxResults: parseNumber(env.AI_MAX_RESULTS, 5, 1, 10),
     webSearchEnabled: parseBoolean(env.AI_WEB_SEARCH_ENABLED, false),
     webSearchProvider: env.AI_WEB_SEARCH_PROVIDER?.trim() || 'none',

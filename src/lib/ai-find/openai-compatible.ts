@@ -31,6 +31,19 @@ interface ChatCompletionResponse {
   };
 }
 
+function getThinkingRequestBody(config: AiFindConfig) {
+  if (
+    config.thinkingMode !== 'enabled' &&
+    config.thinkingMode !== 'disabled'
+  ) {
+    return undefined;
+  }
+
+  return {
+    type: config.thinkingMode,
+  };
+}
+
 function summarizeMessage(message: AiModelMessage) {
   return {
     role: message.role,
@@ -114,6 +127,8 @@ export async function callOpenAiCompatibleChat({
       details: {
         model: config.model,
         baseUrl: config.baseUrl,
+        maxTokens: config.maxTokens,
+        thinkingMode: config.thinkingMode,
         messageCount: messages.length,
         toolCount: tools?.length ?? 0,
         messages: messages.map(summarizeMessage),
@@ -132,6 +147,8 @@ export async function callOpenAiCompatibleChat({
         tools: tools && tools.length > 0 ? tools : undefined,
         tool_choice: tools && tools.length > 0 ? 'auto' : undefined,
         temperature: config.temperature,
+        max_tokens: config.maxTokens,
+        thinking: getThinkingRequestBody(config),
       }),
       signal: controller.signal,
     });
