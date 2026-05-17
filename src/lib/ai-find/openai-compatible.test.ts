@@ -171,7 +171,7 @@ describe('OpenAI-compatible client', () => {
     });
   });
 
-  it('sends bounded output and DeepSeek thinking controls when configured', async () => {
+  it('sends bounded JSON output and DeepSeek thinking controls when configured', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -200,6 +200,7 @@ describe('OpenAI-compatible client', () => {
     const payload = JSON.parse(request.body) as Record<string, unknown>;
 
     expect(payload.max_tokens).toBe(600);
+    expect(payload.response_format).toEqual({ type: 'json_object' });
     expect(payload.thinking).toEqual({ type: 'disabled' });
   });
 });

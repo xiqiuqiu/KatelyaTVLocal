@@ -148,6 +148,9 @@ export async function callOpenAiCompatibleChat({
         tool_choice: tools && tools.length > 0 ? 'auto' : undefined,
         temperature: config.temperature,
         max_tokens: config.maxTokens,
+        response_format: {
+          type: 'json_object',
+        },
         thinking: getThinkingRequestBody(config),
       }),
       signal: controller.signal,

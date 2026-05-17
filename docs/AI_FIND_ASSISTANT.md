@@ -31,6 +31,8 @@ AI_CACHE_TTL_SECONDS=1800
 
 `AI_MAX_TOKENS` limits how much text the title-recognition response can generate. `AI_THINKING_MODE` accepts `auto`, `enabled`, or `disabled`; when left as `auto`, DeepSeek V4 models are sent `thinking: { "type": "disabled" }` to avoid slow reasoning responses for this title-recognition flow.
 
+The model request also uses JSON output mode so candidate parsing does not depend only on prompt compliance.
+
 `AI_FIND_DEBUG=true` enables server-side debug logs for candidate generation and degraded fallbacks.
 
 ## Safety Rules
