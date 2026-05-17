@@ -5,6 +5,7 @@ AI Find Assistant adds a natural-language search mode to the existing search pag
 The feature is intentionally narrow:
 
 - The model reads the user's description and returns candidate titles or short searchable aliases.
+- The search page shows candidate titles first, then loads KatelyaTV source results per candidate.
 - KatelyaTV runs the existing source search once per candidate.
 - Results stay grouped by candidate term.
 - Every displayed play card is backed by existing KatelyaTV search results.
@@ -28,6 +29,8 @@ AI_CACHE_TTL_SECONDS=1800
 ```
 
 `AI_BASE_URL` must point to an OpenAI-compatible `/v1` API root. The current version uses a single Chat Completions call to identify likely titles, then reuses KatelyaTV's normal search aggregation.
+
+For a better perceived response time, `/api/ai/find` can return candidate titles without waiting for source aggregation. The browser then calls `/api/ai/find/group` per candidate so result sections appear progressively.
 
 `AI_MAX_TOKENS` limits how much text the title-recognition response can generate. `AI_THINKING_MODE` accepts `auto`, `enabled`, or `disabled`; when left as `auto`, DeepSeek V4 models are sent `thinking: { "type": "disabled" }` to avoid slow reasoning responses for this title-recognition flow.
 

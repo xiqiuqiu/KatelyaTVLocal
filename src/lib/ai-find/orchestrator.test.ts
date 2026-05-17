@@ -150,6 +150,33 @@ describe('AI find orchestrator', () => {
     ]);
   });
 
+  it('can return candidate queries without waiting for grouped source results', async () => {
+    mockedCallOpenAiCompatibleChat.mockResolvedValue({
+      role: 'assistant',
+      content:
+        '{"answer":"已识别候选片名","candidates":[{"query":"盗梦空间","reason":"旋转陀螺和梦境匹配","confidence":"high","year":2010,"type":"movie"}],"suggestions":["盗梦空间"]}',
+    });
+
+    const result = await runAiFind({
+      config,
+      request: {
+        query: '梦里行动，旋转陀螺',
+        resolveGroups: false,
+      },
+      requestOrigin: 'https://app.example.com',
+    });
+
+    expect(mockedBuildAiFindResultGroup).not.toHaveBeenCalled();
+    expect(result.answer).toBe('已识别候选片名');
+    expect(result.candidateQueries).toEqual([
+      expect.objectContaining({
+        query: '盗梦空间',
+        year: '2010',
+      }),
+    ]);
+    expect(result.groups).toEqual([]);
+  });
+
   it('degrades instead of rejecting when one candidate group build is aborted', async () => {
     mockedCallOpenAiCompatibleChat.mockResolvedValue({
       role: 'assistant',

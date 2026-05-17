@@ -11,7 +11,11 @@ import {
   createAiFindRequestId,
   sanitizeAiFindDebugText,
 } from '@/lib/ai-find/debug';
-import type { AiFindResponse } from '@/lib/ai-find/types';
+import type {
+  AiFindCandidateQuery,
+  AiFindResponse,
+  AiFindResultGroup,
+} from '@/lib/ai-find/types';
 
 import PosterGrid from '@/components/ui/PosterGrid';
 import SectionHeader from '@/components/ui/SectionHeader';
@@ -21,9 +25,10 @@ import VideoCard from '@/components/VideoCard';
 const loadingSteps = [
   '正在理解你的找片需求',
   '正在生成候选片名',
-  '正在查询可用资源站',
-  '正在整理聚合结果',
 ];
+
+type GroupLoadErrors = Record<string, string>;
+const GROUP_LOAD_CONCURRENCY = 2;
 
 function getLoadingText(startedAt: number | null): string {
   if (!startedAt) return loadingSteps[0];
@@ -86,15 +91,29 @@ function summarizeResult(payload: AiFindResponse) {
   };
 }
 
+function createPendingGroup(candidate: AiFindCandidateQuery): AiFindResultGroup {
+  return {
+    query: candidate.query,
+    reason: candidate.reason,
+    confidence: candidate.confidence,
+    rawCount: 0,
+    groupedCount: 0,
+    groups: [],
+  };
+}
+
 export default function AiFindPanel() {
   const searchParams = useSearchParams();
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<AiFindResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingGroups, setLoadingGroups] = useState<string[]>([]);
+  const [groupErrors, setGroupErrors] = useState<GroupLoadErrors>({});
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, setTick] = useState(0);
   const lastSearchQueryRef = useRef(searchParams.get('q') || '');
+  const activeRunRef = useRef<string | null>(null);
 
   const loadingText = getLoadingText(startedAt);
 
@@ -105,8 +124,142 @@ export default function AiFindPanel() {
       lastSearchQueryRef.current = currentSearchQuery;
       setResult(null);
       setError(null);
+      setLoadingGroups([]);
+      setGroupErrors({});
     }
   }, [searchParams]);
+
+  const loadCandidateGroup = async ({
+    candidate,
+    runId,
+    debugEnabled,
+    parentRequestId,
+  }: {
+    candidate: AiFindCandidateQuery;
+    runId: string;
+    debugEnabled: boolean;
+    parentRequestId: string;
+  }) => {
+    const groupRequestId = `${parentRequestId}-g-${Math.random()
+      .toString(36)
+      .slice(2, 6)}`.slice(0, 64);
+    const groupStartedAt = Date.now();
+
+    try {
+      logAiFindClientDebug(debugEnabled, groupRequestId, 'group dispatched', {
+        query: sanitizeAiFindDebugText(candidate.query),
+      });
+
+      const response = await fetch('/api/ai/find/group', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          [AI_FIND_REQUEST_ID_HEADER]: groupRequestId,
+          ...(debugEnabled ? { [AI_FIND_DEBUG_HEADER]: '1' } : {}),
+        },
+        body: JSON.stringify({
+          candidate,
+        }),
+      });
+      const payload = (await response.json()) as
+        | { group?: AiFindResultGroup; failed?: boolean; error?: string };
+
+      if (activeRunRef.current !== runId) {
+        return;
+      }
+
+      if (!response.ok || !payload.group) {
+        throw new Error(payload.error || '候选片名搜索失败');
+      }
+      const receivedGroup = payload.group;
+
+      logAiFindClientDebug(debugEnabled, groupRequestId, 'group received', {
+        status: response.status,
+        durationMs: Date.now() - groupStartedAt,
+        query: receivedGroup.query,
+        groupedCount: receivedGroup.groupedCount,
+        failed: Boolean(payload.failed),
+      });
+
+      setResult((current) => {
+        if (!current) return current;
+
+        return {
+          ...current,
+          groups: current.groups.map((group) =>
+            group.query === candidate.query ? receivedGroup : group
+          ),
+          degraded: current.degraded || Boolean(payload.failed),
+          errorMessage:
+            current.errorMessage ||
+            (payload.failed ? '部分候选片名查询失败。' : undefined),
+        };
+      });
+    } catch (err) {
+      if (activeRunRef.current !== runId) {
+        return;
+      }
+
+      const message = err instanceof Error ? err.message : '候选片名搜索失败';
+      setGroupErrors((current) => ({
+        ...current,
+        [candidate.query]: message,
+      }));
+      setResult((current) => {
+        if (!current) return current;
+
+        return {
+          ...current,
+          groups: current.groups.map((group) =>
+            group.query === candidate.query
+              ? {
+                  ...group,
+                  notFound: true,
+                }
+              : group
+          ),
+          degraded: true,
+          errorMessage: current.errorMessage || '部分候选片名查询失败。',
+        };
+      });
+    } finally {
+      if (activeRunRef.current === runId) {
+        setLoadingGroups((current) =>
+          current.filter((query) => query !== candidate.query)
+        );
+      }
+    }
+  };
+
+  const loadCandidateGroups = async ({
+    candidates,
+    runId,
+    debugEnabled,
+    parentRequestId,
+  }: {
+    candidates: AiFindCandidateQuery[];
+    runId: string;
+    debugEnabled: boolean;
+    parentRequestId: string;
+  }) => {
+    let currentIndex = 0;
+
+    const runWorker = async () => {
+      while (currentIndex < candidates.length) {
+        const nextIndex = currentIndex;
+        currentIndex += 1;
+        await loadCandidateGroup({
+          candidate: candidates[nextIndex],
+          runId,
+          debugEnabled,
+          parentRequestId,
+        });
+      }
+    };
+
+    const workerCount = Math.min(GROUP_LOAD_CONCURRENCY, candidates.length);
+    await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -115,9 +268,11 @@ export default function AiFindPanel() {
 
     const debugEnabled = isClientDebugEnabled(searchParams);
     const clientRequestId = createAiFindRequestId();
+    const runId = clientRequestId;
     const requestStartedAt = Date.now();
     let activeRequestId = clientRequestId;
     let activeDebugEnabled = debugEnabled;
+    activeRunRef.current = runId;
 
     logAiFindClientDebug(debugEnabled, clientRequestId, 'submit started', {
       query: sanitizeAiFindDebugText(trimmedQuery),
@@ -133,6 +288,8 @@ export default function AiFindPanel() {
     setStartedAt(Date.now());
     setError(null);
     setResult(null);
+    setLoadingGroups([]);
+    setGroupErrors({});
 
     const intervalId = window.setInterval(() => {
       setTick((value) => value + 1);
@@ -160,6 +317,7 @@ export default function AiFindPanel() {
         },
         body: JSON.stringify({
           query: trimmedQuery,
+          resolveGroups: false,
         }),
       });
 
@@ -196,21 +354,39 @@ export default function AiFindPanel() {
         throw new Error((payload as { error?: string }).error || 'AI 找片失败');
       }
 
-      setResult(payload as AiFindResponse);
+      const candidatePayload = payload as AiFindResponse;
+      const pendingGroups = candidatePayload.candidateQueries.map(
+        createPendingGroup
+      );
+      setResult({
+        ...candidatePayload,
+        groups: pendingGroups,
+      });
+      setLoadingGroups(
+        candidatePayload.candidateQueries.map((candidate) => candidate.query)
+      );
+      setLoading(false);
+      setStartedAt(null);
+      window.clearInterval(intervalId);
 
       logAiFindClientDebug(
         activeDebugEnabled,
         activeRequestId,
         'state updated',
         {
-          hasResults: (payload as AiFindResponse).groups.some(
-            (group) => group.groups.length > 0
-          ),
-          candidateQueries: (payload as AiFindResponse).candidateQueries.map(
+          hasResults: false,
+          candidateQueries: candidatePayload.candidateQueries.map(
             (candidate) => candidate.query
           ),
         }
       );
+
+      void loadCandidateGroups({
+        candidates: candidatePayload.candidateQueries,
+        runId,
+        debugEnabled: activeDebugEnabled,
+        parentRequestId: activeRequestId,
+      });
     } catch (err) {
       logAiFindClientDebug(
         activeDebugEnabled,
@@ -232,6 +408,7 @@ export default function AiFindPanel() {
 
   const hasResults =
     result?.groups.some((group) => group.groups.length > 0) ?? false;
+  const hasPendingGroups = loadingGroups.length > 0;
 
   return (
     <section className='space-y-5'>
@@ -329,6 +506,21 @@ export default function AiFindPanel() {
                     </div>
                   ))}
                 </PosterGrid>
+              ) : loadingGroups.includes(group.query) ? (
+                <Surface
+                  className='flex items-center justify-center gap-2 px-6 py-8 text-center text-sm text-[rgb(var(--ui-text-muted))]'
+                  variant='plain'
+                >
+                  <Loader2 className='h-4 w-4 animate-spin' />
+                  <span>正在查询这个候选片名的资源站结果</span>
+                </Surface>
+              ) : groupErrors[group.query] ? (
+                <Surface
+                  className='px-6 py-8 text-center text-sm text-[rgb(var(--ui-text-muted))]'
+                  variant='plain'
+                >
+                  {groupErrors[group.query]}
+                </Surface>
               ) : (
                 <Surface
                   className='px-6 py-8 text-center text-sm text-[rgb(var(--ui-text-muted))]'
@@ -340,7 +532,7 @@ export default function AiFindPanel() {
             </section>
           ))}
 
-          {!hasResults && result.suggestions.length > 0 ? (
+          {!hasResults && !hasPendingGroups && result.suggestions.length > 0 ? (
             <Surface className='p-4 sm:p-5' variant='plain'>
               <div className='space-y-3'>
                 <div className='text-sm text-[rgb(var(--ui-text-muted))]'>

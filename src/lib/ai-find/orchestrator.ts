@@ -239,6 +239,86 @@ async function generateCandidates({
   }
 }
 
+export async function buildAiFindCandidateGroup({
+  config,
+  candidate,
+  request,
+  requestOrigin,
+  debugContext,
+}: {
+  config: AiFindConfig;
+  candidate: AiFindCandidateQuery;
+  request: Pick<AiFindRequest, 'userPreference'>;
+  requestOrigin?: string;
+  debugContext?: AiFindDebugContext;
+}): Promise<{ group: AiFindResponse['groups'][number]; failed: boolean }> {
+  logAiFindDebug({
+    configDebug: config.debug,
+    context: debugContext,
+    event: 'candidate group build started',
+    details: {
+      query: candidate.query,
+      confidence: candidate.confidence,
+      year: candidate.year,
+      type: candidate.type,
+    },
+  });
+
+  try {
+    const group = await buildAiFindResultGroup({
+      candidate,
+      maxGroups: 8,
+      cacheTtlSeconds: config.cacheTtlSeconds,
+      requestOrigin,
+      prefer: request.userPreference?.prefer,
+      debugContext,
+    });
+
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'candidate group build completed',
+      details: {
+        query: candidate.query,
+        rawCount: group.rawCount,
+        groupedCount: group.groupedCount,
+        notFound: Boolean(group.notFound),
+      },
+    });
+
+    return {
+      group,
+      failed: false,
+    };
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : '候选片名处理失败';
+
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'candidate group degraded',
+      details: {
+        query: candidate.query,
+        errorMessage,
+      },
+    });
+
+    return {
+      group: {
+        query: candidate.query,
+        reason: candidate.reason,
+        confidence: candidate.confidence,
+        rawCount: 0,
+        groupedCount: 0,
+        groups: [],
+        notFound: true,
+      },
+      failed: true,
+    };
+  }
+}
+
 export async function runAiFind({
   config,
   request,
@@ -256,76 +336,38 @@ export async function runAiFind({
     request,
     debugContext,
   });
+
+  if (request.resolveGroups === false) {
+    logAiFindDebug({
+      configDebug: config.debug,
+      context: debugContext,
+      event: 'ai find candidate-only completed',
+      details: {
+        candidateCount: candidateResult.candidates.length,
+      },
+    });
+
+    return {
+      answer: candidateResult.answer,
+      candidateQueries: candidateResult.candidates,
+      groups: [],
+      suggestions: candidateResult.suggestions,
+      toolTrace,
+      generatedAt: Date.now(),
+    };
+  }
+
   const groupResults = await mapWithConcurrency(
     candidateResult.candidates,
     AI_FIND_CANDIDATE_CONCURRENCY,
-    async (candidate) => {
-      logAiFindDebug({
-        configDebug: config.debug,
-        context: debugContext,
-        event: 'candidate group build started',
-        details: {
-          query: candidate.query,
-          confidence: candidate.confidence,
-          year: candidate.year,
-          type: candidate.type,
-        },
-      });
-
-      try {
-        const group = await buildAiFindResultGroup({
-          candidate,
-          maxGroups: 8,
-          cacheTtlSeconds: config.cacheTtlSeconds,
-          requestOrigin,
-          prefer: request.userPreference?.prefer,
-          debugContext,
-        });
-
-        logAiFindDebug({
-          configDebug: config.debug,
-          context: debugContext,
-          event: 'candidate group build completed',
-          details: {
-            query: candidate.query,
-            rawCount: group.rawCount,
-            groupedCount: group.groupedCount,
-            notFound: Boolean(group.notFound),
-          },
-        });
-
-        return {
-          group,
-          failed: false,
-        };
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : '候选片名处理失败';
-
-        logAiFindDebug({
-          configDebug: config.debug,
-          context: debugContext,
-          event: 'candidate group degraded',
-          details: {
-            query: candidate.query,
-            errorMessage,
-          },
-        });
-
-        return {
-          group: {
-            query: candidate.query,
-            reason: candidate.reason,
-            confidence: candidate.confidence,
-            rawCount: 0,
-            groupedCount: 0,
-            groups: [],
-            notFound: true,
-          },
-          failed: true,
-        };
-      }
-    }
+    async (candidate) =>
+      buildAiFindCandidateGroup({
+        config,
+        candidate,
+        request,
+        requestOrigin,
+        debugContext,
+      })
   );
   const groups = groupResults.map((item) => item.group);
   const partialFailureCount = groupResults.filter((item) => item.failed).length;

@@ -41,6 +41,7 @@ function validatePayload(payload: unknown): AiFindRequest | null {
   return {
     query: candidate.query.trim().slice(0, 200),
     mode: candidate.mode === 'browse' ? 'browse' : 'find',
+    resolveGroups: candidate.resolveGroups !== false,
     userPreference: candidate.userPreference,
   };
 }

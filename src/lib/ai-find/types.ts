@@ -6,6 +6,7 @@ export type AiFindMediaType = 'movie' | 'tv' | 'show' | 'unknown';
 export interface AiFindRequest {
   query: string;
   mode?: 'find' | 'browse';
+  resolveGroups?: boolean;
   userPreference?: {
     prefer?: 'stable' | 'fast' | 'quality';
     type?: AiFindMediaType;
