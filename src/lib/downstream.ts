@@ -1,5 +1,7 @@
+import type { AiFindDebugContext } from '@/lib/ai-find/debug';
+import { logAiFindDebug, sanitizeAiFindDebugText } from '@/lib/ai-find/debug';
 import { API_CONFIG, ApiSite, getConfig } from '@/lib/config';
-import { SearchResult } from '@/lib/types';
+import type { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
 
 interface ApiSearchItem {
@@ -17,8 +19,21 @@ interface ApiSearchItem {
 
 export async function searchFromApi(
   apiSite: ApiSite,
-  query: string
+  query: string,
+  debugContext?: AiFindDebugContext
 ): Promise<SearchResult[]> {
+  const startedAt = Date.now();
+
+  logAiFindDebug({
+    context: debugContext,
+    event: 'downstream search started',
+    details: {
+      query: sanitizeAiFindDebugText(query),
+      sourceKey: apiSite.key,
+      sourceName: apiSite.name,
+    },
+  });
+
   try {
     const apiBaseUrl = apiSite.api;
     const apiUrl =
@@ -37,6 +52,18 @@ export async function searchFromApi(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
+      logAiFindDebug({
+        context: debugContext,
+        event: 'downstream search non-ok response',
+        details: {
+          query: sanitizeAiFindDebugText(query),
+          sourceKey: apiSite.key,
+          sourceName: apiName,
+          status: response.status,
+          durationMs: Date.now() - startedAt,
+        },
+      });
+
       return [];
     }
 
@@ -47,6 +74,17 @@ export async function searchFromApi(
       !Array.isArray(data.list) ||
       data.list.length === 0
     ) {
+      logAiFindDebug({
+        context: debugContext,
+        event: 'downstream search empty response',
+        details: {
+          query: sanitizeAiFindDebugText(query),
+          sourceKey: apiSite.key,
+          sourceName: apiName,
+          durationMs: Date.now() - startedAt,
+        },
+      });
+
       return [];
     }
     // 处理第一页结果
@@ -124,12 +162,38 @@ export async function searchFromApi(
 
             clearTimeout(pageTimeoutId);
 
-            if (!pageResponse.ok) return [];
+            if (!pageResponse.ok) {
+              logAiFindDebug({
+                context: debugContext,
+                event: 'downstream extra page non-ok response',
+                details: {
+                  query: sanitizeAiFindDebugText(query),
+                  sourceKey: apiSite.key,
+                  sourceName: apiName,
+                  page,
+                  status: pageResponse.status,
+                },
+              });
+
+              return [];
+            }
 
             const pageData = await pageResponse.json();
 
-            if (!pageData || !pageData.list || !Array.isArray(pageData.list))
+            if (!pageData || !pageData.list || !Array.isArray(pageData.list)) {
+              logAiFindDebug({
+                context: debugContext,
+                event: 'downstream extra page empty response',
+                details: {
+                  query: sanitizeAiFindDebugText(query),
+                  sourceKey: apiSite.key,
+                  sourceName: apiName,
+                  page,
+                },
+              });
+
               return [];
+            }
 
             return pageData.list.map((item: ApiSearchItem) => {
               let episodes: string[] = [];
@@ -163,6 +227,21 @@ export async function searchFromApi(
               };
             });
           } catch (error) {
+            logAiFindDebug({
+              context: debugContext,
+              event: 'downstream extra page failed',
+              details: {
+                query: sanitizeAiFindDebugText(query),
+                sourceKey: apiSite.key,
+                sourceName: apiName,
+                page,
+                errorMessage:
+                  error instanceof Error
+                    ? error.message
+                    : 'Unknown extra page failure',
+              },
+            });
+
             return [];
           }
         })();
@@ -181,8 +260,35 @@ export async function searchFromApi(
       });
     }
 
+    logAiFindDebug({
+      context: debugContext,
+      event: 'downstream search completed',
+      details: {
+        query: sanitizeAiFindDebugText(query),
+        sourceKey: apiSite.key,
+        sourceName: apiName,
+        resultCount: results.length,
+        pageCount,
+        fetchedExtraPages: pagesToFetch,
+        durationMs: Date.now() - startedAt,
+      },
+    });
+
     return results;
   } catch (error) {
+    logAiFindDebug({
+      context: debugContext,
+      event: 'downstream search failed',
+      details: {
+        query: sanitizeAiFindDebugText(query),
+        sourceKey: apiSite.key,
+        sourceName: apiSite.name,
+        durationMs: Date.now() - startedAt,
+        errorMessage:
+          error instanceof Error ? error.message : 'Unknown downstream failure',
+      },
+    });
+
     return [];
   }
 }
