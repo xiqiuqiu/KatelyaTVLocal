@@ -301,9 +301,8 @@ describe('VideoCard', () => {
 ### 文档结构
 
 - `README.md` - 项目主要说明文档
-- `CHANGELOG.md` - 版本更新日志
 - `CONTRIBUTING.md` - 贡献指南
-- `docs/` - 详细文档目录
+- `specs/` - 详细文档目录（功能文档、笔记、设计文档）
 
 ### 文档规范
 
