@@ -1,21 +1,33 @@
+import { findKnownHlsAdRuleMatch, KnownHlsAdRuleMatch } from './hls-ad-rules';
+
 const DISCONTINUITY_TAG = '#EXT-X-DISCONTINUITY';
 const CUE_OUT_TAG = '#EXT-X-CUE-OUT';
 const CUE_IN_TAG = '#EXT-X-CUE-IN';
 const SCTE35_TAG = '#EXT-X-SCTE35';
 const DATERANGE_TAG = '#EXT-X-DATERANGE';
 
-const AD_URL_PATTERNS = [
-  /\/ads?(?:[/_-]|$)/i,
-  /advertisement/i,
-  /commercial/i,
-];
+const AD_URL_PATTERNS = [/\/ads?(?:[/_-]|$)/i, /advertisement/i, /commercial/i];
 
 type AdBlockReason =
   | 'cue-marker'
   | 'scte35'
   | 'daterange'
   | 'url-keyword'
-  | 'alternate-host';
+  | 'alternate-host'
+  | 'known-rule';
+
+export type M3U8RemovedAdBlockInfo = {
+  reason: AdBlockReason;
+  reasons: AdBlockReason[];
+  segmentCount: number;
+  durationSeconds: number;
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  hosts: string[];
+  sampleUrls: string[];
+  ruleId?: string;
+  ruleName?: string;
+};
 
 export type M3U8AdDebugSummary = {
   totalLines: number;
@@ -33,6 +45,7 @@ export type M3U8AdDebugSummary = {
   keywordBlocks: number;
   alternateHostBlocks: number;
   primaryHost: string | null;
+  removedBlocks: M3U8RemovedAdBlockInfo[];
 };
 
 export type M3U8AdFilterDebugInfo = {
@@ -46,6 +59,11 @@ type PlaylistBlock = {
   lines: string[];
   mediaUrls: string[];
   mediaHosts: string[];
+  segmentCount: number;
+  durationSeconds: number;
+  segmentDurations: number[];
+  startTimeSeconds: number;
+  endTimeSeconds: number;
   hasCueMarker: boolean;
   hasScte35: boolean;
   hasAdDaterange: boolean;
@@ -78,6 +96,14 @@ function isAdDaterangeLine(line: string): boolean {
     /SCTE35-(OUT|IN)=/i.test(line) ||
     /X-AD-/i.test(line)
   );
+}
+
+function parseExtinfDuration(line: string): number {
+  const match = line.match(/^#EXTINF:([\d.]+)/);
+  if (!match) return 0;
+
+  const duration = Number.parseFloat(match[1]);
+  return Number.isFinite(duration) ? duration : 0;
 }
 
 function resolveMediaUrl(input: string, baseUrl?: string): string {
@@ -205,8 +231,23 @@ function removeCueMarkedRanges(lines: string[]): string[] {
 function buildBlock(
   lines: string[],
   separatorBefore: string | null,
+  startTimeSeconds: number,
   baseUrl?: string
 ): PlaylistBlock {
+  let segmentCount = 0;
+  let durationSeconds = 0;
+  const segmentDurations: number[] = [];
+
+  lines.forEach((line) => {
+    const trimmedLine = line.trim();
+    if (trimmedLine.startsWith('#EXTINF:')) {
+      const duration = parseExtinfDuration(trimmedLine);
+      segmentCount += 1;
+      durationSeconds += duration;
+      segmentDurations.push(duration);
+    }
+  });
+
   const mediaUrls = lines
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('#'))
@@ -225,6 +266,11 @@ function buildBlock(
     lines,
     mediaUrls,
     mediaHosts,
+    segmentCount,
+    durationSeconds,
+    segmentDurations,
+    startTimeSeconds,
+    endTimeSeconds: startTimeSeconds + durationSeconds,
     hasCueMarker: lines.some((line) => {
       const trimmedLine = line.trim();
       return isCueOutLine(trimmedLine) || isCueInLine(trimmedLine);
@@ -241,19 +287,35 @@ function splitIntoBlocks(lines: string[], baseUrl?: string): PlaylistBlock[] {
   const blocks: PlaylistBlock[] = [];
   let currentLines: string[] = [];
   let separatorBefore: string | null = null;
+  let currentStartTimeSeconds = 0;
+  let elapsedTimeSeconds = 0;
 
   lines.forEach((line) => {
-    if (isDiscontinuityLine(line.trim())) {
-      blocks.push(buildBlock(currentLines, separatorBefore, baseUrl));
+    const trimmedLine = line.trim();
+    if (isDiscontinuityLine(trimmedLine)) {
+      blocks.push(
+        buildBlock(
+          currentLines,
+          separatorBefore,
+          currentStartTimeSeconds,
+          baseUrl
+        )
+      );
       currentLines = [];
       separatorBefore = line;
+      currentStartTimeSeconds = elapsedTimeSeconds;
       return;
     }
 
     currentLines.push(line);
+    if (trimmedLine.startsWith('#EXTINF:')) {
+      elapsedTimeSeconds += parseExtinfDuration(trimmedLine);
+    }
   });
 
-  blocks.push(buildBlock(currentLines, separatorBefore, baseUrl));
+  blocks.push(
+    buildBlock(currentLines, separatorBefore, currentStartTimeSeconds, baseUrl)
+  );
 
   return blocks;
 }
@@ -293,7 +355,8 @@ function getAdBlockReasons(
   block: PlaylistBlock,
   blockIndex: number,
   blocks: PlaylistBlock[],
-  primaryHost: string | null
+  primaryHost: string | null,
+  knownRuleMatch: KnownHlsAdRuleMatch | null
 ): AdBlockReason[] {
   const reasons: AdBlockReason[] = [];
 
@@ -317,6 +380,10 @@ function getAdBlockReasons(
     reasons.push('alternate-host');
   }
 
+  if (knownRuleMatch) {
+    reasons.push('known-rule');
+  }
+
   return reasons;
 }
 
@@ -324,9 +391,13 @@ function isAdBlock(
   block: PlaylistBlock,
   blockIndex: number,
   blocks: PlaylistBlock[],
-  primaryHost: string | null
+  primaryHost: string | null,
+  knownRuleMatch: KnownHlsAdRuleMatch | null
 ): boolean {
-  return getAdBlockReasons(block, blockIndex, blocks, primaryHost).length > 0;
+  return (
+    getAdBlockReasons(block, blockIndex, blocks, primaryHost, knownRuleMatch)
+      .length > 0
+  );
 }
 
 function filterDiscontinuityBlocks(
@@ -340,8 +411,15 @@ function filterDiscontinuityBlocks(
   const blocks = splitIntoBlocks(lines, baseUrl);
   const primaryHost = getPrimaryHost(blocks, baseUrl);
   const filteredLines: string[] = [];
+  const knownRuleMatches = getKnownRuleMatches(blocks, baseUrl);
   const shouldRemoveBlock = blocks.map((block, blockIndex) =>
-    isAdBlock(block, blockIndex, blocks, primaryHost)
+    isAdBlock(
+      block,
+      blockIndex,
+      blocks,
+      primaryHost,
+      knownRuleMatches[blockIndex]
+    )
   );
 
   blocks.forEach((block, blockIndex) => {
@@ -366,6 +444,48 @@ function countLinesByPrefix(lines: string[], prefix: string): number {
   return lines.filter((line) => line.trim().startsWith(prefix)).length;
 }
 
+function createRemovedBlockInfo(
+  block: PlaylistBlock,
+  reasons: AdBlockReason[],
+  knownRuleMatch: KnownHlsAdRuleMatch | null = null
+): M3U8RemovedAdBlockInfo {
+  return {
+    reason: reasons[0],
+    reasons,
+    segmentCount: block.segmentCount,
+    durationSeconds: Number(block.durationSeconds.toFixed(3)),
+    startTimeSeconds: Number(block.startTimeSeconds.toFixed(3)),
+    endTimeSeconds: Number(block.endTimeSeconds.toFixed(3)),
+    hosts: block.mediaHosts,
+    sampleUrls: block.mediaUrls.slice(0, 3),
+    ruleId: knownRuleMatch?.ruleId,
+    ruleName: knownRuleMatch?.ruleName,
+  };
+}
+
+function getKnownRuleMatches(
+  blocks: PlaylistBlock[],
+  baseUrl?: string
+): Array<KnownHlsAdRuleMatch | null> {
+  const ruleBlocks = blocks.map((block, blockIndex) => ({
+    blockIndex,
+    segmentCount: block.segmentCount,
+    durationSeconds: block.durationSeconds,
+    startTimeSeconds: block.startTimeSeconds,
+    endTimeSeconds: block.endTimeSeconds,
+    mediaHosts: block.mediaHosts,
+    mediaUrls: block.mediaUrls,
+    segmentDurations: block.segmentDurations,
+  }));
+
+  return ruleBlocks.map((block) =>
+    findKnownHlsAdRuleMatch(block, {
+      baseUrl,
+      blocks: ruleBlocks,
+    })
+  );
+}
+
 function shouldLogAdFilterDebug(
   summary: M3U8AdDebugSummary,
   removedLineCount: number
@@ -388,10 +508,28 @@ export function getM3U8AdDebugSummary(
   const lines = content ? content.split(/\r?\n/) : [];
   const blocks = splitIntoBlocks(lines, baseUrl);
   const primaryHost = getPrimaryHost(blocks, baseUrl);
+  const knownRuleMatches = getKnownRuleMatches(blocks, baseUrl);
   const blockReasons = blocks.map((block, blockIndex) =>
-    getAdBlockReasons(block, blockIndex, blocks, primaryHost)
+    getAdBlockReasons(
+      block,
+      blockIndex,
+      blocks,
+      primaryHost,
+      knownRuleMatches[blockIndex]
+    )
   );
-
+  const blockRemovedInfos = blocks
+    .map((block, blockIndex) => ({
+      block,
+      blockIndex,
+      reasons: blockReasons[blockIndex],
+    }))
+    .filter(
+      ({ block, reasons }) => block.segmentCount > 0 && reasons.length > 0
+    )
+    .map(({ block, blockIndex, reasons }) =>
+      createRemovedBlockInfo(block, reasons, knownRuleMatches[blockIndex])
+    );
   return {
     totalLines: lines.length,
     filteredLineCount: filteredLineCount ?? lines.length,
@@ -421,6 +559,7 @@ export function getM3U8AdDebugSummary(
       reasons.includes('alternate-host')
     ).length,
     primaryHost,
+    removedBlocks: blockRemovedInfos,
   };
 }
 
@@ -444,6 +583,62 @@ export function getM3U8AdFilterDebugInfo(
     removedLineCount,
     summary,
   };
+}
+
+function formatDurationClock(totalSeconds: number): string {
+  const roundedSeconds = Math.max(0, Math.round(totalSeconds));
+  const minutes = Math.floor(roundedSeconds / 60);
+  const seconds = roundedSeconds % 60;
+
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(
+    2,
+    '0'
+  )}`;
+}
+
+function formatBlockReason(reason: AdBlockReason): string {
+  switch (reason) {
+    case 'cue-marker':
+      return '广告标记';
+    case 'scte35':
+      return 'SCTE-35 标记';
+    case 'daterange':
+      return '广告时间段标记';
+    case 'url-keyword':
+      return '地址关键词';
+    case 'alternate-host':
+      return '异常域名';
+    case 'known-rule':
+      return '规则库命中';
+    default:
+      return reason;
+  }
+}
+
+export function formatM3U8AdFilterDebugMessage(
+  debugInfo: M3U8AdFilterDebugInfo
+): string {
+  if (!debugInfo.summary.removedBlocks.length) {
+    return '检测到广告相关信号，但本次未移除分段';
+  }
+
+  const details = debugInfo.summary.removedBlocks
+    .map((block, index) => {
+      const timeRange = `${formatDurationClock(
+        block.startTimeSeconds
+      )}-${formatDurationClock(block.endTimeSeconds)}`;
+      const reasons = block.reasons.map(formatBlockReason).join('、');
+      const ruleLabel = block.ruleId ? `，规则：${block.ruleId}` : '';
+
+      return `第 ${
+        index + 1
+      } 段 ${timeRange}，约 ${block.durationSeconds.toFixed(1)} 秒，${
+        block.segmentCount
+      } 个片段，原因：${reasons}${ruleLabel}`;
+    })
+    .join('；');
+
+  return `发现 ${debugInfo.summary.removedBlocks.length} 段疑似广告内容：${details}`;
 }
 
 export function filterAdsFromM3U8(content: string, baseUrl?: string): string {

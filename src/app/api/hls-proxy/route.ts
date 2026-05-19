@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
 import {
   filterAdsFromM3U8,
+  formatM3U8AdFilterDebugMessage,
   getM3U8AdFilterDebugInfo,
 } from '@/lib/hls-ad-filter';
 
@@ -40,6 +41,7 @@ function logProxyAdFilterDebug(
     cueInCount: debugInfo.summary.cueInCount,
     scte35Count: debugInfo.summary.scte35Count,
     daterangeCount: debugInfo.summary.daterangeCount,
+    removedBlocks: debugInfo.summary.removedBlocks.length,
   });
 
   if (proxyAdFilterDebugLogKeys.has(logKey)) {
@@ -48,14 +50,12 @@ function logProxyAdFilterDebug(
 
   proxyAdFilterDebugLogKeys.add(logKey);
 
-  const message =
-    debugInfo.removedLineCount > 0
-      ? '[去广告][代理] 已过滤播放列表'
-      : '[去广告][代理] 检测到广告相关信号，但本次未移除分段';
+  const message = `[去广告][代理] ${formatM3U8AdFilterDebugMessage(debugInfo)}`;
 
   console.log(message, {
     targetUrl,
     removedLineCount: debugInfo.removedLineCount,
+    removedBlocks: debugInfo.summary.removedBlocks,
     summary: debugInfo.summary,
   });
 }

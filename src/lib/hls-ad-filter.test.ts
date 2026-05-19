@@ -1,6 +1,80 @@
-import { filterAdsFromM3U8 } from './hls-ad-filter';
+import {
+  filterAdsFromM3U8,
+  formatM3U8AdFilterDebugMessage,
+  getM3U8AdFilterDebugInfo,
+} from './hls-ad-filter';
+import { KNOWN_HLS_AD_RULES } from './hls-ad-rules';
+
+function createSegments(
+  count: number,
+  prefix: string,
+  host = 'media.example.com'
+): string[] {
+  return Array.from({ length: count }, (_item, index) => [
+    '#EXTINF:10,',
+    `https://${host}/${prefix}-${index + 1}.ts`,
+  ]).flat();
+}
+
+function createRyplayDmcKnownAdCase(): string {
+  return [
+    '#EXTM3U',
+    '#EXT-X-PLAYLIST-TYPE:VOD',
+    '#EXT-X-VERSION:3',
+    '#EXT-X-MEDIA-SEQUENCE:0',
+    '#EXT-X-TARGETDURATION:11',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:10.416667,',
+    '98c1525cd707d7d631d7afdded8ba238.ts',
+    '#EXTINF:10.416667,',
+    '5ad774c12e7d9c6358775a8162e696d6.ts',
+    '#EXTINF:10.416667,',
+    '889bd8b3d32e39a7e480f09b0b24617a.ts',
+    '#EXTINF:10.416667,',
+    '8c034c442a30f10cfa2b5795d5a3c8d8.ts',
+    '#EXTINF:10.416667,',
+    '4991ecc8f086b67675be7d7a8809f16d.ts',
+    '#EXTINF:10.416667,',
+    'dee3600c24df4fe8fe4a511db2f9cf7f.ts',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:4.000000,',
+    '6dae7b6174701f65469c3eaafceb255e.ts',
+    '#EXTINF:5.480000,',
+    '48dd5acf3523c15accf4668f92256683.ts',
+    '#EXTINF:4.000000,',
+    'a756fbb58de3fe6d280f3634fbb9e97e.ts',
+    '#EXTINF:3.240000,',
+    '4f41283191818136361705c95a412d65.ts',
+    '#EXTINF:4.000000,',
+    '5b40ab80a60ddf3554c7a0d6a288dc03.ts',
+    '#EXTINF:1.280000,',
+    'e808d97f1ff02c5296e22cb235ccaedb.ts',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:10.416667,',
+    '199d07d0558fe3bf505743c8243f4e1c.ts',
+    '#EXTINF:10.416667,',
+    '42d679afb0c8b4e2c1c4b02469d587bb.ts',
+    '#EXTINF:10.416667,',
+    '03d77ec912b175e49f77fcf4b2bd5728.ts',
+    '#EXTINF:10.416667,',
+    'a46c85c261a2877f31334fd66e058d5a.ts',
+    '#EXTINF:10.416667,',
+    'f4e2a96cb2c960e66de58f17bc4ae398.ts',
+    '#EXTINF:10.416667,',
+    '897d7f780d5109a904bb87897c9683cd.ts',
+    '#EXT-X-ENDLIST',
+  ].join('\n');
+}
 
 describe('filterAdsFromM3U8', () => {
+  it('records the ruyi ryplay 22-second midroll case in the known rule library', () => {
+    expect(
+      KNOWN_HLS_AD_RULES.some(
+        (rule) => rule.id === 'ruyi-ryplay-22s-midroll-v1'
+      )
+    ).toBe(true);
+  });
+
   it('removes cue-out ranges without dropping surrounding content', () => {
     const input = [
       '#EXTM3U',
@@ -130,6 +204,180 @@ describe('filterAdsFromM3U8', () => {
     expect(output).toContain('segment-2.ts');
     expect(output).not.toContain('ad-roll-1.ts');
     expect(output).not.toContain('#EXT-X-DATERANGE');
+  });
+
+  it('keeps generic short discontinuity blocks unless a source-specific rule matches', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      ...createSegments(15, 'main-a'),
+      '#EXT-X-DISCONTINUITY',
+      ...createSegments(2, 'preroll'),
+      '#EXT-X-DISCONTINUITY',
+      ...createSegments(15, 'main-b'),
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    const output = filterAdsFromM3U8(
+      input,
+      'https://media.example.com/index.m3u8'
+    );
+
+    expect(output).toContain('main-a-1.ts');
+    expect(output).toContain('main-b-15.ts');
+    expect(output).toContain('preroll-1.ts');
+    expect(output).toContain('preroll-2.ts');
+  });
+
+  it('does not report generic short discontinuity blocks as removed ads', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      ...createSegments(15, 'main-a'),
+      '#EXT-X-DISCONTINUITY',
+      ...createSegments(2, 'preroll'),
+      '#EXT-X-DISCONTINUITY',
+      ...createSegments(15, 'main-b'),
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    const filtered = filterAdsFromM3U8(
+      input,
+      'https://media.example.com/index.m3u8'
+    );
+
+    const debugInfo = getM3U8AdFilterDebugInfo(
+      input,
+      filtered,
+      'https://media.example.com/index.m3u8'
+    );
+
+    expect(debugInfo.summary.removedBlocks).toEqual([]);
+  });
+
+  it('formats source-specific rule matches into a readable debug message', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      ...createSegments(6, 'main-a', 'cdn.ryplay12.com').flatMap(
+        (line, index) => (index % 2 === 0 ? '#EXTINF:10.416667,' : line)
+      ),
+      '#EXT-X-DISCONTINUITY',
+      '#EXTINF:4.000000,',
+      'https://cdn.ryplay12.com/preroll-1.ts',
+      '#EXTINF:5.480000,',
+      'https://cdn.ryplay12.com/preroll-2.ts',
+      '#EXTINF:4.000000,',
+      'https://cdn.ryplay12.com/preroll-3.ts',
+      '#EXTINF:3.240000,',
+      'https://cdn.ryplay12.com/preroll-4.ts',
+      '#EXTINF:4.000000,',
+      'https://cdn.ryplay12.com/preroll-5.ts',
+      '#EXTINF:1.280000,',
+      'https://cdn.ryplay12.com/preroll-6.ts',
+      '#EXT-X-DISCONTINUITY',
+      ...createSegments(6, 'main-b', 'cdn.ryplay12.com').flatMap(
+        (line, index) => (index % 2 === 0 ? '#EXTINF:10.416667,' : line)
+      ),
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+    const filtered = filterAdsFromM3U8(
+      input,
+      'https://cdn.ryplay12.com/20250403/16563_f4b58451/2000k/hls/index.m3u8'
+    );
+    const debugInfo = getM3U8AdFilterDebugInfo(
+      input,
+      filtered,
+      'https://cdn.ryplay12.com/20250403/16563_f4b58451/2000k/hls/index.m3u8'
+    );
+
+    expect(formatM3U8AdFilterDebugMessage(debugInfo)).toContain(
+      '发现 1 段疑似广告内容'
+    );
+    expect(formatM3U8AdFilterDebugMessage(debugInfo)).toContain(
+      'ruyi-ryplay-22s-midroll-v1'
+    );
+    expect(formatM3U8AdFilterDebugMessage(debugInfo)).toContain('6 个片段');
+  });
+
+  it('keeps generic tiny inline segments unless a source-specific rule matches', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXTINF:10,',
+      'https://media.example.com/main-1.ts',
+      '#EXTINF:0.01,',
+      'https://track.example.vip/pixel.gif',
+      '#EXTINF:10,',
+      'https://media.example.com/main-2.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    const output = filterAdsFromM3U8(
+      input,
+      'https://media.example.com/index.m3u8'
+    );
+
+    expect(output).toContain('main-1.ts');
+    expect(output).toContain('main-2.ts');
+    expect(output).toContain('pixel.gif');
+  });
+
+  it('does not report generic tiny inline segments as removed ads', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXTINF:10,',
+      'https://media.example.com/main-1.ts',
+      '#EXTINF:0.01,',
+      'https://track.example.vip/pixel.gif',
+      '#EXTINF:10,',
+      'https://media.example.com/main-2.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+    const filtered = filterAdsFromM3U8(
+      input,
+      'https://media.example.com/index.m3u8'
+    );
+    const debugInfo = getM3U8AdFilterDebugInfo(
+      input,
+      filtered,
+      'https://media.example.com/index.m3u8'
+    );
+
+    expect(debugInfo.summary.removedBlocks).toEqual([]);
+  });
+
+  it('removes the known ruyi ryplay 22-second midroll pattern and reports the rule id', () => {
+    const input = createRyplayDmcKnownAdCase();
+    const filtered = filterAdsFromM3U8(
+      input,
+      'https://cdn.ryplay12.com/20250403/16563_f4b58451/2000k/hls/index.m3u8'
+    );
+
+    expect(filtered).toContain('98c1525cd707d7d631d7afdded8ba238.ts');
+    expect(filtered).toContain('199d07d0558fe3bf505743c8243f4e1c.ts');
+    expect(filtered).not.toContain('6dae7b6174701f65469c3eaafceb255e.ts');
+    expect(filtered).not.toContain('e808d97f1ff02c5296e22cb235ccaedb.ts');
+
+    const debugInfo = getM3U8AdFilterDebugInfo(
+      input,
+      filtered,
+      'https://cdn.ryplay12.com/20250403/16563_f4b58451/2000k/hls/index.m3u8'
+    );
+
+    expect(debugInfo.summary.removedBlocks).toEqual([
+      expect.objectContaining({
+        reason: 'known-rule',
+        ruleId: 'ruyi-ryplay-22s-midroll-v1',
+        segmentCount: 6,
+        startTimeSeconds: expect.closeTo(62.5, 3),
+        endTimeSeconds: expect.closeTo(84.5, 3),
+      }),
+    ]);
+    expect(formatM3U8AdFilterDebugMessage(debugInfo)).toContain(
+      'ruyi-ryplay-22s-midroll-v1'
+    );
   });
 
   it('leaves master playlists unchanged', () => {

@@ -26,6 +26,7 @@ import {
 } from '@/lib/db.client';
 import {
   filterAdsFromM3U8,
+  formatM3U8AdFilterDebugMessage,
   getM3U8AdFilterDebugInfo,
 } from '@/lib/hls-ad-filter';
 import { getBrowserProbeBudget } from '@/lib/source-preference';
@@ -92,6 +93,7 @@ function logDirectAdFilterDebug(
     cueInCount: debugInfo.summary.cueInCount,
     scte35Count: debugInfo.summary.scte35Count,
     daterangeCount: debugInfo.summary.daterangeCount,
+    removedBlocks: debugInfo.summary.removedBlocks.length,
   });
 
   if (directAdFilterDebugLogKeys.has(logKey)) {
@@ -100,17 +102,30 @@ function logDirectAdFilterDebug(
 
   directAdFilterDebugLogKeys.add(logKey);
 
-  const message =
-    debugInfo.removedLineCount > 0
-      ? '[去广告][直连] 已过滤播放列表'
-      : '[去广告][直连] 检测到广告相关信号，但本次未移除分段';
+  const message = `[去广告][直连] ${formatM3U8AdFilterDebugMessage(debugInfo)}`;
 
   console.log(message, {
     playlistUrl,
     playlistType,
     removedLineCount: debugInfo.removedLineCount,
+    removedBlocks: debugInfo.summary.removedBlocks,
     summary: debugInfo.summary,
   });
+
+  if (debugInfo.summary.removedBlocks.length > 0) {
+    console.table(
+      debugInfo.summary.removedBlocks.map((block, index) => ({
+        序号: index + 1,
+        开始秒: block.startTimeSeconds,
+        结束秒: block.endTimeSeconds,
+        时长秒: block.durationSeconds,
+        片段数: block.segmentCount,
+        原因: block.reasons.join(', '),
+        规则: block.ruleId || '',
+        域名: block.hosts.join(', '),
+      }))
+    );
+  }
 }
 
 function PlayPageClient() {
