@@ -78,6 +78,11 @@ export interface AiFindConfig {
   webSearchEndpoint: string;
   webSearchApiKey: string;
   dailyLimitPerUser: number;
+  dailyLimitPerIp: number;
+  dailyLimitGlobal: number;
+  groupDailyLimitPerUser: number;
+  groupDailyLimitPerIp: number;
+  groupDailyLimitGlobal: number;
   cacheTtlSeconds: number;
 }
 

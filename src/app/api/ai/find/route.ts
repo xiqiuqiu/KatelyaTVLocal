@@ -13,20 +13,11 @@ import {
 } from '@/lib/ai-find/debug';
 import { isAiFindUserFacingError } from '@/lib/ai-find/errors';
 import { runAiFind } from '@/lib/ai-find/orchestrator';
-import { checkAiFindRateLimit } from '@/lib/ai-find/rate-limit';
+import { enforceAiFindRequestGuard } from '@/lib/ai-find/request-guard';
 import type { AiFindRequest } from '@/lib/ai-find/types';
-import { getAuthInfoFromCookie } from '@/lib/auth';
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
 
 export const runtime = 'edge';
-
-function getClientIdentity(request: NextRequest, username?: string): string {
-  if (username) return `user:${username}`;
-
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  const ip = forwardedFor?.split(',')[0]?.trim() || 'anonymous';
-  return `ip:${ip}`;
-}
 
 function validatePayload(payload: unknown): AiFindRequest | null {
   if (!payload || typeof payload !== 'object') {
@@ -143,32 +134,33 @@ export async function POST(request: NextRequest) {
     return createResponse({ error: configError }, { status: 503 });
   }
 
-  const authInfo = await getAuthInfoFromCookie(request);
-  const clientIdentity = getClientIdentity(request, authInfo?.username);
-  const rateLimit = checkAiFindRateLimit({
-    key: clientIdentity,
-    limit: config.dailyLimitPerUser,
+  const guard = await enforceAiFindRequestGuard({
+    request,
+    endpoint: 'find',
+    config,
   });
 
   logAiFindDebug({
     configDebug: config.debug,
     context: debugContext,
-    event: 'rate limit evaluated',
+    event: 'request guard evaluated',
     details: {
-      allowed: rateLimit.allowed,
-      remaining: rateLimit.remaining,
-      resetAt: rateLimit.resetAt,
-      identity: clientIdentity,
+      allowed: guard.ok,
+      username: guard.username,
+      ip: guard.ip,
+      remaining: guard.quota?.remaining,
+      resetAt: guard.quota?.resetAt,
+      reason: guard.quota?.reason,
     },
   });
 
-  if (!rateLimit.allowed) {
+  if (!guard.ok) {
     return createResponse(
       {
-        error: 'AI 找片次数已达到今日上限',
-        resetAt: rateLimit.resetAt,
+        error: guard.error || 'AI 找片请求被拒绝',
+        resetAt: guard.resetAt,
       },
-      { status: 429 }
+      { status: guard.status || 403 }
     );
   }
 

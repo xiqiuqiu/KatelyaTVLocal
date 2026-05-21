@@ -32,6 +32,11 @@ const config = {
   webSearchEndpoint: '',
   webSearchApiKey: '',
   dailyLimitPerUser: 20,
+  dailyLimitPerIp: 60,
+  dailyLimitGlobal: 500,
+  groupDailyLimitPerUser: 100,
+  groupDailyLimitPerIp: 300,
+  groupDailyLimitGlobal: 2500,
   cacheTtlSeconds: 1800,
 } as const;
 

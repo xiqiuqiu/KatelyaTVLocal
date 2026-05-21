@@ -12,6 +12,7 @@ import {
   shouldLogAiFindDebug,
 } from '@/lib/ai-find/debug';
 import { buildAiFindCandidateGroup } from '@/lib/ai-find/orchestrator';
+import { enforceAiFindRequestGuard } from '@/lib/ai-find/request-guard';
 import type {
   AiFindCandidateQuery,
   AiFindMediaType,
@@ -125,6 +126,22 @@ export async function POST(request: NextRequest) {
     return createResponse({ error: configError }, { status: 503 });
   }
 
+  const guard = await enforceAiFindRequestGuard({
+    request,
+    endpoint: 'group',
+    config,
+  });
+
+  if (!guard.ok) {
+    return createResponse(
+      {
+        error: guard.error || 'AI 找片请求被拒绝',
+        resetAt: guard.resetAt,
+      },
+      { status: guard.status || 403 }
+    );
+  }
+
   logAiFindDebug({
     configDebug: config.debug,
     context: debugContext,
@@ -132,6 +149,8 @@ export async function POST(request: NextRequest) {
     details: {
       query: sanitizeAiFindDebugText(body.candidate.query),
       origin: request.headers.get('origin') || requestUrl.origin,
+      username: guard.username,
+      ip: guard.ip,
     },
   });
 

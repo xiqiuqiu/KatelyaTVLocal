@@ -19,6 +19,11 @@ const baseConfig: AiFindConfig = {
   webSearchEndpoint: 'https://search.example.com/query',
   webSearchApiKey: 'search-key',
   dailyLimitPerUser: 20,
+  dailyLimitPerIp: 60,
+  dailyLimitGlobal: 500,
+  groupDailyLimitPerUser: 100,
+  groupDailyLimitPerIp: 300,
+  groupDailyLimitGlobal: 2500,
   cacheTtlSeconds: 1800,
 };
 

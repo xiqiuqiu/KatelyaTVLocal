@@ -299,6 +299,11 @@ KatelyaTV 使用标准 Apple CMS V10 API 格式。在项目根目录创建 `conf
 | `AI_THINKING_MODE`        | 思考模式：`auto`、`enabled`、`disabled` | `auto`                      |
 | `AI_MAX_RESULTS`          | 最大候选搜索词数                       | `5`                          |
 | `AI_DAILY_LIMIT_PER_USER` | 每用户每日使用上限                     | `20`                         |
+| `AI_DAILY_LIMIT_PER_IP`   | 每 IP 每日使用上限                     | `60`                         |
+| `AI_DAILY_LIMIT_GLOBAL`   | 全站每日使用上限                       | `500`                        |
+| `AI_GROUP_DAILY_LIMIT_PER_USER` | 每用户每日候选分组查询上限       | `100`                        |
+| `AI_GROUP_DAILY_LIMIT_PER_IP`   | 每 IP 每日候选分组查询上限       | `300`                        |
+| `AI_GROUP_DAILY_LIMIT_GLOBAL`   | 全站每日候选分组查询上限         | `2500`                       |
 | `AI_CACHE_TTL_SECONDS`    | 搜索缓存时间                           | `1800`                       |
 
 ### Cloudflare 播放源优选

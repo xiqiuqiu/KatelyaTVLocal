@@ -70,6 +70,31 @@ export function getAiFindConfig(
     webSearchEndpoint: env.AI_WEB_SEARCH_ENDPOINT?.trim() || '',
     webSearchApiKey: env.AI_WEB_SEARCH_API_KEY?.trim() || '',
     dailyLimitPerUser: parseNumber(env.AI_DAILY_LIMIT_PER_USER, 20, 1, 1000),
+    dailyLimitPerIp: parseNumber(env.AI_DAILY_LIMIT_PER_IP, 60, 1, 5000),
+    dailyLimitGlobal: parseNumber(
+      env.AI_DAILY_LIMIT_GLOBAL,
+      500,
+      1,
+      100000
+    ),
+    groupDailyLimitPerUser: parseNumber(
+      env.AI_GROUP_DAILY_LIMIT_PER_USER,
+      100,
+      1,
+      10000
+    ),
+    groupDailyLimitPerIp: parseNumber(
+      env.AI_GROUP_DAILY_LIMIT_PER_IP,
+      300,
+      1,
+      50000
+    ),
+    groupDailyLimitGlobal: parseNumber(
+      env.AI_GROUP_DAILY_LIMIT_GLOBAL,
+      2500,
+      1,
+      500000
+    ),
     cacheTtlSeconds: parseNumber(env.AI_CACHE_TTL_SECONDS, 1800, 30, 86400),
   };
 }

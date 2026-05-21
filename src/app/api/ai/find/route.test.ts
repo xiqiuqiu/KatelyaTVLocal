@@ -1,8 +1,7 @@
 import { getAiFindConfig } from '@/lib/ai-find/config';
 import { AiFindUserFacingError } from '@/lib/ai-find/errors';
 import { runAiFind } from '@/lib/ai-find/orchestrator';
-import { checkAiFindRateLimit } from '@/lib/ai-find/rate-limit';
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import { enforceAiFindRequestGuard } from '@/lib/ai-find/request-guard';
 
 class MockHeaders {
   private readonly values = new Map<string, string>();
@@ -102,12 +101,8 @@ jest.mock('@/lib/ai-find/orchestrator', () => ({
   runAiFind: jest.fn(),
 }));
 
-jest.mock('@/lib/ai-find/rate-limit', () => ({
-  checkAiFindRateLimit: jest.fn(),
-}));
-
-jest.mock('@/lib/auth', () => ({
-  getAuthInfoFromCookie: jest.fn(),
+jest.mock('@/lib/ai-find/request-guard', () => ({
+  enforceAiFindRequestGuard: jest.fn(),
 }));
 
 jest.mock('@/lib/cors', () => ({
@@ -120,10 +115,10 @@ describe('AI find route', () => {
     typeof getAiFindConfig
   >;
   const mockedRunAiFind = runAiFind as jest.MockedFunction<typeof runAiFind>;
-  const mockedCheckAiFindRateLimit =
-    checkAiFindRateLimit as jest.MockedFunction<typeof checkAiFindRateLimit>;
-  const mockedGetAuthInfoFromCookie =
-    getAuthInfoFromCookie as jest.MockedFunction<typeof getAuthInfoFromCookie>;
+  const mockedEnforceAiFindRequestGuard =
+    enforceAiFindRequestGuard as jest.MockedFunction<
+      typeof enforceAiFindRequestGuard
+    >;
 
   beforeAll(() => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -148,7 +143,17 @@ describe('AI find route', () => {
       webSearchEndpoint: '',
       webSearchApiKey: '',
       dailyLimitPerUser: 20,
+      dailyLimitPerIp: 60,
+      dailyLimitGlobal: 500,
+      groupDailyLimitPerUser: 100,
+      groupDailyLimitPerIp: 300,
+      groupDailyLimitGlobal: 2500,
       cacheTtlSeconds: 1800,
+    });
+    mockedEnforceAiFindRequestGuard.mockResolvedValue({
+      ok: true,
+      username: 'alice',
+      ip: '203.0.113.10',
     });
   });
 
@@ -173,8 +178,112 @@ describe('AI find route', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'AI find assistant is disabled',
     });
-    expect(mockedGetAuthInfoFromCookie).not.toHaveBeenCalled();
-    expect(mockedCheckAiFindRateLimit).not.toHaveBeenCalled();
+    expect(mockedEnforceAiFindRequestGuard).not.toHaveBeenCalled();
+    expect(mockedRunAiFind).not.toHaveBeenCalled();
+  });
+
+  it('rejects unauthenticated AI find requests before running AI', async () => {
+    mockedGetAiFindConfig.mockReturnValue({
+      enabled: true,
+      baseUrl: 'https://ai.example/v1',
+      apiKey: 'key',
+      model: 'model',
+      debug: false,
+      temperature: 0.2,
+      maxToolRounds: 4,
+      requestTimeoutMs: 20000,
+      maxTokens: 800,
+      thinkingMode: 'auto',
+      maxResults: 5,
+      webSearchEnabled: false,
+      webSearchProvider: 'none',
+      webSearchEndpoint: '',
+      webSearchApiKey: '',
+      dailyLimitPerUser: 20,
+      dailyLimitPerIp: 60,
+      dailyLimitGlobal: 500,
+      groupDailyLimitPerUser: 100,
+      groupDailyLimitPerIp: 300,
+      groupDailyLimitGlobal: 2500,
+      cacheTtlSeconds: 1800,
+    });
+    mockedEnforceAiFindRequestGuard.mockResolvedValue({
+      ok: false,
+      ip: '203.0.113.10',
+      status: 401,
+      error: '请先登录后再使用 AI 找片',
+    });
+
+    const response = await POST(
+      new Request('https://app.example.com/api/ai/find', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: '想看节奏快一点的国产悬疑剧',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: '请先登录后再使用 AI 找片',
+    });
+    expect(mockedRunAiFind).not.toHaveBeenCalled();
+  });
+
+  it('rejects daily quota exhaustion before running AI', async () => {
+    mockedGetAiFindConfig.mockReturnValue({
+      enabled: true,
+      baseUrl: 'https://ai.example/v1',
+      apiKey: 'key',
+      model: 'model',
+      debug: false,
+      temperature: 0.2,
+      maxToolRounds: 4,
+      requestTimeoutMs: 20000,
+      maxTokens: 800,
+      thinkingMode: 'auto',
+      maxResults: 5,
+      webSearchEnabled: false,
+      webSearchProvider: 'none',
+      webSearchEndpoint: '',
+      webSearchApiKey: '',
+      dailyLimitPerUser: 20,
+      dailyLimitPerIp: 60,
+      dailyLimitGlobal: 500,
+      groupDailyLimitPerUser: 100,
+      groupDailyLimitPerIp: 300,
+      groupDailyLimitGlobal: 2500,
+      cacheTtlSeconds: 1800,
+    });
+    mockedEnforceAiFindRequestGuard.mockResolvedValue({
+      ok: false,
+      username: 'alice',
+      ip: '203.0.113.10',
+      status: 429,
+      error: 'AI 找片次数已达到今日上限',
+      resetAt: 1779292800000,
+    });
+
+    const response = await POST(
+      new Request('https://app.example.com/api/ai/find', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: '想看节奏快一点的国产悬疑剧',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toEqual({
+      error: 'AI 找片次数已达到今日上限',
+      resetAt: 1779292800000,
+    });
     expect(mockedRunAiFind).not.toHaveBeenCalled();
   });
 
@@ -196,13 +305,12 @@ describe('AI find route', () => {
       webSearchEndpoint: '',
       webSearchApiKey: '',
       dailyLimitPerUser: 20,
+      dailyLimitPerIp: 60,
+      dailyLimitGlobal: 500,
+      groupDailyLimitPerUser: 100,
+      groupDailyLimitPerIp: 300,
+      groupDailyLimitGlobal: 2500,
       cacheTtlSeconds: 1800,
-    });
-    mockedGetAuthInfoFromCookie.mockResolvedValue(null as never);
-    mockedCheckAiFindRateLimit.mockReturnValue({
-      allowed: true,
-      remaining: 19,
-      resetAt: Date.now() + 1000,
     });
     mockedRunAiFind.mockRejectedValue(new Error('The operation was aborted'));
 
@@ -242,13 +350,12 @@ describe('AI find route', () => {
       webSearchEndpoint: '',
       webSearchApiKey: '',
       dailyLimitPerUser: 20,
+      dailyLimitPerIp: 60,
+      dailyLimitGlobal: 500,
+      groupDailyLimitPerUser: 100,
+      groupDailyLimitPerIp: 300,
+      groupDailyLimitGlobal: 2500,
       cacheTtlSeconds: 1800,
-    });
-    mockedGetAuthInfoFromCookie.mockResolvedValue(null as never);
-    mockedCheckAiFindRateLimit.mockReturnValue({
-      allowed: true,
-      remaining: 19,
-      resetAt: Date.now() + 1000,
     });
     mockedRunAiFind.mockRejectedValue(
       new AiFindUserFacingError({
@@ -294,13 +401,12 @@ describe('AI find route', () => {
       webSearchEndpoint: '',
       webSearchApiKey: '',
       dailyLimitPerUser: 20,
+      dailyLimitPerIp: 60,
+      dailyLimitGlobal: 500,
+      groupDailyLimitPerUser: 100,
+      groupDailyLimitPerIp: 300,
+      groupDailyLimitGlobal: 2500,
       cacheTtlSeconds: 1800,
-    });
-    mockedGetAuthInfoFromCookie.mockResolvedValue(null as never);
-    mockedCheckAiFindRateLimit.mockReturnValue({
-      allowed: true,
-      remaining: 19,
-      resetAt: Date.now() + 1000,
     });
     mockedRunAiFind.mockResolvedValue({
       answer: 'ok',

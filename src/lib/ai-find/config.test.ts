@@ -10,6 +10,10 @@ describe('AI find config', () => {
     expect(config.requestTimeoutMs).toBe(20000);
     expect(config.maxTokens).toBe(800);
     expect(config.thinkingMode).toBe('auto');
+    expect(config.dailyLimitPerUser).toBe(20);
+    expect(config.dailyLimitPerIp).toBe(60);
+    expect(config.dailyLimitGlobal).toBe(500);
+    expect(config.groupDailyLimitPerUser).toBe(100);
   });
 
   it('normalizes configured values', () => {
@@ -22,6 +26,10 @@ describe('AI find config', () => {
       AI_REQUEST_TIMEOUT_MS: '1',
       AI_MAX_TOKENS: '12000',
       AI_THINKING_MODE: 'enabled',
+      AI_DAILY_LIMIT_PER_USER: '0',
+      AI_DAILY_LIMIT_PER_IP: '120',
+      AI_DAILY_LIMIT_GLOBAL: '999999999',
+      AI_GROUP_DAILY_LIMIT_PER_USER: '50',
     });
 
     expect(config.enabled).toBe(true);
@@ -30,6 +38,10 @@ describe('AI find config', () => {
     expect(config.requestTimeoutMs).toBe(3000);
     expect(config.maxTokens).toBe(4096);
     expect(config.thinkingMode).toBe('enabled');
+    expect(config.dailyLimitPerUser).toBe(1);
+    expect(config.dailyLimitPerIp).toBe(120);
+    expect(config.dailyLimitGlobal).toBe(100000);
+    expect(config.groupDailyLimitPerUser).toBe(50);
   });
 
   it('caps configured request timeout below edge runtime limits', () => {

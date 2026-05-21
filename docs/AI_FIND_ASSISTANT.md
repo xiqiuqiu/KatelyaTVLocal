@@ -25,6 +25,11 @@ AI_MAX_TOKENS=800
 AI_THINKING_MODE=auto
 AI_MAX_RESULTS=5
 AI_DAILY_LIMIT_PER_USER=20
+AI_DAILY_LIMIT_PER_IP=60
+AI_DAILY_LIMIT_GLOBAL=500
+AI_GROUP_DAILY_LIMIT_PER_USER=100
+AI_GROUP_DAILY_LIMIT_PER_IP=300
+AI_GROUP_DAILY_LIMIT_GLOBAL=2500
 AI_CACHE_TTL_SECONDS=1800
 ```
 
@@ -38,10 +43,13 @@ The model request also uses JSON output mode so candidate parsing does not depen
 
 `AI_FIND_DEBUG=true` enables server-side debug logs for candidate generation and degraded fallbacks.
 
+AI find quota state is stored in D1 table `ai_find_usage_daily`. Both `/api/ai/find` and `/api/ai/find/group` require a signed login session before they perform AI, source-search, or playback-probe work. `/api/ai/find` uses the `AI_DAILY_LIMIT_*` values. `/api/ai/find/group` uses the `AI_GROUP_DAILY_LIMIT_*` values because one user-facing AI search can fan out into several candidate group lookups.
+
 ## Safety Rules
 
 - `AI_API_KEY` is server-only.
-- The browser only calls `/api/ai/find`.
+- The browser only calls `/api/ai/find` and `/api/ai/find/group`.
+- Both AI find endpoints require login.
 - The model cannot create playable cards directly.
 - AI-generated candidates that do not exist in KatelyaTV source search are shown as not found.
-- Timeout, result count, and daily usage are capped.
+- Timeout, result count, and D1-backed daily usage are capped.
