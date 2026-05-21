@@ -92,6 +92,79 @@ describe('AI find usage report', () => {
         updatedAt: now,
       },
     ]);
+    expect(report.topUsers).toEqual([
+      {
+        subject: 'alice',
+        scope: 'user',
+        endpoint: 'find',
+        count: 3,
+        updatedAt: now,
+      },
+    ]);
+    expect(report.topIps).toEqual([
+      {
+        subject: '203.0.113.10',
+        scope: 'ip',
+        endpoint: 'group',
+        count: 8,
+        updatedAt: now - 1000,
+      },
+    ]);
+  });
+
+  it('keeps user and IP rankings independently limited', async () => {
+    const now = Date.UTC(2026, 4, 21, 9, 0, 0);
+    const db = createDb([
+      {
+        scope: 'ai-find:group:ip',
+        subject: '203.0.113.10',
+        day_key: '2026-05-21',
+        count: 99,
+        updated_at: now,
+      },
+      {
+        scope: 'ai-find:find:user',
+        subject: 'alice',
+        day_key: '2026-05-21',
+        count: 3,
+        updated_at: now,
+      },
+      {
+        scope: 'ai-find:find:user',
+        subject: 'bob',
+        day_key: '2026-05-21',
+        count: 2,
+        updated_at: now,
+      },
+    ]);
+
+    const report = await getAiFindUsageReport({
+      env: { DB: db },
+      now,
+      days: 1,
+      subjectLimit: 1,
+    });
+
+    expect(report.topSubjects).toHaveLength(1);
+    expect(report.topSubjects[0].scope).toBe('ip');
+    expect(report.topUsers).toEqual([
+      {
+        subject: 'alice',
+        scope: 'user',
+        endpoint: 'find',
+        count: 3,
+        updatedAt: now,
+      },
+    ]);
+    expect(report.topIps).toEqual([
+      {
+        subject: '203.0.113.10',
+        scope: 'ip',
+        endpoint: 'group',
+        count: 99,
+        updatedAt: now,
+      },
+    ]);
   });
 
   it('fails closed when D1 is missing', async () => {

@@ -103,6 +103,8 @@ interface AiUsageReport {
     };
   };
   topSubjects: AiUsageSubject[];
+  topUsers: AiUsageSubject[];
+  topIps: AiUsageSubject[];
 }
 
 // 可折叠标签组件
@@ -1691,14 +1693,73 @@ const AiUsageMonitor = () => {
     });
   };
 
-  const scopeLabel = (scope: AiUsageSubject['scope']) => {
-    if (scope === 'user') return '用户';
-    if (scope === 'ip') return 'IP';
-    return '全站';
-  };
-
   const endpointLabel = (endpoint: AiUsageSubject['endpoint']) =>
     endpoint === 'find' ? 'AI 识别' : '结果加载';
+
+  const renderSubjectTable = ({
+    title,
+    emptyText,
+    subjects,
+  }: {
+    title: string;
+    emptyText: string;
+    subjects: AiUsageSubject[];
+  }) => (
+    <div className='space-y-2'>
+      <h5 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+        {title}
+      </h5>
+      <div className='border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto'>
+        <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
+          <thead className='bg-gray-50 dark:bg-gray-900'>
+            <tr>
+              <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                对象
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                接口
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                今天次数
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                最近更新
+              </th>
+            </tr>
+          </thead>
+          <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
+            {subjects.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={4}
+                  className='px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400'
+                >
+                  {emptyText}
+                </td>
+              </tr>
+            ) : (
+              subjects.map((item) => (
+                <tr key={`${item.scope}:${item.endpoint}:${item.subject}`}>
+                  <td className='px-4 py-3 text-sm text-gray-900 dark:text-gray-100'>
+                    {item.subject}
+                  </td>
+                  <td className='px-4 py-3 text-sm text-gray-700 dark:text-gray-300'>
+                    {endpointLabel(item.endpoint)}
+                  </td>
+                  <td className='px-4 py-3 text-sm text-right font-medium text-gray-900 dark:text-gray-100'>
+                    {item.count}
+                  </td>
+                  <td className='px-4 py-3 text-sm text-gray-700 dark:text-gray-300'>
+                    {formatTime(item.updatedAt)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 
   return (
     <div className='space-y-5'>
@@ -1800,62 +1861,17 @@ const AiUsageMonitor = () => {
             </table>
           </div>
 
-          <div className='border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto'>
-            <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
-              <thead className='bg-gray-50 dark:bg-gray-900'>
-                <tr>
-                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    对象
-                  </th>
-                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    类型
-                  </th>
-                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    接口
-                  </th>
-                  <th className='px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    今天次数
-                  </th>
-                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    最近更新
-                  </th>
-                </tr>
-              </thead>
-              <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
-                {report.topSubjects.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className='px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400'
-                    >
-                      今天还没有用户或 IP 用量记录
-                    </td>
-                  </tr>
-                ) : (
-                  report.topSubjects.map((item) => (
-                    <tr
-                      key={`${item.scope}:${item.endpoint}:${item.subject}`}
-                    >
-                      <td className='px-4 py-3 text-sm text-gray-900 dark:text-gray-100'>
-                        {item.subject}
-                      </td>
-                      <td className='px-4 py-3 text-sm text-gray-700 dark:text-gray-300'>
-                        {scopeLabel(item.scope)}
-                      </td>
-                      <td className='px-4 py-3 text-sm text-gray-700 dark:text-gray-300'>
-                        {endpointLabel(item.endpoint)}
-                      </td>
-                      <td className='px-4 py-3 text-sm text-right font-medium text-gray-900 dark:text-gray-100'>
-                        {item.count}
-                      </td>
-                      <td className='px-4 py-3 text-sm text-gray-700 dark:text-gray-300'>
-                        {formatTime(item.updatedAt)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <div className='grid grid-cols-1 xl:grid-cols-2 gap-4'>
+            {renderSubjectTable({
+              title: '用户用量排行',
+              emptyText: '今天还没有用户用量记录',
+              subjects: report.topUsers || [],
+            })}
+            {renderSubjectTable({
+              title: 'IP 用量排行',
+              emptyText: '今天还没有 IP 用量记录',
+              subjects: report.topIps || [],
+            })}
           </div>
         </>
       )}

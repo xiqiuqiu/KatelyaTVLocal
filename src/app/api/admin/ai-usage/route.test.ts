@@ -75,6 +75,8 @@ describe('admin AI usage route', () => {
         group: { total: 0, global: 0 },
       },
       topSubjects: [],
+      topUsers: [],
+      topIps: [],
     });
   });
 

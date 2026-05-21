@@ -49,6 +49,8 @@ export interface AiFindUsageReport {
     };
   };
   topSubjects: AiFindUsageSubject[];
+  topUsers: AiFindUsageSubject[];
+  topIps: AiFindUsageSubject[];
 }
 
 export interface AiFindUsageReportInput {
@@ -216,6 +218,26 @@ export async function getAiFindUsageReport(
       (row) => row.endpoint === 'group' && row.scope === 'global'
     )?.count ?? 0;
 
+  const todaySubjects = todayRows
+    .filter((row) => row.scope !== 'global')
+    .sort((a, b) => b.count - a.count || b.updatedAt - a.updatedAt);
+  const mapSubject = (row: AiFindUsageRow): AiFindUsageSubject => ({
+    subject: row.subject,
+    scope: row.scope,
+    endpoint: row.endpoint,
+    count: row.count,
+    updatedAt: row.updatedAt,
+  });
+  const topSubjects = todaySubjects.slice(0, subjectLimit).map(mapSubject);
+  const topUsers = todaySubjects
+    .filter((row) => row.scope === 'user')
+    .slice(0, subjectLimit)
+    .map(mapSubject);
+  const topIps = todaySubjects
+    .filter((row) => row.scope === 'ip')
+    .slice(0, subjectLimit)
+    .map(mapSubject);
+
   return {
     generatedAt: now,
     days: daySummaries,
@@ -230,16 +252,8 @@ export async function getAiFindUsageReport(
         global: todayGroupGlobal,
       },
     },
-    topSubjects: todayRows
-      .filter((row) => row.scope !== 'global')
-      .sort((a, b) => b.count - a.count || b.updatedAt - a.updatedAt)
-      .slice(0, subjectLimit)
-      .map((row) => ({
-        subject: row.subject,
-        scope: row.scope,
-        endpoint: row.endpoint,
-        count: row.count,
-        updatedAt: row.updatedAt,
-      })),
+    topSubjects,
+    topUsers,
+    topIps,
   };
 }
