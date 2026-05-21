@@ -23,8 +23,15 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ChevronDown, ChevronUp, Settings, Users, Video } from 'lucide-react';
-import { GripVertical } from 'lucide-react';
+import {
+  Activity,
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  Settings,
+  Users,
+  Video,
+} from 'lucide-react';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import Swal from 'sweetalert2';
 
@@ -64,6 +71,38 @@ interface DataSource {
   detail?: string;
   disabled?: boolean;
   from: 'config' | 'custom';
+}
+
+interface AiUsageSummary {
+  dayKey: string;
+  find: number;
+  group: number;
+  total: number;
+}
+
+interface AiUsageSubject {
+  subject: string;
+  scope: 'user' | 'ip' | 'global';
+  endpoint: 'find' | 'group';
+  count: number;
+  updatedAt: number;
+}
+
+interface AiUsageReport {
+  generatedAt: number;
+  days: AiUsageSummary[];
+  today: {
+    dayKey: string;
+    find: {
+      total: number;
+      global: number;
+    };
+    group: {
+      total: number;
+      global: number;
+    };
+  };
+  topSubjects: AiUsageSubject[];
 }
 
 // 可折叠标签组件
@@ -1610,6 +1649,220 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
   );
 };
 
+const AiUsageMonitor = () => {
+  const [report, setReport] = useState<AiUsageReport | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchUsage = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch('/api/admin/ai-usage?days=7&limit=20');
+      const data = (await response.json().catch(() => ({}))) as
+        | AiUsageReport
+        | { error?: string; details?: string };
+
+      if (!response.ok) {
+        throw new Error(
+          'error' in data
+            ? data.details || data.error || `获取失败: ${response.status}`
+            : `获取失败: ${response.status}`
+        );
+      }
+
+      setReport(data as AiUsageReport);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '获取 AI 用量失败';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUsage();
+  }, [fetchUsage]);
+
+  const formatTime = (value: number) => {
+    if (!value) return '-';
+    return new Date(value).toLocaleString('zh-CN', {
+      hour12: false,
+    });
+  };
+
+  const scopeLabel = (scope: AiUsageSubject['scope']) => {
+    if (scope === 'user') return '用户';
+    if (scope === 'ip') return 'IP';
+    return '全站';
+  };
+
+  const endpointLabel = (endpoint: AiUsageSubject['endpoint']) =>
+    endpoint === 'find' ? 'AI 识别' : '结果加载';
+
+  return (
+    <div className='space-y-5'>
+      <div className='flex items-center justify-between gap-3 flex-wrap'>
+        <div>
+          <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+            AI 找片用量
+          </h4>
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            这里展示每日调用量和今天占用最高的用户或 IP。
+          </p>
+        </div>
+        <button
+          onClick={fetchUsage}
+          disabled={loading}
+          className='px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors'
+        >
+          {loading ? '刷新中…' : '刷新'}
+        </button>
+      </div>
+
+      {error && (
+        <div className='rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'>
+          {error}
+        </div>
+      )}
+
+      {!report && !error && (
+        <div className='text-sm text-gray-500 dark:text-gray-400'>
+          {loading ? '正在读取 AI 用量...' : '暂无用量数据'}
+        </div>
+      )}
+
+      {report && (
+        <>
+          <div className='grid grid-cols-1 sm:grid-cols-3 gap-3'>
+            <div className='rounded-lg border border-gray-200 dark:border-gray-700 p-4'>
+              <div className='text-xs text-gray-500 dark:text-gray-400'>
+                今天 AI 识别
+              </div>
+              <div className='mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100'>
+                {report.today.find.total}
+              </div>
+            </div>
+            <div className='rounded-lg border border-gray-200 dark:border-gray-700 p-4'>
+              <div className='text-xs text-gray-500 dark:text-gray-400'>
+                今天结果加载
+              </div>
+              <div className='mt-2 text-2xl font-semibold text-gray-900 dark:text-gray-100'>
+                {report.today.group.total}
+              </div>
+            </div>
+            <div className='rounded-lg border border-gray-200 dark:border-gray-700 p-4'>
+              <div className='text-xs text-gray-500 dark:text-gray-400'>
+                更新时间
+              </div>
+              <div className='mt-2 text-sm font-medium text-gray-900 dark:text-gray-100'>
+                {formatTime(report.generatedAt)}
+              </div>
+            </div>
+          </div>
+
+          <div className='border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto'>
+            <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
+              <thead className='bg-gray-50 dark:bg-gray-900'>
+                <tr>
+                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    日期
+                  </th>
+                  <th className='px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    AI 识别
+                  </th>
+                  <th className='px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    结果加载
+                  </th>
+                  <th className='px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    合计
+                  </th>
+                </tr>
+              </thead>
+              <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
+                {report.days.map((day) => (
+                  <tr key={day.dayKey}>
+                    <td className='px-4 py-3 text-sm text-gray-900 dark:text-gray-100'>
+                      {day.dayKey}
+                    </td>
+                    <td className='px-4 py-3 text-sm text-right text-gray-700 dark:text-gray-300'>
+                      {day.find}
+                    </td>
+                    <td className='px-4 py-3 text-sm text-right text-gray-700 dark:text-gray-300'>
+                      {day.group}
+                    </td>
+                    <td className='px-4 py-3 text-sm text-right font-medium text-gray-900 dark:text-gray-100'>
+                      {day.total}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className='border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto'>
+            <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
+              <thead className='bg-gray-50 dark:bg-gray-900'>
+                <tr>
+                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    对象
+                  </th>
+                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    类型
+                  </th>
+                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    接口
+                  </th>
+                  <th className='px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    今天次数
+                  </th>
+                  <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    最近更新
+                  </th>
+                </tr>
+              </thead>
+              <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
+                {report.topSubjects.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className='px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400'
+                    >
+                      今天还没有用户或 IP 用量记录
+                    </td>
+                  </tr>
+                ) : (
+                  report.topSubjects.map((item) => (
+                    <tr
+                      key={`${item.scope}:${item.endpoint}:${item.subject}`}
+                    >
+                      <td className='px-4 py-3 text-sm text-gray-900 dark:text-gray-100'>
+                        {item.subject}
+                      </td>
+                      <td className='px-4 py-3 text-sm text-gray-700 dark:text-gray-300'>
+                        {scopeLabel(item.scope)}
+                      </td>
+                      <td className='px-4 py-3 text-sm text-gray-700 dark:text-gray-300'>
+                        {endpointLabel(item.endpoint)}
+                      </td>
+                      <td className='px-4 py-3 text-sm text-right font-medium text-gray-900 dark:text-gray-100'>
+                        {item.count}
+                      </td>
+                      <td className='px-4 py-3 text-sm text-gray-700 dark:text-gray-300'>
+                        {formatTime(item.updatedAt)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 function AdminPageClient() {
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1619,6 +1872,7 @@ function AdminPageClient() {
     userConfig: false,
     videoSource: false,
     siteConfig: false,
+    aiUsage: false,
   });
 
   // 获取管理员配置
@@ -1762,6 +2016,21 @@ function AdminPageClient() {
                 role={role}
                 refreshConfig={fetchConfig}
               />
+            </CollapsibleTab>
+
+            {/* AI 用量监控标签 */}
+            <CollapsibleTab
+              title='AI 用量监控'
+              icon={
+                <Activity
+                  size={20}
+                  className='text-gray-600 dark:text-gray-400'
+                />
+              }
+              isExpanded={expandedTabs.aiUsage}
+              onToggle={() => toggleTab('aiUsage')}
+            >
+              <AiUsageMonitor />
             </CollapsibleTab>
 
             {/* 视频源配置标签 */}

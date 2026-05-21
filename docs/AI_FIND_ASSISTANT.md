@@ -45,6 +45,8 @@ The model request also uses JSON output mode so candidate parsing does not depen
 
 AI find quota state is stored in D1 table `ai_find_usage_daily`. Both `/api/ai/find` and `/api/ai/find/group` require a signed login session before they perform AI, source-search, or playback-probe work. `/api/ai/find` uses the `AI_DAILY_LIMIT_*` values. `/api/ai/find/group` uses the `AI_GROUP_DAILY_LIMIT_*` values because one user-facing AI search can fan out into several candidate group lookups.
 
+Admins can review AI find usage in `/admin` under `AI 用量监控`. The panel reads the same D1 quota table through `/api/admin/ai-usage` and shows recent daily totals plus today's highest user/IP usage.
+
 ## Safety Rules
 
 - `AI_API_KEY` is server-only.
@@ -53,3 +55,4 @@ AI find quota state is stored in D1 table `ai_find_usage_daily`. Both `/api/ai/f
 - The model cannot create playable cards directly.
 - AI-generated candidates that do not exist in KatelyaTV source search are shown as not found.
 - Timeout, result count, and D1-backed daily usage are capped.
+- Admin usage reporting is read-only and does not expose `AI_API_KEY`.
