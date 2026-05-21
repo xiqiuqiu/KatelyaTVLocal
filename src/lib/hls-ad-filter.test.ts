@@ -66,6 +66,56 @@ function createRyplayDmcKnownAdCase(): string {
   ].join('\n');
 }
 
+function createRyplayCasinoShortGroupCase(): string {
+  return [
+    '#EXTM3U',
+    '#EXT-X-PLAYLIST-TYPE:VOD',
+    '#EXT-X-VERSION:3',
+    '#EXT-X-MEDIA-SEQUENCE:0',
+    '#EXT-X-TARGETDURATION:9',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:4.583333,',
+    'content-before-1.ts',
+    '#EXTINF:4.166667,',
+    'content-before-2.ts',
+    '#EXTINF:4.166667,',
+    'content-before-3.ts',
+    '#EXTINF:2.916667,',
+    'content-before-4.ts',
+    '#EXTINF:4.166667,',
+    'content-before-5.ts',
+    '#EXTINF:1.166667,',
+    'content-before-6.ts',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:4.000000,',
+    'casino-ad-1.ts',
+    '#EXTINF:5.480000,',
+    'casino-ad-2.ts',
+    '#EXTINF:4.000000,',
+    'casino-ad-3.ts',
+    '#EXTINF:3.240000,',
+    'casino-ad-4.ts',
+    '#EXTINF:4.000000,',
+    'casino-ad-5.ts',
+    '#EXTINF:1.280000,',
+    'casino-ad-6.ts',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:4.166667,',
+    'content-after-1.ts',
+    '#EXTINF:4.166667,',
+    'content-after-2.ts',
+    '#EXTINF:4.166667,',
+    'content-after-3.ts',
+    '#EXTINF:2.958333,',
+    'content-after-4.ts',
+    '#EXTINF:8.125000,',
+    'content-after-5.ts',
+    '#EXTINF:3.625000,',
+    'content-after-6.ts',
+    '#EXT-X-ENDLIST',
+  ].join('\n');
+}
+
 describe('filterAdsFromM3U8', () => {
   it('records the ruyi ryplay 22-second midroll case in the known rule library', () => {
     expect(
@@ -377,6 +427,37 @@ describe('filterAdsFromM3U8', () => {
     ]);
     expect(formatM3U8AdFilterDebugMessage(debugInfo)).toContain(
       'ruyi-ryplay-22s-midroll-v1'
+    );
+  });
+
+  it('removes the ruyi ryplay casino midroll even when neighboring content groups are short', () => {
+    const input = createRyplayCasinoShortGroupCase();
+    const filtered = filterAdsFromM3U8(
+      input,
+      'https://cdn.ryplay12.com/20260512/36030_e8d329b2/2000k/hls/index.m3u8'
+    );
+
+    expect(filtered).toContain('content-before-1.ts');
+    expect(filtered).toContain('content-after-6.ts');
+    expect(filtered).not.toContain('casino-ad-1.ts');
+    expect(filtered).not.toContain('casino-ad-6.ts');
+
+    const debugInfo = getM3U8AdFilterDebugInfo(
+      input,
+      filtered,
+      'https://cdn.ryplay12.com/20260512/36030_e8d329b2/2000k/hls/index.m3u8'
+    );
+
+    expect(debugInfo.summary.removedBlocks).toEqual([
+      expect.objectContaining({
+        reason: 'known-rule',
+        ruleId: 'ruyi-ryplay-casino-22s-midroll-v1',
+        segmentCount: 6,
+        durationSeconds: 22,
+      }),
+    ]);
+    expect(formatM3U8AdFilterDebugMessage(debugInfo)).toContain(
+      'ruyi-ryplay-casino-22s-midroll-v1'
     );
   });
 

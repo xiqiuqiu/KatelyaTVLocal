@@ -79,6 +79,28 @@ function isShortVariableSixSegmentBlock(block: KnownHlsAdRuleBlock): boolean {
   return maxDuration <= 6 && minDuration <= 2;
 }
 
+function durationCloseTo(
+  actualDuration: number,
+  expectedDuration: number
+): boolean {
+  return Math.abs(actualDuration - expectedDuration) <= 0.05;
+}
+
+function hasRyplayCasinoDurationFingerprint(
+  block: KnownHlsAdRuleBlock
+): boolean {
+  const casinoAdDurations = [4, 5.48, 4, 3.24, 4, 1.28];
+
+  return (
+    block.segmentCount === casinoAdDurations.length &&
+    block.durationSeconds >= 21.8 &&
+    block.durationSeconds <= 22.2 &&
+    casinoAdDurations.every((duration, index) =>
+      durationCloseTo(block.segmentDurations[index], duration)
+    )
+  );
+}
+
 export const KNOWN_HLS_AD_RULES: KnownHlsAdRule[] = [
   {
     id: 'ruyi-ryplay-22s-midroll-v1',
@@ -105,6 +127,26 @@ export const KNOWN_HLS_AD_RULES: KnownHlsAdRule[] = [
         isStableSixSegmentContentBlock(context.blocks[block.blockIndex - 1]) &&
         isStableSixSegmentContentBlock(context.blocks[block.blockIndex + 1])
       );
+    },
+  },
+  {
+    id: 'ruyi-ryplay-casino-22s-midroll-v1',
+    name: '如意 ryplay 22 秒博彩中插广告',
+    description:
+      '如意资源 ryplay 新剧集会把正片也切成 20 多秒短组，博彩贴片可通过 4/5.48/4/3.24/4/1.28 秒的 6 片段时长指纹识别。',
+    matches(block, context) {
+      if (!hasRyplayContext(block, context)) {
+        return false;
+      }
+
+      if (
+        block.blockIndex === 0 ||
+        block.blockIndex === context.blocks.length - 1
+      ) {
+        return false;
+      }
+
+      return hasRyplayCasinoDurationFingerprint(block);
     },
   },
 ];
