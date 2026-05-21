@@ -16,7 +16,6 @@ import {
 } from '@/lib/cast';
 import {
   deleteFavorite,
-  deletePlayRecord,
   generateStorageKey,
   getAllPlayRecords,
   isFavorited,
@@ -29,6 +28,7 @@ import {
   formatM3U8AdFilterDebugMessage,
   getM3U8AdFilterDebugInfo,
 } from '@/lib/hls-ad-filter';
+import { getSourceSwitchResumePlan } from '@/lib/playback-source-switch';
 import { getBrowserProbeBudget } from '@/lib/source-preference';
 import {
   PlaybackFeedbackInput,
@@ -196,6 +196,7 @@ function PlayPageClient() {
   const originalVideoUrlRef = useRef('');
   const videoUrlRef = useRef('');
   const sourceFallbackAttemptedRef = useRef(false);
+  const sourceSwitchSavePendingRef = useRef(false);
 
   // 同步最新值到 refs
   useEffect(() => {
@@ -1100,23 +1101,11 @@ function PlayPageClient() {
       // 显示换源加载状态
       setVideoLoadingStage('sourceChanging');
       setIsVideoLoading(true);
+      sourceSwitchSavePendingRef.current = false;
 
       // 记录当前播放进度（仅在同一集数切换时恢复）
       const currentPlayTime = artPlayerRef.current?.currentTime || 0;
       console.log('换源前当前播放时间:', currentPlayTime);
-
-      // 清除前一个历史记录
-      if (currentSourceRef.current && currentIdRef.current) {
-        try {
-          await deletePlayRecord(
-            currentSourceRef.current,
-            currentIdRef.current
-          );
-          console.log('已清除前一个播放记录');
-        } catch (err) {
-          console.error('清除播放记录失败:', err);
-        }
-      }
 
       const newDetail = availableSources.find(
         (source) => source.source === newSource && source.id === newId
@@ -1144,15 +1133,14 @@ function PlayPageClient() {
       sourceFallbackAttemptedRef.current = false;
       setPlaybackMode('direct');
 
-      // 如果仍然是同一集数且播放进度有效，则在播放器就绪后恢复到原始进度
-      if (targetIndex !== currentEpisodeIndex) {
-        resumeTimeRef.current = 0;
-      } else if (
-        (!resumeTimeRef.current || resumeTimeRef.current === 0) &&
-        currentPlayTime > 1
-      ) {
-        resumeTimeRef.current = currentPlayTime;
-      }
+      const resumePlan = getSourceSwitchResumePlan({
+        currentEpisodeIndex,
+        targetEpisodeIndex: targetIndex,
+        currentPlayTime,
+        existingResumeTime: resumeTimeRef.current,
+      });
+      resumeTimeRef.current = resumePlan.resumeTime;
+      sourceSwitchSavePendingRef.current = resumePlan.saveAfterCanPlay;
 
       // 更新URL参数（不刷新页面）
       const newUrl = new URL(window.location.href);
@@ -1786,6 +1774,13 @@ function PlayPageClient() {
 
           // 隐藏换源加载状态
           setIsVideoLoading(false);
+
+          if (sourceSwitchSavePendingRef.current) {
+            sourceSwitchSavePendingRef.current = false;
+            setTimeout(() => {
+              void saveCurrentPlayProgress();
+            }, 0);
+          }
 
           if (!startupFeedbackSentRef.current) {
             startupFeedbackSentRef.current = true;
