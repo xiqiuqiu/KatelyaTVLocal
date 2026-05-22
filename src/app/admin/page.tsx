@@ -27,6 +27,7 @@ import {
   Activity,
   ChevronDown,
   ChevronUp,
+  Copy,
   GripVertical,
   Settings,
   Users,
@@ -105,6 +106,16 @@ interface AiUsageReport {
   topSubjects: AiUsageSubject[];
   topUsers: AiUsageSubject[];
   topIps: AiUsageSubject[];
+}
+
+interface RegistrationInvite {
+  code: string;
+  maxUses: number;
+  usedCount: number;
+  disabled: boolean;
+  expiresAt: number | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 // 可折叠标签组件
@@ -653,6 +664,272 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
             })()}
           </table>
         </div>
+      </div>
+    </div>
+  );
+};
+
+const InviteConfig = () => {
+  const [invites, setInvites] = useState<RegistrationInvite[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [maxUses, setMaxUses] = useState(1);
+  const [validDays, setValidDays] = useState(0);
+
+  const fetchInvites = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/admin/registration-invites');
+      const data = (await response.json().catch(() => ({}))) as {
+        invites?: RegistrationInvite[];
+        error?: string;
+        details?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(data.details || data.error || '获取邀请码失败');
+      }
+
+      setInvites(data.invites || []);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : '获取邀请码失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchInvites();
+  }, [fetchInvites]);
+
+  const formatTime = (value: number | null) => {
+    if (!value) return '长期有效';
+    return new Date(value).toLocaleString('zh-CN', { hour12: false });
+  };
+
+  const handleCreateInvite = async () => {
+    try {
+      setLoading(true);
+      const expiresAt =
+        validDays > 0 ? Date.now() + validDays * 24 * 60 * 60 * 1000 : null;
+      const response = await fetch('/api/admin/registration-invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          maxUses,
+          expiresAt,
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        invite?: RegistrationInvite;
+        error?: string;
+        details?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(data.details || data.error || '生成邀请码失败');
+      }
+
+      await fetchInvites();
+      showSuccess(`邀请码已生成：${data.invite?.code || ''}`);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : '生成邀请码失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDisableInvite = async (code: string) => {
+    const { isConfirmed } = await Swal.fire({
+      title: '确认禁用邀请码',
+      text: `邀请码 ${code} 禁用后不能再用于注册。`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: '确认',
+      cancelButtonText: '取消',
+    });
+    if (!isConfirmed) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch('/api/admin/registration-invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'disable', code }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        details?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(data.details || data.error || '禁用邀请码失败');
+      }
+
+      await fetchInvites();
+      showSuccess('邀请码已禁用');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : '禁用邀请码失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopyInvite = async (code: string) => {
+    await navigator.clipboard.writeText(code);
+    showSuccess('邀请码已复制');
+  };
+
+  return (
+    <div className='space-y-5'>
+      <div className='grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3'>
+        <div>
+          <label className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300'>
+            可使用次数
+          </label>
+          <input
+            type='number'
+            min={1}
+            max={1000}
+            value={maxUses}
+            onChange={(e) =>
+              setMaxUses(
+                Math.min(1000, Math.max(1, Number(e.target.value) || 1))
+              )
+            }
+            className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+          />
+        </div>
+        <div>
+          <label className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300'>
+            有效天数
+          </label>
+          <input
+            type='number'
+            min={0}
+            max={365}
+            value={validDays}
+            onChange={(e) =>
+              setValidDays(
+                Math.min(365, Math.max(0, Number(e.target.value) || 0))
+              )
+            }
+            className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+          />
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            0 表示长期有效
+          </p>
+        </div>
+        <div className='flex items-end gap-2'>
+          <button
+            onClick={handleCreateInvite}
+            disabled={loading}
+            className='px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg transition-colors'
+          >
+            生成邀请码
+          </button>
+          <button
+            onClick={fetchInvites}
+            disabled={loading}
+            className='px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors'
+          >
+            刷新
+          </button>
+        </div>
+      </div>
+
+      <div className='border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto'>
+        <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
+          <thead className='bg-gray-50 dark:bg-gray-900'>
+            <tr>
+              <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                邀请码
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                使用
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                有效期
+              </th>
+              <th className='px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                状态
+              </th>
+              <th className='px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                操作
+              </th>
+            </tr>
+          </thead>
+          <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
+            {invites.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={5}
+                  className='px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400'
+                >
+                  暂无邀请码
+                </td>
+              </tr>
+            ) : (
+              invites.map((invite) => {
+                const exhausted = invite.usedCount >= invite.maxUses;
+                const expired =
+                  invite.expiresAt !== null && invite.expiresAt <= Date.now();
+                const active = !invite.disabled && !exhausted && !expired;
+
+                return (
+                  <tr key={invite.code}>
+                    <td className='px-4 py-3 text-sm font-mono text-gray-900 dark:text-gray-100'>
+                      {invite.code}
+                    </td>
+                    <td className='px-4 py-3 text-sm text-right text-gray-700 dark:text-gray-300'>
+                      {invite.usedCount}/{invite.maxUses}
+                    </td>
+                    <td className='px-4 py-3 text-sm text-gray-700 dark:text-gray-300'>
+                      {formatTime(invite.expiresAt)}
+                    </td>
+                    <td className='px-4 py-3 text-sm'>
+                      <span
+                        className={`inline-flex rounded-full px-2 py-1 text-xs ${
+                          active
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        {active
+                          ? '可用'
+                          : invite.disabled
+                          ? '已禁用'
+                          : exhausted
+                          ? '已用完'
+                          : '已过期'}
+                      </span>
+                    </td>
+                    <td className='px-4 py-3 text-right'>
+                      <div className='inline-flex gap-2'>
+                        <button
+                          onClick={() => handleCopyInvite(invite.code)}
+                          className='inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors'
+                        >
+                          <Copy className='h-3 w-3' />
+                          复制
+                        </button>
+                        {!invite.disabled && (
+                          <button
+                            onClick={() => handleDisableInvite(invite.code)}
+                            disabled={loading}
+                            className='px-2 py-1 text-xs bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white rounded-md transition-colors'
+                          >
+                            禁用
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -1886,6 +2163,7 @@ function AdminPageClient() {
   const [role, setRole] = useState<'owner' | 'admin' | null>(null);
   const [expandedTabs, setExpandedTabs] = useState<{ [key: string]: boolean }>({
     userConfig: false,
+    inviteConfig: false,
     videoSource: false,
     siteConfig: false,
     aiUsage: false,
@@ -2032,6 +2310,17 @@ function AdminPageClient() {
                 role={role}
                 refreshConfig={fetchConfig}
               />
+            </CollapsibleTab>
+
+            <CollapsibleTab
+              title='注册邀请码'
+              icon={
+                <Copy size={20} className='text-gray-600 dark:text-gray-400' />
+              }
+              isExpanded={expandedTabs.inviteConfig}
+              onToggle={() => toggleTab('inviteConfig')}
+            >
+              <InviteConfig />
             </CollapsibleTab>
 
             {/* AI 用量监控标签 */}
