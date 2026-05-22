@@ -482,6 +482,62 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
     let cancelled = false;
 
+    const probeFallbackSources = async () => {
+      const concurrency = 6;
+      let currentIndex = 0;
+
+      const runWorker = async () => {
+        while (!cancelled && currentIndex < availableSources.length) {
+          const source = availableSources[currentIndex];
+          currentIndex += 1;
+          const sourceKey = getSourceIdentityKey(source.source, source.id);
+          const probeEpisodeIndex = Math.max(
+            0,
+            Math.min(value - 1, Math.max(0, source.episodes.length - 1))
+          );
+          const episodeUrl = source.episodes?.[probeEpisodeIndex];
+
+          if (!episodeUrl) {
+            setSourceStatusMap((prev) =>
+              new Map(prev).set(
+                sourceKey,
+                createSourceStatus('unavailable', {
+                  reason: '该播放源没有可用剧集',
+                })
+              )
+            );
+            continue;
+          }
+
+          const probeResult = await probeSourcePlayback(episodeUrl);
+          if (cancelled) {
+            return;
+          }
+
+          setSourceStatusMap((prev) =>
+            new Map(prev).set(
+              sourceKey,
+              createSourceStatus(probeResult.kind, {
+                reason: probeResult.reason,
+                playbackMode:
+                  probeResult.kind === 'unavailable'
+                    ? undefined
+                    : probeResult.kind,
+                domain: probeResult.domain || null,
+              })
+            )
+          );
+        }
+      };
+
+      await Promise.all(
+        Array.from(
+          { length: Math.min(concurrency, availableSources.length) },
+          () => runWorker()
+        )
+      );
+    };
+
     void fetchSourcePreferencesInBatches(requestSources)
       .then((preferenceData) => {
         if (cancelled) {
@@ -521,6 +577,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       })
       .catch(() => {
         sourcePreferenceProbeKeyRef.current = '';
+        void probeFallbackSources();
       });
 
     return () => {

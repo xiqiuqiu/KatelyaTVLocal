@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import type { SearchResult, SourceStatus } from '@/lib/types';
-import { createSourceStatus } from '@/lib/utils';
+import { createSourceStatus, probeSourcePlayback } from '@/lib/utils';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 
@@ -33,6 +33,9 @@ describe('EpisodeSelector playback sidebar controls', () => {
     fetchSourcePreferencesInBatches as jest.MockedFunction<
       typeof fetchSourcePreferencesInBatches
     >;
+  const mockedProbeSourcePlayback = probeSourcePlayback as jest.MockedFunction<
+    typeof probeSourcePlayback
+  >;
 
   beforeEach(() => {
     mockedFetchSourcePreferencesInBatches.mockResolvedValue({
@@ -140,6 +143,48 @@ describe('EpisodeSelector playback sidebar controls', () => {
     );
     expect(mockedFetchSourcePreferencesInBatches.mock.calls[0][0]).toHaveLength(
       45
+    );
+  });
+
+  it('falls back to per-source probing when batch probing fails', async () => {
+    mockedFetchSourcePreferencesInBatches.mockRejectedValueOnce(
+      new Error('unauthorized')
+    );
+    mockedProbeSourcePlayback.mockResolvedValue({
+      kind: 'proxy',
+      reason: 'fallback probe',
+      domain: 'example.com',
+    });
+    const availableSources: SearchResult[] = Array.from(
+      { length: 5 },
+      (_, index) => ({
+        id: `id-${index}`,
+        source: `source-${index}`,
+        title: `缁€杞扮伀 ${index}`,
+        year: '2026',
+        poster: '',
+        episodes: [`https://example.com/${index}.m3u8`],
+        source_name: `S${index}`,
+      })
+    );
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-0'
+        currentId='id-0'
+        availableSources={availableSources}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockedProbeSourcePlayback).toHaveBeenCalledWith(
+        'https://example.com/4.m3u8'
+      );
+    });
+    expect(mockedProbeSourcePlayback.mock.calls.length).toBeGreaterThanOrEqual(
+      5
     );
   });
 });
