@@ -4,11 +4,23 @@ import { Redis } from '@upstash/redis';
 
 import { AdminConfig } from './admin.types';
 import {
+  type AiFindSavedRecordMap,
+  listAiFindSavedRecordSummaries,
+  pruneAiFindSavedRecords,
+} from './ai-find/saved-records';
+import {
   hashPassword,
   isLegacyPlaintextPassword,
   verifyPassword,
 } from './security/password';
-import { EpisodeSkipConfig, Favorite, IStorage, PlayRecord } from './types';
+import {
+  AiFindSavedRecord,
+  AiFindSavedRecordSummary,
+  EpisodeSkipConfig,
+  Favorite,
+  IStorage,
+  PlayRecord,
+} from './types';
 
 // 搜索历史最大条数
 const SEARCH_HISTORY_LIMIT = 20;
@@ -220,6 +232,11 @@ export class UpstashRedisStorage implements IStorage {
     // 删除搜索历史
     await withRetry(() => this.client.del(this.shKey(userName)));
 
+    // 删除 AI 找片结果记录
+    await withRetry(() =>
+      this.client.del(this.aiFindSavedRecordsKey(userName))
+    );
+
     // 删除播放记录
     const playRecordPattern = `u:${userName}:pr:*`;
     const playRecordKeys = await withRetry(() =>
@@ -269,6 +286,81 @@ export class UpstashRedisStorage implements IStorage {
     } else {
       await withRetry(() => this.client.del(key));
     }
+  }
+
+  // ---------- AI 找片结果记录 ----------
+  private aiFindSavedRecordsKey(user: string) {
+    return `u:${user}:ai_find_saved_records`;
+  }
+
+  private async getAiFindSavedRecordMap(
+    userName: string
+  ): Promise<AiFindSavedRecordMap> {
+    const val = await withRetry(() =>
+      this.client.get(this.aiFindSavedRecordsKey(userName))
+    );
+    return val ? (val as AiFindSavedRecordMap) : {};
+  }
+
+  private async setAiFindSavedRecordMap(
+    userName: string,
+    records: AiFindSavedRecordMap
+  ): Promise<void> {
+    await withRetry(() =>
+      this.client.set(
+        this.aiFindSavedRecordsKey(userName),
+        pruneAiFindSavedRecords(records)
+      )
+    );
+  }
+
+  async getAiFindSavedRecords(
+    userName: string
+  ): Promise<AiFindSavedRecordSummary[]> {
+    const records = await this.getAiFindSavedRecordMap(userName);
+    return listAiFindSavedRecordSummaries(records);
+  }
+
+  async getAiFindSavedRecord(
+    userName: string,
+    id: string
+  ): Promise<AiFindSavedRecord | null> {
+    const records = await this.getAiFindSavedRecordMap(userName);
+    return records[id] || null;
+  }
+
+  async upsertAiFindSavedRecord(
+    userName: string,
+    record: AiFindSavedRecord
+  ): Promise<void> {
+    const records = await this.getAiFindSavedRecordMap(userName);
+    records[record.id] = record;
+    await this.setAiFindSavedRecordMap(userName, records);
+  }
+
+  async touchAiFindSavedRecord(userName: string, id: string): Promise<void> {
+    const records = await this.getAiFindSavedRecordMap(userName);
+    const record = records[id];
+    if (!record) return;
+
+    records[id] = {
+      ...record,
+      lastOpenedAt: Date.now(),
+      openedCount: record.openedCount + 1,
+    };
+    await this.setAiFindSavedRecordMap(userName, records);
+  }
+
+  async deleteAiFindSavedRecord(userName: string, id: string): Promise<void> {
+    const records = await this.getAiFindSavedRecordMap(userName);
+    delete records[id];
+    await this.setAiFindSavedRecordMap(userName, records);
+  }
+
+  async clearAiFindSavedRecords(userName: string): Promise<void> {
+    await withRetry(() =>
+      this.client.del(this.aiFindSavedRecordsKey(userName))
+    );
   }
 
   // ---------- 获取全部用户 ----------
@@ -363,7 +455,8 @@ export class UpstashRedisStorage implements IStorage {
 function getUpstashRedisClient(): Redis {
   const legacyKey = Symbol.for('__MOONTV_UPSTASH_REDIS_CLIENT__');
   const globalKey = Symbol.for('__KATELYATV_UPSTASH_REDIS_CLIENT__');
-  let client: Redis | undefined = (global as any)[globalKey] || (global as any)[legacyKey];
+  let client: Redis | undefined =
+    (global as any)[globalKey] || (global as any)[legacyKey];
 
   if (!client) {
     const upstashUrl = process.env.UPSTASH_URL;

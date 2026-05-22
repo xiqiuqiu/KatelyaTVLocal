@@ -43,6 +43,20 @@ The model request also uses JSON output mode so candidate parsing does not depen
 
 `AI_FIND_DEBUG=true` enables server-side debug logs for candidate generation and degraded fallbacks.
 
+## Saved Result Records
+
+AI find saves successful user sessions as private result records. A saved record
+contains the original query, the AI-generated candidate titles, suggestions, and
+the progressively loaded KatelyaTV source groups.
+
+Opening a saved record reuses the saved response and does not call the AI model
+or source group endpoints. Users can manually refresh a saved record when they
+want current results.
+
+`AI_MAX_RESULTS` remains the only setting that controls how many candidate
+titles the AI returns. The app does not use a separate result count for title
+guessing versus recommendation-style queries.
+
 AI find quota state is stored in D1 table `ai_find_usage_daily`. Both `/api/ai/find` and `/api/ai/find/group` require a signed login session before they perform AI, source-search, or playback-probe work. `/api/ai/find` uses the `AI_DAILY_LIMIT_*` values. `/api/ai/find/group` uses the `AI_GROUP_DAILY_LIMIT_*` values because one user-facing AI search can fan out into several candidate group lookups.
 
 Admins can review AI find usage in `/admin` under `AI 用量监控`. The panel reads the same D1 quota table through `/api/admin/ai-usage` and shows recent daily totals plus today's highest user/IP usage.

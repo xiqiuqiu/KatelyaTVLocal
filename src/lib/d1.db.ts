@@ -2,11 +2,22 @@
 
 import { AdminConfig } from './admin.types';
 import {
+  AI_FIND_SAVED_RECORD_LIMIT,
+  summarizeAiFindSavedRecord,
+} from './ai-find/saved-records';
+import {
   hashPassword,
   isLegacyPlaintextPassword,
   verifyPassword,
 } from './security/password';
-import { EpisodeSkipConfig, Favorite, IStorage, PlayRecord } from './types';
+import {
+  AiFindSavedRecord,
+  AiFindSavedRecordSummary,
+  EpisodeSkipConfig,
+  Favorite,
+  IStorage,
+  PlayRecord,
+} from './types';
 
 // 搜索历史最大条数
 const SEARCH_HISTORY_LIMIT = 20;
@@ -375,6 +386,9 @@ export class D1Storage implements IStorage {
         db
           .prepare('DELETE FROM search_history WHERE username = ?')
           .bind(userName),
+        db
+          .prepare('DELETE FROM ai_find_saved_records WHERE username = ?')
+          .bind(userName),
       ];
 
       await db.batch(statements);
@@ -458,6 +472,175 @@ export class D1Storage implements IStorage {
       }
     } catch (err) {
       console.error('Failed to delete search history:', err);
+      throw err;
+    }
+  }
+
+  private mapAiFindSavedRecordRow(row: any): AiFindSavedRecord {
+    return {
+      id: row.id,
+      userName: row.username,
+      query: row.query,
+      response: JSON.parse(row.response_json),
+      status: row.status === 'complete' ? 'complete' : 'partial',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      lastOpenedAt: row.last_opened_at,
+      openedCount: row.opened_count,
+    };
+  }
+
+  async getAiFindSavedRecords(
+    userName: string
+  ): Promise<AiFindSavedRecordSummary[]> {
+    try {
+      const db = await this.getDatabase();
+      const result = await db
+        .prepare(
+          `
+          SELECT id, username, query, response_json, status, created_at,
+                 updated_at, last_opened_at, opened_count
+          FROM ai_find_saved_records
+          WHERE username = ?
+          ORDER BY updated_at DESC
+          LIMIT ?
+        `
+        )
+        .bind(userName, AI_FIND_SAVED_RECORD_LIMIT)
+        .all<any>();
+
+      return result.results.map((row) =>
+        summarizeAiFindSavedRecord(this.mapAiFindSavedRecordRow(row))
+      );
+    } catch (err) {
+      console.error('Failed to get AI find saved records:', err);
+      throw err;
+    }
+  }
+
+  async getAiFindSavedRecord(
+    userName: string,
+    id: string
+  ): Promise<AiFindSavedRecord | null> {
+    try {
+      const db = await this.getDatabase();
+      const row = await db
+        .prepare(
+          `
+          SELECT id, username, query, response_json, status, created_at,
+                 updated_at, last_opened_at, opened_count
+          FROM ai_find_saved_records
+          WHERE username = ? AND id = ?
+        `
+        )
+        .bind(userName, id)
+        .first<any>();
+
+      return row ? this.mapAiFindSavedRecordRow(row) : null;
+    } catch (err) {
+      console.error('Failed to get AI find saved record:', err);
+      throw err;
+    }
+  }
+
+  async upsertAiFindSavedRecord(
+    userName: string,
+    record: AiFindSavedRecord
+  ): Promise<void> {
+    try {
+      const db = await this.getDatabase();
+      await db
+        .prepare(
+          `
+          INSERT INTO ai_find_saved_records (
+            id, username, query, response_json, status, created_at,
+            updated_at, last_opened_at, opened_count
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(username, id) DO UPDATE SET
+            query = excluded.query,
+            response_json = excluded.response_json,
+            status = excluded.status,
+            updated_at = excluded.updated_at
+        `
+        )
+        .bind(
+          record.id,
+          userName,
+          record.query,
+          JSON.stringify(record.response),
+          record.status,
+          record.createdAt,
+          record.updatedAt,
+          record.lastOpenedAt,
+          record.openedCount
+        )
+        .run();
+
+      await db
+        .prepare(
+          `
+          DELETE FROM ai_find_saved_records
+          WHERE username = ?
+          AND id NOT IN (
+            SELECT id FROM ai_find_saved_records
+            WHERE username = ?
+            ORDER BY updated_at DESC
+            LIMIT ?
+          )
+        `
+        )
+        .bind(userName, userName, AI_FIND_SAVED_RECORD_LIMIT)
+        .run();
+    } catch (err) {
+      console.error('Failed to upsert AI find saved record:', err);
+      throw err;
+    }
+  }
+
+  async touchAiFindSavedRecord(userName: string, id: string): Promise<void> {
+    try {
+      const db = await this.getDatabase();
+      await db
+        .prepare(
+          `
+          UPDATE ai_find_saved_records
+          SET last_opened_at = ?, opened_count = opened_count + 1
+          WHERE username = ? AND id = ?
+        `
+        )
+        .bind(Date.now(), userName, id)
+        .run();
+    } catch (err) {
+      console.error('Failed to touch AI find saved record:', err);
+      throw err;
+    }
+  }
+
+  async deleteAiFindSavedRecord(userName: string, id: string): Promise<void> {
+    try {
+      const db = await this.getDatabase();
+      await db
+        .prepare(
+          'DELETE FROM ai_find_saved_records WHERE username = ? AND id = ?'
+        )
+        .bind(userName, id)
+        .run();
+    } catch (err) {
+      console.error('Failed to delete AI find saved record:', err);
+      throw err;
+    }
+  }
+
+  async clearAiFindSavedRecords(userName: string): Promise<void> {
+    try {
+      const db = await this.getDatabase();
+      await db
+        .prepare('DELETE FROM ai_find_saved_records WHERE username = ?')
+        .bind(userName)
+        .run();
+    } catch (err) {
+      console.error('Failed to clear AI find saved records:', err);
       throw err;
     }
   }
@@ -578,7 +761,7 @@ export class D1Storage implements IStorage {
         .all<any>();
 
       const configs: { [key: string]: EpisodeSkipConfig } = {};
-      
+
       for (const row of result.results) {
         configs[row.key] = {
           source: row.source,

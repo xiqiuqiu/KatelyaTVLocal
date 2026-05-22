@@ -11,21 +11,29 @@ import {
   createAiFindRequestId,
   sanitizeAiFindDebugText,
 } from '@/lib/ai-find/debug';
+import {
+  createAiFindSavedRecordId,
+  deleteAiFindSavedRecord,
+  getAiFindSavedRecord,
+  listAiFindSavedRecords,
+  saveAiFindSavedRecordSnapshot,
+} from '@/lib/ai-find/history-client';
 import type {
   AiFindCandidateQuery,
   AiFindResponse,
   AiFindResultGroup,
 } from '@/lib/ai-find/types';
+import type {
+  AiFindSavedRecordStatus,
+  AiFindSavedRecordSummary,
+} from '@/lib/types';
 
 import PosterGrid from '@/components/ui/PosterGrid';
 import SectionHeader from '@/components/ui/SectionHeader';
 import Surface from '@/components/ui/Surface';
 import VideoCard from '@/components/VideoCard';
 
-const loadingSteps = [
-  '正在理解你的找片需求',
-  '正在生成候选片名',
-];
+const loadingSteps = ['正在理解你的找片需求', '正在生成候选片名'];
 
 type GroupLoadErrors = Record<string, string>;
 const GROUP_LOAD_CONCURRENCY = 2;
@@ -91,7 +99,9 @@ function summarizeResult(payload: AiFindResponse) {
   };
 }
 
-function createPendingGroup(candidate: AiFindCandidateQuery): AiFindResultGroup {
+function createPendingGroup(
+  candidate: AiFindCandidateQuery
+): AiFindResultGroup {
   return {
     query: candidate.query,
     reason: candidate.reason,
@@ -111,9 +121,19 @@ export default function AiFindPanel() {
   const [groupErrors, setGroupErrors] = useState<GroupLoadErrors>({});
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savedRecords, setSavedRecords] = useState<AiFindSavedRecordSummary[]>(
+    []
+  );
+  const [activeSavedRecordId, setActiveSavedRecordId] = useState<string | null>(
+    null
+  );
   const [, setTick] = useState(0);
   const lastSearchQueryRef = useRef(searchParams.get('q') || '');
   const activeRunRef = useRef<string | null>(null);
+  const activeSavedRecordIdRef = useRef<string | null>(null);
+  const activeSavedRecordCreatedAtRef = useRef<number | null>(null);
+  const activeSavedRecordQueryRef = useRef<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   const loadingText = getLoadingText(startedAt);
 
@@ -129,16 +149,58 @@ export default function AiFindPanel() {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    void listAiFindSavedRecords().then((records) => {
+      if (mounted) {
+        setSavedRecords(records);
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const refreshSavedRecords = async () => {
+    setSavedRecords(await listAiFindSavedRecords());
+  };
+
+  const persistSavedSnapshot = ({
+    id,
+    originalQuery,
+    response,
+    status,
+    createdAt,
+  }: {
+    id: string;
+    originalQuery: string;
+    response: AiFindResponse;
+    status: AiFindSavedRecordStatus;
+    createdAt: number;
+  }) => {
+    void saveAiFindSavedRecordSnapshot({
+      id,
+      query: originalQuery,
+      response,
+      status,
+      createdAt,
+    }).then(refreshSavedRecords);
+  };
+
   const loadCandidateGroup = async ({
     candidate,
     runId,
     debugEnabled,
     parentRequestId,
+    originalQuery,
   }: {
     candidate: AiFindCandidateQuery;
     runId: string;
     debugEnabled: boolean;
     parentRequestId: string;
+    originalQuery: string;
   }) => {
     const groupRequestId = `${parentRequestId}-g-${Math.random()
       .toString(36)
@@ -161,8 +223,11 @@ export default function AiFindPanel() {
           candidate,
         }),
       });
-      const payload = (await response.json()) as
-        | { group?: AiFindResultGroup; failed?: boolean; error?: string };
+      const payload = (await response.json()) as {
+        group?: AiFindResultGroup;
+        failed?: boolean;
+        error?: string;
+      };
 
       if (activeRunRef.current !== runId) {
         return;
@@ -184,7 +249,7 @@ export default function AiFindPanel() {
       setResult((current) => {
         if (!current) return current;
 
-        return {
+        const next = {
           ...current,
           groups: current.groups.map((group) =>
             group.query === candidate.query ? receivedGroup : group
@@ -194,6 +259,23 @@ export default function AiFindPanel() {
             current.errorMessage ||
             (payload.failed ? '部分候选片名查询失败。' : undefined),
         };
+
+        const savedRecordId = activeSavedRecordIdRef.current;
+        const createdAt = activeSavedRecordCreatedAtRef.current;
+        if (savedRecordId && createdAt) {
+          const hasPendingGroups = next.groups.some(
+            (group) => group.groups.length === 0 && !group.notFound
+          );
+          persistSavedSnapshot({
+            id: savedRecordId,
+            originalQuery,
+            response: next,
+            status: hasPendingGroups ? 'partial' : 'complete',
+            createdAt,
+          });
+        }
+
+        return next;
       });
     } catch (err) {
       if (activeRunRef.current !== runId) {
@@ -208,7 +290,7 @@ export default function AiFindPanel() {
       setResult((current) => {
         if (!current) return current;
 
-        return {
+        const next = {
           ...current,
           groups: current.groups.map((group) =>
             group.query === candidate.query
@@ -221,6 +303,23 @@ export default function AiFindPanel() {
           degraded: true,
           errorMessage: current.errorMessage || '部分候选片名查询失败。',
         };
+
+        const savedRecordId = activeSavedRecordIdRef.current;
+        const createdAt = activeSavedRecordCreatedAtRef.current;
+        if (savedRecordId && createdAt) {
+          const hasPendingGroups = next.groups.some(
+            (group) => group.groups.length === 0 && !group.notFound
+          );
+          persistSavedSnapshot({
+            id: savedRecordId,
+            originalQuery,
+            response: next,
+            status: hasPendingGroups ? 'partial' : 'complete',
+            createdAt,
+          });
+        }
+
+        return next;
       });
     } finally {
       if (activeRunRef.current === runId) {
@@ -236,11 +335,13 @@ export default function AiFindPanel() {
     runId,
     debugEnabled,
     parentRequestId,
+    originalQuery,
   }: {
     candidates: AiFindCandidateQuery[];
     runId: string;
     debugEnabled: boolean;
     parentRequestId: string;
+    originalQuery: string;
   }) => {
     let currentIndex = 0;
 
@@ -253,6 +354,7 @@ export default function AiFindPanel() {
           runId,
           debugEnabled,
           parentRequestId,
+          originalQuery,
         });
       }
     };
@@ -273,6 +375,9 @@ export default function AiFindPanel() {
     let activeRequestId = clientRequestId;
     let activeDebugEnabled = debugEnabled;
     activeRunRef.current = runId;
+    const shouldUpdateActiveRecord =
+      activeSavedRecordIdRef.current !== null &&
+      activeSavedRecordQueryRef.current === trimmedQuery;
 
     logAiFindClientDebug(debugEnabled, clientRequestId, 'submit started', {
       query: sanitizeAiFindDebugText(trimmedQuery),
@@ -355,12 +460,30 @@ export default function AiFindPanel() {
       }
 
       const candidatePayload = payload as AiFindResponse;
-      const pendingGroups = candidatePayload.candidateQueries.map(
-        createPendingGroup
-      );
-      setResult({
+      const pendingGroups =
+        candidatePayload.candidateQueries.map(createPendingGroup);
+      const nextResult = {
         ...candidatePayload,
         groups: pendingGroups,
+      };
+      setResult(nextResult);
+      const savedRecordId = shouldUpdateActiveRecord
+        ? activeSavedRecordIdRef.current || createAiFindSavedRecordId()
+        : createAiFindSavedRecordId();
+      const savedRecordCreatedAt =
+        shouldUpdateActiveRecord && activeSavedRecordCreatedAtRef.current
+          ? activeSavedRecordCreatedAtRef.current
+          : Date.now();
+      activeSavedRecordIdRef.current = savedRecordId;
+      activeSavedRecordCreatedAtRef.current = savedRecordCreatedAt;
+      activeSavedRecordQueryRef.current = trimmedQuery;
+      setActiveSavedRecordId(savedRecordId);
+      persistSavedSnapshot({
+        id: savedRecordId,
+        originalQuery: trimmedQuery,
+        response: nextResult,
+        status: 'partial',
+        createdAt: savedRecordCreatedAt,
       });
       setLoadingGroups(
         candidatePayload.candidateQueries.map((candidate) => candidate.query)
@@ -386,6 +509,7 @@ export default function AiFindPanel() {
         runId,
         debugEnabled: activeDebugEnabled,
         parentRequestId: activeRequestId,
+        originalQuery: trimmedQuery,
       });
     } catch (err) {
       logAiFindClientDebug(
@@ -412,8 +536,45 @@ export default function AiFindPanel() {
 
   return (
     <section className='space-y-5'>
+      {savedRecords.length > 0 ? (
+        <Surface className='p-4 sm:p-5' variant='plain'>
+          <div className='space-y-3'>
+            <div className='text-sm font-medium text-[rgb(var(--ui-text))]'>
+              最近 AI 找片
+            </div>
+            <div className='flex flex-wrap gap-2'>
+              {savedRecords.slice(0, 8).map((record) => (
+                <button
+                  className='rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-[rgb(var(--ui-text))] transition hover:bg-white/10'
+                  key={record.id}
+                  onClick={async () => {
+                    const saved = await getAiFindSavedRecord(record.id);
+                    if (!saved) return;
+
+                    setQuery(saved.query);
+                    setResult(saved.response);
+                    setActiveSavedRecordId(saved.id);
+                    activeSavedRecordIdRef.current = saved.id;
+                    activeSavedRecordCreatedAtRef.current = saved.createdAt;
+                    activeSavedRecordQueryRef.current = saved.query;
+                    setLoading(false);
+                    setLoadingGroups([]);
+                    setGroupErrors({});
+                    setError(null);
+                    await refreshSavedRecords();
+                  }}
+                  type='button'
+                >
+                  {record.query}
+                </button>
+              ))}
+            </div>
+          </div>
+        </Surface>
+      ) : null}
+
       <Surface className='p-4 sm:p-5' variant='plain'>
-        <form className='space-y-4' onSubmit={handleSubmit}>
+        <form className='space-y-4' onSubmit={handleSubmit} ref={formRef}>
           <div className='flex items-center gap-2 text-sm font-medium text-[rgb(var(--ui-text))]'>
             <Sparkles className='h-4 w-4 text-[rgb(var(--ui-success))]' />
             <span>AI 找片</span>
@@ -459,6 +620,37 @@ export default function AiFindPanel() {
               <p className='text-sm text-[rgb(var(--ui-text-muted))]'>
                 {result.answer}
               </p>
+              {activeSavedRecordId ? (
+                <div className='flex flex-wrap gap-2'>
+                  <button
+                    className='rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-[rgb(var(--ui-text))] transition hover:bg-white/10'
+                    onClick={() => {
+                      formRef.current?.requestSubmit();
+                    }}
+                    type='button'
+                  >
+                    刷新结果
+                  </button>
+                  <button
+                    className='rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-[rgb(var(--ui-text-muted))] transition hover:bg-white/10'
+                    onClick={async () => {
+                      if (!activeSavedRecordIdRef.current) return;
+
+                      await deleteAiFindSavedRecord(
+                        activeSavedRecordIdRef.current
+                      );
+                      activeSavedRecordIdRef.current = null;
+                      activeSavedRecordCreatedAtRef.current = null;
+                      activeSavedRecordQueryRef.current = null;
+                      setActiveSavedRecordId(null);
+                      await refreshSavedRecords();
+                    }}
+                    type='button'
+                  >
+                    删除记录
+                  </button>
+                </div>
+              ) : null}
               {result.degraded && result.errorMessage ? (
                 <p className='text-xs text-[rgb(var(--ui-text-muted))]'>
                   已降级处理：{result.errorMessage}

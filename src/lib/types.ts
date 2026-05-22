@@ -1,4 +1,5 @@
 import { AdminConfig } from './admin.types';
+import type { AiFindResponse } from './ai-find/types';
 
 // 播放记录数据结构
 export interface PlayRecord {
@@ -42,6 +43,33 @@ export interface Favorite {
   search_title: string; // 搜索时使用的标题
 }
 
+export type AiFindSavedRecordStatus = 'partial' | 'complete';
+
+export interface AiFindSavedRecord {
+  id: string;
+  userName: string;
+  query: string;
+  response: AiFindResponse;
+  status: AiFindSavedRecordStatus;
+  createdAt: number;
+  updatedAt: number;
+  lastOpenedAt: number;
+  openedCount: number;
+}
+
+export interface AiFindSavedRecordSummary {
+  id: string;
+  query: string;
+  answer: string;
+  candidateCount: number;
+  foundGroupCount: number;
+  status: AiFindSavedRecordStatus;
+  createdAt: number;
+  updatedAt: number;
+  lastOpenedAt: number;
+  openedCount: number;
+}
+
 // 存储接口
 export interface IStorage {
   // 播放记录相关
@@ -76,6 +104,20 @@ export interface IStorage {
   getSearchHistory(userName: string): Promise<string[]>;
   addSearchHistory(userName: string, keyword: string): Promise<void>;
   deleteSearchHistory(userName: string, keyword?: string): Promise<void>;
+
+  // AI 找片结果记录相关
+  getAiFindSavedRecords(userName: string): Promise<AiFindSavedRecordSummary[]>;
+  getAiFindSavedRecord(
+    userName: string,
+    id: string
+  ): Promise<AiFindSavedRecord | null>;
+  upsertAiFindSavedRecord(
+    userName: string,
+    record: AiFindSavedRecord
+  ): Promise<void>;
+  touchAiFindSavedRecord(userName: string, id: string): Promise<void>;
+  deleteAiFindSavedRecord(userName: string, id: string): Promise<void>;
+  clearAiFindSavedRecords(userName: string): Promise<void>;
 
   // 片头片尾跳过配置相关
   getSkipConfig(

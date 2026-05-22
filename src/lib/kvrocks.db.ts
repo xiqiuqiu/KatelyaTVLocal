@@ -4,11 +4,23 @@ import { createClient, RedisClientType } from 'redis';
 
 import { AdminConfig } from './admin.types';
 import {
+  type AiFindSavedRecordMap,
+  listAiFindSavedRecordSummaries,
+  pruneAiFindSavedRecords,
+} from './ai-find/saved-records';
+import {
   hashPassword,
   isLegacyPlaintextPassword,
   verifyPassword,
 } from './security/password';
-import { EpisodeSkipConfig, Favorite, IStorage, PlayRecord } from './types';
+import {
+  AiFindSavedRecord,
+  AiFindSavedRecordSummary,
+  EpisodeSkipConfig,
+  Favorite,
+  IStorage,
+  PlayRecord,
+} from './types';
 
 // 搜索历史最大条数
 const SEARCH_HISTORY_LIMIT = 20;
@@ -203,12 +215,90 @@ export class KvrocksStorage implements IStorage {
     }
   }
 
+  // ---------- AI 找片结果记录 ----------
+  private aiFindSavedRecordsKey(userName: string) {
+    return `u:${userName}:ai_find_saved_records`;
+  }
+
+  private async getAiFindSavedRecordMap(
+    userName: string
+  ): Promise<AiFindSavedRecordMap> {
+    const val = await withRetry(() =>
+      this.client.get(this.aiFindSavedRecordsKey(userName))
+    );
+    return val ? (JSON.parse(val) as AiFindSavedRecordMap) : {};
+  }
+
+  private async setAiFindSavedRecordMap(
+    userName: string,
+    records: AiFindSavedRecordMap
+  ): Promise<void> {
+    await withRetry(() =>
+      this.client.set(
+        this.aiFindSavedRecordsKey(userName),
+        JSON.stringify(pruneAiFindSavedRecords(records))
+      )
+    );
+  }
+
+  async getAiFindSavedRecords(
+    userName: string
+  ): Promise<AiFindSavedRecordSummary[]> {
+    const records = await this.getAiFindSavedRecordMap(userName);
+    return listAiFindSavedRecordSummaries(records);
+  }
+
+  async getAiFindSavedRecord(
+    userName: string,
+    id: string
+  ): Promise<AiFindSavedRecord | null> {
+    const records = await this.getAiFindSavedRecordMap(userName);
+    return records[id] || null;
+  }
+
+  async upsertAiFindSavedRecord(
+    userName: string,
+    record: AiFindSavedRecord
+  ): Promise<void> {
+    const records = await this.getAiFindSavedRecordMap(userName);
+    records[record.id] = record;
+    await this.setAiFindSavedRecordMap(userName, records);
+  }
+
+  async touchAiFindSavedRecord(userName: string, id: string): Promise<void> {
+    const records = await this.getAiFindSavedRecordMap(userName);
+    const record = records[id];
+    if (!record) return;
+
+    records[id] = {
+      ...record,
+      lastOpenedAt: Date.now(),
+      openedCount: record.openedCount + 1,
+    };
+    await this.setAiFindSavedRecordMap(userName, records);
+  }
+
+  async deleteAiFindSavedRecord(userName: string, id: string): Promise<void> {
+    const records = await this.getAiFindSavedRecordMap(userName);
+    delete records[id];
+    await this.setAiFindSavedRecordMap(userName, records);
+  }
+
+  async clearAiFindSavedRecords(userName: string): Promise<void> {
+    await withRetry(() =>
+      this.client.del(this.aiFindSavedRecordsKey(userName))
+    );
+  }
+
   // ---------- 片头片尾跳过配置 ----------
   private skipConfigKey(userName: string, key: string) {
     return `u:${userName}:skip_config:${key}`;
   }
 
-  async getSkipConfig(userName: string, key: string): Promise<EpisodeSkipConfig | null> {
+  async getSkipConfig(
+    userName: string,
+    key: string
+  ): Promise<EpisodeSkipConfig | null> {
     const val = await withRetry(() =>
       this.client.get(this.skipConfigKey(userName, key))
     );
@@ -229,7 +319,9 @@ export class KvrocksStorage implements IStorage {
     await withRetry(() => this.client.del(this.skipConfigKey(userName, key)));
   }
 
-  async getAllSkipConfigs(userName: string): Promise<Record<string, EpisodeSkipConfig>> {
+  async getAllSkipConfigs(
+    userName: string
+  ): Promise<Record<string, EpisodeSkipConfig>> {
     const pattern = `u:${userName}:skip_config:*`;
     const keys = await withRetry(() => this.client.keys(pattern));
     const result: Record<string, EpisodeSkipConfig> = {};
@@ -272,7 +364,9 @@ export class KvrocksStorage implements IStorage {
   }
 
   async getAllUsers(): Promise<string[]> {
-    const users = await withRetry(() => this.client.sMembers(this.userListKey()));
+    const users = await withRetry(() =>
+      this.client.sMembers(this.userListKey())
+    );
     return ensureStringArray(users);
   }
 
@@ -313,7 +407,10 @@ export class KvrocksStorage implements IStorage {
 
     for (const userName of userNames) {
       const userData = await this.getUser(userName);
-      if (!userData?.password || !isLegacyPlaintextPassword(userData.password)) {
+      if (
+        !userData?.password ||
+        !isLegacyPlaintextPassword(userData.password)
+      ) {
         continue;
       }
 
@@ -337,6 +434,7 @@ export class KvrocksStorage implements IStorage {
         `u:${userName}:pr:*`, // 播放记录
         `u:${userName}:fav:*`, // 收藏
         `u:${userName}:search_history`, // 搜索历史
+        `u:${userName}:ai_find_saved_records`, // AI 找片结果记录
         `u:${userName}:skip_config:*`, // 跳过配置
       ];
 
@@ -387,7 +485,9 @@ export function getKvrocksClient(): RedisClientType {
         connectTimeout: 10000, // 10秒连接超时
         reconnectStrategy: (retries: number) => {
           const delay = Math.min(retries * 50, 2000);
-          console.log(`🔄 Kvrocks reconnecting in ${delay}ms (attempt ${retries})`);
+          console.log(
+            `🔄 Kvrocks reconnecting in ${delay}ms (attempt ${retries})`
+          );
           return delay;
         },
       },

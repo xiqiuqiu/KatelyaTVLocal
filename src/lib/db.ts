@@ -5,7 +5,13 @@ import { D1Storage } from './d1.db';
 import { KvrocksStorage } from './kvrocks.db';
 import { LocalStorage } from './localstorage.db';
 import { RedisStorage } from './redis.db';
-import { Favorite, IStorage, PlayRecord } from './types';
+import {
+  AiFindSavedRecord,
+  AiFindSavedRecordSummary,
+  Favorite,
+  IStorage,
+  PlayRecord,
+} from './types';
 import { UpstashRedisStorage } from './upstash.db';
 
 // storage type 常量: 'localstorage' | 'redis' | 'kvrocks' | 'd1' | 'upstash'，默认 'localstorage'
@@ -173,6 +179,39 @@ export class DbManager {
     await this.storage.deleteSearchHistory(userName, keyword);
   }
 
+  // ---------- AI 找片结果记录 ----------
+  async getAiFindSavedRecords(
+    userName: string
+  ): Promise<AiFindSavedRecordSummary[]> {
+    return this.storage.getAiFindSavedRecords(userName);
+  }
+
+  async getAiFindSavedRecord(
+    userName: string,
+    id: string
+  ): Promise<AiFindSavedRecord | null> {
+    return this.storage.getAiFindSavedRecord(userName, id);
+  }
+
+  async saveAiFindSavedRecord(
+    userName: string,
+    record: AiFindSavedRecord
+  ): Promise<void> {
+    await this.storage.upsertAiFindSavedRecord(userName, record);
+  }
+
+  async touchAiFindSavedRecord(userName: string, id: string): Promise<void> {
+    await this.storage.touchAiFindSavedRecord(userName, id);
+  }
+
+  async deleteAiFindSavedRecord(userName: string, id: string): Promise<void> {
+    await this.storage.deleteAiFindSavedRecord(userName, id);
+  }
+
+  async clearAiFindSavedRecords(userName: string): Promise<void> {
+    await this.storage.clearAiFindSavedRecords(userName);
+  }
+
   // 获取全部用户名
   async getAllUsers(): Promise<string[]> {
     if (typeof (this.storage as any).getAllUsers === 'function') {
@@ -196,10 +235,7 @@ export class DbManager {
   }
 
   // ---------- 跳过配置 ----------
-  async getSkipConfig(
-    userName: string,
-    key: string
-  ): Promise<any> {
+  async getSkipConfig(userName: string, key: string): Promise<any> {
     if (typeof (this.storage as any).getSkipConfig === 'function') {
       return (this.storage as any).getSkipConfig(userName, key);
     }
@@ -216,19 +252,14 @@ export class DbManager {
     }
   }
 
-  async getAllSkipConfigs(
-    userName: string
-  ): Promise<{ [key: string]: any }> {
+  async getAllSkipConfigs(userName: string): Promise<{ [key: string]: any }> {
     if (typeof (this.storage as any).getAllSkipConfigs === 'function') {
       return (this.storage as any).getAllSkipConfigs(userName);
     }
     return {};
   }
 
-  async deleteSkipConfig(
-    userName: string,
-    key: string
-  ): Promise<void> {
+  async deleteSkipConfig(userName: string, key: string): Promise<void> {
     if (typeof (this.storage as any).deleteSkipConfig === 'function') {
       await (this.storage as any).deleteSkipConfig(userName, key);
     }
