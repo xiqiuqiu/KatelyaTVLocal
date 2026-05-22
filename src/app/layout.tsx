@@ -57,6 +57,9 @@ export default async function RootLayout({
     process.env.ANNOUNCEMENT ||
     '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。';
   let enableRegister = process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true';
+  const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '';
+  const registerInviteRequired =
+    process.env.NEXT_PUBLIC_REGISTER_INVITE_REQUIRED !== 'false';
   let imageProxy = process.env.NEXT_PUBLIC_IMAGE_PROXY || '';
   let doubanProxy = process.env.NEXT_PUBLIC_DOUBAN_PROXY || '';
   const sourceProbe =
@@ -100,6 +103,8 @@ export default async function RootLayout({
     HLS_PROXY: hlsProxy,
     SOURCE_RANKING_ENABLED:
       process.env.NEXT_PUBLIC_SOURCE_RANKING_ENABLED === 'true',
+    TURNSTILE_SITE_KEY: turnstileSiteKey,
+    REGISTER_INVITE_REQUIRED: registerInviteRequired,
     CURRENT_USER: currentUser,
   };
 

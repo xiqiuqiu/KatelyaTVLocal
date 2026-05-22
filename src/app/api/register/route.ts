@@ -4,6 +4,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionSigningSecret } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
+import {
+  getRequestIp,
+  recordSuccessfulRegistration,
+  validateRegistrationSecurity,
+} from '@/lib/registration/security';
 import { createSessionCookieValue } from '@/lib/security/session';
 
 export const runtime = 'edge';
@@ -53,35 +58,68 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '当前未开放注册' }, { status: 400 });
     }
 
-    const { username, password } = await req.json();
+    const { username, password, inviteCode, turnstileToken } = await req.json();
     if (!username || typeof username !== 'string') {
       return NextResponse.json({ error: '用户名不能为空' }, { status: 400 });
     }
     if (!password || typeof password !== 'string') {
       return NextResponse.json({ error: '密码不能为空' }, { status: 400 });
     }
-    if (username === process.env.USERNAME) {
+    const normalizedUsername = username.trim();
+    if (!normalizedUsername) {
+      return NextResponse.json({ error: '用户名不能为空' }, { status: 400 });
+    }
+    if (normalizedUsername === process.env.USERNAME) {
       return NextResponse.json({ error: '用户已存在' }, { status: 400 });
     }
 
+    const ip = getRequestIp(req.headers);
+    const security = await validateRegistrationSecurity({
+      username: normalizedUsername,
+      password,
+      ip,
+      inviteCode,
+      turnstileToken,
+    });
+    if (!security.ok) {
+      return NextResponse.json(
+        { error: security.error },
+        { status: security.status }
+      );
+    }
+
     try {
-      const exists = await db.checkUserExist(username);
+      const exists = await db.checkUserExist(normalizedUsername);
       if (exists) {
         return NextResponse.json({ error: '用户已存在' }, { status: 400 });
       }
 
       await db.upgradeLegacyPasswords();
-      await db.registerUser(username, password);
+      await db.registerUser(normalizedUsername, password);
+
+      const recorded = await recordSuccessfulRegistration({
+        username: normalizedUsername,
+        password,
+        ip,
+        inviteCode,
+        turnstileToken,
+      });
+      if (!recorded.ok) {
+        return NextResponse.json(
+          { error: recorded.error },
+          { status: recorded.status }
+        );
+      }
 
       config.UserConfig.Users.push({
-        username,
+        username: normalizedUsername,
         role: 'user',
       });
       await db.saveAdminConfig(config);
 
       const response = NextResponse.json({ ok: true });
       const cookieValue = await createSessionCookieValue(
-        { username, role: 'user' },
+        { username: normalizedUsername, role: 'user' },
         signingSecret
       );
       const expires = new Date();

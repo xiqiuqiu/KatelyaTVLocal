@@ -5,6 +5,7 @@ export const runtime = 'edge';
 import {
   ArrowRight,
   Clapperboard,
+  Hash,
   KeyRound,
   Loader2,
   ShieldCheck,
@@ -18,14 +19,35 @@ import IOSCompatibility from '@/components/IOSCompatibility';
 import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        selector: string | Element,
+        options: {
+          sitekey: string;
+          callback: (token: string) => void;
+          'expired-callback'?: () => void;
+          'error-callback'?: () => void;
+        }
+      ) => string;
+      reset: (widgetId?: string) => void;
+    };
+  }
+}
+
 function LoginPageClient() {
   const searchParams = useSearchParams();
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [shouldAskUsername, setShouldAskUsername] = useState(false);
   const [enableRegister, setEnableRegister] = useState(false);
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
+  const [registerInviteRequired, setRegisterInviteRequired] = useState(true);
   const { siteName } = useSite();
 
   // 在客户端挂载后设置配置
@@ -36,8 +58,49 @@ function LoginPageClient() {
         Boolean(storageType && storageType !== 'localstorage')
       );
       setEnableRegister(Boolean(window.RUNTIME_CONFIG?.ENABLE_REGISTER));
+      setTurnstileSiteKey(window.RUNTIME_CONFIG?.TURNSTILE_SITE_KEY || '');
+      setRegisterInviteRequired(
+        window.RUNTIME_CONFIG?.REGISTER_INVITE_REQUIRED !== false
+      );
     }
   }, []);
+
+  useEffect(() => {
+    if (!enableRegister || !turnstileSiteKey) return;
+
+    const scriptId = 'cf-turnstile-script';
+    const renderTurnstile = () => {
+      if (!window.turnstile || !document.getElementById('register-turnstile')) {
+        return;
+      }
+
+      const container = document.getElementById('register-turnstile');
+      if (!container || container.dataset.rendered === 'true') {
+        return;
+      }
+
+      window.turnstile.render(container, {
+        sitekey: turnstileSiteKey,
+        callback: (token) => setTurnstileToken(token),
+        'expired-callback': () => setTurnstileToken(''),
+        'error-callback': () => setTurnstileToken(''),
+      });
+      container.dataset.rendered = 'true';
+    };
+
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.src =
+        'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.onload = renderTurnstile;
+      document.head.appendChild(script);
+    } else {
+      renderTurnstile();
+    }
+  }, [enableRegister, turnstileSiteKey]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -76,13 +139,26 @@ function LoginPageClient() {
   const handleRegister = async () => {
     setError(null);
     if (!password || !username) return;
+    if (registerInviteRequired && !inviteCode.trim()) {
+      setError('请输入邀请码');
+      return;
+    }
+    if (turnstileSiteKey && !turnstileToken) {
+      setError('请先完成人机验证');
+      return;
+    }
 
     try {
       setLoading(true);
       const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username,
+          password,
+          inviteCode,
+          turnstileToken,
+        }),
       });
 
       if (res.ok) {
@@ -91,6 +167,8 @@ function LoginPageClient() {
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? '服务器错误');
+        window.turnstile?.reset();
+        setTurnstileToken('');
       }
     } catch (error) {
       setError('网络错误，请稍后重试');
@@ -255,6 +333,44 @@ function LoginPageClient() {
                   </div>
                 </div>
 
+                {shouldAskUsername && enableRegister && (
+                  <>
+                    {registerInviteRequired && (
+                      <div>
+                        <label
+                          htmlFor='inviteCode'
+                          className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text-muted))]'
+                        >
+                          邀请码
+                        </label>
+                        <div className='relative'>
+                          <Hash className='pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
+                          <input
+                            id='inviteCode'
+                            type='text'
+                            autoComplete='off'
+                            className='block w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg-elevated)/0.76)] py-3 pl-12 pr-4 text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.34)] sm:text-base'
+                            placeholder='输入邀请码'
+                            value={inviteCode}
+                            onChange={(e) => setInviteCode(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {turnstileSiteKey ? (
+                      <div
+                        id='register-turnstile'
+                        className='min-h-[65px]'
+                      />
+                    ) : (
+                      <p className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'>
+                        注册人机验证尚未配置，请稍后再试。
+                      </p>
+                    )}
+                  </>
+                )}
+
                 {error && (
                   <p
                     role='alert'
@@ -269,7 +385,13 @@ function LoginPageClient() {
                     <button
                       type='button'
                       onClick={handleRegister}
-                      disabled={!password || !username || loading}
+                      disabled={
+                        !password ||
+                        !username ||
+                        loading ||
+                        !turnstileSiteKey ||
+                        (registerInviteRequired && !inviteCode.trim())
+                      }
                       className='inline-flex min-h-12 items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-surface-strong)/0.7)] px-4 py-3 text-base font-semibold text-[rgb(var(--ui-text))] shadow-ui-soft transition-all duration-200 hover:bg-[rgb(var(--ui-surface-strong)/0.92)] disabled:cursor-not-allowed disabled:opacity-50'
                     >
                       {loading ? (

@@ -273,6 +273,14 @@ KatelyaTV 使用标准 Apple CMS V10 API 格式。在项目根目录创建 `conf
 | `UPSTASH_URL`                 | Upstash Redis URL              | 连接 URL                                             | （空）          |
 | `UPSTASH_TOKEN`               | Upstash Redis Token            | Token 字符串                                         | （空）          |
 | `NEXT_PUBLIC_ENABLE_REGISTER` | 是否开放注册（仅非 localstorage） | `true` / `false`                                     | `false`         |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile 站点 Key | 字符串                                               | （空）          |
+| `TURNSTILE_SECRET_KEY`        | Cloudflare Turnstile 密钥       | 字符串                                               | （空）          |
+| `REGISTER_TURNSTILE_REQUIRED` | 注册是否要求人机验证             | `true` / `false`                                     | `true`          |
+| `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | 前端是否显示邀请码输入 | `true` / `false`                                     | `true`          |
+| `REGISTER_INVITE_REQUIRED`    | 注册接口是否要求邀请码           | `true` / `false`                                     | `true`          |
+| `REGISTER_PASSWORD_MIN_LENGTH` | 注册密码最短长度                | 数字                                                 | `8`             |
+| `REGISTER_IP_WINDOW_SECONDS`  | 注册 IP 频率窗口秒数             | 数字                                                 | `3600`          |
+| `REGISTER_IP_WINDOW_LIMIT`    | 同一 IP 在窗口内最多注册次数      | 数字                                                 | `3`             |
 
 ### 搜索与代理
 

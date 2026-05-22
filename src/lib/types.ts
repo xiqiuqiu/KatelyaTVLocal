@@ -227,6 +227,8 @@ export interface RuntimeConfig {
   SOURCE_PROBE?: string;
   HLS_PROXY?: string;
   SOURCE_RANKING_ENABLED?: boolean;
+  TURNSTILE_SITE_KEY?: string;
+  REGISTER_INVITE_REQUIRED?: boolean;
   CURRENT_USER?: {
     username?: string | null;
     role?: 'owner' | 'admin' | 'user';

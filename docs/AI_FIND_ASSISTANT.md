@@ -56,3 +56,20 @@ Admins can review AI find usage in `/admin` under `AI 用量监控`. The panel r
 - AI-generated candidates that do not exist in KatelyaTV source search are shown as not found.
 - Timeout, result count, and D1-backed daily usage are capped.
 - Admin usage reporting is read-only and does not expose `AI_API_KEY`.
+
+## Registration Safety
+
+When registration is enabled, the default protection requires both Cloudflare Turnstile and an invite code.
+
+```text
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
+REGISTER_TURNSTILE_REQUIRED=true
+NEXT_PUBLIC_REGISTER_INVITE_REQUIRED=true
+REGISTER_INVITE_REQUIRED=true
+REGISTER_PASSWORD_MIN_LENGTH=8
+REGISTER_IP_WINDOW_SECONDS=3600
+REGISTER_IP_WINDOW_LIMIT=3
+```
+
+Invite codes are stored in D1 table `registration_invites`; successful registrations are recorded in `registration_audit` with username, IP, and time.
