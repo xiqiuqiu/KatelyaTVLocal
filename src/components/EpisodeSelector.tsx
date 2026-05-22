@@ -115,6 +115,22 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     );
   }, []);
 
+  const canReplaceSourceStatus = useCallback(
+    (status: SourceStatus | null | undefined) =>
+      !status ||
+      status.kind === 'idle' ||
+      status.kind === 'probing' ||
+      Boolean(status.fromMemory),
+    []
+  );
+
+  const getKnownSourceStatus = useCallback(
+    (sourceKey: string) =>
+      sourceStatusMapRef.current.get(sourceKey) ||
+      precomputedSourceStatuses?.get(sourceKey),
+    [precomputedSourceStatuses]
+  );
+
   const probeSourceDirectPlayback = useCallback(
     async (source: SearchResult) => {
       const sourceKey = getSourceIdentityKey(source.source, source.id);
@@ -482,15 +498,25 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
     let cancelled = false;
 
-    const probeFallbackSources = async () => {
+    const probeFallbackSources = async (targetSourceKeys?: Set<string>) => {
+      const fallbackSources = targetSourceKeys
+        ? availableSources.filter((source) =>
+            targetSourceKeys.has(getSourceIdentityKey(source.source, source.id))
+          )
+        : availableSources;
       const concurrency = 6;
       let currentIndex = 0;
 
       const runWorker = async () => {
-        while (!cancelled && currentIndex < availableSources.length) {
-          const source = availableSources[currentIndex];
+        while (!cancelled && currentIndex < fallbackSources.length) {
+          const source = fallbackSources[currentIndex];
           currentIndex += 1;
           const sourceKey = getSourceIdentityKey(source.source, source.id);
+          const knownStatus = getKnownSourceStatus(sourceKey);
+          if (!canReplaceSourceStatus(knownStatus)) {
+            continue;
+          }
+
           const probeEpisodeIndex = Math.max(
             0,
             Math.min(value - 1, Math.max(0, source.episodes.length - 1))
@@ -498,14 +524,19 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           const episodeUrl = source.episodes?.[probeEpisodeIndex];
 
           if (!episodeUrl) {
-            setSourceStatusMap((prev) =>
-              new Map(prev).set(
+            setSourceStatusMap((prev) => {
+              const previousStatus = prev.get(sourceKey);
+              if (!canReplaceSourceStatus(previousStatus)) {
+                return prev;
+              }
+
+              return new Map(prev).set(
                 sourceKey,
                 createSourceStatus('unavailable', {
                   reason: '该播放源没有可用剧集',
                 })
-              )
-            );
+              );
+            });
             continue;
           }
 
@@ -514,8 +545,13 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             return;
           }
 
-          setSourceStatusMap((prev) =>
-            new Map(prev).set(
+          setSourceStatusMap((prev) => {
+            const previousStatus = prev.get(sourceKey);
+            if (!canReplaceSourceStatus(previousStatus)) {
+              return prev;
+            }
+
+            return new Map(prev).set(
               sourceKey,
               createSourceStatus(probeResult.kind, {
                 reason: probeResult.reason,
@@ -525,14 +561,14 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     : probeResult.kind,
                 domain: probeResult.domain || null,
               })
-            )
-          );
+            );
+          });
         }
       };
 
       await Promise.all(
         Array.from(
-          { length: Math.min(concurrency, availableSources.length) },
+          { length: Math.min(concurrency, fallbackSources.length) },
           () => runWorker()
         )
       );
@@ -549,12 +585,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
           preferenceData.results.forEach((result) => {
             const previousStatus = next.get(result.sourceKey);
-            if (
-              previousStatus &&
-              previousStatus.kind !== 'idle' &&
-              previousStatus.kind !== 'probing' &&
-              !previousStatus.fromMemory
-            ) {
+            if (!canReplaceSourceStatus(previousStatus)) {
               return;
             }
 
@@ -574,6 +605,17 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
           return next;
         });
+
+        const returnedSourceKeys = new Set(
+          preferenceData.results.map((result) => result.sourceKey)
+        );
+        const missingSourceKeys = requestSources
+          .filter((source) => !returnedSourceKeys.has(source.sourceKey))
+          .map((source) => source.sourceKey);
+
+        if (missingSourceKeys.length > 0) {
+          void probeFallbackSources(new Set(missingSourceKeys));
+        }
       })
       .catch(() => {
         sourcePreferenceProbeKeyRef.current = '';
@@ -583,7 +625,13 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeTab, availableSources, value]);
+  }, [
+    activeTab,
+    availableSources,
+    canReplaceSourceStatus,
+    getKnownSourceStatus,
+    value,
+  ]);
 
   // 当换源Tab激活时，只对少量候选源做浏览器直连检测，避免控制台刷满错误
   useEffect(() => {

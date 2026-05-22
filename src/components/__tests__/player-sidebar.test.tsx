@@ -187,4 +187,107 @@ describe('EpisodeSelector playback sidebar controls', () => {
       5
     );
   });
+
+  it('does not fallback-probe sources that already have a final status', async () => {
+    mockedFetchSourcePreferencesInBatches.mockRejectedValueOnce(
+      new Error('unauthorized')
+    );
+    mockedProbeSourcePlayback.mockResolvedValue({
+      kind: 'proxy',
+      reason: 'fallback probe',
+      domain: 'example.com',
+    });
+    const sourceStatuses = new Map<string, SourceStatus>([
+      [
+        'source-0-id-0',
+        createSourceStatus('direct', {
+          reason: 'already checked',
+          playbackMode: 'direct',
+        }),
+      ],
+    ]);
+    const availableSources: SearchResult[] = Array.from(
+      { length: 2 },
+      (_, index) => ({
+        id: `id-${index}`,
+        source: `source-${index}`,
+        title: `fallback ${index}`,
+        year: '2026',
+        poster: '',
+        episodes: [`https://example.com/${index}.m3u8`],
+        source_name: `S${index}`,
+      })
+    );
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-0'
+        currentId='id-0'
+        availableSources={availableSources}
+        precomputedSourceStatuses={sourceStatuses}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockedProbeSourcePlayback).toHaveBeenCalledWith(
+        'https://example.com/1.m3u8'
+      );
+    });
+
+    expect(mockedProbeSourcePlayback).not.toHaveBeenCalledWith(
+      'https://example.com/0.m3u8'
+    );
+  });
+
+  it('fallback-probes source rows missing from a partial batch response', async () => {
+    mockedFetchSourcePreferencesInBatches.mockResolvedValueOnce({
+      orderedSourceKeys: ['source-0-id-0'],
+      results: [
+        {
+          sourceKey: 'source-0-id-0',
+          kind: 'direct',
+          reason: 'ranked',
+          rankingSource: 'd1',
+        },
+      ],
+      generatedAt: 1710000000000,
+      rankingSource: 'd1',
+      confidence: 'medium',
+    });
+    mockedProbeSourcePlayback.mockResolvedValue({
+      kind: 'proxy',
+      reason: 'fallback probe',
+      domain: 'example.com',
+    });
+    const availableSources: SearchResult[] = Array.from(
+      { length: 2 },
+      (_, index) => ({
+        id: `id-${index}`,
+        source: `source-${index}`,
+        title: `partial ${index}`,
+        year: '2026',
+        poster: '',
+        episodes: [`https://example.com/${index}.m3u8`],
+        source_name: `S${index}`,
+      })
+    );
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-0'
+        currentId='id-0'
+        availableSources={availableSources}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockedProbeSourcePlayback).toHaveBeenCalledWith(
+        'https://example.com/1.m3u8'
+      );
+    });
+  });
 });

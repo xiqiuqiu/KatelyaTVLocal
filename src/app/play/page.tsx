@@ -28,6 +28,7 @@ import {
   formatM3U8AdFilterDebugMessage,
   getM3U8AdFilterDebugInfo,
 } from '@/lib/hls-ad-filter';
+import { getHlsRecoveryPlan } from '@/lib/hls-recovery';
 import { getSourceSwitchResumePlan } from '@/lib/playback-source-switch';
 import { getBrowserProbeBudget } from '@/lib/source-preference';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
@@ -63,6 +64,8 @@ import Surface from '@/components/ui/Surface';
 declare global {
   interface HTMLVideoElement {
     hls?: any;
+    recoveryWaitingListener?: EventListener;
+    recoveryPlayingListener?: EventListener;
   }
 }
 
@@ -263,11 +266,24 @@ function PlayPageClient() {
   const [precomputedSourceStatuses, setPrecomputedSourceStatuses] = useState<
     Map<string, SourceStatus>
   >(new Map());
+  const availableSourcesRef = useRef<SearchResult[]>([]);
   const precomputedVideoInfoRef = useRef<Map<string, SourceVideoInfo>>(
+    new Map()
+  );
+  const precomputedSourceStatusesRef = useRef<Map<string, SourceStatus>>(
     new Map()
   );
   const playbackStartupStartedAtRef = useRef<number | null>(null);
   const startupFeedbackSentRef = useRef(false);
+  const waitingRecoveryTimerRef = useRef<number | null>(null);
+  const autoRecoveredSourceKeysRef = useRef<Set<string>>(new Set());
+  const hlsRecoveryStateRef = useRef({
+    stallCount: 0,
+    networkRecoveryAttempts: 0,
+    mediaRecoveryAttempts: 0,
+    lastErrorAt: 0,
+    lastPlaybackTime: 0,
+  });
 
   // 折叠状态（仅在 lg 及以上屏幕有效）
   const [isEpisodeSelectorCollapsed, setIsEpisodeSelectorCollapsed] =
@@ -295,8 +311,20 @@ function PlayPageClient() {
   const artRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    availableSourcesRef.current = availableSources;
+  }, [availableSources]);
+
+  useEffect(() => {
     precomputedVideoInfoRef.current = precomputedVideoInfo;
   }, [precomputedVideoInfo]);
+
+  useEffect(() => {
+    precomputedSourceStatusesRef.current = precomputedSourceStatuses;
+  }, [precomputedSourceStatuses]);
+
+  useEffect(() => {
+    autoRecoveredSourceKeysRef.current.clear();
+  }, [currentEpisodeIndex]);
 
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
@@ -337,6 +365,113 @@ function PlayPageClient() {
     } catch {
       return null;
     }
+  };
+
+  const clearWaitingRecoveryTimer = () => {
+    if (
+      typeof window !== 'undefined' &&
+      waitingRecoveryTimerRef.current !== null
+    ) {
+      window.clearTimeout(waitingRecoveryTimerRef.current);
+      waitingRecoveryTimerRef.current = null;
+    }
+  };
+
+  const resetHlsRecoveryCounters = () => {
+    clearWaitingRecoveryTimer();
+    hlsRecoveryStateRef.current.stallCount = 0;
+    hlsRecoveryStateRef.current.networkRecoveryAttempts = 0;
+    hlsRecoveryStateRef.current.mediaRecoveryAttempts = 0;
+    hlsRecoveryStateRef.current.lastErrorAt = 0;
+    hlsRecoveryStateRef.current.lastPlaybackTime = 0;
+  };
+
+  const markPlaybackHealthy = (currentTime?: number) => {
+    clearWaitingRecoveryTimer();
+
+    if (typeof currentTime === 'number') {
+      const lastPlaybackTime = hlsRecoveryStateRef.current.lastPlaybackTime;
+      if (currentTime > lastPlaybackTime + 0.25) {
+        hlsRecoveryStateRef.current.stallCount = 0;
+      }
+      hlsRecoveryStateRef.current.lastPlaybackTime = currentTime;
+      return;
+    }
+
+    hlsRecoveryStateRef.current.stallCount = 0;
+  };
+
+  const getRecoverySourcePriority = (source: SearchResult) => {
+    const sourceKey = getSourceIdentityKey(source.source, source.id);
+    const status =
+      precomputedSourceStatusesRef.current.get(sourceKey) ||
+      getRememberedSourceStatus(source.episodes);
+
+    if (status?.kind === 'direct') return 0;
+    if (!status || status.kind === 'idle' || status.kind === 'probing') {
+      return 1;
+    }
+    if (status?.kind === 'proxy') return 2;
+    return 3;
+  };
+
+  const getNextRecoverySource = () => {
+    const currentSourceKey = getCurrentSourceKey();
+
+    return [...availableSourcesRef.current]
+      .filter((source) => {
+        const sourceKey = getSourceIdentityKey(source.source, source.id);
+        if (sourceKey === currentSourceKey) {
+          return false;
+        }
+
+        if (autoRecoveredSourceKeysRef.current.has(sourceKey)) {
+          return false;
+        }
+
+        if (!source.episodes || source.episodes.length === 0) {
+          return false;
+        }
+
+        const status =
+          precomputedSourceStatusesRef.current.get(sourceKey) ||
+          getRememberedSourceStatus(source.episodes);
+
+        return status?.kind !== 'unavailable';
+      })
+      .sort(
+        (a, b) => getRecoverySourcePriority(a) - getRecoverySourcePriority(b)
+      )[0];
+  };
+
+  const tryNudgePlayback = (video: HTMLVideoElement | null) => {
+    if (!video) {
+      return false;
+    }
+
+    const buffered = video.buffered;
+    const currentTime = video.currentTime || 0;
+
+    for (let index = 0; index < buffered.length; index += 1) {
+      const start = buffered.start(index);
+      const end = buffered.end(index);
+
+      if (currentTime >= start - 0.5 && currentTime <= end + 0.5) {
+        const nudgedTime = Math.min(end - 0.1, currentTime + 0.35);
+        if (nudgedTime > currentTime + 0.01) {
+          video.currentTime = nudgedTime;
+          return true;
+        }
+      }
+
+      if (currentTime < start && start - currentTime < 1.5) {
+        video.currentTime = Math.min(start + 0.05, end - 0.05);
+        return true;
+      }
+    }
+
+    void video.play().catch(() => undefined);
+    return false;
   };
 
   const reportPlaybackFeedback = async (input: PlaybackFeedbackInput) => {
@@ -783,6 +918,7 @@ function PlayPageClient() {
     if (nextUrl !== videoUrlRef.current) {
       startupFeedbackSentRef.current = false;
       playbackStartupStartedAtRef.current = Date.now();
+      resetHlsRecoveryCounters();
       setVideoUrl(nextUrl);
     }
   };
@@ -790,6 +926,7 @@ function PlayPageClient() {
   const trySwitchToProxyPlayback = () => {
     const directUrl = originalVideoUrlRef.current;
     const proxyUrl = buildHlsProxyUrl(directUrl);
+    const currentPlayTime = artPlayerRef.current?.currentTime || 0;
 
     if (
       playbackModeRef.current === 'proxy' ||
@@ -800,14 +937,44 @@ function PlayPageClient() {
       return false;
     }
 
+    const resumePlan = getSourceSwitchResumePlan({
+      currentEpisodeIndex: currentEpisodeIndexRef.current,
+      targetEpisodeIndex: currentEpisodeIndexRef.current,
+      currentPlayTime,
+      existingResumeTime: resumeTimeRef.current,
+    });
+    resumeTimeRef.current = resumePlan.resumeTime;
+    sourceSwitchSavePendingRef.current = resumePlan.saveAfterCanPlay;
+
     sourceFallbackAttemptedRef.current = true;
     startupFeedbackSentRef.current = false;
     playbackStartupStartedAtRef.current = Date.now();
+    resetHlsRecoveryCounters();
     setPlaybackMode('proxy');
     setVideoLoadingStage('sourceChanging');
     setIsVideoLoading(true);
     setError(null);
     setVideoUrl(proxyUrl);
+    return true;
+  };
+
+  const trySwitchToNextAvailableSource = (reason: string) => {
+    const nextSource = getNextRecoverySource();
+    if (!nextSource) {
+      return false;
+    }
+
+    const currentSourceKey = getCurrentSourceKey();
+    if (currentSourceKey) {
+      autoRecoveredSourceKeysRef.current.add(currentSourceKey);
+    }
+    autoRecoveredSourceKeysRef.current.add(
+      getSourceIdentityKey(nextSource.source, nextSource.id)
+    );
+
+    console.warn(`${reason}，自动切换到播放源: ${nextSource.source_name}`);
+    resetHlsRecoveryCounters();
+    void handleSourceChange(nextSource.source, nextSource.id, nextSource.title);
     return true;
   };
 
@@ -1553,12 +1720,12 @@ function PlayPageClient() {
               const hls = new Hls({
                 debug: false, // 关闭日志
                 enableWorker: true, // WebWorker 解码，降低主线程压力
-                lowLatencyMode: true, // 开启低延迟 LL-HLS
+                lowLatencyMode: false, // 点播场景优先稳定性，避免低缓冲导致频繁卡顿
 
                 /* 缓冲/内存相关 */
-                maxBufferLength: 30, // 前向缓冲最大 30s，过大容易导致高延迟
-                backBufferLength: 30, // 仅保留 30s 已播放内容，避免内存占用
-                maxBufferSize: 60 * 1000 * 1000, // 约 60MB，超出后触发清理
+                maxBufferLength: 60, // 增大前向缓冲，提升波动网络下的连续播放稳定性
+                backBufferLength: 90, // 适度保留已播放缓冲，降低 seek/恢复时的二次卡顿
+                maxBufferSize: 90 * 1000 * 1000, // 约 90MB，换取更稳的点播缓冲空间
 
                 /* 自定义loader */
                 loader: blockAdEnabledRef.current
@@ -1572,30 +1739,143 @@ function PlayPageClient() {
 
               ensureVideoSource(video, url);
 
+              const executeRecoveryPlan = (reason: string, action: string) => {
+                switch (action) {
+                  case 'nudge-playback': {
+                    console.warn(`${reason}，尝试微调播放位置`);
+                    const nudged = tryNudgePlayback(video);
+                    if (!nudged) {
+                      hls.startLoad(Math.max(0, video.currentTime - 1));
+                    }
+                    void video.play().catch(() => undefined);
+                    return true;
+                  }
+                  case 'restart-load':
+                    console.warn(`${reason}，尝试重新拉取分片`);
+                    hlsRecoveryStateRef.current.networkRecoveryAttempts += 1;
+                    hls.startLoad(Math.max(0, video.currentTime - 1));
+                    void video.play().catch(() => undefined);
+                    return true;
+                  case 'recover-media':
+                    console.warn(`${reason}，尝试恢复媒体解码器`);
+                    hlsRecoveryStateRef.current.mediaRecoveryAttempts += 1;
+                    hls.recoverMediaError();
+                    void video.play().catch(() => undefined);
+                    return true;
+                  case 'switch-proxy':
+                    if (trySwitchToProxyPlayback()) {
+                      console.warn(`${reason}，已切换到代理重试`);
+                      hls.destroy();
+                      return true;
+                    }
+                    return trySwitchToNextAvailableSource(
+                      `${reason}，代理回退不可用`
+                    );
+                  case 'switch-source':
+                    return trySwitchToNextAvailableSource(reason);
+                  case 'destroy':
+                    console.error(reason);
+                    hls.destroy();
+                    setError('当前播放源不可恢复，请稍后重试或手动换源');
+                    return true;
+                  default:
+                    return false;
+                }
+              };
+
+              const triggerRecovery = (
+                reason: string,
+                errorType?: string,
+                errorDetails?: string,
+                fatal = false
+              ) => {
+                const now = Date.now();
+                if (
+                  hlsRecoveryStateRef.current.lastErrorAt > 0 &&
+                  now - hlsRecoveryStateRef.current.lastErrorAt > 20000
+                ) {
+                  hlsRecoveryStateRef.current.stallCount = 0;
+                  hlsRecoveryStateRef.current.networkRecoveryAttempts = 0;
+                  hlsRecoveryStateRef.current.mediaRecoveryAttempts = 0;
+                }
+                hlsRecoveryStateRef.current.lastErrorAt = now;
+
+                if (
+                  errorDetails === 'bufferStalledError' ||
+                  errorDetails === 'bufferNudgeOnStall' ||
+                  errorDetails === 'waitingTimeout'
+                ) {
+                  hlsRecoveryStateRef.current.stallCount += 1;
+                }
+
+                const plan = getHlsRecoveryPlan({
+                  fatal,
+                  errorType,
+                  errorDetails,
+                  playbackMode: playbackModeRef.current,
+                  stallCount: hlsRecoveryStateRef.current.stallCount,
+                  networkRecoveryAttempts:
+                    hlsRecoveryStateRef.current.networkRecoveryAttempts,
+                  mediaRecoveryAttempts:
+                    hlsRecoveryStateRef.current.mediaRecoveryAttempts,
+                  hasAlternativeSource: Boolean(getNextRecoverySource()),
+                });
+
+                if (plan.action === 'ignore') {
+                  return;
+                }
+
+                executeRecoveryPlan(reason || plan.reason, plan.action);
+              };
+
+              if (video.recoveryWaitingListener) {
+                video.removeEventListener(
+                  'waiting',
+                  video.recoveryWaitingListener
+                );
+              }
+
+              if (video.recoveryPlayingListener) {
+                video.removeEventListener(
+                  'playing',
+                  video.recoveryPlayingListener
+                );
+              }
+
+              const handleVideoWaiting = () => {
+                clearWaitingRecoveryTimer();
+                if (typeof window === 'undefined') {
+                  return;
+                }
+
+                waitingRecoveryTimerRef.current = window.setTimeout(() => {
+                  waitingRecoveryTimerRef.current = null;
+                  triggerRecovery(
+                    '播放器等待缓冲超时',
+                    'mediaError',
+                    'waitingTimeout',
+                    false
+                  );
+                }, 4000);
+              };
+
+              const handleVideoPlaying = () => {
+                markPlaybackHealthy(video.currentTime || 0);
+              };
+
+              video.recoveryWaitingListener = handleVideoWaiting;
+              video.recoveryPlayingListener = handleVideoPlaying;
+              video.addEventListener('waiting', handleVideoWaiting);
+              video.addEventListener('playing', handleVideoPlaying);
+
               hls.on(Hls.Events.ERROR, function (event: any, data: any) {
                 console.error('HLS Error:', event, data);
-                if (data.fatal) {
-                  if (trySwitchToProxyPlayback()) {
-                    console.log('直连播放失败，已切换到代理重试');
-                    hls.destroy();
-                    return;
-                  }
-
-                  switch (data.type) {
-                    case Hls.ErrorTypes.NETWORK_ERROR:
-                      console.log('网络错误，尝试恢复...');
-                      hls.startLoad();
-                      break;
-                    case Hls.ErrorTypes.MEDIA_ERROR:
-                      console.log('媒体错误，尝试恢复...');
-                      hls.recoverMediaError();
-                      break;
-                    default:
-                      console.log('无法恢复的错误');
-                      hls.destroy();
-                      break;
-                  }
-                }
+                triggerRecovery(
+                  data?.fatal ? 'HLS 致命错误' : 'HLS 播放异常',
+                  data?.type,
+                  data?.details,
+                  Boolean(data?.fatal)
+                );
               });
             },
           },
@@ -1722,6 +2002,7 @@ function PlayPageClient() {
         artPlayerRef.current.on('video:timeupdate', () => {
           const currentTime = artPlayerRef.current.currentTime || 0;
           setCurrentPlayTime(currentTime);
+          markPlaybackHealthy(currentTime);
 
           // 同时更新时长（防止ready事件中获取不到）
           const duration = artPlayerRef.current.duration || 0;
@@ -1732,6 +2013,8 @@ function PlayPageClient() {
 
         // 监听视频可播放事件，这时恢复播放进度更可靠
         artPlayerRef.current.on('video:canplay', () => {
+          markPlaybackHealthy(artPlayerRef.current.currentTime || 0);
+
           // 若存在需要恢复的播放进度，则跳转
           if (resumeTimeRef.current && resumeTimeRef.current > 0) {
             try {
@@ -1801,6 +2084,10 @@ function PlayPageClient() {
                   : undefined,
             });
           }
+        });
+
+        artPlayerRef.current.on('video:playing', () => {
+          markPlaybackHealthy(artPlayerRef.current.currentTime || 0);
         });
 
         artPlayerRef.current.on('error', (err: any) => {
@@ -1893,6 +2180,8 @@ function PlayPageClient() {
       if (saveIntervalRef.current) {
         clearInterval(saveIntervalRef.current);
       }
+
+      clearWaitingRecoveryTimer();
     };
   }, []);
 
