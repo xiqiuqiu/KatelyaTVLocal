@@ -158,4 +158,18 @@ describe('admin AI usage route', () => {
     expect(response.status).toBe(401);
     expect(mockedGetAiFindUsageReport).not.toHaveBeenCalled();
   });
+
+  it('returns 500 when usage report loading fails', async () => {
+    mockedGetAiFindUsageReport.mockRejectedValue(new Error('D1 unavailable'));
+
+    const response = await GET({
+      url: 'https://app.example.com/api/admin/ai-usage',
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: '获取 AI 用量失败',
+      details: 'D1 unavailable',
+    });
+  });
 });

@@ -107,6 +107,40 @@ describe('admin registration invites route', () => {
     expect(mockedListRegistrationInvites).not.toHaveBeenCalled();
   });
 
+  it('lists invites for owner', async () => {
+    mockedListRegistrationInvites.mockResolvedValue([
+      {
+        code: 'INVITE',
+        maxUses: 3,
+        usedCount: 1,
+        disabled: false,
+        expiresAt: null,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ]);
+
+    const response = await GET({
+      url: 'https://app.example.com/api/admin/registration-invites',
+    });
+
+    expect(response.status).toBe(200);
+    expect(mockedListRegistrationInvites).toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      invites: [
+        {
+          code: 'INVITE',
+          maxUses: 3,
+          usedCount: 1,
+          disabled: false,
+          expiresAt: null,
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    });
+  });
+
   it('creates invites for owner', async () => {
     const response = await POST({
       url: 'https://app.example.com/api/admin/registration-invites',

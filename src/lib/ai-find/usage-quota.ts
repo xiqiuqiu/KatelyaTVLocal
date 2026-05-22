@@ -1,12 +1,5 @@
-interface D1PreparedStatementLike {
-  bind: (...values: unknown[]) => D1PreparedStatementLike;
-  first: <T = unknown>() => Promise<T | null>;
-  run: () => Promise<unknown>;
-}
-
-interface D1DatabaseLike {
-  prepare: (query: string) => D1PreparedStatementLike;
-}
+import { D1DatabaseLike, getD1Database } from '@/lib/d1';
+import { getUtcDayKey } from '@/lib/utc-day';
 
 type AiFindQuotaEndpoint = 'find' | 'group';
 
@@ -56,19 +49,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function getQuotaDatabase(
   source?: AiFindQuotaInput['env']
 ): D1DatabaseLike | null {
-  const db =
-    (source as { DB?: D1DatabaseLike } | undefined)?.DB ||
-    ((process.env as unknown as { DB?: D1DatabaseLike }).DB ?? null);
-
-  if (db && typeof db.prepare === 'function') {
-    return db;
-  }
-
-  return null;
-}
-
-function getUtcDayKey(now: number): string {
-  return new Date(now).toISOString().slice(0, 10);
+  return getD1Database(source);
 }
 
 function getNextUtcDayStart(now: number): number {
@@ -126,7 +107,8 @@ async function readUsageCount({
     .prepare(
       `SELECT count
        FROM ai_find_usage_daily
-       WHERE scope = ? AND subject = ? AND day_key = ?`
+       WHERE scope = ? AND subject = ? AND day_key = ?
+       LIMIT 1`
     )
     .bind(getScopeKey(endpoint, scope.scope), scope.subject, dayKey)
     .first<UsageRow>();
@@ -134,7 +116,73 @@ async function readUsageCount({
   return row?.count ?? 0;
 }
 
-async function incrementUsage({
+function getRemaining(scopes: UsageScope[], counts: number[]) {
+  return {
+    user: Math.max(0, scopes[0].limit - counts[0]),
+    ip: Math.max(0, scopes[1].limit - counts[1]),
+    global: Math.max(0, scopes[2].limit - counts[2]),
+  };
+}
+
+function getLimitReason(scope: UsageScope['scope']) {
+  return scope === 'user'
+    ? 'user-limit'
+    : scope === 'ip'
+    ? 'ip-limit'
+    : 'global-limit';
+}
+
+async function readUsageCounts({
+  db,
+  endpoint,
+  scopes,
+  dayKey,
+}: {
+  db: D1DatabaseLike;
+  endpoint: AiFindQuotaEndpoint;
+  scopes: UsageScope[];
+  dayKey: string;
+}): Promise<number[]> {
+  return Promise.all(
+    scopes.map((scope) => readUsageCount({ db, endpoint, scope, dayKey }))
+  );
+}
+
+async function incrementUsageIfUnderLimit({
+  db,
+  endpoint,
+  scope,
+  dayKey,
+  now,
+}: {
+  db: D1DatabaseLike;
+  endpoint: AiFindQuotaEndpoint;
+  scope: UsageScope;
+  dayKey: string;
+  now: number;
+}): Promise<boolean> {
+  const result = (await db
+    .prepare(
+      `INSERT INTO ai_find_usage_daily
+       (scope, subject, day_key, count, updated_at)
+       VALUES (?, ?, ?, 1, ?)
+       ON CONFLICT(scope, subject, day_key)
+       DO UPDATE SET count = count + 1, updated_at = excluded.updated_at
+       WHERE count < ?`
+    )
+    .bind(
+      getScopeKey(endpoint, scope.scope),
+      scope.subject,
+      dayKey,
+      now,
+      scope.limit
+    )
+    .run()) as { meta?: { changes?: number } } | undefined;
+
+  return (result?.meta?.changes ?? 1) > 0;
+}
+
+async function decrementUsage({
   db,
   endpoint,
   scope,
@@ -149,13 +197,12 @@ async function incrementUsage({
 }) {
   await db
     .prepare(
-      `INSERT INTO ai_find_usage_daily
-       (scope, subject, day_key, count, updated_at)
-       VALUES (?, ?, ?, 1, ?)
-       ON CONFLICT(scope, subject, day_key)
-       DO UPDATE SET count = count + 1, updated_at = excluded.updated_at`
+      `UPDATE ai_find_usage_daily
+       SET count = CASE WHEN count > 0 THEN count - 1 ELSE 0 END,
+           updated_at = ?
+       WHERE scope = ? AND subject = ? AND day_key = ?`
     )
-    .bind(getScopeKey(endpoint, scope.scope), scope.subject, dayKey, now)
+    .bind(now, getScopeKey(endpoint, scope.scope), scope.subject, dayKey)
     .run();
 }
 
@@ -180,16 +227,13 @@ export async function checkAndConsumeAiFindQuota(
 
   const dayKey = getUtcDayKey(now);
   const scopes = getScopes(input);
-  const counts = await Promise.all(
-    scopes.map((scope) =>
-      readUsageCount({ db, endpoint: input.endpoint, scope, dayKey })
-    )
-  );
-  const remaining = {
-    user: Math.max(0, scopes[0].limit - counts[0]),
-    ip: Math.max(0, scopes[1].limit - counts[1]),
-    global: Math.max(0, scopes[2].limit - counts[2]),
-  };
+  const counts = await readUsageCounts({
+    db,
+    endpoint: input.endpoint,
+    scopes,
+    dayKey,
+  });
+  const remaining = getRemaining(scopes, counts);
 
   const blockedIndex = counts.findIndex(
     (count, index) => count >= scopes[index].limit
@@ -197,17 +241,11 @@ export async function checkAndConsumeAiFindQuota(
 
   if (blockedIndex >= 0) {
     const blockedScope = scopes[blockedIndex].scope;
-    const reason =
-      blockedScope === 'user'
-        ? 'user-limit'
-        : blockedScope === 'ip'
-        ? 'ip-limit'
-        : 'global-limit';
 
     return {
       allowed: false,
       status: 429,
-      reason,
+      reason: getLimitReason(blockedScope),
       message:
         blockedScope === 'global'
           ? 'AI 找片今日全站次数已达到上限'
@@ -217,21 +255,65 @@ export async function checkAndConsumeAiFindQuota(
     };
   }
 
-  await Promise.all(
-    scopes.map((scope) =>
-      incrementUsage({ db, endpoint: input.endpoint, scope, dayKey, now })
-    )
-  );
+  const consumedScopes: UsageScope[] = [];
+  for (const scope of scopes) {
+    const consumed = await incrementUsageIfUnderLimit({
+      db,
+      endpoint: input.endpoint,
+      scope,
+      dayKey,
+      now,
+    });
+
+    if (!consumed) {
+      await Promise.all(
+        consumedScopes.map((consumedScope) =>
+          decrementUsage({
+            db,
+            endpoint: input.endpoint,
+            scope: consumedScope,
+            dayKey,
+            now,
+          })
+        )
+      );
+
+      const latestCounts = await readUsageCounts({
+        db,
+        endpoint: input.endpoint,
+        scopes,
+        dayKey,
+      });
+      const blockedScope = scope.scope;
+
+      return {
+        allowed: false,
+        status: 429,
+        reason: getLimitReason(blockedScope),
+        message:
+          blockedScope === 'global'
+            ? 'AI 找片今日全站次数已达到上限'
+            : 'AI 找片次数已达到今日上限',
+        resetAt,
+        remaining: getRemaining(scopes, latestCounts),
+      };
+    }
+
+    consumedScopes.push(scope);
+  }
+
+  const latestCounts = await readUsageCounts({
+    db,
+    endpoint: input.endpoint,
+    scopes,
+    dayKey,
+  });
 
   return {
     allowed: true,
     status: 200,
     resetAt,
-    remaining: {
-      user: Math.max(0, remaining.user - 1),
-      ip: Math.max(0, remaining.ip - 1),
-      global: Math.max(0, remaining.global - 1),
-    },
+    remaining: getRemaining(scopes, latestCounts),
   };
 }
 

@@ -1,28 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { isAdminRequest } from '@/lib/admin-auth';
 import { getAiFindUsageReport } from '@/lib/ai-find/usage-report';
-import { getAuthInfoFromCookie } from '@/lib/auth';
-import { getConfig } from '@/lib/config';
 
 export const runtime = 'edge';
-
-async function requireAdmin(request: NextRequest) {
-  const authInfo = await getAuthInfoFromCookie(request);
-  if (!authInfo?.username) {
-    return false;
-  }
-
-  if (authInfo.username === process.env.USERNAME) {
-    return true;
-  }
-
-  const config = await getConfig();
-  const user = config.UserConfig.Users.find(
-    (entry) => entry.username === authInfo.username
-  );
-
-  return user?.role === 'admin';
-}
 
 export async function GET(request: NextRequest) {
   if ((process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage') === 'localstorage') {
@@ -33,7 +14,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const isAdmin = await requireAdmin(request);
+    const isAdmin = await isAdminRequest(request);
     if (!isAdmin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

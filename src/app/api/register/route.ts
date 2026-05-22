@@ -5,8 +5,9 @@ import { getSessionSigningSecret } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 import {
+  consumeRegistrationInvite,
   getRequestIp,
-  recordSuccessfulRegistration,
+  recordRegistrationAudit,
   validateRegistrationSecurity,
 } from '@/lib/registration/security';
 import { createSessionCookieValue } from '@/lib/security/session';
@@ -94,10 +95,24 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: '用户已存在' }, { status: 400 });
       }
 
+      const inviteConsumed = await consumeRegistrationInvite({
+        username: normalizedUsername,
+        password,
+        ip,
+        inviteCode,
+        turnstileToken,
+      });
+      if (!inviteConsumed.ok) {
+        return NextResponse.json(
+          { error: inviteConsumed.error },
+          { status: inviteConsumed.status }
+        );
+      }
+
       await db.upgradeLegacyPasswords();
       await db.registerUser(normalizedUsername, password);
 
-      const recorded = await recordSuccessfulRegistration({
+      const recorded = await recordRegistrationAudit({
         username: normalizedUsername,
         password,
         ip,

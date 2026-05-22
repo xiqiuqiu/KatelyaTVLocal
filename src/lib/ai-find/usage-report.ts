@@ -1,11 +1,5 @@
-interface D1PreparedStatementLike {
-  bind: (...values: unknown[]) => D1PreparedStatementLike;
-  all: <T = unknown>() => Promise<{ results?: T[] }>;
-}
-
-interface D1DatabaseLike {
-  prepare: (query: string) => D1PreparedStatementLike;
-}
+import { D1DatabaseLike, getD1Database } from '@/lib/d1';
+import { getUtcDayKey } from '@/lib/utc-day';
 
 type UsageScope = 'user' | 'ip' | 'global';
 type UsageEndpoint = 'find' | 'group';
@@ -63,28 +57,7 @@ export interface AiFindUsageReportInput {
 function getReportDatabase(
   source?: AiFindUsageReportInput['env']
 ): D1DatabaseLike | null {
-  const db =
-    (source as { DB?: D1DatabaseLike } | undefined)?.DB ||
-    ((process.env as unknown as { DB?: D1DatabaseLike }).DB ?? null);
-
-  if (db && typeof db.prepare === 'function') {
-    return db;
-  }
-
-  return null;
-}
-
-function getUtcDayKey(now: number, offsetDays = 0): string {
-  const date = new Date(now);
-  return new Date(
-    Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate() + offsetDays
-    )
-  )
-    .toISOString()
-    .slice(0, 10);
+  return getD1Database(source);
 }
 
 function parseScope(value: string): {
@@ -238,6 +211,8 @@ export async function getAiFindUsageReport(
     .slice(0, subjectLimit)
     .map(mapSubject);
 
+  // Current daily totals are based on the global rows. The separate field names
+  // leave room for showing charged vs. blocked totals independently later.
   return {
     generatedAt: now,
     days: daySummaries,

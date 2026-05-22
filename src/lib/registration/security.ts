@@ -1,12 +1,4 @@
-interface D1PreparedStatementLike {
-  bind: (...values: unknown[]) => D1PreparedStatementLike;
-  first: <T = unknown>() => Promise<T | null>;
-  run: () => Promise<{ meta?: { changes?: number } } | unknown>;
-}
-
-interface D1DatabaseLike {
-  prepare: (query: string) => D1PreparedStatementLike;
-}
+import { D1DatabaseLike, getD1Database } from '@/lib/d1';
 
 export interface RegistrationSecurityConfig {
   turnstileRequired: boolean;
@@ -110,15 +102,7 @@ export function getRegistrationSecurityConfig(
 export function getRegistrationDatabase(
   env?: Record<string, unknown>
 ): D1DatabaseLike | null {
-  const db =
-    (env as { DB?: D1DatabaseLike } | undefined)?.DB ||
-    ((process.env as unknown as { DB?: D1DatabaseLike }).DB ?? null);
-
-  if (db && typeof db.prepare === 'function') {
-    return db;
-  }
-
-  return null;
+  return getD1Database(env);
 }
 
 export function getRequestIp(headers: Headers): string {
@@ -242,6 +226,29 @@ async function consumeInvite({
   return (result?.meta?.changes ?? 1) > 0;
 }
 
+export async function consumeRegistrationInvite(
+  input: RegistrationSecurityInput
+): Promise<RegistrationSecurityResult> {
+  const config = getRegistrationSecurityConfig(input.env);
+  const db = getRegistrationDatabase(input.env);
+  const now = input.now ?? Date.now();
+
+  if (!db || !config.inviteRequired) {
+    return { ok: true, status: 200 };
+  }
+
+  const consumed = await consumeInvite({
+    db,
+    code: input.inviteCode,
+    now,
+  });
+  if (!consumed) {
+    return { ok: false, status: 400, error: '邀请码已被使用' };
+  }
+
+  return { ok: true, status: 200 };
+}
+
 async function checkIpFrequency({
   db,
   ip,
@@ -327,26 +334,14 @@ export async function validateRegistrationSecurity(
   return { ok: true, status: 200 };
 }
 
-export async function recordSuccessfulRegistration(
+export async function recordRegistrationAudit(
   input: RegistrationSecurityInput
 ): Promise<RegistrationSecurityResult> {
-  const config = getRegistrationSecurityConfig(input.env);
   const db = getRegistrationDatabase(input.env);
   const now = input.now ?? Date.now();
 
   if (!db) {
     return { ok: true, status: 200 };
-  }
-
-  if (config.inviteRequired) {
-    const consumed = await consumeInvite({
-      db,
-      code: input.inviteCode,
-      now,
-    });
-    if (!consumed) {
-      return { ok: false, status: 400, error: '邀请码已被使用' };
-    }
   }
 
   await db
@@ -358,4 +353,15 @@ export async function recordSuccessfulRegistration(
     .run();
 
   return { ok: true, status: 200 };
+}
+
+export async function recordSuccessfulRegistration(
+  input: RegistrationSecurityInput
+): Promise<RegistrationSecurityResult> {
+  const consumed = await consumeRegistrationInvite(input);
+  if (!consumed.ok) {
+    return consumed;
+  }
+
+  return recordRegistrationAudit(input);
 }

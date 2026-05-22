@@ -1963,8 +1963,8 @@ const AiUsageMonitor = () => {
     fetchUsage();
   }, [fetchUsage]);
 
-  const formatTime = (value: number) => {
-    if (!value) return '-';
+  const formatTime = (value: number | null) => {
+    if (value === null || value === undefined) return '-';
     return new Date(value).toLocaleString('zh-CN', {
       hour12: false,
     });

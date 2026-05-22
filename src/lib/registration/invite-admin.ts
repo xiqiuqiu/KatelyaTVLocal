@@ -1,13 +1,4 @@
-interface D1PreparedStatementLike {
-  bind: (...values: unknown[]) => D1PreparedStatementLike;
-  all: <T = unknown>() => Promise<{ results?: T[] }>;
-  first: <T = unknown>() => Promise<T | null>;
-  run: () => Promise<unknown>;
-}
-
-interface D1DatabaseLike {
-  prepare: (query: string) => D1PreparedStatementLike;
-}
+import { D1DatabaseLike, getD1Database } from '@/lib/d1';
 
 export interface RegistrationInvite {
   code: string;
@@ -46,15 +37,7 @@ export interface DisableRegistrationInviteInput {
 function getInviteDatabase(
   env?: Record<string, unknown>
 ): D1DatabaseLike | null {
-  const db =
-    (env as { DB?: D1DatabaseLike } | undefined)?.DB ||
-    ((process.env as unknown as { DB?: D1DatabaseLike }).DB ?? null);
-
-  if (db && typeof db.prepare === 'function') {
-    return db;
-  }
-
-  return null;
+  return getD1Database(env);
 }
 
 function normalizeInvite(row: RegistrationInviteRow): RegistrationInvite {

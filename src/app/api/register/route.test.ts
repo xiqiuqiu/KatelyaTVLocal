@@ -1,6 +1,10 @@
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
-import { validateRegistrationSecurity } from '@/lib/registration/security';
+import {
+  consumeRegistrationInvite,
+  recordRegistrationAudit,
+  validateRegistrationSecurity,
+} from '@/lib/registration/security';
 
 class MockHeaders {
   private readonly values = new Map<string, string>();
@@ -90,7 +94,8 @@ jest.mock('@/lib/security/session', () => ({
 jest.mock('@/lib/registration/security', () => ({
   getRequestIp: jest.fn(() => '203.0.113.10'),
   validateRegistrationSecurity: jest.fn(),
-  recordSuccessfulRegistration: jest.fn(),
+  consumeRegistrationInvite: jest.fn(),
+  recordRegistrationAudit: jest.fn(),
 }));
 
 describe('register route security', () => {
@@ -99,6 +104,14 @@ describe('register route security', () => {
   const mockedValidateRegistrationSecurity =
     validateRegistrationSecurity as jest.MockedFunction<
       typeof validateRegistrationSecurity
+    >;
+  const mockedConsumeRegistrationInvite =
+    consumeRegistrationInvite as jest.MockedFunction<
+      typeof consumeRegistrationInvite
+    >;
+  const mockedRecordRegistrationAudit =
+    recordRegistrationAudit as jest.MockedFunction<
+      typeof recordRegistrationAudit
     >;
 
   beforeAll(() => {
@@ -119,6 +132,14 @@ describe('register route security', () => {
       ok: false,
       status: 400,
       error: '请先完成人机验证',
+    });
+    mockedConsumeRegistrationInvite.mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+    mockedRecordRegistrationAudit.mockResolvedValue({
+      ok: true,
+      status: 200,
     });
   });
 
@@ -157,5 +178,40 @@ describe('register route security', () => {
       })
     );
     expect(mockedDb.registerUser).not.toHaveBeenCalled();
+  });
+
+  it('does not create a user when invite consumption fails after validation', async () => {
+    mockedValidateRegistrationSecurity.mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+    mockedConsumeRegistrationInvite.mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: '邀请码已被使用',
+    });
+
+    const response = await POST(
+      new Request('https://app.example.com/api/register', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'cf-connecting-ip': '203.0.113.10',
+        },
+        body: JSON.stringify({
+          username: 'alice',
+          password: 'password123',
+          inviteCode: 'invite-1',
+          turnstileToken: 'token',
+        }),
+      })
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      error: '邀请码已被使用',
+    });
+    expect(response.status).toBe(400);
+    expect(mockedDb.registerUser).not.toHaveBeenCalled();
+    expect(mockedRecordRegistrationAudit).not.toHaveBeenCalled();
   });
 });

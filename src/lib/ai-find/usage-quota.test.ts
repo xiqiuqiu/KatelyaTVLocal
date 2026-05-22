@@ -21,14 +21,31 @@ function createFakeD1() {
             return (count === undefined ? null : { count }) as T | null;
           },
           async run() {
-            if (!/INSERT INTO ai_find_usage_daily/.test(sql)) {
-              return {};
+            if (/UPDATE ai_find_usage_daily/.test(sql)) {
+              const [, scope, subject, dayKey] = values as string[];
+              const key = `${scope}|${subject}|${dayKey}`;
+              rows.set(key, Math.max(0, (rows.get(key) || 0) - 1));
+              return { meta: { changes: 1 } };
             }
 
-            const [scope, subject, dayKey] = values as string[];
+            if (!/INSERT INTO ai_find_usage_daily/.test(sql)) {
+              return { meta: { changes: 1 } };
+            }
+
+            const [scope, subject, dayKey, , limit] = values as [
+              string,
+              string,
+              string,
+              number,
+              number
+            ];
             const key = `${scope}|${subject}|${dayKey}`;
-            rows.set(key, (rows.get(key) || 0) + 1);
-            return {};
+            const count = rows.get(key) || 0;
+            if (count >= limit) {
+              return { meta: { changes: 0 } };
+            }
+            rows.set(key, count + 1);
+            return { meta: { changes: 1 } };
           },
         };
       },
@@ -156,5 +173,49 @@ describe('AI find D1 usage quota', () => {
       status: 503,
       reason: 'missing-d1',
     });
+  });
+
+  it('blocks concurrent requests when only one user quota remains', async () => {
+    const fake = createFakeD1();
+    const limitedConfig = {
+      ...quotaConfig,
+      dailyLimitPerUser: 1,
+    };
+
+    const [first, second] = await Promise.all([
+      checkAndConsumeAiFindQuota({
+        username: 'alice',
+        ip: '203.0.113.10',
+        endpoint: 'find',
+        config: limitedConfig,
+        now: Date.UTC(2026, 4, 21, 1),
+        env: { DB: fake.DB },
+      }),
+      checkAndConsumeAiFindQuota({
+        username: 'alice',
+        ip: '203.0.113.10',
+        endpoint: 'find',
+        config: limitedConfig,
+        now: Date.UTC(2026, 4, 21, 1),
+        env: { DB: fake.DB },
+      }),
+    ]);
+
+    expect([first.allowed, second.allowed].sort()).toEqual([false, true]);
+    const rejected = [first, second].find((result) => !result.allowed);
+    expect(rejected).toMatchObject({
+      status: 429,
+      reason: 'user-limit',
+      remaining: {
+        user: 0,
+      },
+    });
+    expect(
+      fake.rows.get('ai-find:find:user|alice|2026-05-21')
+    ).toBe(1);
+    expect(
+      fake.rows.get('ai-find:find:ip|203.0.113.10|2026-05-21')
+    ).toBe(1);
+    expect(fake.rows.get('ai-find:find:global|global|2026-05-21')).toBe(1);
   });
 });
