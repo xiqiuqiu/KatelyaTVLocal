@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS ai_find_saved_records (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
   username TEXT NOT NULL,
   query TEXT NOT NULL,
   response_json TEXT NOT NULL,

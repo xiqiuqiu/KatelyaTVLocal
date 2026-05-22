@@ -181,7 +181,7 @@ Create `migrations/2026-05-22_ai_find_saved_records.sql`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS ai_find_saved_records (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
   username TEXT NOT NULL,
   query TEXT NOT NULL,
   response_json TEXT NOT NULL,
@@ -189,7 +189,8 @@ CREATE TABLE IF NOT EXISTS ai_find_saved_records (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   last_opened_at INTEGER NOT NULL,
-  opened_count INTEGER NOT NULL DEFAULT 0
+  opened_count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (username, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_find_saved_records_user_updated
