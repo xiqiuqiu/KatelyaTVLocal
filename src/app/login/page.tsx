@@ -195,9 +195,6 @@ function LoginPageClient() {
               <span>PRIVATE SCREENING</span>
               <span>ACCESS GATE</span>
             </div>
-
-            <div className='absolute left-8 top-24 h-[420px] w-1 rounded-full bg-[linear-gradient(180deg,rgb(var(--ui-accent)),rgb(var(--ui-accent)/0.08))]' />
-
             <div className='relative flex h-full flex-col justify-between p-10 pt-24'>
               <div className='max-w-lg'>
                 <div className='mb-8 flex h-20 w-20 items-center justify-center rounded-ui-lg border border-[rgb(var(--ui-border)/0.8)] bg-[rgb(var(--ui-surface)/0.82)] shadow-ui-soft'>
@@ -359,10 +356,7 @@ function LoginPageClient() {
                     )}
 
                     {turnstileSiteKey ? (
-                      <div
-                        id='register-turnstile'
-                        className='min-h-[65px]'
-                      />
+                      <div id='register-turnstile' className='min-h-[65px]' />
                     ) : (
                       <p className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'>
                         注册人机验证尚未配置，请稍后再试。
