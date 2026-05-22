@@ -1,4 +1,5 @@
 import { D1DatabaseLike, getD1Database } from '@/lib/d1';
+import { getClientIp, verifyTurnstileToken } from '@/lib/turnstile';
 
 export interface RegistrationSecurityConfig {
   turnstileRequired: boolean;
@@ -106,57 +107,7 @@ export function getRegistrationDatabase(
 }
 
 export function getRequestIp(headers: Headers): string {
-  return (
-    headers.get('cf-connecting-ip') ||
-    headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    'anonymous'
-  );
-}
-
-async function verifyTurnstile({
-  token,
-  ip,
-  secretKey,
-  fetchImpl,
-}: {
-  token?: string;
-  ip: string;
-  secretKey: string;
-  fetchImpl?: typeof fetch;
-}): Promise<RegistrationSecurityResult> {
-  if (!token) {
-    return { ok: false, status: 400, error: '请先完成人机验证' };
-  }
-
-  if (!secretKey) {
-    return { ok: false, status: 500, error: 'Turnstile 未配置' };
-  }
-
-  const verifyFetch = fetchImpl ?? fetch;
-
-  const form = new FormData();
-  form.set('secret', secretKey);
-  form.set('response', token);
-  if (ip && ip !== 'anonymous') {
-    form.set('remoteip', ip);
-  }
-
-  const response = await verifyFetch(
-    'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-    {
-      method: 'POST',
-      body: form,
-    }
-  );
-  const result = (await response.json().catch(() => null)) as {
-    success?: boolean;
-  } | null;
-
-  if (!response.ok || !result?.success) {
-    return { ok: false, status: 400, error: '人机验证失败，请重试' };
-  }
-
-  return { ok: true, status: 200 };
+  return getClientIp(headers);
 }
 
 async function checkInvite({
@@ -297,7 +248,7 @@ export async function validateRegistrationSecurity(
   }
 
   if (config.turnstileRequired) {
-    const result = await verifyTurnstile({
+    const result = await verifyTurnstileToken({
       token: input.turnstileToken,
       ip: input.ip,
       secretKey: config.turnstileSecretKey,
