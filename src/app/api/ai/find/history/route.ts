@@ -58,6 +58,8 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = body as Record<string, unknown>;
+  // Defense-in-depth truncation — normal IDs (UUID) and queries (search input)
+  // never exceed these limits; only malformed or malicious payloads would.
   const id =
     typeof payload.id === 'string' ? payload.id.trim().slice(0, 80) : '';
   const query =

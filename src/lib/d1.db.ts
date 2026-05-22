@@ -562,6 +562,8 @@ export class D1Storage implements IStorage {
             response_json = excluded.response_json,
             status = excluded.status,
             updated_at = excluded.updated_at
+            -- last_opened_at and opened_count intentionally omitted:
+            -- they are managed by touchAiFindSavedRecord (called on open).
         `
         )
         .bind(

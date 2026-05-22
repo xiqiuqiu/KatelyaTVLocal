@@ -120,7 +120,7 @@ function formatSavedRecordTime(timestamp: number): string {
     hour12: false,
   });
 
-  return formatter.format(new Date(timestamp)).replace('/', '-');
+  return formatter.format(new Date(timestamp)).replaceAll('/', '-');
 }
 
 function getConfidenceLabel(confidence: AiFindCandidateQuery['confidence']) {
@@ -219,13 +219,18 @@ export default function AiFindPanel() {
     status: AiFindSavedRecordStatus;
     createdAt: number;
   }) => {
-    void saveAiFindSavedRecordSnapshot({
+    saveAiFindSavedRecordSnapshot({
       id,
       query: originalQuery,
       response,
       status,
       createdAt,
-    }).then(refreshSavedRecords);
+    })
+      .then(refreshSavedRecords)
+      .catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error('Failed to persist AI find saved snapshot:', err);
+      });
   };
 
   const loadCandidateGroup = async ({
