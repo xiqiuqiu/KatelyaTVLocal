@@ -20,6 +20,7 @@ import { homeTabMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
 import ContinueWatching from '@/components/ContinueWatching';
 import PageLayout from '@/components/PageLayout';
+import { useSite } from '@/components/SiteProvider';
 import ActionLink from '@/components/ui/ActionLink';
 import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
 import PageHeader from '@/components/ui/PageHeader';
@@ -29,12 +30,13 @@ import VideoCard from '@/components/VideoCard';
 
 export const runtime = 'edge';
 
-// KatelyaTV 底部 Logo 组件
+// 底部 Logo 组件
 const BottomKatelyaLogo = () => {
+  const { siteName } = useSite();
   return (
     <div className='bottom-logo-container'>
       <div className='text-center'>
-        <div className='bottom-logo'>KatelyaTV</div>
+        <div className='bottom-logo'>{siteName}</div>
         <div className='mt-2 text-sm text-[rgb(var(--ui-text-muted))] opacity-75'>
           影视聚合搜索与在线播放
         </div>

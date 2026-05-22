@@ -413,7 +413,7 @@ export default function VideoCard({
         <button
           aria-label={titleActionLabel}
           className={`block w-full truncate font-semibold text-[rgb(var(--ui-text))] transition-colors duration-300 hover:text-[rgb(var(--ui-success))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent ${
-            isSmall ? 'text-xs' : 'text-sm'
+            isSmall ? 'text-lg leading-6' : 'text-base leading-5'
           }`}
           onClick={handleClick}
           title={actualTitle}

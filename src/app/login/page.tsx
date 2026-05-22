@@ -5,6 +5,8 @@ export const runtime = 'edge';
 import {
   ArrowRight,
   Clapperboard,
+  Eye,
+  EyeOff,
   Hash,
   KeyRound,
   Loader2,
@@ -39,6 +41,7 @@ declare global {
 function LoginPageClient() {
   const searchParams = useSearchParams();
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [turnstileToken, setTurnstileToken] = useState('');
@@ -209,7 +212,7 @@ function LoginPageClient() {
                 </div>
 
                 <p className='mb-4 text-sm font-semibold uppercase text-[rgb(var(--ui-accent-warm))]'>
-                  KatelyaTV
+                  {siteName}
                 </p>
                 <h1 className='max-w-xl text-5xl font-semibold leading-tight text-[rgb(var(--ui-text))]'>
                   {siteName}
@@ -255,7 +258,7 @@ function LoginPageClient() {
               </div>
               <div>
                 <p className='text-sm font-semibold text-[rgb(var(--ui-accent-warm))]'>
-                  KatelyaTV
+                  {siteName}
                 </p>
                 <h1 className='text-2xl font-semibold text-[rgb(var(--ui-text))]'>
                   {siteName}
@@ -320,13 +323,28 @@ function LoginPageClient() {
                     <KeyRound className='pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
                     <input
                       id='password'
-                      type='password'
+                      type={showPassword ? 'text' : 'password'}
                       autoComplete='current-password'
-                      className='block w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg-elevated)/0.76)] py-3 pl-12 pr-4 text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.34)] sm:text-base'
+                      className='block w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg-elevated)/0.76)] py-3 pl-12 pr-16 text-[rgb(var(--ui-text))] shadow-ui-soft selection:bg-[rgb(var(--ui-accent)/0.28)] selection:text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.34)] sm:text-base'
                       placeholder='输入访问密码'
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />
+                    <button
+                      aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                      className='absolute right-0 top-1/2 flex h-full w-16 -translate-y-1/2 items-center justify-center rounded-r-ui-sm text-[rgb(var(--ui-text-muted))] transition-colors duration-200 before:absolute before:inset-y-1 before:right-2 before:w-11 before:rounded-ui-sm before:border before:border-transparent before:bg-transparent before:transition-all before:duration-200 hover:text-[rgb(var(--ui-text))] hover:before:border-[rgb(var(--ui-border)/0.62)] hover:before:bg-[rgb(var(--ui-surface-strong)/0.44)] hover:before:shadow-ui-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.38)] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--ui-bg))]'
+                      onClick={() => setShowPassword((value) => !value)}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setShowPassword(true)}
+                      onMouseLeave={() => setShowPassword(false)}
+                      type='button'
+                    >
+                      {showPassword ? (
+                        <EyeOff className='relative h-5 w-5' />
+                      ) : (
+                        <Eye className='relative h-5 w-5' />
+                      )}
+                    </button>
                   </div>
                 </div>
 
