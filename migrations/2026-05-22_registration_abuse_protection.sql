@@ -20,6 +20,3 @@ CREATE TABLE IF NOT EXISTS registration_audit (
 
 CREATE INDEX IF NOT EXISTS idx_registration_audit_ip_created
   ON registration_audit(ip, created_at);
-
-CREATE INDEX IF NOT EXISTS idx_registration_audit_username
-  ON registration_audit(username);
