@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import type { SearchResult, SourceStatus } from '@/lib/types';
 import { createSourceStatus } from '@/lib/utils';
 
@@ -7,6 +8,10 @@ import EpisodeSelector from '@/components/EpisodeSelector';
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
+}));
+
+jest.mock('@/lib/source-preference-client', () => ({
+  fetchSourcePreferencesInBatches: jest.fn(),
 }));
 
 jest.mock('@/lib/utils', () => {
@@ -24,7 +29,26 @@ jest.mock('@/lib/utils', () => {
 });
 
 describe('EpisodeSelector playback sidebar controls', () => {
-  it('shows stable tabs and keeps episode buttons findable by accessible name', () => {
+  const mockedFetchSourcePreferencesInBatches =
+    fetchSourcePreferencesInBatches as jest.MockedFunction<
+      typeof fetchSourcePreferencesInBatches
+    >;
+
+  beforeEach(() => {
+    mockedFetchSourcePreferencesInBatches.mockResolvedValue({
+      orderedSourceKeys: [],
+      results: [],
+      generatedAt: 1710000000000,
+      rankingSource: 'live',
+      confidence: 'low',
+    });
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('shows stable tabs and keeps episode buttons findable by accessible name', async () => {
     const sourceStatuses = new Map<string, SourceStatus>([
       [
         'source-a-a',
@@ -63,6 +87,10 @@ describe('EpisodeSelector playback sidebar controls', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '线路' }));
 
+    await waitFor(() => {
+      expect(mockedFetchSourcePreferencesInBatches).toHaveBeenCalledTimes(1);
+    });
+
     expect(screen.getByText('A源')).toBeInTheDocument();
     const unavailableSourceButton = screen.getByRole('button', {
       name: '切换线路 A源',
@@ -72,5 +100,46 @@ describe('EpisodeSelector playback sidebar controls', () => {
     fireEvent.click(unavailableSourceButton);
 
     expect(handleSourceChange).not.toHaveBeenCalled();
+  });
+
+  it('server-probes all source rows when the source tab is opened', async () => {
+    const availableSources: SearchResult[] = Array.from(
+      { length: 45 },
+      (_, index) => ({
+        id: `id-${index}`,
+        source: `source-${index}`,
+        title: `绀轰緥 ${index}`,
+        year: '2026',
+        poster: '',
+        episodes: [`https://example.com/${index}.m3u8`],
+        source_name: `S${index}`,
+      })
+    );
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-0'
+        currentId='id-0'
+        availableSources={availableSources}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockedFetchSourcePreferencesInBatches).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockedFetchSourcePreferencesInBatches).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        {
+          sourceKey: 'source-44-id-44',
+          episodeUrl: 'https://example.com/44.m3u8',
+        },
+      ])
+    );
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[0][0]).toHaveLength(
+      45
+    );
   });
 });

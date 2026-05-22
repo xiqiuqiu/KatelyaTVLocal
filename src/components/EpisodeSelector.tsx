@@ -5,6 +5,7 @@
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
+import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import { SearchResult, SourceStatus, SourceVideoInfo } from '@/lib/types';
 import {
   createPlayableSourceStatus,
@@ -79,6 +80,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   const attemptedSourcesRef = useRef<Set<string>>(new Set());
   const videoInfoMapRef = useRef<Map<string, SourceVideoInfo>>(new Map());
   const sourceStatusMapRef = useRef<Map<string, SourceStatus>>(new Map());
+  const sourcePreferenceProbeKeyRef = useRef<string>('');
 
   // 同步状态到 ref
   useEffect(() => {
@@ -452,6 +454,79 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       });
     }
   }, [precomputedSourceStatuses]);
+
+  useEffect(() => {
+    if (activeTab !== 'sources' || availableSources.length === 0) {
+      return;
+    }
+
+    const requestSources = availableSources.map((source) => {
+      const probeEpisodeIndex = Math.max(
+        0,
+        Math.min(value - 1, Math.max(0, source.episodes.length - 1))
+      );
+
+      return {
+        sourceKey: getSourceIdentityKey(source.source, source.id),
+        episodeUrl: source.episodes?.[probeEpisodeIndex] || null,
+      };
+    });
+    const requestKey = requestSources
+      .map((source) => `${source.sourceKey}:${source.episodeUrl || ''}`)
+      .join('|');
+
+    if (sourcePreferenceProbeKeyRef.current === requestKey) {
+      return;
+    }
+    sourcePreferenceProbeKeyRef.current = requestKey;
+
+    let cancelled = false;
+
+    void fetchSourcePreferencesInBatches(requestSources)
+      .then((preferenceData) => {
+        if (cancelled) {
+          return;
+        }
+
+        setSourceStatusMap((prev) => {
+          const next = new Map(prev);
+
+          preferenceData.results.forEach((result) => {
+            const previousStatus = next.get(result.sourceKey);
+            if (
+              previousStatus &&
+              previousStatus.kind !== 'idle' &&
+              previousStatus.kind !== 'probing' &&
+              !previousStatus.fromMemory
+            ) {
+              return;
+            }
+
+            next.set(
+              result.sourceKey,
+              createSourceStatus(result.kind, {
+                reason: result.reason,
+                playbackMode:
+                  result.kind === 'unavailable' ? undefined : result.kind,
+                domain: result.domain || previousStatus?.domain || null,
+                updatedAt: result.updatedAt,
+                rankingSource: result.rankingSource,
+                rankScore: result.rankScore,
+              })
+            );
+          });
+
+          return next;
+        });
+      })
+      .catch(() => {
+        sourcePreferenceProbeKeyRef.current = '';
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, availableSources, value]);
 
   // 当换源Tab激活时，只对少量候选源做浏览器直连检测，避免控制台刷满错误
   useEffect(() => {
