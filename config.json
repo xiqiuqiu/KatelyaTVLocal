@@ -96,11 +96,6 @@
       "name": "TV-无尽资源",
       "detail": ""
     },
-    "wwzy": {
-      "api": "https://wwzy.tv/api.php/provide/vod",
-      "name": "TV-旺旺短剧",
-      "detail": "https://wwzy.tv"
-    },
     "wwzy_api": {
       "api": "https://api.wwzy.tv/api.php/provide/vod",
       "name": "TV-旺旺资源",
@@ -256,18 +251,6 @@
       "name": "极速资源",
       "detail": "https://jszyapi.com"
     },
-    "gayapi": {
-      "api": "https://gayapi.com/api.php/provide/vod",
-      "name": "快播资源网站"
-    },
-    "xingba111": {
-      "api": "https://xingba111.com/api.php/provide/vod",
-      "name": "性吧资源"
-    },
-    "aiduanju": {
-      "api": "https://www.aiduanju.cc/",
-      "name": "爱短剧.cc"
-    },
     "huawei8": {
       "api": "https://huawei8.live/api.php/provide/vod",
       "name": "华为吧资源"
@@ -300,25 +283,10 @@
       "api": "https://dadiapi.com/api.php/provide/vod",
       "name": "大地资源网络"
     },
-    "hsckzy888": {
-      "api": "https://hsckzy888.com/api.php/provide/vod",
-      "name": "黄色资源啊啊"
-    },
-    "xiaojizy": {
-      "api": "https://api.xiaojizy.live/provide/vod",
-      "name": "小鸡资源"
-    },
-    "kuaichezy": {
-      "api": "https://caiji.kuaichezy.org/api.php/provide",
-      "name": "快车资源阿"
-    },
+
     "xinlangapi_provide": {
       "api": "https://api.xinlangapi.com/xinlangapi.php/provide/vod",
       "name": "新浪资源阿"
-    },
-    "apilj_provide": {
-      "api": "https://apilj.com/api.php/provide",
-      "name": "辣椒资源黄黄"
     },
     "yzzy_api": {
       "api": "https://api.yzzy-api.com/inc/ldg_api_all.php/provide/vod",
@@ -327,10 +295,6 @@
     "iqiyizyapi": {
       "api": "https://www.iqiyizyapi.com/api.php/provide/vod",
       "name": "iqiyi资源"
-    },
-    "xxibaozyw": {
-      "api": "https://www.xxibaozyw.com/api.php/provide/vod",
-      "name": "细胞采集黄色"
     },
     "qiqidys": {
       "api": "https://www.qiqidys.com/api.php/provide/vod/",
