@@ -30,11 +30,11 @@ import {
 } from '@/lib/hls-ad-filter';
 import { getSourceSwitchResumePlan } from '@/lib/playback-source-switch';
 import { getBrowserProbeBudget } from '@/lib/source-preference';
+import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import {
   PlaybackFeedbackInput,
   SearchResult,
   SourcePlaybackMode,
-  SourcePreferenceResponse,
   SourcePreferenceResult,
   SourceStatus,
   SourceVideoInfo,
@@ -396,32 +396,18 @@ function PlayPageClient() {
         0,
         Math.min(currentEpisodeIndexRef.current, sources[0].episodes.length - 1)
       );
-      const response = await fetch('/api/source-preference', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        cache: 'no-store',
-        body: JSON.stringify({
-          sources: sourceEntries.map(({ source, sourceKey }) => ({
-            sourceKey,
-            episodeUrl:
-              source.episodes?.[
-                Math.max(
-                  0,
-                  Math.min(probeEpisodeIndex, source.episodes.length - 1)
-                )
-              ] || null,
-          })),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`批量探测失败: ${response.status}`);
-      }
-
-      const preferenceData =
-        (await response.json()) as SourcePreferenceResponse;
+      const preferenceData = await fetchSourcePreferencesInBatches(
+        sourceEntries.map(({ source, sourceKey }) => ({
+          sourceKey,
+          episodeUrl:
+            source.episodes?.[
+              Math.max(
+                0,
+                Math.min(probeEpisodeIndex, source.episodes.length - 1)
+              )
+            ] || null,
+        }))
+      );
 
       if (preferenceData.orderedSourceKeys.length > 0) {
         orderedSourceKeys = preferenceData.orderedSourceKeys;
