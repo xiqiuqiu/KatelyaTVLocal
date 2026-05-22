@@ -7,6 +7,7 @@
   <p>Continuation of MoonTV &middot; actively maintained</p>
 
   <p>
+    <a href="README_CN.md">中文</a> |
     <a href="#deployment">Deploy</a> &middot;
     <a href="#features">Features</a> &middot;
     <a href="#docker">Docker</a> &middot;
@@ -38,6 +39,19 @@ This project evolved from MoonTV as a community continuation. Original authors a
 - **Multi-user** &mdash; independent per-user data
 - **Multiple storage backends** &mdash; LocalStorage, Redis, Kvrocks, D1, Upstash
 
+### Security
+
+- **Turnstile verification** &mdash; Cloudflare Turnstile anti-bot protection for login and registration
+- **Registration invite system** &mdash; admin-managed invite codes for controlled user registration
+- **Secure sessions** &mdash; httpOnly cookies signed with HMAC-SHA256
+- **Password hashing** &mdash; PBKDF2-SHA256 with 100,000 iterations
+
+### Quality of Life
+
+- **HLS ad filtering** &mdash; known ad segment patterns filtered from HLS streams
+- **Source ranking** &mdash; automated source health scoring and availability probing
+- **AI usage monitoring** &mdash; admin dashboard for tracking AI find assistant usage
+
 ### Deployment & Integration
 
 - **Docker** &mdash; one-command deployment, multi-arch images
@@ -48,16 +62,32 @@ This project evolved from MoonTV as a community continuation. Original authors a
 - **Dark mode** &mdash; light/dark theme toggle
 - **Admin panel** &mdash; source management, user management, site config
 
+## Screenshots
+
+<div align="center">
+  <img src="ui/UI_1.0_web.png" alt="Web UI" width="800" />
+  <p><em>Web Interface</em></p>
+
+  <img src="ui/UI_1.0_APP.png" alt="App UI" width="800" />
+  <p><em>Mobile App Interface</em></p>
+
+  <img src="ui/UI_state_design.png" alt="State Design" width="800" />
+  <p><em>State Design</em></p>
+</div>
+
 ## Tech Stack
 
 | Category   | Dependencies                                          |
 | ---------- | ----------------------------------------------------- |
 | Framework  | Next.js 14 &middot; App Router                        |
-| UI & Style | Tailwind CSS 3 &middot; Framer Motion                 |
-| Language   | TypeScript 5                                          |
+| UI & Style | Tailwind CSS 3 &middot; Framer Motion &middot; Headless UI |
+| Language   | TypeScript 4.9                                        |
 | Player     | ArtPlayer &middot; HLS.js                             |
 | State      | React Hooks &middot; Context API                      |
+| Validation | Zod                                                   |
+| Auth       | PBKDF2-SHA256 &middot; HMAC-SHA256 &middot; Turnstile |
 | Quality    | ESLint &middot; Prettier &middot; Jest &middot; Husky |
+| PWA        | next-pwa                                              |
 | Deploy     | Docker &middot; Vercel &middot; Cloudflare Pages      |
 
 ## Deployment
@@ -250,6 +280,8 @@ For recommended config files, see the download links in the deployment sections 
 
 **Admin panel** (non-localstorage modes only): import/export configs, drag-to-reorder sources, enable/disable per source. Changes persist in the database without restart.
 
+> **Note on config loading:** In Docker deployments (`DOCKER_ENV=true`), `config.json` is read from the filesystem at runtime. In Vercel/Cloudflare Pages deployments, the config is compiled into `src/lib/runtime.ts` at build time via `scripts/convert-config.js`. In non-localstorage modes, database-stored admin config overrides the file-based config.
+
 ## Environment Variables
 
 ### Core
@@ -261,6 +293,7 @@ For recommended config files, see the download links in the deployment sections 
 | `USERNAME`            | Admin username (non-localstorage modes)                                       | (empty)           |
 | `SITE_NAME`           | Site display name                                                             | `KatelyaTV`       |
 | `ANNOUNCEMENT`        | Site-wide announcement banner text                                            | (disclaimer text) |
+| `DOCKER_ENV`           | Set to `true` in Docker to read config.json at runtime                        | (empty)           |
 
 ### Storage
 
@@ -270,6 +303,7 @@ For recommended config files, see the download links in the deployment sections 
 | `REDIS_URL`                   | Redis connection URL                            | connection URL                                      | (empty)        |
 | `KVROCKS_URL`                 | Kvrocks connection URL                          | connection URL                                      | (empty)        |
 | `KVROCKS_PASSWORD`            | Kvrocks password                                | string                                              | (empty)        |
+| `KVROCKS_DATABASE`            | Kvrocks database number                         | `0`-`15`                                            | `0`            |
 | `UPSTASH_URL`                 | Upstash Redis URL                               | connection URL                                      | (empty)        |
 | `UPSTASH_TOKEN`               | Upstash Redis token                             | token string                                        | (empty)        |
 | `NEXT_PUBLIC_ENABLE_REGISTER` | Allow user registration (non-localstorage only) | `true` / `false`                                    | `false`        |
@@ -283,6 +317,21 @@ For recommended config files, see the download links in the deployment sections 
 | `NEXT_PUBLIC_DOUBAN_PROXY`    | Browser-side Douban API proxy URL prefix | (empty) |
 | `NEXT_PUBLIC_SOURCE_PROBE`    | Browser-side source probe proxy          | (empty) |
 | `NEXT_PUBLIC_HLS_PROXY`       | Browser-side HLS stream proxy            | (empty) |
+
+### Turnstile & Registration Security
+
+| Variable                              | Description                            | Default |
+| ------------------------------------- | -------------------------------------- | ------- |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`      | Cloudflare Turnstile site key          | (empty) |
+| `TURNSTILE_SECRET_KEY`                | Cloudflare Turnstile secret key        | (empty) |
+| `NEXT_PUBLIC_LOGIN_TURNSTILE_REQUIRED` | Require Turnstile on login             | `false` |
+| `LOGIN_TURNSTILE_REQUIRED`            | Server-side Turnstile requirement      | (empty) |
+| `REGISTER_TURNSTILE_REQUIRED`         | Require Turnstile on registration      | `false` |
+| `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | Require invite code for registration  | `false` |
+| `REGISTER_INVITE_REQUIRED`            | Server-side invite requirement         | (empty) |
+| `REGISTER_PASSWORD_MIN_LENGTH`        | Minimum password length                | `6`     |
+| `REGISTER_IP_WINDOW_SECONDS`          | IP rate-limit window (seconds)         | `3600`  |
+| `REGISTER_IP_WINDOW_LIMIT`            | Max registrations per IP per window    | `3`     |
 
 ### AI Find Assistant
 
@@ -299,6 +348,11 @@ For recommended config files, see the download links in the deployment sections 
 | `AI_THINKING_MODE`        | Thinking mode: `auto`, `enabled`, `disabled` | `auto`                      |
 | `AI_MAX_RESULTS`          | Max candidate queries                        | `5`                         |
 | `AI_DAILY_LIMIT_PER_USER` | Daily usage limit per user                   | `20`                        |
+| `AI_DAILY_LIMIT_PER_IP`   | Daily usage limit per IP                     | `60`                        |
+| `AI_DAILY_LIMIT_GLOBAL`   | Global daily usage limit                     | (unlimited)                 |
+| `AI_GROUP_DAILY_LIMIT_PER_USER` | Group search daily limit per user      | `50`                        |
+| `AI_GROUP_DAILY_LIMIT_PER_IP`   | Group search daily limit per IP        | `120`                       |
+| `AI_GROUP_DAILY_LIMIT_GLOBAL`   | Group search global daily limit         | (unlimited)                 |
 | `AI_CACHE_TTL_SECONDS`    | Search cache TTL                             | `1800`                      |
 
 ### Cloudflare Source Ranking
@@ -339,7 +393,7 @@ See [TVBox integration spec](specs/features/2026-05-01-tvbox-integration.md) for
 
 ## Android TV (OrionTV)
 
-Use with [OrionTV](https://github.com/zimplexing/OrionTV) on Android TV. Configure OrionTV with your KatelyaTV deployment URL and password. CORS headers are enabled on all API routes.
+Use with [OrionTV](https://github.com/zimplexing/OrionTV) on Android TV. Configure OrionTV with your deployment URL and password. CORS headers are enabled on all API routes.
 
 ## Documentation
 
@@ -361,13 +415,15 @@ Key docs:
 - [D1 Initialization SQL](specs/notes/2026-01-01-d1-initialization.md)
 - [Security Review (2026-05-11)](specs/notes/2026-05-11-security-review.md)
 - [Auth Security Design](specs/research/2026-05-11-auth-security-hardening-design.md)
+- [Deployment Compatibility](specs/notes/2026-01-01-deployment-compatibility.md)
+- [Docker Troubleshooting](specs/notes/2025-09-03-docker-troubleshooting.md)
 
 ## Security
 
 - **Set a password.** Instances without `PASSWORD` are publicly accessible.
 - Use `AUTH_SIGNING_SECRET` for session signing in non-localstorage modes.
 - Session cookies are `httpOnly`, signed with HMAC-SHA256.
-- Passwords are stored as PBKDF2-SHA256 hashes (120,000 iterations).
+- Passwords are stored as PBKDF2-SHA256 hashes (100,000 iterations).
 - Keep your instance private. Do not share the URL publicly.
 
 This project is for learning and personal use. Users are responsible for complying with local laws. The project developers assume no legal liability for users' actions.
