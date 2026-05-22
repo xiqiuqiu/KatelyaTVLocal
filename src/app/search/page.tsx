@@ -265,13 +265,13 @@ function SearchPageClient() {
         />
 
         <div className='mx-auto max-w-[95%] overflow-visible'>
-          <Surface className='mb-8 p-2' variant='plain'>
-            <div className='grid grid-cols-2 gap-2'>
+          <Surface className='mb-4 max-w-[28rem] p-1.5' variant='plain'>
+            <div className='grid grid-cols-2 gap-1.5'>
               <button
                 aria-pressed={searchMode === 'normal'}
-                className={`rounded-xl px-4 py-3 text-sm font-medium transition ${
+                className={`rounded-xl px-4 py-2.5 text-sm font-medium transition ${
                   searchMode === 'normal'
-                    ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))]'
+                    ? 'bg-[rgb(var(--ui-accent)/0.18)] text-[rgb(var(--ui-text))] shadow-[inset_0_0_0_1px_rgb(var(--ui-accent)/0.22)]'
                     : 'bg-white/5 text-[rgb(var(--ui-text-muted))] hover:bg-white/10'
                 }`}
                 onClick={() => setSearchMode('normal')}
@@ -281,9 +281,9 @@ function SearchPageClient() {
               </button>
               <button
                 aria-pressed={searchMode === 'ai'}
-                className={`rounded-xl px-4 py-3 text-sm font-medium transition ${
+                className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition ${
                   searchMode === 'ai'
-                    ? 'bg-[rgb(var(--ui-success))] text-[rgb(var(--ui-on-accent))]'
+                    ? 'bg-[rgb(var(--ui-success)/0.2)] text-[rgb(var(--ui-success))] shadow-[inset_0_0_0_1px_rgb(var(--ui-success)/0.28)]'
                     : 'bg-white/5 text-[rgb(var(--ui-text-muted))] hover:bg-white/10'
                 }`}
                 onClick={() => setSearchMode('ai')}
