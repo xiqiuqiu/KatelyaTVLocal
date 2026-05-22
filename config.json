@@ -1,17 +1,97 @@
 {
   "cache_time": 7200,
   "api_site": {
+    "dyttzy": {
+      "api": "http://caiji.dyttzyapi.com/api.php/provide/vod",
+      "name": "电影天堂资源",
+      "detail": "http://caiji.dyttzyapi.com"
+    },
+    "heimuer": {
+      "api": "https://json.heimuer.xyz/api.php/provide/vod",
+      "name": "黑木耳",
+      "detail": "https://heimuer.tv"
+    },
+    "ruyi": {
+      "api": "https://cj.rycjapi.com/api.php/provide/vod",
+      "name": "如意资源"
+    },
+    "bfzy": {
+      "api": "https://bfzyapi.com/api.php/provide/vod",
+      "name": "暴风资源"
+    },
+    "tyyszy": {
+      "api": "https://tyyszy.com/api.php/provide/vod",
+      "name": "天涯资源"
+    },
+    "ffzy": {
+      "api": "http://ffzy5.tv/api.php/provide/vod",
+      "name": "非凡影视",
+      "detail": "http://ffzy5.tv"
+    },
+    "zy360": {
+      "api": "https://360zy.com/api.php/provide/vod",
+      "name": "360资源"
+    },
+    "maotaizy": {
+      "api": "https://caiji.maotaizy.cc/api.php/provide/vod",
+      "name": "茅台资源"
+    },
+    "wolong": {
+      "api": "https://wolongzyw.com/api.php/provide/vod",
+      "name": "卧龙资源"
+    },
+    "jisu": {
+      "api": "https://jszyapi.com/api.php/provide/vod",
+      "name": "极速资源",
+      "detail": "https://jszyapi.com"
+    },
+    "dbzy": {
+      "api": "https://dbzy.tv/api.php/provide/vod",
+      "name": "豆瓣资源"
+    },
+    "aqy": {
+      "api": "https://iqiyizyapi.com/api.php/provide/vod",
+      "name": "爱奇艺资源"
+    },
+    "mdzy": {
+      "api": "https://www.mdzyapi.com/api.php/provide/vod",
+      "name": "魔都资源"
+    },
+    "zuid": {
+      "api": "https://api.zuidapi.com/api.php/provide/vod",
+      "name": "最大资源"
+    },
+    "yinghua": {
+      "api": "https://m3u8.apiyhzy.com/api.php/provide/vod",
+      "name": "樱花资源"
+    },
+    "wujin": {
+      "api": "https://api.wujinapi.me/api.php/provide/vod",
+      "name": "无尽资源"
+    },
+    "wwzy": {
+      "api": "https://wwzy.tv/api.php/provide/vod",
+      "name": "旺旺短剧"
+    },
+    "ikun": {
+      "api": "https://ikunzyapi.com/api.php/provide/vod",
+      "name": "iKun资源"
+    },
+    "lzi": {
+      "api": "https://cj.lziapi.com/api.php/provide/vod",
+      "name": "量子资源站"
+    },
+    "subo": {
+      "api": "https://www.subocaiji.com/api.php/provide/vod",
+      "name": "速播"
+    },
+    "maotai": {
+      "api": "https://tyyszyapi.com/api.php/provide/vod/",
+      "name": "天涯影视"
+    },
     "1080zyku": {
       "api": "https://api.1080zyku.com/inc/api_mac10.php",
       "name": "1080zyku"
-    },
-    "360zy": {
-      "api": "https://360zy.com/api.php/provide/vod",
-      "name": "360zy"
-    },
-    "ikunzy": {
-      "api": "https://ikunzyapi.com/api.php/provide/vod",
-      "name": "ikunzy"
     },
     "wujinapi_cc": {
       "api": "https://api.wujinapi.cc/api.php/provide/vod",
@@ -21,17 +101,9 @@
       "api": "https://api.guangsuapi.com/api.php/provide/vod",
       "name": "guangsuapi"
     },
-    "rycjapi": {
-      "api": "https://cj.rycjapi.com/api.php/provide/vod",
-      "name": "rycjapi"
-    },
     "wujinapi_com": {
       "api": "https://api.wujinapi.com/api.php/provide/vod",
       "name": "wujinapi_com"
-    },
-    "wujinapi_me": {
-      "api": "https://api.wujinapi.me/api.php/provide/vod",
-      "name": "wujinapi_me"
     },
     "wujinapi_net": {
       "api": "https://api.wujinapi.net/api.php/provide/vod",
@@ -41,17 +113,9 @@
       "api": "https://api.wwzy.tv/api.php/provide/vod",
       "name": "wwzy_api"
     },
-    "bfzyapi": {
-      "api": "https://bfzyapi.com/api.php/provide/vod",
-      "name": "bfzyapi"
-    },
     "zuidazy": {
       "api": "http://zuidazy.me/api.php/provide/vod",
       "name": "zuidazy"
-    },
-    "dyttzyapi": {
-      "api": "http://caiji.dyttzyapi.com/api.php/provide/vod",
-      "name": "dyttzyapi"
     },
     "apibdzy": {
       "api": "https://api.apibdzy.com/api.php/provide/vod",
@@ -69,10 +133,6 @@
       "api": "https://www.huyaapi.com/api.php/provide/vod",
       "name": "huyaapi"
     },
-    "dbzy": {
-      "api": "https://dbzy.tv/api.php/provide/vod",
-      "name": "dbzy"
-    },
     "hhzyapi": {
       "api": "https://hhzyapi.com/api.php/provide/vod",
       "name": "hhzyapi"
@@ -80,10 +140,6 @@
     "subocaiji": {
       "api": "https://subocaiji.com/api.php/provide/vod",
       "name": "subocaiji"
-    },
-    "lziapi": {
-      "api": "https://cj.lziapi.com/api.php/provide/vod",
-      "name": "lziapi"
     },
     "jinyingzy": {
       "api": "https://jinyingzy.com/api.php/provide/vod",
@@ -100,10 +156,6 @@
     "moduapi": {
       "api": "https://caiji.moduapi.cc/api.php/provide/vod",
       "name": "moduapi"
-    },
-    "mdzyapi": {
-      "api": "https://www.mdzyapi.com/api.php/provide/vod",
-      "name": "mdzyapi"
     },
     "ffzynew": {
       "api": "https://api.ffzyapi.com/api.php/provide/vod",
