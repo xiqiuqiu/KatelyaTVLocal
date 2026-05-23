@@ -7,6 +7,7 @@ import {
 } from '@testing-library/react';
 
 import {
+  deleteAiFindSavedRecord,
   getAiFindSavedRecord,
   listAiFindSavedRecords,
 } from '@/lib/ai-find/history-client';
@@ -123,6 +124,10 @@ describe('AiFindPanel', () => {
     >;
   const mockedGetAiFindSavedRecord =
     getAiFindSavedRecord as jest.MockedFunction<typeof getAiFindSavedRecord>;
+  const mockedDeleteAiFindSavedRecord =
+    deleteAiFindSavedRecord as jest.MockedFunction<
+      typeof deleteAiFindSavedRecord
+    >;
 
   beforeEach(() => {
     mockedListAiFindSavedRecords.mockResolvedValue([]);
@@ -176,6 +181,100 @@ describe('AiFindPanel', () => {
     expect(global.fetch).not.toHaveBeenCalledWith(
       expect.stringMatching(/^\/api\/ai\/find/)
     );
+  });
+
+  it('removes the opened saved record from the screen after deleting it', async () => {
+    const openedResponse: AiFindResponse = {
+      answer: 'saved answer',
+      candidateQueries: [
+        {
+          query: 'saved title',
+          reason: 'saved reason',
+          confidence: 'high',
+          type: 'movie',
+        },
+      ],
+      groups: [
+        {
+          query: 'saved title',
+          reason: 'saved reason',
+          confidence: 'high',
+          rawCount: 1,
+          groupedCount: 1,
+          groups: [
+            {
+              groupKey: 'saved-title-1986-movie',
+              title: 'saved title',
+              year: '1986',
+              items: [
+                {
+                  id: '1',
+                  title: 'saved title',
+                  poster: 'poster.jpg',
+                  episodes: ['episode 1'],
+                  source: 'test',
+                  source_name: 'test source',
+                  year: '1986',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      suggestions: [],
+      toolTrace: [],
+      generatedAt: 1700000000000,
+    };
+    const summary = {
+      id: 'rec_1',
+      query: 'saved query',
+      answer: 'saved answer',
+      candidateCount: 1,
+      foundGroupCount: 1,
+      status: 'complete' as const,
+      createdAt: 1,
+      updatedAt: 2,
+      lastOpenedAt: 2,
+      openedCount: 0,
+    };
+    mockedListAiFindSavedRecords
+      .mockResolvedValueOnce([summary])
+      .mockResolvedValueOnce([summary])
+      .mockResolvedValueOnce([]);
+    mockedGetAiFindSavedRecord.mockResolvedValue({
+      id: 'rec_1',
+      userName: 'alice',
+      query: 'saved query',
+      response: openedResponse,
+      status: 'complete',
+      createdAt: 1,
+      updatedAt: 2,
+      lastOpenedAt: 2,
+      openedCount: 0,
+    });
+    mockedDeleteAiFindSavedRecord.mockResolvedValue(undefined);
+
+    await act(async () => {
+      render(<AiFindPanel />);
+    });
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'saved query' })
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('saved title').length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '删除记录' }));
+
+    await waitFor(() => {
+      expect(mockedDeleteAiFindSavedRecord).toHaveBeenCalledWith('rec_1');
+      expect(
+        screen.queryByRole('button', { name: 'saved query' })
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText('saved title')).not.toBeInTheDocument();
+    });
   });
 
   it('uses the AI response candidate count as-is', async () => {

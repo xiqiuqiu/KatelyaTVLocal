@@ -172,6 +172,7 @@ export default function AiFindPanel() {
   const activeSavedRecordIdRef = useRef<string | null>(null);
   const activeSavedRecordCreatedAtRef = useRef<number | null>(null);
   const activeSavedRecordQueryRef = useRef<string | null>(null);
+  const deletedSavedRecordIdsRef = useRef<Set<string>>(new Set());
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const loadingText = getLoadingText(startedAt);
@@ -219,6 +220,10 @@ export default function AiFindPanel() {
     status: AiFindSavedRecordStatus;
     createdAt: number;
   }) => {
+    if (deletedSavedRecordIdsRef.current.has(id)) {
+      return;
+    }
+
     saveAiFindSavedRecordSnapshot({
       id,
       query: originalQuery,
@@ -521,6 +526,7 @@ export default function AiFindPanel() {
       activeSavedRecordIdRef.current = savedRecordId;
       activeSavedRecordCreatedAtRef.current = savedRecordCreatedAt;
       activeSavedRecordQueryRef.current = trimmedQuery;
+      deletedSavedRecordIdsRef.current.delete(savedRecordId);
       setActiveSavedRecordId(savedRecordId);
       persistSavedSnapshot({
         id: savedRecordId,
@@ -772,15 +778,22 @@ export default function AiFindPanel() {
                   <button
                     className='inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-[rgb(var(--ui-text-muted))] transition hover:border-[rgb(var(--ui-critical)/0.34)] hover:bg-[rgb(var(--ui-critical)/0.08)] hover:text-[rgb(var(--ui-critical))]'
                     onClick={async () => {
-                      if (!activeSavedRecordIdRef.current) return;
+                      const recordId = activeSavedRecordIdRef.current;
+                      if (!recordId) return;
 
-                      await deleteAiFindSavedRecord(
-                        activeSavedRecordIdRef.current
-                      );
+                      deletedSavedRecordIdsRef.current.add(recordId);
                       activeSavedRecordIdRef.current = null;
                       activeSavedRecordCreatedAtRef.current = null;
                       activeSavedRecordQueryRef.current = null;
                       setActiveSavedRecordId(null);
+                      setResult(null);
+                      setLoadingGroups([]);
+                      setGroupErrors({});
+                      setError(null);
+                      setSavedRecords((current) =>
+                        current.filter((record) => record.id !== recordId)
+                      );
+                      await deleteAiFindSavedRecord(recordId);
                       await refreshSavedRecords();
                     }}
                     type='button'
