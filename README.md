@@ -41,7 +41,7 @@ This project evolved from MoonTV as a community continuation. Original authors a
 
 ### Security
 
-- **Turnstile verification** &mdash; Cloudflare Turnstile anti-bot protection for login and registration
+- **Turnstile verification** &mdash; Cloudflare Turnstile anti-bot protection for registration
 - **Registration invite system** &mdash; admin-managed invite codes for controlled user registration
 - **Secure sessions** &mdash; httpOnly cookies signed with HMAC-SHA256
 - **Password hashing** &mdash; PBKDF2-SHA256 with 100,000 iterations
@@ -324,8 +324,6 @@ For recommended config files, see the download links in the deployment sections 
 | ------------------------------------- | -------------------------------------- | ------- |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`      | Cloudflare Turnstile site key          | (empty) |
 | `TURNSTILE_SECRET_KEY`                | Cloudflare Turnstile secret key        | (empty) |
-| `NEXT_PUBLIC_LOGIN_TURNSTILE_REQUIRED` | Require Turnstile on login             | `false` |
-| `LOGIN_TURNSTILE_REQUIRED`            | Server-side Turnstile requirement      | (empty) |
 | `REGISTER_TURNSTILE_REQUIRED`         | Require Turnstile on registration      | `false` |
 | `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | Require invite code for registration  | `false` |
 | `REGISTER_INVITE_REQUIRED`            | Server-side invite requirement         | (empty) |

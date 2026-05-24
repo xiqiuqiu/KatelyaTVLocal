@@ -41,7 +41,7 @@
 
 ### 安全防护
 
-- **Turnstile 验证** &mdash; Cloudflare Turnstile 人机验证，保护登录和注册
+- **Turnstile 验证** &mdash; Cloudflare Turnstile 人机验证，保护注册
 - **注册邀请系统** &mdash; 管理员可创建邀请码，控制用户注册
 - **安全会话** &mdash; httpOnly Cookie + HMAC-SHA256 签名
 - **密码哈希** &mdash; PBKDF2-SHA256（100,000 次迭代）
@@ -324,8 +324,6 @@ KatelyaTV 使用标准 Apple CMS V10 API 格式。在项目根目录创建 `conf
 | ------------------------------------- | -------------------------------- | ------- |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`      | Cloudflare Turnstile 站点密钥    | （空）  |
 | `TURNSTILE_SECRET_KEY`                | Cloudflare Turnstile 密钥        | （空）  |
-| `NEXT_PUBLIC_LOGIN_TURNSTILE_REQUIRED` | 登录时要求 Turnstile 验证        | `false` |
-| `LOGIN_TURNSTILE_REQUIRED`            | 服务端 Turnstile 要求            | （空）  |
 | `REGISTER_TURNSTILE_REQUIRED`         | 注册时要求 Turnstile 验证        | `false` |
 | `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | 注册需要邀请码                   | `false` |
 | `REGISTER_INVITE_REQUIRED`            | 服务端邀请要求                   | （空）  |

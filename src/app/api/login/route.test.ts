@@ -90,7 +90,7 @@ jest.mock('@/lib/turnstile', () => ({
   verifyTurnstileToken: jest.fn(),
 }));
 
-describe('login route Turnstile protection', () => {
+describe('login route without Turnstile protection', () => {
   const mockedGetConfig = getConfig as jest.MockedFunction<typeof getConfig>;
   const mockedDb = db as jest.Mocked<typeof db>;
   const mockedVerifyTurnstileToken =
@@ -125,11 +125,11 @@ describe('login route Turnstile protection', () => {
     delete process.env.TURNSTILE_SECRET_KEY;
   });
 
-  it('rejects login before password verification when Turnstile fails', async () => {
+  it('allows login without Turnstile when Turnstile verification would fail', async () => {
     mockedVerifyTurnstileToken.mockResolvedValue({
       ok: false,
       status: 400,
-      error: '请先完成人机验证',
+      error: 'Turnstile failed',
     });
 
     const response = await POST(
@@ -146,14 +146,13 @@ describe('login route Turnstile protection', () => {
       })
     );
 
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({
-      error: '请先完成人机验证',
-    });
-    expect(mockedDb.verifyUser).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(mockedVerifyTurnstileToken).not.toHaveBeenCalled();
+    expect(mockedDb.verifyUser).toHaveBeenCalledWith('alice', 'password123');
   });
 
-  it('passes Turnstile token to verifier before normal login', async () => {
+  it('ignores Turnstile token during normal login', async () => {
     const response = await POST(
       new Request('https://app.example.com/api/login', {
         method: 'POST',
@@ -170,11 +169,7 @@ describe('login route Turnstile protection', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockedVerifyTurnstileToken).toHaveBeenCalledWith({
-      token: 'token',
-      ip: '203.0.113.10',
-      secretKey: 'secret',
-    });
+    expect(mockedVerifyTurnstileToken).not.toHaveBeenCalled();
     expect(mockedDb.verifyUser).toHaveBeenCalledWith('alice', 'password123');
   });
 });

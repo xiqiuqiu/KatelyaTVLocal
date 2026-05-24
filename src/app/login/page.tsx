@@ -50,7 +50,6 @@ function LoginPageClient() {
   const [shouldAskUsername, setShouldAskUsername] = useState(false);
   const [enableRegister, setEnableRegister] = useState(false);
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
-  const [loginTurnstileRequired, setLoginTurnstileRequired] = useState(false);
   const [registerInviteRequired, setRegisterInviteRequired] = useState(true);
   const { siteName } = useSite();
 
@@ -63,9 +62,6 @@ function LoginPageClient() {
       );
       setEnableRegister(Boolean(window.RUNTIME_CONFIG?.ENABLE_REGISTER));
       setTurnstileSiteKey(window.RUNTIME_CONFIG?.TURNSTILE_SITE_KEY || '');
-      setLoginTurnstileRequired(
-        Boolean(window.RUNTIME_CONFIG?.LOGIN_TURNSTILE_REQUIRED)
-      );
       setRegisterInviteRequired(
         window.RUNTIME_CONFIG?.REGISTER_INVITE_REQUIRED !== false
       );
@@ -73,8 +69,7 @@ function LoginPageClient() {
   }, []);
 
   useEffect(() => {
-    const shouldRenderTurnstile =
-      (enableRegister || loginTurnstileRequired) && turnstileSiteKey;
+    const shouldRenderTurnstile = enableRegister && turnstileSiteKey;
     if (!shouldRenderTurnstile) return;
 
     const scriptId = 'cf-turnstile-script';
@@ -109,17 +104,13 @@ function LoginPageClient() {
     } else {
       renderTurnstile();
     }
-  }, [enableRegister, loginTurnstileRequired, turnstileSiteKey]);
+  }, [enableRegister, turnstileSiteKey]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
 
     if (!password || (shouldAskUsername && !username)) return;
-    if (loginTurnstileRequired && !turnstileToken) {
-      setError('请先完成人机验证');
-      return;
-    }
 
     try {
       setLoading(true);
@@ -128,7 +119,6 @@ function LoginPageClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password,
-          turnstileToken,
           ...(shouldAskUsername ? { username } : {}),
         }),
       });
@@ -141,8 +131,6 @@ function LoginPageClient() {
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? '服务器错误');
-        window.turnstile?.reset();
-        setTurnstileToken('');
       }
     } catch (error) {
       setError('网络错误，请稍后重试');
@@ -396,10 +384,6 @@ function LoginPageClient() {
                   </>
                 )}
 
-                {!enableRegister && loginTurnstileRequired && (
-                  <div id='register-turnstile' className='min-h-[65px]' />
-                )}
-
                 {error && (
                   <p
                     role='alert'
@@ -438,8 +422,7 @@ function LoginPageClient() {
                       disabled={
                         !password ||
                         loading ||
-                        (shouldAskUsername && !username) ||
-                        (loginTurnstileRequired && !turnstileToken)
+                        (shouldAskUsername && !username)
                       }
                       className='inline-flex min-h-12 items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-3 text-base font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50'
                     >
@@ -462,8 +445,7 @@ function LoginPageClient() {
                     disabled={
                       !password ||
                       loading ||
-                      (shouldAskUsername && !username) ||
-                      (loginTurnstileRequired && !turnstileToken)
+                      (shouldAskUsername && !username)
                     }
                     className='inline-flex min-h-12 w-full items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-3 text-base font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50'
                   >
