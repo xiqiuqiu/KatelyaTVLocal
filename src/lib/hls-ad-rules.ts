@@ -14,9 +14,29 @@ export type KnownHlsAdRuleContext = {
   blocks: KnownHlsAdRuleBlock[];
 };
 
+export type KnownHlsAdRuleSegment = {
+  segmentIndex: number;
+  durationSeconds: number;
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  mediaHost: string | null;
+  mediaUrl: string;
+  pathname: string;
+};
+
 export type KnownHlsAdRuleMatch = {
   ruleId: string;
   ruleName: string;
+};
+
+export type KnownHlsAdSegmentRuleMatch = KnownHlsAdRuleMatch & {
+  segmentIndexes: number[];
+  segmentCount: number;
+  durationSeconds: number;
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  mediaHosts: string[];
+  sampleUrls: string[];
 };
 
 export type KnownHlsAdRule = {
@@ -27,6 +47,16 @@ export type KnownHlsAdRule = {
     block: KnownHlsAdRuleBlock,
     context: KnownHlsAdRuleContext
   ) => boolean;
+};
+
+type KnownHlsAdSegmentRule = {
+  id: string;
+  name: string;
+  description: string;
+  findMatches: (
+    segments: KnownHlsAdRuleSegment[],
+    context: { baseUrl?: string }
+  ) => KnownHlsAdSegmentRuleMatch[];
 };
 
 function getHost(input?: string): string | null {
@@ -41,6 +71,10 @@ function getHost(input?: string): string | null {
 
 function isRyplayHost(host: string | null): boolean {
   return Boolean(host && /(^|\.)ryplay\d*\.com$/i.test(host));
+}
+
+function isModujx10Host(host: string | null): boolean {
+  return Boolean(host && /(^|\.)modujx\d+\.com$/i.test(host));
 }
 
 function hasRyplayContext(
@@ -101,6 +135,77 @@ function hasRyplayCasinoDurationFingerprint(
   );
 }
 
+function getBasePlaylistDirectory(baseUrl?: string): string | null {
+  if (!baseUrl) return null;
+
+  try {
+    const path = new URL(baseUrl).pathname;
+    return path.slice(0, path.lastIndexOf('/') + 1);
+  } catch {
+    return null;
+  }
+}
+
+function groupConsecutiveSegments(
+  segments: KnownHlsAdRuleSegment[]
+): KnownHlsAdRuleSegment[][] {
+  const groups: KnownHlsAdRuleSegment[][] = [];
+  let currentGroup: KnownHlsAdRuleSegment[] = [];
+
+  segments.forEach((segment) => {
+    const previousSegment = currentGroup[currentGroup.length - 1];
+    if (
+      previousSegment &&
+      segment.segmentIndex === previousSegment.segmentIndex + 1
+    ) {
+      currentGroup.push(segment);
+      return;
+    }
+
+    if (currentGroup.length > 0) {
+      groups.push(currentGroup);
+    }
+    currentGroup = [segment];
+  });
+
+  if (currentGroup.length > 0) {
+    groups.push(currentGroup);
+  }
+
+  return groups;
+}
+
+function createSegmentRuleMatch(
+  rule: Pick<KnownHlsAdSegmentRule, 'id' | 'name'>,
+  segments: KnownHlsAdRuleSegment[]
+): KnownHlsAdSegmentRuleMatch {
+  const hosts = Array.from(
+    new Set(
+      segments
+        .map((segment) => segment.mediaHost)
+        .filter((host): host is string => Boolean(host))
+    )
+  );
+
+  return {
+    ruleId: rule.id,
+    ruleName: rule.name,
+    segmentIndexes: segments.map((segment) => segment.segmentIndex),
+    segmentCount: segments.length,
+    durationSeconds: Number(
+      segments
+        .reduce((sum, segment) => sum + segment.durationSeconds, 0)
+        .toFixed(3)
+    ),
+    startTimeSeconds: Number(segments[0].startTimeSeconds.toFixed(3)),
+    endTimeSeconds: Number(
+      segments[segments.length - 1].endTimeSeconds.toFixed(3)
+    ),
+    mediaHosts: hosts,
+    sampleUrls: segments.map((segment) => segment.mediaUrl).slice(0, 3),
+  };
+}
+
 export const KNOWN_HLS_AD_RULES: KnownHlsAdRule[] = [
   {
     id: 'ruyi-ryplay-22s-midroll-v1',
@@ -151,6 +256,61 @@ export const KNOWN_HLS_AD_RULES: KnownHlsAdRule[] = [
   },
 ];
 
+const KNOWN_HLS_AD_SEGMENT_RULES: KnownHlsAdSegmentRule[] = [
+  {
+    id: 'moduapi-modujx10-foreign-path-v1',
+    name: 'moduapi modujx10 外目录插入广告',
+    description:
+      'modujx10 播放列表的正片分片通常位于当前剧集目录，广告会以同域名但不同日期、不同码率目录的连续短分片插入。',
+    findMatches(segments, context) {
+      const baseHost = getHost(context.baseUrl);
+      const baseDirectory = getBasePlaylistDirectory(context.baseUrl);
+      if (!isModujx10Host(baseHost) || !baseDirectory) {
+        return [];
+      }
+
+      const foreignSegments = segments.filter((segment) => {
+        if (segment.mediaHost !== baseHost) {
+          return false;
+        }
+
+        if (segment.pathname.startsWith(baseDirectory)) {
+          return false;
+        }
+
+        return (
+          /^\/\d{8}\/[^/]+\/\d+kb\/hls\/[^/]+\.ts$/i.test(segment.pathname) &&
+          segment.durationSeconds <= 4
+        );
+      });
+
+      return groupConsecutiveSegments(foreignSegments)
+        .filter((group) => {
+          const durationSeconds = group.reduce(
+            (sum, segment) => sum + segment.durationSeconds,
+            0
+          );
+
+          return (
+            group.length >= 6 &&
+            group.length <= 12 &&
+            durationSeconds >= 8 &&
+            durationSeconds <= 30
+          );
+        })
+        .map((group) =>
+          createSegmentRuleMatch(
+            {
+              id: 'moduapi-modujx10-foreign-path-v1',
+              name: 'moduapi modujx10 外目录插入广告',
+            },
+            group
+          )
+        );
+    },
+  },
+];
+
 export function findKnownHlsAdRuleMatch(
   block: KnownHlsAdRuleBlock,
   context: KnownHlsAdRuleContext
@@ -167,4 +327,13 @@ export function findKnownHlsAdRuleMatch(
     ruleId: matchedRule.id,
     ruleName: matchedRule.name,
   };
+}
+
+export function findKnownHlsAdSegmentRuleMatches(
+  segments: KnownHlsAdRuleSegment[],
+  context: { baseUrl?: string }
+): KnownHlsAdSegmentRuleMatch[] {
+  return KNOWN_HLS_AD_SEGMENT_RULES.flatMap((rule) =>
+    rule.findMatches(segments, context)
+  );
 }

@@ -116,6 +116,44 @@ function createRyplayCasinoShortGroupCase(): string {
   ].join('\n');
 }
 
+function createModuForeignPathInsertCase(): string {
+  return [
+    '#EXTM3U',
+    '#EXT-X-VERSION:3',
+    '#EXT-X-TARGETDURATION:4',
+    '#EXT-X-MEDIA-SEQUENCE:0',
+    '#EXTINF:3.753,',
+    '/20230919/zQzvuLQv/1143kb/hls/content-before-1.ts',
+    '#EXTINF:3.753,',
+    '/20230919/zQzvuLQv/1143kb/hls/content-before-2.ts',
+    '#EXTINF:3.333,',
+    '/20260523/fILZBl9p/10047kb/hls/foreign-ad-1.ts',
+    '#EXTINF:1.667,',
+    '/20260523/fILZBl9p/10047kb/hls/foreign-ad-2.ts',
+    '#EXTINF:1.667,',
+    '/20260523/fILZBl9p/10047kb/hls/foreign-ad-3.ts',
+    '#EXTINF:2.933,',
+    '/20260523/fILZBl9p/10047kb/hls/foreign-ad-4.ts',
+    '#EXTINF:1.667,',
+    '/20260523/fILZBl9p/10047kb/hls/foreign-ad-5.ts',
+    '#EXTINF:1.667,',
+    '/20260523/fILZBl9p/10047kb/hls/foreign-ad-6.ts',
+    '#EXTINF:1.667,',
+    '/20260523/fILZBl9p/10047kb/hls/foreign-ad-7.ts',
+    '#EXTINF:1.667,',
+    '/20260523/fILZBl9p/10047kb/hls/foreign-ad-8.ts',
+    '#EXTINF:3.300,',
+    '/20260523/fILZBl9p/10047kb/hls/foreign-ad-9.ts',
+    '#EXTINF:0.667,',
+    '/20260523/fILZBl9p/10047kb/hls/foreign-ad-10.ts',
+    '#EXTINF:3.753,',
+    '/20230919/zQzvuLQv/1143kb/hls/content-after-1.ts',
+    '#EXTINF:3.753,',
+    '/20230919/zQzvuLQv/1143kb/hls/content-after-2.ts',
+    '#EXT-X-ENDLIST',
+  ].join('\n');
+}
+
 describe('filterAdsFromM3U8', () => {
   it('records the ruyi ryplay 22-second midroll case in the known rule library', () => {
     expect(
@@ -458,6 +496,37 @@ describe('filterAdsFromM3U8', () => {
     ]);
     expect(formatM3U8AdFilterDebugMessage(debugInfo)).toContain(
       'ruyi-ryplay-casino-22s-midroll-v1'
+    );
+  });
+
+  it('removes moduapi modujx10 foreign-path inserted ad segments without discontinuity markers', () => {
+    const input = createModuForeignPathInsertCase();
+    const filtered = filterAdsFromM3U8(
+      input,
+      'https://play.modujx10.com/20230919/zQzvuLQv/1143kb/hls/index.m3u8'
+    );
+
+    expect(filtered).toContain('content-before-1.ts');
+    expect(filtered).toContain('content-after-2.ts');
+    expect(filtered).not.toContain('foreign-ad-1.ts');
+    expect(filtered).not.toContain('foreign-ad-10.ts');
+
+    const debugInfo = getM3U8AdFilterDebugInfo(
+      input,
+      filtered,
+      'https://play.modujx10.com/20230919/zQzvuLQv/1143kb/hls/index.m3u8'
+    );
+
+    expect(debugInfo.summary.removedBlocks).toEqual([
+      expect.objectContaining({
+        reason: 'known-rule',
+        ruleId: 'moduapi-modujx10-foreign-path-v1',
+        segmentCount: 10,
+        durationSeconds: expect.closeTo(20.235, 3),
+      }),
+    ]);
+    expect(formatM3U8AdFilterDebugMessage(debugInfo)).toContain(
+      'moduapi-modujx10-foreign-path-v1'
     );
   });
 
