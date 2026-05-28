@@ -41,6 +41,12 @@ import {
   SourceVideoInfo,
 } from '@/lib/types';
 import {
+  getPlayRecordHeartbeatIntervalMs,
+  shouldSavePlayRecord,
+  type PlayRecordSaveReason,
+  type PlayRecordSaveSnapshot,
+} from '@/lib/play-record-save-policy';
+import {
   buildHlsProxyUrl,
   createSourceStatus,
   getRememberedSourceStatus,
@@ -298,6 +304,7 @@ function PlayPageClient() {
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastSaveTimeRef = useRef<number>(0);
+  const lastSavedSnapshotRef = useRef<PlayRecordSaveSnapshot | null>(null);
 
   // 播放器时间状态（用于跳过功能）
   const [currentPlayTime, setCurrentPlayTime] = useState<number>(0);
@@ -1333,7 +1340,7 @@ function PlayPageClient() {
     if (episodeIndex >= 0 && episodeIndex < totalEpisodes) {
       // 在更换集数前保存当前播放进度
       if (artPlayerRef.current && artPlayerRef.current.paused) {
-        saveCurrentPlayProgress();
+        saveCurrentPlayProgress('episode-change');
       }
       setCurrentEpisodeIndex(episodeIndex);
     }
@@ -1344,7 +1351,7 @@ function PlayPageClient() {
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx > 0) {
       if (artPlayerRef.current && !artPlayerRef.current.paused) {
-        saveCurrentPlayProgress();
+        saveCurrentPlayProgress('episode-change');
       }
       setCurrentEpisodeIndex(idx - 1);
     }
@@ -1356,7 +1363,7 @@ function PlayPageClient() {
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx < d.episodes.length - 1) {
       if (artPlayerRef.current && !artPlayerRef.current.paused) {
-        saveCurrentPlayProgress();
+        saveCurrentPlayProgress('episode-change');
       }
       setCurrentEpisodeIndex(idx + 1);
     }
@@ -1455,8 +1462,21 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 播放记录相关
   // ---------------------------------------------------------------------------
+  const getRuntimeStorageType = () => {
+    if (typeof window !== 'undefined') {
+      return (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || null;
+    }
+
+    return process.env.NEXT_PUBLIC_STORAGE_TYPE || null;
+  };
+
   // 保存播放进度
-  const saveCurrentPlayProgress = async () => {
+  const saveCurrentPlayProgress = async (
+    reason: PlayRecordSaveReason = 'heartbeat',
+    options?: {
+      keepalive?: boolean;
+    }
+  ) => {
     if (
       !artPlayerRef.current ||
       !currentSourceRef.current ||
@@ -1468,29 +1488,48 @@ function PlayPageClient() {
     }
 
     const player = artPlayerRef.current;
-    const currentTime = player.currentTime || 0;
-    const duration = player.duration || 0;
+    const currentTime = Math.floor(player.currentTime || 0);
+    const duration = Math.floor(player.duration || 0);
 
     // 如果播放时间太短（少于5秒）或者视频时长无效，不保存
     if (currentTime < 1 || !duration) {
       return;
     }
 
-    try {
-      await savePlayRecord(currentSourceRef.current, currentIdRef.current, {
-        title: videoTitleRef.current,
-        source_name: detailRef.current?.source_name || '',
-        year: detailRef.current?.year,
-        cover: detailRef.current?.poster || '',
-        index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
-        total_episodes: detailRef.current?.episodes.length || 1,
-        play_time: Math.floor(currentTime),
-        total_time: Math.floor(duration),
-        save_time: Date.now(),
-        search_title: searchTitle,
-      });
+    const saveTime = Date.now();
+    const snapshot = {
+      key: generateStorageKey(currentSourceRef.current, currentIdRef.current),
+      episodeIndex: currentEpisodeIndexRef.current,
+      playTime: currentTime,
+      totalTime: duration,
+      savedAt: saveTime,
+    } satisfies PlayRecordSaveSnapshot;
 
-      lastSaveTimeRef.current = Date.now();
+    if (!shouldSavePlayRecord(lastSavedSnapshotRef.current, snapshot, reason)) {
+      return;
+    }
+
+    try {
+      await savePlayRecord(
+        currentSourceRef.current,
+        currentIdRef.current,
+        {
+          title: videoTitleRef.current,
+          source_name: detailRef.current?.source_name || '',
+          year: detailRef.current?.year,
+          cover: detailRef.current?.poster || '',
+          index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
+          total_episodes: detailRef.current?.episodes.length || 1,
+          play_time: currentTime,
+          total_time: duration,
+          save_time: saveTime,
+          search_title: searchTitle,
+        },
+        options
+      );
+
+      lastSaveTimeRef.current = saveTime;
+      lastSavedSnapshotRef.current = snapshot;
     } catch (err) {
       console.error('保存播放进度失败:', err);
     }
@@ -1499,13 +1538,15 @@ function PlayPageClient() {
   useEffect(() => {
     // 页面即将卸载时保存播放进度
     const handleBeforeUnload = () => {
-      saveCurrentPlayProgress();
+      void saveCurrentPlayProgress('beforeunload', { keepalive: true });
     };
 
     // 页面可见性变化时保存播放进度
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        saveCurrentPlayProgress();
+        void saveCurrentPlayProgress('visibility-hidden', {
+          keepalive: true,
+        });
       }
     };
 
@@ -2047,7 +2088,7 @@ function PlayPageClient() {
           if (sourceSwitchSavePendingRef.current) {
             sourceSwitchSavePendingRef.current = false;
             setTimeout(() => {
-              void saveCurrentPlayProgress();
+              void saveCurrentPlayProgress('resume-sync');
             }, 0);
           }
 
@@ -2138,21 +2179,17 @@ function PlayPageClient() {
 
         artPlayerRef.current.on('video:timeupdate', () => {
           const now = Date.now();
-          let interval = 5000;
-          if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'd1') {
-            interval = 10000;
-          }
-          if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'upstash') {
-            interval = 20000;
-          }
+          const interval = getPlayRecordHeartbeatIntervalMs(
+            getRuntimeStorageType()
+          );
           if (now - lastSaveTimeRef.current > interval) {
-            saveCurrentPlayProgress();
+            saveCurrentPlayProgress('heartbeat');
             lastSaveTimeRef.current = now;
           }
         });
 
         artPlayerRef.current.on('pause', () => {
-          saveCurrentPlayProgress();
+          saveCurrentPlayProgress('pause');
         });
 
         if (artPlayerRef.current?.video) {

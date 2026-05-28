@@ -1,5 +1,22 @@
 # D1 Database Migration Guide
 
+## Play Records Optimization Migration
+
+For lower D1 write amplification on playback progress, run the migration script:
+
+```bash
+npx wrangler d1 migrations apply DB
+```
+
+Or manually execute `migrations/2026-05-28_play_records_optimization.sql` in the D1 Console.
+
+This migration:
+
+- rebuilds `play_records` to use `PRIMARY KEY (username, key)`
+- removes the unused autoincrement `id` column
+- keeps only the `username, save_time DESC` index used by continue-watching reads
+- intentionally avoids explicit `BEGIN` / `COMMIT` statements because Cloudflare's local SQL runtime and Durable Objects-backed execution paths reject manual transaction SQL
+
 ## Skip Configs Migration
 
 If you have an existing D1 database, run the following SQL to add skip config support:
@@ -63,12 +80,14 @@ WHERE type = 'index'
 ## Execution Methods
 
 ### Cloudflare Dashboard (recommended)
+
 1. Log in to Cloudflare Dashboard
 2. Navigate to D1 > your database instance
 3. Open the Console tab
 4. Paste SQL and execute
 
 ### Wrangler CLI
+
 ```bash
 wrangler d1 execute your-database-name --file=migration.sql
 ```
