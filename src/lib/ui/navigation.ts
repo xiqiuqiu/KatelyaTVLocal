@@ -4,8 +4,7 @@ export type NavigationIcon =
   | 'film'
   | 'tv'
   | 'clover'
-  | 'heart'
-  | 'settings';
+  | 'heart';
 
 export interface NavigationItem {
   href: string;
@@ -27,14 +26,7 @@ export const sidebarNavigationItems: readonly NavigationItem[] = [
   { key: 'favorites', label: '收藏夹', href: '/?tab=favorites', icon: 'heart' },
 ] as const;
 
-export const secondaryNavigationItems: readonly NavigationItem[] = [
-  {
-    key: 'config',
-    label: 'TVBox配置',
-    href: '/config',
-    icon: 'settings',
-  },
-] as const;
+export const secondaryNavigationItems: readonly NavigationItem[] = [] as const;
 
 export function isNavigationItemActive(activePath: string, href: string) {
   const decodedActive = decodeURIComponent(activePath);

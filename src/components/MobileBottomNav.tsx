@@ -21,7 +21,6 @@ const iconMap: Record<NavigationIcon, typeof Home> = {
   tv: Tv,
   clover: Clover,
   heart: Heart,
-  settings: Home,
 };
 
 const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {

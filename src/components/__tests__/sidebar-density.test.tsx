@@ -63,4 +63,12 @@ describe('Sidebar shell density', () => {
       'false'
     );
   });
+
+  it('does not show unavailable TVBox configuration in the desktop sidebar', () => {
+    render(<Sidebar activePath='/' collapsed={false} />);
+
+    expect(
+      screen.queryByRole('link', { name: /TVBox配置/ })
+    ).not.toBeInTheDocument();
+  });
 });

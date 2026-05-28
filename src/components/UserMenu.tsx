@@ -2,7 +2,7 @@
 
 'use client';
 
-import { KeyRound, LogOut, Settings, Shield, Tv, User, X } from 'lucide-react';
+import { KeyRound, LogOut, Shield, User, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -29,28 +29,13 @@ const modalPanelClassName =
 const inputClassName =
   'w-full rounded-ui-sm border border-white/10 bg-white/5 px-3 py-2 text-sm text-[rgb(var(--ui-text))] transition-colors placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgba(var(--ui-accent),0.34)] disabled:cursor-not-allowed disabled:opacity-55';
 
-const toggleTrackClassName =
-  'h-6 w-11 rounded-full bg-white/15 transition-colors peer-checked:bg-[rgb(var(--ui-accent))]';
-
-const toggleKnobClassName =
-  'absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5';
-
 export const UserMenu: React.FC = () => {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [storageType, setStorageType] = useState<string>('localstorage');
   const [mounted, setMounted] = useState(false);
-
-  // 设置相关状态
-  const [defaultAggregateSearch, setDefaultAggregateSearch] = useState(true);
-  const [doubanProxyUrl, setDoubanProxyUrl] = useState('');
-  const [imageProxyUrl, setImageProxyUrl] = useState('');
-  const [enableOptimization, setEnableOptimization] = useState(true);
-  const [enableImageProxy, setEnableImageProxy] = useState(false);
-  const [enableDoubanProxy, setEnableDoubanProxy] = useState(false);
 
   // 修改密码相关状态
   const [newPassword, setNewPassword] = useState('');
@@ -87,56 +72,6 @@ export const UserMenu: React.FC = () => {
       });
   }, []);
 
-  // 从 localStorage 读取设置
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedAggregateSearch = localStorage.getItem(
-        'defaultAggregateSearch'
-      );
-      if (savedAggregateSearch !== null) {
-        setDefaultAggregateSearch(JSON.parse(savedAggregateSearch));
-      }
-
-      const savedEnableDoubanProxy = localStorage.getItem('enableDoubanProxy');
-      const defaultDoubanProxy =
-        (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY || '';
-      if (savedEnableDoubanProxy !== null) {
-        setEnableDoubanProxy(JSON.parse(savedEnableDoubanProxy));
-      } else if (defaultDoubanProxy) {
-        setEnableDoubanProxy(true);
-      }
-
-      const savedDoubanProxyUrl = localStorage.getItem('doubanProxyUrl');
-      if (savedDoubanProxyUrl !== null) {
-        setDoubanProxyUrl(savedDoubanProxyUrl);
-      } else if (defaultDoubanProxy) {
-        setDoubanProxyUrl(defaultDoubanProxy);
-      }
-
-      const savedEnableImageProxy = localStorage.getItem('enableImageProxy');
-      const defaultImageProxy =
-        (window as any).RUNTIME_CONFIG?.IMAGE_PROXY || '';
-      if (savedEnableImageProxy !== null) {
-        setEnableImageProxy(JSON.parse(savedEnableImageProxy));
-      } else if (defaultImageProxy) {
-        setEnableImageProxy(true);
-      }
-
-      const savedImageProxyUrl = localStorage.getItem('imageProxyUrl');
-      if (savedImageProxyUrl !== null) {
-        setImageProxyUrl(savedImageProxyUrl);
-      } else if (defaultImageProxy) {
-        setImageProxyUrl(defaultImageProxy);
-      }
-
-      const savedEnableOptimization =
-        localStorage.getItem('enableOptimization');
-      if (savedEnableOptimization !== null) {
-        setEnableOptimization(JSON.parse(savedEnableOptimization));
-      }
-    }
-  }, []);
-
   const handleMenuClick = () => {
     setIsOpen(!isOpen);
   };
@@ -159,11 +94,6 @@ export const UserMenu: React.FC = () => {
 
   const handleAdminPanel = () => {
     router.push('/admin');
-  };
-
-  const handleTVBoxConfig = () => {
-    setIsOpen(false);
-    router.push('/config');
   };
 
   const handleChangePassword = () => {
@@ -222,86 +152,6 @@ export const UserMenu: React.FC = () => {
       setPasswordError('网络错误，请稍后重试');
     } finally {
       setPasswordLoading(false);
-    }
-  };
-
-  const handleSettings = () => {
-    setIsOpen(false);
-    setIsSettingsOpen(true);
-  };
-
-  const handleCloseSettings = () => {
-    setIsSettingsOpen(false);
-  };
-
-  // 设置相关的处理函数
-  const handleAggregateToggle = (value: boolean) => {
-    setDefaultAggregateSearch(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('defaultAggregateSearch', JSON.stringify(value));
-    }
-  };
-
-  const handleDoubanProxyUrlChange = (value: string) => {
-    setDoubanProxyUrl(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('doubanProxyUrl', value);
-    }
-  };
-
-  const handleImageProxyUrlChange = (value: string) => {
-    setImageProxyUrl(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('imageProxyUrl', value);
-    }
-  };
-
-  const handleOptimizationToggle = (value: boolean) => {
-    setEnableOptimization(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('enableOptimization', JSON.stringify(value));
-    }
-  };
-
-  const handleImageProxyToggle = (value: boolean) => {
-    setEnableImageProxy(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('enableImageProxy', JSON.stringify(value));
-    }
-  };
-
-  const handleDoubanProxyToggle = (value: boolean) => {
-    setEnableDoubanProxy(value);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('enableDoubanProxy', JSON.stringify(value));
-    }
-  };
-
-  const handleResetSettings = () => {
-    const defaultImageProxy = (window as any).RUNTIME_CONFIG?.IMAGE_PROXY || '';
-    const defaultDoubanProxy =
-      (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY || '';
-
-    setDefaultAggregateSearch(true);
-    setEnableOptimization(true);
-    setDoubanProxyUrl(defaultDoubanProxy);
-    setEnableDoubanProxy(!!defaultDoubanProxy);
-    setEnableImageProxy(!!defaultImageProxy);
-    setImageProxyUrl(defaultImageProxy);
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
-      localStorage.setItem('enableOptimization', JSON.stringify(true));
-      localStorage.setItem('doubanProxyUrl', defaultDoubanProxy);
-      localStorage.setItem(
-        'enableDoubanProxy',
-        JSON.stringify(!!defaultDoubanProxy)
-      );
-      localStorage.setItem(
-        'enableImageProxy',
-        JSON.stringify(!!defaultImageProxy)
-      );
-      localStorage.setItem('imageProxyUrl', defaultImageProxy);
     }
   };
 
@@ -372,20 +222,8 @@ export const UserMenu: React.FC = () => {
         {/* 菜单项 */}
         <div className='space-y-1 py-2'>
           <p className='px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-[rgb(var(--ui-accent-warm))]'>
-            偏好设置
+            账号操作
           </p>
-
-          {/* 设置按钮 */}
-          <button onClick={handleSettings} className={menuItemClassName}>
-            <Settings className='h-4 w-4' />
-            <span>偏好设置</span>
-          </button>
-
-          {/* TVBox配置按钮 */}
-          <button onClick={handleTVBoxConfig} className={menuItemClassName}>
-            <Tv className='h-4 w-4' />
-            <span>TVBox配置</span>
-          </button>
 
           {/* 管理面板按钮 */}
           {showAdminPanel && (
@@ -414,195 +252,6 @@ export const UserMenu: React.FC = () => {
             <LogOut className='h-4 w-4' />
             <span>退出登录</span>
           </button>
-        </div>
-      </div>
-    </>
-  );
-
-  // 设置面板内容
-  const settingsPanel = (
-    <>
-      {/* 背景遮罩 */}
-      <div
-        className='fixed inset-0 z-[1000] bg-black/70 backdrop-blur-md'
-        onClick={handleCloseSettings}
-      />
-
-      {/* 设置面板 */}
-      <div className={modalPanelClassName}>
-        {/* 标题栏 */}
-        <div className='flex items-center justify-between mb-6'>
-          <div className='flex items-center gap-3'>
-            <h3 className='text-xl font-semibold text-[rgb(var(--ui-text))]'>
-              偏好设置
-            </h3>
-            <button
-              onClick={handleResetSettings}
-              className='rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs text-red-200 transition-colors hover:bg-red-500/20'
-              title='重置为默认设置'
-            >
-              重置
-            </button>
-          </div>
-          <button
-            onClick={handleCloseSettings}
-            className='flex h-8 w-8 items-center justify-center rounded-full text-[rgb(var(--ui-text-muted))] transition-colors hover:bg-white/10 hover:text-[rgb(var(--ui-text))]'
-            aria-label='Close'
-          >
-            <X className='h-5 w-5' />
-          </button>
-        </div>
-
-        {/* 设置项 */}
-        <div className='space-y-6'>
-          {/* 默认聚合搜索结果 */}
-          <div className='flex items-center justify-between'>
-            <div>
-              <h4 className='text-sm font-medium text-[rgb(var(--ui-text))]'>
-                默认聚合搜索结果
-              </h4>
-              <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-                搜索时默认按标题和年份聚合显示结果
-              </p>
-            </div>
-            <label className='flex items-center cursor-pointer'>
-              <div className='relative'>
-                <input
-                  type='checkbox'
-                  className='sr-only peer'
-                  checked={defaultAggregateSearch}
-                  onChange={(e) => handleAggregateToggle(e.target.checked)}
-                />
-                <div className={toggleTrackClassName}></div>
-                <div className={toggleKnobClassName}></div>
-              </div>
-            </label>
-          </div>
-
-          {/* 优选和测速 */}
-          <div className='flex items-center justify-between'>
-            <div>
-              <h4 className='text-sm font-medium text-[rgb(var(--ui-text))]'>
-                启用优选和测速
-              </h4>
-              <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-                如出现播放器劫持问题可关闭
-              </p>
-            </div>
-            <label className='flex items-center cursor-pointer'>
-              <div className='relative'>
-                <input
-                  type='checkbox'
-                  className='sr-only peer'
-                  checked={enableOptimization}
-                  onChange={(e) => handleOptimizationToggle(e.target.checked)}
-                />
-                <div className={toggleTrackClassName}></div>
-                <div className={toggleKnobClassName}></div>
-              </div>
-            </label>
-          </div>
-
-          {/* 分割线 */}
-          <div className='border-t border-white/10'></div>
-
-          {/* 豆瓣代理开关 */}
-          <div className='flex items-center justify-between'>
-            <div>
-              <h4 className='text-sm font-medium text-[rgb(var(--ui-text))]'>
-                启用豆瓣代理
-              </h4>
-              <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-                启用后，豆瓣数据将通过代理服务器获取
-              </p>
-            </div>
-            <label className='flex items-center cursor-pointer'>
-              <div className='relative'>
-                <input
-                  type='checkbox'
-                  className='sr-only peer'
-                  checked={enableDoubanProxy}
-                  onChange={(e) => handleDoubanProxyToggle(e.target.checked)}
-                />
-                <div className={toggleTrackClassName}></div>
-                <div className={toggleKnobClassName}></div>
-              </div>
-            </label>
-          </div>
-
-          {/* 豆瓣代理地址设置 */}
-          <div className='space-y-3'>
-            <div>
-              <h4 className='text-sm font-medium text-[rgb(var(--ui-text))]'>
-                豆瓣代理地址
-              </h4>
-              <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-                仅在启用豆瓣代理时生效，留空则使用服务器 API
-              </p>
-            </div>
-            <input
-              type='text'
-              className={inputClassName}
-              placeholder='例如: https://proxy.example.com/fetch?url='
-              value={doubanProxyUrl}
-              onChange={(e) => handleDoubanProxyUrlChange(e.target.value)}
-              disabled={!enableDoubanProxy}
-            />
-          </div>
-
-          {/* 分割线 */}
-          <div className='border-t border-white/10'></div>
-
-          {/* 图片代理开关 */}
-          <div className='flex items-center justify-between'>
-            <div>
-              <h4 className='text-sm font-medium text-[rgb(var(--ui-text))]'>
-                启用图片代理
-              </h4>
-              <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-                启用后，所有图片加载将通过代理服务器
-              </p>
-            </div>
-            <label className='flex items-center cursor-pointer'>
-              <div className='relative'>
-                <input
-                  type='checkbox'
-                  className='sr-only peer'
-                  checked={enableImageProxy}
-                  onChange={(e) => handleImageProxyToggle(e.target.checked)}
-                />
-                <div className={toggleTrackClassName}></div>
-                <div className={toggleKnobClassName}></div>
-              </div>
-            </label>
-          </div>
-
-          {/* 图片代理地址设置 */}
-          <div className='space-y-3'>
-            <div>
-              <h4 className='text-sm font-medium text-[rgb(var(--ui-text))]'>
-                图片代理地址
-              </h4>
-              <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-                仅在启用图片代理时生效
-              </p>
-            </div>
-            <input
-              type='text'
-              className={inputClassName}
-              placeholder='例如: https://imageproxy.example.com/?url='
-              value={imageProxyUrl}
-              onChange={(e) => handleImageProxyUrlChange(e.target.value)}
-              disabled={!enableImageProxy}
-            />
-          </div>
-        </div>
-
-        {/* 底部说明 */}
-        <div className='mt-6 border-t border-white/10 pt-4'>
-          <p className='text-center text-xs text-[rgb(var(--ui-text-muted))]'>
-            这些设置保存在本地浏览器中
-          </p>
         </div>
       </div>
     </>
@@ -715,9 +364,6 @@ export const UserMenu: React.FC = () => {
 
       {/* 使用 Portal 将菜单面板渲染到 document.body */}
       {isOpen && mounted && createPortal(menuPanel, document.body)}
-
-      {/* 使用 Portal 将设置面板渲染到 document.body */}
-      {isSettingsOpen && mounted && createPortal(settingsPanel, document.body)}
 
       {/* 使用 Portal 将修改密码面板渲染到 document.body */}
       {isChangePasswordOpen &&

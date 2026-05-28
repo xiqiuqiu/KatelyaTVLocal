@@ -7,7 +7,6 @@ import {
   Home,
   Menu,
   Search,
-  Settings,
   Tv,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -60,7 +59,6 @@ const iconMap: Record<NavigationIcon, typeof Home> = {
   tv: Tv,
   clover: Clover,
   heart: Heart,
-  settings: Settings,
 };
 
 const Sidebar = ({

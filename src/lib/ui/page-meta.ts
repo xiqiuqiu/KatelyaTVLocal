@@ -1,7 +1,4 @@
-import {
-  primaryNavigationItems,
-  secondaryNavigationItems,
-} from '@/lib/ui/navigation';
+import { primaryNavigationItems } from '@/lib/ui/navigation';
 
 export interface PageMetaEntry {
   subtitle: string;
@@ -30,7 +27,7 @@ export const pageMeta = {
     subtitle: '豆瓣热门综艺',
   },
   '/config': {
-    title: secondaryNavigationItems[0].label,
+    title: 'TVBox配置',
     subtitle: '配置 TVBox 数据源',
   },
   '/play': {
