@@ -167,11 +167,13 @@ function HomeClient() {
   const renderHomeSection = ({
     href,
     items,
+    priorityImages = false,
     title,
     type,
   }: {
     href: string;
     items: DoubanItem[];
+    priorityImages?: boolean;
     title: string;
     type?: string;
   }) => (
@@ -200,6 +202,7 @@ function HomeClient() {
                 <VideoCard
                   douban_id={item.id}
                   from='douban'
+                  imagePriority={priorityImages && index < 4}
                   poster={item.poster}
                   rate={item.rate}
                   size='small'
@@ -280,6 +283,7 @@ function HomeClient() {
               {renderHomeSection({
                 href: '/douban?type=movie',
                 items: hotMovies.slice(0, 12),
+                priorityImages: true,
                 title: pageSectionLabels.popularMovies,
                 type: 'movie',
               })}

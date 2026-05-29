@@ -4,6 +4,31 @@ import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
 
 export const runtime = 'edge';
 
+type CloudflareImageFetchInit = RequestInit & {
+  cf?: {
+    image?: {
+      fit?: 'scale-down' | 'contain' | 'cover' | 'crop' | 'pad';
+      format?: 'auto';
+      height?: number;
+      quality?: number;
+      width?: number;
+    };
+  };
+};
+
+function parseBoundedInteger(
+  value: string | null,
+  min: number,
+  max: number
+): number | undefined {
+  if (!value) return undefined;
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) return undefined;
+
+  return Math.min(Math.max(parsed, min), max);
+}
+
 // 处理OPTIONS预检请求（OrionTV客户端需要）
 export async function OPTIONS() {
   return handleOptionsRequest();
@@ -13,6 +38,9 @@ export async function OPTIONS() {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const imageUrl = searchParams.get('url');
+  const width = parseBoundedInteger(searchParams.get('w'), 32, 1200);
+  const height = parseBoundedInteger(searchParams.get('h'), 32, 1800);
+  const quality = parseBoundedInteger(searchParams.get('q'), 40, 90);
 
   if (!imageUrl) {
     const response = NextResponse.json(
@@ -23,13 +51,27 @@ export async function GET(request: Request) {
   }
 
   try {
-    const imageResponse = await fetch(imageUrl, {
+    const fetchInit: CloudflareImageFetchInit = {
       headers: {
         Referer: 'https://movie.douban.com/',
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
       },
-    });
+    };
+
+    if (width || height || quality) {
+      fetchInit.cf = {
+        image: {
+          fit: 'cover',
+          format: 'auto',
+          ...(width ? { width } : {}),
+          ...(height ? { height } : {}),
+          ...(quality ? { quality } : {}),
+        },
+      };
+    }
+
+    const imageResponse = await fetch(imageUrl, fetchInit);
 
     if (!imageResponse.ok) {
       const response = NextResponse.json(

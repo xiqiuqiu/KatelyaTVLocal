@@ -13,7 +13,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
-import { processImageUrl } from '@/lib/utils';
+import { type ImageProxyOptions, processImageUrl } from '@/lib/utils';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 import CardActions from '@/components/ui/CardActions';
@@ -38,6 +38,8 @@ interface VideoCardProps {
   items?: SearchResult[];
   type?: string;
   size?: 'default' | 'small';
+  imagePriority?: boolean;
+  imageSize?: ImageProxyOptions;
 }
 
 export default function VideoCard({
@@ -59,6 +61,8 @@ export default function VideoCard({
   items,
   type = '',
   size = 'default',
+  imagePriority = false,
+  imageSize,
 }: VideoCardProps) {
   const router = useRouter();
   const [favorited, setFavorited] = useState(false);
@@ -291,6 +295,10 @@ export default function VideoCard({
     'absolute left-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-bg)/0.48)] text-[rgb(var(--ui-success))] shadow-ui-glass backdrop-blur-xl transition duration-200 hover:scale-[1.06] hover:border-[rgb(var(--ui-success)/0.48)] hover:bg-[rgb(var(--ui-surface-strong)/0.68)] hover:text-[rgb(var(--ui-on-accent))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
   const posterActionLabel = `打开 ${actualTitle} 海报`;
   const titleActionLabel = `打开 ${actualTitle}`;
+  const defaultImageSize = isSmall
+    ? { width: 240, height: 360, quality: 76 }
+    : { width: 360, height: 540, quality: 78 };
+  const resolvedImageSize = imageSize || defaultImageSize;
 
   return (
     <article
@@ -308,9 +316,16 @@ export default function VideoCard({
             alt={actualTitle}
             className='object-cover'
             fill
+            loading={imagePriority ? undefined : 'lazy'}
             onLoad={() => setHasImageLoaded(true)}
+            priority={imagePriority}
             referrerPolicy='no-referrer'
-            src={processImageUrl(actualPoster)}
+            sizes={
+              isSmall
+                ? '(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 180px'
+                : '(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 240px'
+            }
+            src={processImageUrl(actualPoster, resolvedImageSize)}
           />
 
           <button

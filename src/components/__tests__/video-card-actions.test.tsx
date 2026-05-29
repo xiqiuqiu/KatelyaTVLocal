@@ -10,8 +10,26 @@ const push = jest.fn();
 
 jest.mock('next/image', () => ({
   __esModule: true,
-  default: ({ alt, src }: { alt: string; src: string }) => (
-    <img alt={alt} src={src} />
+  default: ({
+    alt,
+    loading,
+    priority,
+    sizes,
+    src,
+  }: {
+    alt: string;
+    loading?: 'eager' | 'lazy';
+    priority?: boolean;
+    sizes?: string;
+    src: string;
+  }) => (
+    <img
+      alt={alt}
+      data-priority={priority ? 'true' : 'false'}
+      data-sizes={sizes}
+      loading={loading}
+      src={src}
+    />
   ),
 }));
 
@@ -181,5 +199,33 @@ describe('VideoCard', () => {
       )
     );
     expect(push).toHaveBeenCalledWith(expect.stringContaining('prefer=true'));
+  });
+
+  it('requests optimized poster sizes and can prioritize first-screen cards', () => {
+    window.RUNTIME_CONFIG = {
+      IMAGE_PROXY: '/api/image-proxy?url=',
+    };
+
+    render(
+      <VideoCard
+        id='1'
+        source='test'
+        title='首屏影片'
+        poster='https://example.com/poster.jpg'
+        from='favorite'
+        imagePriority={true}
+        size='small'
+      />
+    );
+
+    const poster = screen.getByRole('img', { name: '首屏影片' });
+
+    expect(poster).toHaveAttribute(
+      'src',
+      '/api/image-proxy?url=https%3A%2F%2Fexample.com%2Fposter.jpg&w=240&h=360&q=76'
+    );
+    expect(poster).toHaveAttribute('data-priority', 'true');
+    expect(poster).not.toHaveAttribute('loading');
+    expect(poster).toHaveAttribute('data-sizes', expect.stringContaining('33vw'));
   });
 });

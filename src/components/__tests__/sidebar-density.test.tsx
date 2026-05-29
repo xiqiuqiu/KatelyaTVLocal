@@ -22,6 +22,10 @@ describe('Sidebar shell density', () => {
       'true'
     );
     expect(screen.queryByText('首页')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '首页' })).toHaveAttribute(
+      'href',
+      '/'
+    );
   });
 
   it('preserves the existing expand and collapse interaction', () => {
