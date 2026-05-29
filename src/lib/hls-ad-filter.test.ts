@@ -154,6 +154,58 @@ function createModuForeignPathInsertCase(): string {
   ].join('\n');
 }
 
+function createRuyiRyplay12JjkS3Episode1Case(): string {
+  return [
+    '#EXTM3U',
+    '#EXT-X-PLAYLIST-TYPE:VOD',
+    '#EXT-X-VERSION:3',
+    '#EXT-X-MEDIA-SEQUENCE:0',
+    '#EXT-X-TARGETDURATION:8',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:7.549211,',
+    '7d994bc68cf80bcc3aeb62d6834a1a0f.ts',
+    '#EXTINF:4.170833,',
+    'de932b2bed618a671b6b74129a2faf5f.ts',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:3.294956,',
+    '5046b4041aa822cdc48369c38dc8b0e7.ts',
+    '#EXTINF:4.170833,',
+    '10a32e39c0614f2366557b3eda961771.ts',
+    '#EXTINF:4.170833,',
+    '67deb25d2552d1d315fef8ecfb8937b3.ts',
+    '#EXTINF:4.170833,',
+    '3953b607206dfff90b77b43042936d28.ts',
+    '#EXTINF:0.667333,',
+    '9cbefbed5c7cb46d39489166e4919c0d.ts',
+    '#EXTINF:6.506500,',
+    '01e243fade73f156c08b68b836acfd4a.ts',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:4.170833,',
+    '07e6b5da11077314af13b8fc8fa637a4.ts',
+    '#EXTINF:2.669333,',
+    '35aaa208fec34352538b41b52e6b805d.ts',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:4.170833,',
+    '0f9749d04fee1f3130ad7758695b2a26.ts',
+    '#EXTINF:5.922578,',
+    '2b381afbd5e6d3090616a621a5a53821.ts',
+    '#EXTINF:3.378378,',
+    '72d7424610e576f290e51a48e34e0b77.ts',
+    '#EXTINF:4.170833,',
+    'abf506f673c6544122d5185d3267dceb.ts',
+    '#EXTINF:5.630622,',
+    'eee13f7ce5bd1f66a55af2a19f758533.ts',
+    '#EXTINF:4.170833,',
+    'be90370a3174e6296713ae7b0861a585.ts',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:4.045711,',
+    '240d5e0714be9babea8412c0df2ffde9.ts',
+    '#EXTINF:0.750744,',
+    '294f6dd63aa39af09be7558067a19848.ts',
+    '#EXT-X-ENDLIST',
+  ].join('\n');
+}
+
 describe('filterAdsFromM3U8', () => {
   it('records the ruyi ryplay 22-second midroll case in the known rule library', () => {
     expect(
@@ -527,6 +579,46 @@ describe('filterAdsFromM3U8', () => {
     ]);
     expect(formatM3U8AdFilterDebugMessage(debugInfo)).toContain(
       'moduapi-modujx10-foreign-path-v1'
+    );
+  });
+
+  it('records and removes the ruyi ryplay12 iPad-reported midrolls by exact segment fingerprints', () => {
+    const input = createRuyiRyplay12JjkS3Episode1Case();
+    const filtered = filterAdsFromM3U8(
+      input,
+      'https://cdn.ryplay12.com/20260109/30954_0fe9a7a0/2000k/hls/index.m3u8'
+    );
+
+    expect(filtered).toContain('5046b4041aa822cdc48369c38dc8b0e7.ts');
+    expect(filtered).toContain('01e243fade73f156c08b68b836acfd4a.ts');
+    expect(filtered).not.toContain('10a32e39c0614f2366557b3eda961771.ts');
+    expect(filtered).not.toContain('9cbefbed5c7cb46d39489166e4919c0d.ts');
+    expect(filtered).not.toContain('abf506f673c6544122d5185d3267dceb.ts');
+    expect(filtered).not.toContain('240d5e0714be9babea8412c0df2ffde9.ts');
+
+    const debugInfo = getM3U8AdFilterDebugInfo(
+      input,
+      filtered,
+      'https://cdn.ryplay12.com/20260109/30954_0fe9a7a0/2000k/hls/index.m3u8'
+    );
+
+    expect(debugInfo.summary.removedBlocks).toHaveLength(2);
+    expect(debugInfo.summary.removedBlocks).toEqual([
+      expect.objectContaining({
+        reason: 'known-rule',
+        ruleId: 'ruyi-ryplay12-jjk-s3-ep1-20260109-v1',
+        segmentCount: 4,
+        durationSeconds: expect.closeTo(13.18, 2),
+      }),
+      expect.objectContaining({
+        reason: 'known-rule',
+        ruleId: 'ruyi-ryplay12-jjk-s3-ep1-20260109-v1',
+        segmentCount: 4,
+        durationSeconds: expect.closeTo(18.018, 3),
+      }),
+    ]);
+    expect(formatM3U8AdFilterDebugMessage(debugInfo)).toContain(
+      'ruyi-ryplay12-jjk-s3-ep1-20260109-v1'
     );
   });
 
