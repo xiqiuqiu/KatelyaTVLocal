@@ -906,6 +906,9 @@ function PlayPageClient() {
       ? getRememberedSourceStatus(detailData.episodes)
       : null;
     const proxyUrl = buildHlsProxyUrl(directUrl);
+    const adFilteringProxyUrl = buildHlsProxyUrl(directUrl, {
+      mediaSegmentMode: 'direct',
+    });
     const rememberedPlaybackMode =
       rememberedStatus?.kind === 'proxy'
         ? 'proxy'
@@ -913,12 +916,13 @@ function PlayPageClient() {
     const playbackPolicy = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
+      adFilteringProxyUrl,
       rememberedPlaybackMode,
       isAppleNativeHlsEnvironment: isAppleNativeHlsPlaybackEnvironment(),
     });
 
     applyPlaybackMode(playbackPolicy.mode);
-    logHlsPlaybackPolicy(directUrl, proxyUrl, playbackPolicy);
+    logHlsPlaybackPolicy(directUrl, playbackPolicy.url, playbackPolicy);
 
     const nextUrl = playbackPolicy.url;
 

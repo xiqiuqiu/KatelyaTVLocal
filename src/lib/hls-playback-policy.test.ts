@@ -5,18 +5,22 @@ import {
 
 describe('resolveHlsPlaybackPolicy', () => {
   const directUrl = 'https://media.example.com/show/index.m3u8';
-  const proxyUrl = '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8';
+  const proxyUrl =
+    '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8';
+  const adFilteringProxyUrl =
+    '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8&segmentMode=direct';
 
   it('uses proxy filtering on iPad Chrome because it runs through the Apple HLS environment', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
+      adFilteringProxyUrl,
       rememberedPlaybackMode: 'direct',
       isAppleNativeHlsEnvironment: true,
     });
 
     expect(result.mode).toBe('proxy');
-    expect(result.url).toBe(proxyUrl);
+    expect(result.url).toBe(adFilteringProxyUrl);
     expect(result.forcedProxyForAdFiltering).toBe(true);
     expect(result.reason).toBe('apple-native-hls-ad-filter');
   });
@@ -25,6 +29,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
+      adFilteringProxyUrl,
       rememberedPlaybackMode: 'direct',
       isAppleNativeHlsEnvironment: false,
     });
@@ -39,6 +44,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
+      adFilteringProxyUrl,
       rememberedPlaybackMode: 'proxy',
       isAppleNativeHlsEnvironment: false,
     });

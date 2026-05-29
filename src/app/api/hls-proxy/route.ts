@@ -6,6 +6,10 @@ import {
   formatM3U8AdFilterDebugMessage,
   getM3U8AdFilterDebugInfo,
 } from '@/lib/hls-ad-filter';
+import {
+  HlsMediaSegmentMode,
+  rewritePlaylistContent,
+} from '@/lib/hls-proxy-rewrite';
 
 export const runtime = 'edge';
 
@@ -73,42 +77,6 @@ function isPlaylistResponse(
   );
 }
 
-function buildAbsoluteUrl(input: string, baseUrl: string): string {
-  return new URL(input, baseUrl).toString();
-}
-
-function rewritePlaylistAttributes(
-  line: string,
-  baseUrl: string,
-  proxyPrefix: string
-): string {
-  return line.replace(/URI="([^"]+)"/g, (_match, uri) => {
-    const absoluteUrl = buildAbsoluteUrl(uri, baseUrl);
-    return `URI="${proxyPrefix}${encodeURIComponent(absoluteUrl)}"`;
-  });
-}
-
-function rewritePlaylistContent(
-  content: string,
-  baseUrl: string,
-  proxyPrefix: string
-): string {
-  return content
-    .split('\n')
-    .map((rawLine) => {
-      const line = rawLine.trim();
-      if (!line) return rawLine;
-
-      if (line.startsWith('#')) {
-        return rewritePlaylistAttributes(rawLine, baseUrl, proxyPrefix);
-      }
-
-      const absoluteUrl = buildAbsoluteUrl(line, baseUrl);
-      return `${proxyPrefix}${encodeURIComponent(absoluteUrl)}`;
-    })
-    .join('\n');
-}
-
 function buildUpstreamHeaders(request: Request, targetUrl: string): Headers {
   const headers = new Headers();
   const rangeHeader = request.headers.get('range');
@@ -172,6 +140,10 @@ export async function OPTIONS() {
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const targetUrl = requestUrl.searchParams.get('url');
+  const mediaSegmentMode: HlsMediaSegmentMode =
+    requestUrl.searchParams.get('segmentMode') === 'direct'
+      ? 'direct'
+      : 'proxy';
 
   if (!targetUrl) {
     const response = NextResponse.json(
@@ -207,7 +179,10 @@ export async function GET(request: Request) {
       return addCorsHeaders(response);
     }
 
-    const proxyPrefix = `${requestUrl.origin}/api/hls-proxy?url=`;
+    const proxyPrefix =
+      mediaSegmentMode === 'direct'
+        ? `${requestUrl.origin}/api/hls-proxy?segmentMode=direct&url=`
+        : `${requestUrl.origin}/api/hls-proxy?url=`;
     const isPlaylist = isPlaylistResponse(
       targetUrl,
       upstreamResponse.headers.get('content-type')
@@ -222,7 +197,8 @@ export async function GET(request: Request) {
       const rewrittenPlaylist = rewritePlaylistContent(
         filteredPlaylist,
         targetUrl,
-        proxyPrefix
+        proxyPrefix,
+        { mediaSegmentMode }
       );
 
       const response = new Response(rewrittenPlaylist, {

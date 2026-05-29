@@ -16,6 +16,7 @@ export interface AppleNativeHlsDetectionInput {
 export interface HlsPlaybackPolicyInput {
   directUrl: string;
   proxyUrl?: string | null;
+  adFilteringProxyUrl?: string | null;
   rememberedPlaybackMode?: SourcePlaybackMode | null;
   isAppleNativeHlsEnvironment: boolean;
 }
@@ -54,6 +55,7 @@ export function detectAppleNativeHlsEnvironment({
 export function resolveHlsPlaybackPolicy({
   directUrl,
   proxyUrl,
+  adFilteringProxyUrl,
   rememberedPlaybackMode,
   isAppleNativeHlsEnvironment,
 }: HlsPlaybackPolicyInput): HlsPlaybackPolicyResult {
@@ -76,10 +78,12 @@ export function resolveHlsPlaybackPolicy({
   }
 
   if (isAppleNativeHlsEnvironment) {
-    if (proxyUrl) {
+    const appleAdFilteringProxyUrl = adFilteringProxyUrl || proxyUrl;
+
+    if (appleAdFilteringProxyUrl) {
       return {
         mode: 'proxy',
-        url: proxyUrl,
+        url: appleAdFilteringProxyUrl,
         reason: 'apple-native-hls-ad-filter',
         forcedProxyForAdFiltering: true,
       };

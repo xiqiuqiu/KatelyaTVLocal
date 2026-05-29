@@ -1,4 +1,5 @@
 import {
+  buildHlsProxyUrl,
   createPlayableSourceStatus,
   getRememberedSourceStatus,
   getSourceStatusLabel,
@@ -101,6 +102,20 @@ describe('source status behavior', () => {
       '/api/source-probe?url=https%3A%2F%2Fmedia.example.com%2F20250508%2Fdemo%2Findex.m3u8'
     );
     expect(result.kind).toBe('direct');
+  });
+
+  it('can build an HLS proxy URL that keeps media segments direct', () => {
+    window.RUNTIME_CONFIG = {
+      HLS_PROXY: '/api/hls-proxy?url=',
+    };
+
+    expect(
+      buildHlsProxyUrl('https://media.example.com/show/index.m3u8', {
+        mediaSegmentMode: 'direct',
+      })
+    ).toBe(
+      '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8&segmentMode=direct'
+    );
   });
 
   it('adds bounded card image options to proxied image URLs', () => {

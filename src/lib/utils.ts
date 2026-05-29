@@ -463,16 +463,29 @@ export function getHlsProxyUrl(): string | null {
   return serverHlsProxy && serverHlsProxy.trim() ? serverHlsProxy.trim() : null;
 }
 
+interface HlsProxyUrlOptions {
+  mediaSegmentMode?: 'proxy' | 'direct';
+}
+
 /**
  * 处理 HLS URL，如果配置了代理则使用代理
  */
-export function buildHlsProxyUrl(originalUrl: string): string | null {
+export function buildHlsProxyUrl(
+  originalUrl: string,
+  options: HlsProxyUrlOptions = {}
+): string | null {
   if (!originalUrl) return null;
 
   const proxyUrl = getHlsProxyUrl();
   if (!proxyUrl) return null;
 
-  return `${proxyUrl}${encodeURIComponent(originalUrl)}`;
+  const url = `${proxyUrl}${encodeURIComponent(originalUrl)}`;
+
+  if (options.mediaSegmentMode === 'direct') {
+    return `${url}${url.includes('?') ? '&' : '?'}segmentMode=direct`;
+  }
+
+  return url;
 }
 
 /**
