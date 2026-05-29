@@ -4,6 +4,7 @@ import {
   getSourceStatusLabel,
   isSourceStatusClickable,
   probeSourcePlayback,
+  processImageUrl,
 } from '@/lib/utils';
 
 describe('source status behavior', () => {
@@ -100,5 +101,21 @@ describe('source status behavior', () => {
       '/api/source-probe?url=https%3A%2F%2Fmedia.example.com%2F20250508%2Fdemo%2Findex.m3u8'
     );
     expect(result.kind).toBe('direct');
+  });
+
+  it('adds bounded card image options to proxied image URLs', () => {
+    window.RUNTIME_CONFIG = {
+      IMAGE_PROXY: '/api/image-proxy?url=',
+    };
+
+    expect(
+      processImageUrl('https://images.example.com/poster.jpg', {
+        height: 360,
+        quality: 76,
+        width: 240,
+      })
+    ).toBe(
+      '/api/image-proxy?url=https%3A%2F%2Fimages.example.com%2Fposter.jpg&w=240&h=360&q=76'
+    );
   });
 });

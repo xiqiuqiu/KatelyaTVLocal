@@ -384,13 +384,47 @@ export function getImageProxyUrl(): string | null {
 /**
  * 处理图片 URL，如果设置了图片代理则使用代理
  */
-export function processImageUrl(originalUrl: string): string {
+export interface ImageProxyOptions {
+  width?: number;
+  height?: number;
+  quality?: number;
+}
+
+function appendImageProxyOptions(
+  proxiedUrl: string,
+  options?: ImageProxyOptions
+): string {
+  const params = new URLSearchParams();
+
+  if (options?.width) {
+    params.set('w', String(options.width));
+  }
+  if (options?.height) {
+    params.set('h', String(options.height));
+  }
+  if (options?.quality) {
+    params.set('q', String(options.quality));
+  }
+
+  const queryString = params.toString();
+  if (!queryString) return proxiedUrl;
+
+  return `${proxiedUrl}${proxiedUrl.includes('?') ? '&' : '?'}${queryString}`;
+}
+
+export function processImageUrl(
+  originalUrl: string,
+  options?: ImageProxyOptions
+): string {
   if (!originalUrl) return originalUrl;
 
   const proxyUrl = getImageProxyUrl();
   if (!proxyUrl) return originalUrl;
 
-  return `${proxyUrl}${encodeURIComponent(originalUrl)}`;
+  return appendImageProxyOptions(
+    `${proxyUrl}${encodeURIComponent(originalUrl)}`,
+    options
+  );
 }
 
 /**

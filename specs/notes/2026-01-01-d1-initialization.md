@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS play_records (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL,
   key TEXT NOT NULL,
   title TEXT NOT NULL,
@@ -23,7 +22,7 @@ CREATE TABLE IF NOT EXISTS play_records (
   total_time INTEGER NOT NULL,
   save_time INTEGER NOT NULL,
   search_title TEXT,
-  UNIQUE(username, key)
+  PRIMARY KEY (username, key)
 );
 
 CREATE TABLE IF NOT EXISTS favorites (
@@ -66,13 +65,11 @@ CREATE TABLE IF NOT EXISTS skip_configs (
 );
 
 -- Basic indexes
-CREATE INDEX IF NOT EXISTS idx_play_records_username ON play_records(username);
 CREATE INDEX IF NOT EXISTS idx_favorites_username ON favorites(username);
 CREATE INDEX IF NOT EXISTS idx_search_history_username ON search_history(username);
 CREATE INDEX IF NOT EXISTS idx_skip_configs_username ON skip_configs(username);
 
 -- Composite indexes
-CREATE INDEX IF NOT EXISTS idx_play_records_username_key ON play_records(username, key);
 CREATE INDEX IF NOT EXISTS idx_play_records_username_save_time ON play_records(username, save_time DESC);
 CREATE INDEX IF NOT EXISTS idx_favorites_username_key ON favorites(username, key);
 CREATE INDEX IF NOT EXISTS idx_favorites_username_save_time ON favorites(username, save_time DESC);

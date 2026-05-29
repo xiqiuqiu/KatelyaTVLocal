@@ -49,3 +49,4 @@ public/manifest.json
 tmp-cloudflare-play-test.png
 .wrangler/
 .tmp-dev-*.log
+.alma-snapshots

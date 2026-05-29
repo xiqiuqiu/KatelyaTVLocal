@@ -100,6 +100,20 @@ export class DbManager {
     await this.storage.deletePlayRecord(userName, key);
   }
 
+  async clearAllPlayRecords(userName: string): Promise<void> {
+    if (this.storage.clearAllPlayRecords) {
+      await this.storage.clearAllPlayRecords(userName);
+      return;
+    }
+
+    const records = await this.storage.getAllPlayRecords(userName);
+    await Promise.all(
+      Object.keys(records).map((key) =>
+        this.storage.deletePlayRecord(userName, key)
+      )
+    );
+  }
+
   // 收藏相关方法
   async getFavorite(
     userName: string,

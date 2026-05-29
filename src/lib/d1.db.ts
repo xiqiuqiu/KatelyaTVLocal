@@ -110,9 +110,20 @@ export class D1Storage implements IStorage {
       await db
         .prepare(
           `
-          INSERT OR REPLACE INTO play_records 
+          INSERT INTO play_records 
           (username, key, title, source_name, cover, year, index_episode, total_episodes, play_time, total_time, save_time, search_title)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(username, key) DO UPDATE SET
+            title = excluded.title,
+            source_name = excluded.source_name,
+            cover = excluded.cover,
+            year = excluded.year,
+            index_episode = excluded.index_episode,
+            total_episodes = excluded.total_episodes,
+            play_time = excluded.play_time,
+            total_time = excluded.total_time,
+            save_time = excluded.save_time,
+            search_title = excluded.search_title
         `
         )
         .bind(
@@ -181,6 +192,19 @@ export class D1Storage implements IStorage {
         .run();
     } catch (err) {
       console.error('Failed to delete play record:', err);
+      throw err;
+    }
+  }
+
+  async clearAllPlayRecords(userName: string): Promise<void> {
+    try {
+      const db = await this.getDatabase();
+      await db
+        .prepare('DELETE FROM play_records WHERE username = ?')
+        .bind(userName)
+        .run();
+    } catch (err) {
+      console.error('Failed to clear play records:', err);
       throw err;
     }
   }

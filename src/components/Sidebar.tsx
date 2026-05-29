@@ -148,9 +148,11 @@ const Sidebar = ({
     return (
       <Link
         key={item.key}
+        aria-label={item.label}
         href={item.href}
         onClick={() => setActive(item.href)}
         data-active={isActive}
+        title={isCollapsed ? item.label : undefined}
         className={`group flex items-center gap-3 rounded-ui-md px-4 py-3 text-sm transition ${
           isCollapsed ? 'justify-center px-3' : ''
         } text-[rgb(var(--ui-text-muted))] hover:-translate-y-0.5 hover:bg-[rgb(var(--ui-surface)/0.42)] hover:text-[rgb(var(--ui-text))] data-[active=true]:border data-[active=true]:border-[rgb(var(--ui-accent)/0.24)] data-[active=true]:bg-[rgb(var(--ui-surface-strong)/0.5)] data-[active=true]:text-[rgb(var(--ui-text))] data-[active=true]:shadow-ui-soft`}

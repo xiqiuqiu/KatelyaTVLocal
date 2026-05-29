@@ -28,7 +28,17 @@ import {
   formatM3U8AdFilterDebugMessage,
   getM3U8AdFilterDebugInfo,
 } from '@/lib/hls-ad-filter';
+import {
+  detectAppleNativeHlsEnvironment,
+  resolveHlsPlaybackPolicy,
+} from '@/lib/hls-playback-policy';
 import { getHlsRecoveryPlan } from '@/lib/hls-recovery';
+import {
+  type PlayRecordSaveReason,
+  type PlayRecordSaveSnapshot,
+  getPlayRecordHeartbeatIntervalMs,
+  shouldSavePlayRecord,
+} from '@/lib/play-record-save-policy';
 import { getSourceSwitchResumePlan } from '@/lib/playback-source-switch';
 import { getBrowserProbeBudget } from '@/lib/source-preference';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
@@ -149,19 +159,6 @@ function PlayPageClient() {
   // 收藏状态
   const [favorited, setFavorited] = useState(false);
 
-  // 去广告开关（从 localStorage 继承，默认 true）
-  const [blockAdEnabled, setBlockAdEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const v = localStorage.getItem('enable_blockad');
-      if (v !== null) return v === 'true';
-    }
-    return true;
-  });
-  const blockAdEnabledRef = useRef(blockAdEnabled);
-  useEffect(() => {
-    blockAdEnabledRef.current = blockAdEnabled;
-  }, [blockAdEnabled]);
-
   // 视频基本信息
   const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
   const [videoYear, setVideoYear] = useState(searchParams.get('year') || '');
@@ -200,6 +197,7 @@ function PlayPageClient() {
   const videoUrlRef = useRef('');
   const sourceFallbackAttemptedRef = useRef(false);
   const sourceSwitchSavePendingRef = useRef(false);
+  const playbackPolicyLogKeysRef = useRef(new Set<string>());
 
   // 同步最新值到 refs
   useEffect(() => {
@@ -221,6 +219,11 @@ function PlayPageClient() {
   useEffect(() => {
     playbackModeRef.current = playbackMode;
   }, [playbackMode]);
+
+  const applyPlaybackMode = (mode: SourcePlaybackMode) => {
+    playbackModeRef.current = mode;
+    setPlaybackMode(mode);
+  };
 
   // 视频播放地址
   const [videoUrl, setVideoUrl] = useState('');
@@ -298,6 +301,7 @@ function PlayPageClient() {
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastSaveTimeRef = useRef<number>(0);
+  const lastSavedSnapshotRef = useRef<PlayRecordSaveSnapshot | null>(null);
 
   // 播放器时间状态（用于跳过功能）
   const [currentPlayTime, setCurrentPlayTime] = useState<number>(0);
@@ -901,19 +905,22 @@ function PlayPageClient() {
     const rememberedStatus = detailData
       ? getRememberedSourceStatus(detailData.episodes)
       : null;
-    const nextPlaybackMode: SourcePlaybackMode =
-      rememberedStatus?.kind === 'proxy' && buildHlsProxyUrl(directUrl)
+    const proxyUrl = buildHlsProxyUrl(directUrl);
+    const rememberedPlaybackMode =
+      rememberedStatus?.kind === 'proxy'
         ? 'proxy'
-        : 'direct';
+        : rememberedStatus?.playbackMode || null;
+    const playbackPolicy = resolveHlsPlaybackPolicy({
+      directUrl,
+      proxyUrl,
+      rememberedPlaybackMode,
+      isAppleNativeHlsEnvironment: isAppleNativeHlsPlaybackEnvironment(),
+    });
 
-    if (playbackModeRef.current !== nextPlaybackMode) {
-      setPlaybackMode(nextPlaybackMode);
-    }
+    applyPlaybackMode(playbackPolicy.mode);
+    logHlsPlaybackPolicy(directUrl, proxyUrl, playbackPolicy);
 
-    const nextUrl =
-      nextPlaybackMode === 'proxy'
-        ? buildHlsProxyUrl(directUrl) || directUrl
-        : directUrl;
+    const nextUrl = playbackPolicy.url;
 
     if (nextUrl !== videoUrlRef.current) {
       startupFeedbackSentRef.current = false;
@@ -950,7 +957,7 @@ function PlayPageClient() {
     startupFeedbackSentRef.current = false;
     playbackStartupStartedAtRef.current = Date.now();
     resetHlsRecoveryCounters();
-    setPlaybackMode('proxy');
+    applyPlaybackMode('proxy');
     setVideoLoadingStage('sourceChanging');
     setIsVideoLoading(true);
     setError(null);
@@ -996,6 +1003,67 @@ function PlayPageClient() {
     if (video.hasAttribute('disableRemotePlayback')) {
       video.removeAttribute('disableRemotePlayback');
     }
+  };
+
+  const isAppleNativeHlsPlaybackEnvironment = () =>
+    detectAppleNativeHlsEnvironment({
+      userAgent:
+        typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+      platform:
+        typeof navigator !== 'undefined' ? navigator.platform : undefined,
+      maxTouchPoints:
+        typeof navigator !== 'undefined'
+          ? navigator.maxTouchPoints
+          : undefined,
+      hasWebKitPointConversion:
+        typeof window !== 'undefined' &&
+        typeof (window as any).webkitConvertPointFromNodeToPage === 'function',
+    });
+
+  const logHlsPlaybackPolicy = (
+    directUrl: string,
+    proxyUrl: string | null,
+    policy: ReturnType<typeof resolveHlsPlaybackPolicy>
+  ) => {
+    if (
+      policy.reason !== 'apple-native-hls-ad-filter' &&
+      policy.reason !== 'proxy-unavailable'
+    ) {
+      return;
+    }
+
+    const logKey = JSON.stringify({
+      directUrl,
+      proxyUrl,
+      mode: policy.mode,
+      reason: policy.reason,
+    });
+
+    if (playbackPolicyLogKeysRef.current.has(logKey)) {
+      return;
+    }
+
+    playbackPolicyLogKeysRef.current.add(logKey);
+
+    if (policy.reason === 'apple-native-hls-ad-filter') {
+      console.info(
+        '[去广告][播放策略] 当前终端可能使用系统 HLS，已使用代理过滤播放列表',
+        {
+          directUrl,
+          proxyUrl,
+          playbackMode: policy.mode,
+        }
+      );
+      return;
+    }
+
+    console.warn(
+      '[去广告][播放策略] 当前终端可能绕过前端过滤，但代理地址不可用，暂时使用直连播放',
+      {
+        directUrl,
+        playbackMode: policy.mode,
+      }
+    );
   };
 
   const showPlayerNotice = (art: any, message: string) => {
@@ -1284,7 +1352,6 @@ function PlayPageClient() {
         targetIndex = 0;
       }
       sourceFallbackAttemptedRef.current = false;
-      setPlaybackMode('direct');
 
       const resumePlan = getSourceSwitchResumePlan({
         currentEpisodeIndex,
@@ -1333,7 +1400,7 @@ function PlayPageClient() {
     if (episodeIndex >= 0 && episodeIndex < totalEpisodes) {
       // 在更换集数前保存当前播放进度
       if (artPlayerRef.current && artPlayerRef.current.paused) {
-        saveCurrentPlayProgress();
+        saveCurrentPlayProgress('episode-change');
       }
       setCurrentEpisodeIndex(episodeIndex);
     }
@@ -1344,7 +1411,7 @@ function PlayPageClient() {
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx > 0) {
       if (artPlayerRef.current && !artPlayerRef.current.paused) {
-        saveCurrentPlayProgress();
+        saveCurrentPlayProgress('episode-change');
       }
       setCurrentEpisodeIndex(idx - 1);
     }
@@ -1356,7 +1423,7 @@ function PlayPageClient() {
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx < d.episodes.length - 1) {
       if (artPlayerRef.current && !artPlayerRef.current.paused) {
-        saveCurrentPlayProgress();
+        saveCurrentPlayProgress('episode-change');
       }
       setCurrentEpisodeIndex(idx + 1);
     }
@@ -1455,8 +1522,21 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 播放记录相关
   // ---------------------------------------------------------------------------
+  const getRuntimeStorageType = () => {
+    if (typeof window !== 'undefined') {
+      return (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || null;
+    }
+
+    return process.env.NEXT_PUBLIC_STORAGE_TYPE || null;
+  };
+
   // 保存播放进度
-  const saveCurrentPlayProgress = async () => {
+  const saveCurrentPlayProgress = async (
+    reason: PlayRecordSaveReason = 'heartbeat',
+    options?: {
+      keepalive?: boolean;
+    }
+  ) => {
     if (
       !artPlayerRef.current ||
       !currentSourceRef.current ||
@@ -1468,29 +1548,48 @@ function PlayPageClient() {
     }
 
     const player = artPlayerRef.current;
-    const currentTime = player.currentTime || 0;
-    const duration = player.duration || 0;
+    const currentTime = Math.floor(player.currentTime || 0);
+    const duration = Math.floor(player.duration || 0);
 
     // 如果播放时间太短（少于5秒）或者视频时长无效，不保存
     if (currentTime < 1 || !duration) {
       return;
     }
 
-    try {
-      await savePlayRecord(currentSourceRef.current, currentIdRef.current, {
-        title: videoTitleRef.current,
-        source_name: detailRef.current?.source_name || '',
-        year: detailRef.current?.year,
-        cover: detailRef.current?.poster || '',
-        index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
-        total_episodes: detailRef.current?.episodes.length || 1,
-        play_time: Math.floor(currentTime),
-        total_time: Math.floor(duration),
-        save_time: Date.now(),
-        search_title: searchTitle,
-      });
+    const saveTime = Date.now();
+    const snapshot = {
+      key: generateStorageKey(currentSourceRef.current, currentIdRef.current),
+      episodeIndex: currentEpisodeIndexRef.current,
+      playTime: currentTime,
+      totalTime: duration,
+      savedAt: saveTime,
+    } satisfies PlayRecordSaveSnapshot;
 
-      lastSaveTimeRef.current = Date.now();
+    if (!shouldSavePlayRecord(lastSavedSnapshotRef.current, snapshot, reason)) {
+      return;
+    }
+
+    try {
+      await savePlayRecord(
+        currentSourceRef.current,
+        currentIdRef.current,
+        {
+          title: videoTitleRef.current,
+          source_name: detailRef.current?.source_name || '',
+          year: detailRef.current?.year,
+          cover: detailRef.current?.poster || '',
+          index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
+          total_episodes: detailRef.current?.episodes.length || 1,
+          play_time: currentTime,
+          total_time: duration,
+          save_time: saveTime,
+          search_title: searchTitle,
+        },
+        options
+      );
+
+      lastSaveTimeRef.current = saveTime;
+      lastSavedSnapshotRef.current = snapshot;
     } catch (err) {
       console.error('保存播放进度失败:', err);
     }
@@ -1499,13 +1598,15 @@ function PlayPageClient() {
   useEffect(() => {
     // 页面即将卸载时保存播放进度
     const handleBeforeUnload = () => {
-      saveCurrentPlayProgress();
+      void saveCurrentPlayProgress('beforeunload', { keepalive: true });
     };
 
     // 页面可见性变化时保存播放进度
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        saveCurrentPlayProgress();
+        void saveCurrentPlayProgress('visibility-hidden', {
+          keepalive: true,
+        });
       }
     };
 
@@ -1634,11 +1735,7 @@ function PlayPageClient() {
 
         if (cancelled) return;
 
-        // 检测是否为WebKit浏览器
-        const isWebkit =
-          typeof window !== 'undefined' &&
-          typeof (window as any).webkitConvertPointFromNodeToPage ===
-            'function';
+        const isWebkit = isAppleNativeHlsPlaybackEnvironment();
 
         // 非WebKit浏览器且播放器已存在，使用switch方法切换
         if (!isWebkit && artPlayerRef.current) {
@@ -1728,9 +1825,7 @@ function PlayPageClient() {
                 maxBufferSize: 90 * 1000 * 1000, // 约 90MB，换取更稳的点播缓冲空间
 
                 /* 自定义loader */
-                loader: blockAdEnabledRef.current
-                  ? (CustomHlsJsLoader as any)
-                  : Hls.DefaultConfig.loader,
+                loader: CustomHlsJsLoader as any,
               });
 
               hls.loadSource(url);
@@ -1883,34 +1978,6 @@ function PlayPageClient() {
             loading:
               '<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCIgdmlld0JveD0iMCAwIDUwIDUwIj48cGF0aCBkPSJNMjUuMjUxIDYuNDYxYy0xMC4zMTggMC0xOC42ODMgOC4zNjUtMTguNjgzIDE4LjY4M2g0LjA2OGMwLTguMDcgNi41NDUtMTQuNjE1IDE0LjYxNS0xNC42MTVWNi40NjF6IiBmaWxsPSIjMDA5Njg4Ij48YW5pbWF0ZVRyYW5zZm9ybSBhdHRyaWJ1dGVOYW1lPSJ0cmFuc2Zvcm0iIGF0dHJpYnV0ZVR5cGU9IlhNTCIgZHVyPSIxcyIgZnJvbT0iMCAyNSAyNSIgcmVwZWF0Q291bnQ9ImluZGVmaW5pdGUiIHRvPSIzNjAgMjUgMjUiIHR5cGU9InJvdGF0ZSIvPjwvcGF0aD48L3N2Zz4=">',
           },
-          settings: [
-            {
-              html: '去广告',
-              icon: '<text x="50%" y="50%" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="rgb(var(--ui-on-accent))">AD</text>',
-              tooltip: blockAdEnabled ? '已开启' : '已关闭',
-              onClick() {
-                const newVal = !blockAdEnabled;
-                try {
-                  localStorage.setItem('enable_blockad', String(newVal));
-                  if (artPlayerRef.current) {
-                    resumeTimeRef.current = artPlayerRef.current.currentTime;
-                    if (
-                      artPlayerRef.current.video &&
-                      artPlayerRef.current.video.hls
-                    ) {
-                      artPlayerRef.current.video.hls.destroy();
-                    }
-                    artPlayerRef.current.destroy();
-                    artPlayerRef.current = null;
-                  }
-                  setBlockAdEnabled(newVal);
-                } catch (_) {
-                  // ignore
-                }
-                return newVal ? '当前开启' : '当前关闭';
-              },
-            },
-          ],
           // 控制栏配置
           controls: [
             {
@@ -2047,7 +2114,7 @@ function PlayPageClient() {
           if (sourceSwitchSavePendingRef.current) {
             sourceSwitchSavePendingRef.current = false;
             setTimeout(() => {
-              void saveCurrentPlayProgress();
+              void saveCurrentPlayProgress('resume-sync');
             }, 0);
           }
 
@@ -2138,21 +2205,17 @@ function PlayPageClient() {
 
         artPlayerRef.current.on('video:timeupdate', () => {
           const now = Date.now();
-          let interval = 5000;
-          if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'd1') {
-            interval = 10000;
-          }
-          if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'upstash') {
-            interval = 20000;
-          }
+          const interval = getPlayRecordHeartbeatIntervalMs(
+            getRuntimeStorageType()
+          );
           if (now - lastSaveTimeRef.current > interval) {
-            saveCurrentPlayProgress();
+            saveCurrentPlayProgress('heartbeat');
             lastSaveTimeRef.current = now;
           }
         });
 
         artPlayerRef.current.on('pause', () => {
-          saveCurrentPlayProgress();
+          saveCurrentPlayProgress('pause');
         });
 
         if (artPlayerRef.current?.video) {
@@ -2172,7 +2235,7 @@ function PlayPageClient() {
     return () => {
       cancelled = true;
     };
-  }, [videoUrl, loading, blockAdEnabled]);
+  }, [videoUrl, loading]);
 
   // 当组件卸载时清理定时器
   useEffect(() => {
