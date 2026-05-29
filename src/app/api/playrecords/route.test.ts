@@ -56,7 +56,10 @@ class MockResponse {
   MockResponse;
 
 let POST: (request: Request) => Promise<MockResponse>;
+
 let DELETE: (request: Request) => Promise<MockResponse>;
+
+let GET: (request: Request) => Promise<MockResponse>;
 
 jest.mock('next/server', () => ({
   NextResponse: {
@@ -84,8 +87,11 @@ describe('playrecords route', () => {
     getAuthInfoFromCookie as jest.MockedFunction<typeof getAuthInfoFromCookie>;
 
   beforeAll(() => {
+
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    ({ POST, DELETE } = require('@/app/api/playrecords/route'));
+
+    ({ POST, DELETE, GET } = require('@/app/api/playrecords/route'));
+
   });
 
   beforeEach(() => {
@@ -133,16 +139,180 @@ describe('playrecords route', () => {
     );
   });
 
-  it('clears all play records via the optimized DbManager path', async () => {
-    const response = await DELETE(
-      new Request('https://app.example.com/api/playrecords', {
-        method: 'DELETE',
-      })
-    );
-
-    expect(response.status).toBe(200);
-    expect(mockedDb.clearAllPlayRecords).toHaveBeenCalledWith('alice');
-    expect(mockedDb.getAllPlayRecords).not.toHaveBeenCalled();
-    expect(mockedDb.deletePlayRecord).not.toHaveBeenCalled();
-  });
+  it('clears all play records via the optimized DbManager path', async () => {
+    const response = await DELETE(
+      new Request('https://app.example.com/api/playrecords', {
+        method: 'DELETE',
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedDb.clearAllPlayRecords).toHaveBeenCalledWith('alice');
+    expect(mockedDb.getAllPlayRecords).not.toHaveBeenCalled();
+    expect(mockedDb.deletePlayRecord).not.toHaveBeenCalled();
+  });
+
+  // ─── GET ──────────────────────────────────────────────────────────────────
+
+  it('GET returns all play records for the authenticated user', async () => {
+    const records = [{ title: '示例影片' }];
+    mockedDb.getAllPlayRecords.mockResolvedValue(records as any);
+
+    const response = await GET(
+      new Request('https://app.example.com/api/playrecords', { method: 'GET' })
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(records);
+    expect(mockedDb.getAllPlayRecords).toHaveBeenCalledWith('alice');
+  });
+
+  it('GET returns 401 when the request is unauthenticated', async () => {
+    mockedGetAuthInfoFromCookie.mockResolvedValue(null as any);
+
+    const response = await GET(
+      new Request('https://app.example.com/api/playrecords', { method: 'GET' })
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  // ─── POST — auth & validation ──────────────────────────────────────────────
+
+  it('POST returns 401 when the request is unauthenticated', async () => {
+    mockedGetAuthInfoFromCookie.mockResolvedValue(null as any);
+
+    const response = await POST(
+      new Request('https://app.example.com/api/playrecords', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ key: 'src+1', record: {} }),
+      })
+    );
+
+    expect(response.status).toBe(401);
+    expect(mockedDb.savePlayRecord).not.toHaveBeenCalled();
+  });
+
+  it('POST returns 400 when the body is missing the key field', async () => {
+    const response = await POST(
+      new Request('https://app.example.com/api/playrecords', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          record: { title: '示例', source_name: '源', index: 1 },
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockedDb.savePlayRecord).not.toHaveBeenCalled();
+  });
+
+  it('POST returns 400 when the body is missing the record field', async () => {
+    const response = await POST(
+      new Request('https://app.example.com/api/playrecords', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ key: 'src+1' }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockedDb.savePlayRecord).not.toHaveBeenCalled();
+  });
+
+  it('POST returns 400 when the record has no title', async () => {
+    const response = await POST(
+      new Request('https://app.example.com/api/playrecords', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          key: 'src+1',
+          record: { title: '', source_name: '源', index: 1 },
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockedDb.savePlayRecord).not.toHaveBeenCalled();
+  });
+
+  it('POST returns 400 when the record index is less than 1', async () => {
+    const response = await POST(
+      new Request('https://app.example.com/api/playrecords', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          key: 'src+1',
+          record: { title: '示例', source_name: '源', index: 0 },
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockedDb.savePlayRecord).not.toHaveBeenCalled();
+  });
+
+  it('POST returns 400 when the key has no + separator', async () => {
+    const response = await POST(
+      new Request('https://app.example.com/api/playrecords', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          key: 'invalid-key-without-plus',
+          record: { title: '示例影片', source_name: '测试源', index: 1 },
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockedDb.savePlayRecord).not.toHaveBeenCalled();
+  });
+
+  // ─── DELETE — auth, single-record, validation ──────────────────────────────
+
+  it('DELETE returns 401 when the request is unauthenticated', async () => {
+    mockedGetAuthInfoFromCookie.mockResolvedValue(null as any);
+
+    const response = await DELETE(
+      new Request('https://app.example.com/api/playrecords', {
+        method: 'DELETE',
+      })
+    );
+
+    expect(response.status).toBe(401);
+    expect(mockedDb.clearAllPlayRecords).not.toHaveBeenCalled();
+    expect(mockedDb.deletePlayRecord).not.toHaveBeenCalled();
+  });
+
+  it('DELETE with a valid key removes only that single play record', async () => {
+    const response = await DELETE(
+      new Request(
+        'https://app.example.com/api/playrecords?key=source-a%2Bvideo-1',
+        { method: 'DELETE' }
+      )
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedDb.deletePlayRecord).toHaveBeenCalledWith(
+      'alice',
+      'source-a',
+      'video-1'
+    );
+    expect(mockedDb.clearAllPlayRecords).not.toHaveBeenCalled();
+  });
+
+  it('DELETE returns 400 when the key param has no + separator', async () => {
+    const response = await DELETE(
+      new Request(
+        'https://app.example.com/api/playrecords?key=bad-key-format',
+        { method: 'DELETE' }
+      )
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockedDb.deletePlayRecord).not.toHaveBeenCalled();
+    expect(mockedDb.clearAllPlayRecords).not.toHaveBeenCalled();
+  });
 });
