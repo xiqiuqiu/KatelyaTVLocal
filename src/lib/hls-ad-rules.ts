@@ -293,7 +293,7 @@ const KNOWN_HLS_AD_SEGMENT_RULES: KnownHlsAdSegmentRule[] = [
     id: 'ruyi-ryplay12-jjk-s3-ep1-20260109-v1',
     name: '如意 ryplay12 咒术回战第三季第 1 集中插广告',
     description:
-      '用户在 iPad Chrome 预览环境反馈 6:56 到 7:10、9:22 到 9:40 左右出现广告；该样本同源正常内容也大量使用短分片，因此只按当前剧集目录和连续分片文件名精确命中。',
+      '用户在 iPad Chrome 预览环境反馈 6:56 到 7:10、8:04、9:22 到 9:40 左右出现广告；该样本同源正常内容也大量使用短分片，因此只按当前剧集目录和连续分片文件名精确命中。',
     findMatches(segments, context) {
       const baseHost = getHost(context.baseUrl);
       const baseDirectory = getBasePlaylistDirectory(context.baseUrl);
@@ -310,6 +310,12 @@ const KNOWN_HLS_AD_SEGMENT_RULES: KnownHlsAdSegmentRule[] = [
           '67deb25d2552d1d315fef8ecfb8937b3.ts',
           '3953b607206dfff90b77b43042936d28.ts',
           '9cbefbed5c7cb46d39489166e4919c0d.ts',
+        ],
+        [
+          'bef3f550e01ce9acff81a337d38689be.ts',
+          'ab4d121a23ab5e7435b9dd668e608623.ts',
+          '40e8cb440c21f6354564e7fe8eba9fa2.ts',
+          '6565740a9e9e3963eaa6605077a40675.ts',
         ],
         [
           'abf506f673c6544122d5185d3267dceb.ts',

@@ -185,6 +185,22 @@ function createRuyiRyplay12JjkS3Episode1Case(): string {
     '#EXTINF:2.669333,',
     '35aaa208fec34352538b41b52e6b805d.ts',
     '#EXT-X-DISCONTINUITY',
+    '#EXTINF:6.006000,',
+    '32d8764b8fce4b9ef4546395438ff0f9.ts',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:4.170833,',
+    'bef3f550e01ce9acff81a337d38689be.ts',
+    '#EXTINF:4.170833,',
+    'ab4d121a23ab5e7435b9dd668e608623.ts',
+    '#EXTINF:4.170833,',
+    '40e8cb440c21f6354564e7fe8eba9fa2.ts',
+    '#EXTINF:1.334667,',
+    '6565740a9e9e3963eaa6605077a40675.ts',
+    '#EXTINF:4.170833,',
+    'e247ee94729807348f91da54762e92b2.ts',
+    '#EXTINF:6.131122,',
+    '2c79145942d872bd70093e15e92118e6.ts',
+    '#EXT-X-DISCONTINUITY',
     '#EXTINF:4.170833,',
     '0f9749d04fee1f3130ad7758695b2a26.ts',
     '#EXTINF:5.922578,',
@@ -593,6 +609,8 @@ describe('filterAdsFromM3U8', () => {
     expect(filtered).toContain('01e243fade73f156c08b68b836acfd4a.ts');
     expect(filtered).not.toContain('10a32e39c0614f2366557b3eda961771.ts');
     expect(filtered).not.toContain('9cbefbed5c7cb46d39489166e4919c0d.ts');
+    expect(filtered).not.toContain('bef3f550e01ce9acff81a337d38689be.ts');
+    expect(filtered).not.toContain('6565740a9e9e3963eaa6605077a40675.ts');
     expect(filtered).not.toContain('abf506f673c6544122d5185d3267dceb.ts');
     expect(filtered).not.toContain('240d5e0714be9babea8412c0df2ffde9.ts');
 
@@ -602,13 +620,19 @@ describe('filterAdsFromM3U8', () => {
       'https://cdn.ryplay12.com/20260109/30954_0fe9a7a0/2000k/hls/index.m3u8'
     );
 
-    expect(debugInfo.summary.removedBlocks).toHaveLength(2);
+    expect(debugInfo.summary.removedBlocks).toHaveLength(3);
     expect(debugInfo.summary.removedBlocks).toEqual([
       expect.objectContaining({
         reason: 'known-rule',
         ruleId: 'ruyi-ryplay12-jjk-s3-ep1-20260109-v1',
         segmentCount: 4,
         durationSeconds: expect.closeTo(13.18, 2),
+      }),
+      expect.objectContaining({
+        reason: 'known-rule',
+        ruleId: 'ruyi-ryplay12-jjk-s3-ep1-20260109-v1',
+        segmentCount: 4,
+        durationSeconds: expect.closeTo(13.847, 3),
       }),
       expect.objectContaining({
         reason: 'known-rule',
