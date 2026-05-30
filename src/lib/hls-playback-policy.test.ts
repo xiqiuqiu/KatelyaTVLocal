@@ -21,6 +21,10 @@ describe('resolveHlsPlaybackPolicy', () => {
 
     expect(result.mode).toBe('proxy');
     expect(result.url).toBe(adFilteringProxyUrl);
+    expect(result.runtime).toBe('native-hls');
+    expect(result.playlistFilter).toBe('proxy-playlist');
+    expect(result.segmentMode).toBe('direct');
+    expect(result.recoveryProfile).toBe('native-video');
     expect(result.forcedProxyForAdFiltering).toBe(true);
     expect(result.reason).toBe('apple-native-hls-ad-filter');
   });
@@ -36,6 +40,10 @@ describe('resolveHlsPlaybackPolicy', () => {
 
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
+    expect(result.runtime).toBe('hlsjs');
+    expect(result.playlistFilter).toBe('client-loader');
+    expect(result.segmentMode).toBe('direct');
+    expect(result.recoveryProfile).toBe('hlsjs');
     expect(result.forcedProxyForAdFiltering).toBe(false);
     expect(result.reason).toBe('direct-preferred');
   });
@@ -51,6 +59,29 @@ describe('resolveHlsPlaybackPolicy', () => {
 
     expect(result.mode).toBe('proxy');
     expect(result.url).toBe(proxyUrl);
+    expect(result.runtime).toBe('hlsjs');
+    expect(result.playlistFilter).toBe('proxy-playlist');
+    expect(result.segmentMode).toBe('proxy');
+    expect(result.recoveryProfile).toBe('hlsjs');
+    expect(result.forcedProxyForAdFiltering).toBe(false);
+    expect(result.reason).toBe('remembered-proxy');
+  });
+
+  it('uses full proxy mode on iOS when the source is remembered as proxy-only', () => {
+    const result = resolveHlsPlaybackPolicy({
+      directUrl,
+      proxyUrl,
+      adFilteringProxyUrl,
+      rememberedPlaybackMode: 'proxy',
+      isAppleNativeHlsEnvironment: true,
+    });
+
+    expect(result.mode).toBe('proxy');
+    expect(result.url).toBe(proxyUrl);
+    expect(result.runtime).toBe('native-hls');
+    expect(result.playlistFilter).toBe('proxy-playlist');
+    expect(result.segmentMode).toBe('proxy');
+    expect(result.recoveryProfile).toBe('native-video');
     expect(result.forcedProxyForAdFiltering).toBe(false);
     expect(result.reason).toBe('remembered-proxy');
   });
