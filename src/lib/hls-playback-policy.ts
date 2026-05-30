@@ -1,5 +1,10 @@
 import type { SourcePlaybackMode } from './types';
 
+export type HlsPlaybackRuntime = 'hlsjs' | 'native-hls';
+export type HlsPlaylistFilterMode = 'client-loader' | 'proxy-playlist';
+export type HlsSegmentMode = 'direct' | 'proxy';
+export type HlsRecoveryProfile = 'hlsjs' | 'native-video';
+
 export type HlsPlaybackPolicyReason =
   | 'remembered-proxy'
   | 'apple-native-hls-ad-filter'
@@ -24,6 +29,10 @@ export interface HlsPlaybackPolicyInput {
 export interface HlsPlaybackPolicyResult {
   mode: SourcePlaybackMode;
   url: string;
+  runtime: HlsPlaybackRuntime;
+  playlistFilter: HlsPlaylistFilterMode;
+  segmentMode: HlsSegmentMode;
+  recoveryProfile: HlsRecoveryProfile;
   reason: HlsPlaybackPolicyReason;
   forcedProxyForAdFiltering: boolean;
 }
@@ -59,11 +68,22 @@ export function resolveHlsPlaybackPolicy({
   rememberedPlaybackMode,
   isAppleNativeHlsEnvironment,
 }: HlsPlaybackPolicyInput): HlsPlaybackPolicyResult {
+  const runtime: HlsPlaybackRuntime = isAppleNativeHlsEnvironment
+    ? 'native-hls'
+    : 'hlsjs';
+  const recoveryProfile: HlsRecoveryProfile = isAppleNativeHlsEnvironment
+    ? 'native-video'
+    : 'hlsjs';
+
   if (rememberedPlaybackMode === 'proxy') {
     if (proxyUrl) {
       return {
         mode: 'proxy',
         url: proxyUrl,
+        runtime,
+        playlistFilter: 'proxy-playlist',
+        segmentMode: 'proxy',
+        recoveryProfile,
         reason: 'remembered-proxy',
         forcedProxyForAdFiltering: false,
       };
@@ -72,6 +92,12 @@ export function resolveHlsPlaybackPolicy({
     return {
       mode: 'direct',
       url: directUrl,
+      runtime,
+      playlistFilter: isAppleNativeHlsEnvironment
+        ? 'proxy-playlist'
+        : 'client-loader',
+      segmentMode: 'direct',
+      recoveryProfile,
       reason: 'proxy-unavailable',
       forcedProxyForAdFiltering: false,
     };
@@ -84,6 +110,10 @@ export function resolveHlsPlaybackPolicy({
       return {
         mode: 'proxy',
         url: appleAdFilteringProxyUrl,
+        runtime,
+        playlistFilter: 'proxy-playlist',
+        segmentMode: adFilteringProxyUrl ? 'direct' : 'proxy',
+        recoveryProfile,
         reason: 'apple-native-hls-ad-filter',
         forcedProxyForAdFiltering: true,
       };
@@ -92,6 +122,10 @@ export function resolveHlsPlaybackPolicy({
     return {
       mode: 'direct',
       url: directUrl,
+      runtime,
+      playlistFilter: 'proxy-playlist',
+      segmentMode: 'direct',
+      recoveryProfile,
       reason: 'proxy-unavailable',
       forcedProxyForAdFiltering: false,
     };
@@ -100,6 +134,10 @@ export function resolveHlsPlaybackPolicy({
   return {
     mode: 'direct',
     url: directUrl,
+    runtime,
+    playlistFilter: 'client-loader',
+    segmentMode: 'direct',
+    recoveryProfile,
     reason: 'direct-preferred',
     forcedProxyForAdFiltering: false,
   };
