@@ -70,4 +70,36 @@ describe('getNativeVideoRecoveryPlan', () => {
       reason: '完整代理仍无法恢复，切换到其他播放源',
     });
   });
+
+  it('escalates media source unavailable errors directly to full proxy', () => {
+    expect(
+      getNativeVideoRecoveryPlan({
+        stallCount: 1,
+        sourceReloadAttempts: 0,
+        fullProxyAttempted: false,
+        hasAlternativeSource: true,
+        mediaSourceUnavailable: true,
+        repeatedFailureAtSamePosition: false,
+      })
+    ).toEqual({
+      action: 'switch-full-proxy',
+      reason: '原生播放器判定当前媒体源不可用，升级到完整代理线路',
+    });
+  });
+
+  it('switches source when full proxy still fails at the same position', () => {
+    expect(
+      getNativeVideoRecoveryPlan({
+        stallCount: 2,
+        sourceReloadAttempts: 0,
+        fullProxyAttempted: true,
+        hasAlternativeSource: true,
+        mediaSourceUnavailable: true,
+        repeatedFailureAtSamePosition: true,
+      })
+    ).toEqual({
+      action: 'switch-source',
+      reason: '同一播放位置重复失败，切换到其他播放源',
+    });
+  });
 });

@@ -12,6 +12,8 @@ export interface NativeVideoRecoveryPlanInput {
   sourceReloadAttempts: number;
   fullProxyAttempted: boolean;
   hasAlternativeSource: boolean;
+  mediaSourceUnavailable?: boolean;
+  repeatedFailureAtSamePosition?: boolean;
 }
 
 export interface NativeVideoRecoveryPlan {
@@ -24,11 +26,34 @@ export function getNativeVideoRecoveryPlan({
   sourceReloadAttempts,
   fullProxyAttempted,
   hasAlternativeSource,
+  mediaSourceUnavailable = false,
+  repeatedFailureAtSamePosition = false,
 }: NativeVideoRecoveryPlanInput): NativeVideoRecoveryPlan {
   if (stallCount <= 0) {
     return {
       action: 'ignore',
       reason: '原生播放器暂无恢复动作',
+    };
+  }
+
+  if (repeatedFailureAtSamePosition && hasAlternativeSource) {
+    return {
+      action: 'switch-source',
+      reason: '同一播放位置重复失败，切换到其他播放源',
+    };
+  }
+
+  if (mediaSourceUnavailable && !fullProxyAttempted) {
+    return {
+      action: 'switch-full-proxy',
+      reason: '原生播放器判定当前媒体源不可用，升级到完整代理线路',
+    };
+  }
+
+  if (mediaSourceUnavailable && fullProxyAttempted && hasAlternativeSource) {
+    return {
+      action: 'switch-source',
+      reason: '完整代理媒体源仍不可用，切换到其他播放源',
     };
   }
 
