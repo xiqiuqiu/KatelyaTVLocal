@@ -62,6 +62,7 @@ interface SiteConfig {
   SiteInterfaceCacheTime: number;
   ImageProxy: string;
   DoubanProxy: string;
+  PlaybackDebugEnabled?: boolean;
 }
 
 // 视频源数据类型
@@ -106,6 +107,34 @@ interface AiUsageReport {
   topSubjects: AiUsageSubject[];
   topUsers: AiUsageSubject[];
   topIps: AiUsageSubject[];
+}
+
+interface PlaybackDebugLogEntry {
+  id: string;
+  sessionId: string;
+  eventType: string;
+  sourceKey: string | null;
+  playbackUrl: string | null;
+  playbackDomain: string | null;
+  title: string | null;
+  runtime: string | null;
+  playlistFilter: string | null;
+  segmentMode: string | null;
+  recoveryProfile: string | null;
+  currentTime: number | null;
+  duration: number | null;
+  readyState: number | null;
+  networkState: number | null;
+  paused: boolean | null;
+  ended: boolean | null;
+  details: unknown;
+  userAgent: string | null;
+  createdAt: number;
+}
+
+interface PlaybackDebugLogResponse {
+  enabled: boolean;
+  logs: PlaybackDebugLogEntry[];
 }
 
 interface RegistrationInvite {
@@ -1656,6 +1685,7 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
     SiteInterfaceCacheTime: 7200,
     ImageProxy: '',
     DoubanProxy: '',
+    PlaybackDebugEnabled: false,
   });
   // 保存状态
   const [saving, setSaving] = useState(false);
@@ -1674,6 +1704,9 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
         ...config.SiteConfig,
         ImageProxy: config.SiteConfig.ImageProxy || '',
         DoubanProxy: config.SiteConfig.DoubanProxy || '',
+        PlaybackDebugEnabled: Boolean(
+          config.SiteConfig.PlaybackDebugEnabled
+        ),
       });
     }
   }, [config]);
@@ -1910,13 +1943,38 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
         </p>
       </div>
 
+      {/* 播放调试模式 */}
+      <div className='rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/60 dark:bg-amber-950/30'>
+        <label className='flex cursor-pointer items-start gap-3'>
+          <input
+            type='checkbox'
+            checked={Boolean(siteSettings.PlaybackDebugEnabled)}
+            onChange={(e) =>
+              setSiteSettings((prev) => ({
+                ...prev,
+                PlaybackDebugEnabled: e.target.checked,
+              }))
+            }
+            className='mt-1 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500'
+          />
+          <span>
+            <span className='block text-sm font-medium text-gray-900 dark:text-gray-100'>
+              播放调试模式
+            </span>
+            <span className='mt-1 block text-xs leading-5 text-gray-600 dark:text-gray-300'>
+              开启后，管理员播放页会显示调试面板，并把卡顿、恢复、播放策略等信息写入后台日志表。关闭后不会记录。
+            </span>
+          </span>
+        </label>
+      </div>
+
       {/* 操作按钮 */}
       <div className='flex justify-end'>
         <button
           onClick={handleSave}
-          disabled={saving || isD1Storage || isUpstashStorage}
+          disabled={saving}
           className={`px-4 py-2 ${
-            saving || isD1Storage || isUpstashStorage
+            saving
               ? 'bg-gray-400 cursor-not-allowed'
               : 'bg-green-600 hover:bg-green-700'
           } text-white rounded-lg transition-colors`}
@@ -2156,6 +2214,184 @@ const AiUsageMonitor = () => {
   );
 };
 
+const formatDebugTime = (value: number | null) => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '-';
+  }
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.floor(value % 60)
+    .toString()
+    .padStart(2, '0');
+  return `${minutes}:${seconds}`;
+};
+
+const formatCreatedAt = (value: number) => {
+  if (!value) {
+    return '-';
+  }
+  return new Date(value).toLocaleString('zh-CN', {
+    hour12: false,
+  });
+};
+
+const stringifyDebugDetails = (details: unknown) => {
+  if (details == null) {
+    return '';
+  }
+  if (typeof details === 'string') {
+    return details;
+  }
+  try {
+    return JSON.stringify(details);
+  } catch {
+    return String(details);
+  }
+};
+
+const PlaybackDebugLogs = () => {
+  const [data, setData] = useState<PlaybackDebugLogResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchLogs = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch('/api/admin/playback-debug?limit=100');
+      const payload = (await response.json().catch(() => ({}))) as
+        | PlaybackDebugLogResponse
+        | { error?: string };
+      if (!response.ok) {
+        throw new Error(
+          'error' in payload && payload.error
+            ? payload.error
+            : `读取失败: ${response.status}`
+        );
+      }
+      setData(payload as PlaybackDebugLogResponse);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '读取播放调试日志失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchLogs();
+  }, [fetchLogs]);
+
+  const logs = data?.logs || [];
+
+  return (
+    <div className='space-y-4'>
+      <div className='flex flex-wrap items-center justify-between gap-3'>
+        <div>
+          <p className='text-sm text-gray-600 dark:text-gray-300'>
+            当前状态：
+            <span
+              className={`ml-1 font-medium ${
+                data?.enabled
+                  ? 'text-green-600 dark:text-green-400'
+                  : 'text-gray-500 dark:text-gray-400'
+              }`}
+            >
+              {data?.enabled ? '已开启' : '未开启'}
+            </span>
+          </p>
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            这里只展示最近 100 条管理员播放调试日志。
+          </p>
+        </div>
+        <button
+          type='button'
+          onClick={() => void fetchLogs()}
+          disabled={loading}
+          className='rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400'
+        >
+          {loading ? '读取中…' : '刷新日志'}
+        </button>
+      </div>
+
+      {error && (
+        <div className='rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300'>
+          {error}
+        </div>
+      )}
+
+      {!loading && logs.length === 0 && (
+        <div className='rounded-lg border border-gray-200 bg-white p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400'>
+          暂无播放调试日志
+        </div>
+      )}
+
+      {logs.length > 0 && (
+        <div className='overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700'>
+          <table className='min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700'>
+            <thead className='bg-gray-50 dark:bg-gray-800'>
+              <tr>
+                <th className='px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300'>
+                  时间
+                </th>
+                <th className='px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300'>
+                  事件
+                </th>
+                <th className='px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300'>
+                  播放位置
+                </th>
+                <th className='px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300'>
+                  影片/来源
+                </th>
+                <th className='px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300'>
+                  策略
+                </th>
+                <th className='px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-300'>
+                  详情
+                </th>
+              </tr>
+            </thead>
+            <tbody className='divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-900'>
+              {logs.map((log) => (
+                <tr key={log.id}>
+                  <td className='whitespace-nowrap px-3 py-2 text-gray-700 dark:text-gray-300'>
+                    {formatCreatedAt(log.createdAt)}
+                  </td>
+                  <td className='whitespace-nowrap px-3 py-2 font-medium text-gray-900 dark:text-gray-100'>
+                    {log.eventType}
+                  </td>
+                  <td className='whitespace-nowrap px-3 py-2 text-gray-700 dark:text-gray-300'>
+                    {formatDebugTime(log.currentTime)}
+                  </td>
+                  <td className='min-w-[180px] px-3 py-2 text-gray-700 dark:text-gray-300'>
+                    <div>{log.title || '-'}</div>
+                    <div className='text-xs text-gray-500 dark:text-gray-400'>
+                      {log.sourceKey || log.playbackDomain || '-'}
+                    </div>
+                  </td>
+                  <td className='min-w-[180px] px-3 py-2 text-xs text-gray-600 dark:text-gray-400'>
+                    <div>运行时：{log.runtime || '-'}</div>
+                    <div>过滤：{log.playlistFilter || '-'}</div>
+                    <div>分片：{log.segmentMode || '-'}</div>
+                  </td>
+                  <td className='max-w-[360px] px-3 py-2 text-xs text-gray-600 dark:text-gray-400'>
+                    <div className='line-clamp-3 break-all'>
+                      {stringifyDebugDetails(log.details) || '-'}
+                    </div>
+                    {log.userAgent && (
+                      <div className='mt-1 line-clamp-2 break-all text-gray-400'>
+                        {log.userAgent}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
 function AdminPageClient() {
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2167,6 +2403,7 @@ function AdminPageClient() {
     videoSource: false,
     siteConfig: false,
     aiUsage: false,
+    playbackDebug: false,
   });
 
   // 获取管理员配置
@@ -2336,6 +2573,20 @@ function AdminPageClient() {
               onToggle={() => toggleTab('aiUsage')}
             >
               <AiUsageMonitor />
+            </CollapsibleTab>
+
+            <CollapsibleTab
+              title='播放调试日志'
+              icon={
+                <Activity
+                  size={20}
+                  className='text-gray-600 dark:text-gray-400'
+                />
+              }
+              isExpanded={expandedTabs.playbackDebug}
+              onToggle={() => toggleTab('playbackDebug')}
+            >
+              <PlaybackDebugLogs />
             </CollapsibleTab>
 
             {/* 视频源配置标签 */}

@@ -43,6 +43,17 @@ export const API_CONFIG = {
 let fileConfig: ConfigFileStruct;
 let cachedConfig: AdminConfig;
 
+function getDefaultPlaybackDebugEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_PLAYBACK_DEBUG === 'true';
+}
+
+function normalizeSiteConfig(adminConfig: AdminConfig): void {
+  adminConfig.SiteConfig.PlaybackDebugEnabled = Boolean(
+    adminConfig.SiteConfig.PlaybackDebugEnabled ??
+      getDefaultPlaybackDebugEnabled()
+  );
+}
+
 async function initConfig() {
   if (cachedConfig) {
     return;
@@ -88,6 +99,8 @@ async function initConfig() {
       const apiSiteEntries = Object.entries(fileConfig.api_site);
 
       if (adminConfig) {
+        normalizeSiteConfig(adminConfig);
+
         // 补全 SourceConfig
         const existed = new Set(
           (adminConfig.SourceConfig || []).map((s) => s.key)
@@ -160,6 +173,7 @@ async function initConfig() {
             SiteInterfaceCacheTime: fileConfig.cache_time || 7200,
             ImageProxy: process.env.NEXT_PUBLIC_IMAGE_PROXY || '',
             DoubanProxy: process.env.NEXT_PUBLIC_DOUBAN_PROXY || '',
+            PlaybackDebugEnabled: getDefaultPlaybackDebugEnabled(),
           },
           UserConfig: {
             AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',
@@ -199,6 +213,7 @@ async function initConfig() {
         SiteInterfaceCacheTime: fileConfig.cache_time || 7200,
         ImageProxy: process.env.NEXT_PUBLIC_IMAGE_PROXY || '',
         DoubanProxy: process.env.NEXT_PUBLIC_DOUBAN_PROXY || '',
+        PlaybackDebugEnabled: getDefaultPlaybackDebugEnabled(),
       },
       UserConfig: {
         AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',
@@ -229,6 +244,8 @@ export async function getConfig(): Promise<AdminConfig> {
     adminConfig = await (storage as any).getAdminConfig();
   }
   if (adminConfig) {
+    normalizeSiteConfig(adminConfig);
+
     // 合并一些环境变量配置
     adminConfig.SiteConfig.SiteName = process.env.SITE_NAME || 'KatelyaTV';
     adminConfig.SiteConfig.Announcement =
@@ -346,6 +363,7 @@ export async function resetConfig() {
       SiteInterfaceCacheTime: fileConfig.cache_time || 7200,
       ImageProxy: process.env.NEXT_PUBLIC_IMAGE_PROXY || '',
       DoubanProxy: process.env.NEXT_PUBLIC_DOUBAN_PROXY || '',
+      PlaybackDebugEnabled: getDefaultPlaybackDebugEnabled(),
     },
     UserConfig: {
       AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',

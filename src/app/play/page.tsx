@@ -87,6 +87,54 @@ declare global {
 
 const directAdFilterDebugLogKeys = new Set<string>();
 
+interface PlaybackDebugEvent {
+  eventType: string;
+  message: string;
+  createdAt: number;
+  currentTime?: number | null;
+  details?: Record<string, unknown>;
+}
+
+interface PlaybackDebugLogPayload {
+  sessionId: string;
+  eventType: string;
+  sourceKey?: string | null;
+  playbackUrl?: string | null;
+  title?: string | null;
+  runtime?: string | null;
+  playlistFilter?: string | null;
+  segmentMode?: string | null;
+  recoveryProfile?: string | null;
+  currentTime?: number | null;
+  duration?: number | null;
+  readyState?: number | null;
+  networkState?: number | null;
+  paused?: boolean | null;
+  ended?: boolean | null;
+  details?: Record<string, unknown>;
+  userAgent?: string | null;
+}
+
+function createPlaybackDebugSessionId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `playback-debug-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
+}
+
+function formatDebugPlaybackTime(value?: number | null) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '--:--';
+  }
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.floor(value % 60)
+    .toString()
+    .padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+
 function logDirectAdFilterDebug(
   playlistUrl: string | undefined,
   originalContent: string,
@@ -201,10 +249,16 @@ function PlayPageClient() {
   const playbackModeRef = useRef<SourcePlaybackMode>('direct');
   const originalVideoUrlRef = useRef('');
   const videoUrlRef = useRef('');
+  const playbackDebugSessionIdRef = useRef(createPlaybackDebugSessionId());
+  const playbackDebugEnabledRef = useRef(false);
   const sourceFallbackAttemptedRef = useRef(false);
   const sourceSwitchSavePendingRef = useRef(false);
   const playbackPolicyLogKeysRef = useRef(new Set<string>());
   const playbackPolicyRef = useRef<HlsPlaybackPolicyResult | null>(null);
+  const [playbackDebugEnabled, setPlaybackDebugEnabled] = useState(false);
+  const [playbackDebugEvents, setPlaybackDebugEvents] = useState<
+    PlaybackDebugEvent[]
+  >([]);
 
   // 同步最新值到 refs
   useEffect(() => {
@@ -226,6 +280,32 @@ function PlayPageClient() {
   useEffect(() => {
     playbackModeRef.current = playbackMode;
   }, [playbackMode]);
+
+  useEffect(() => {
+    playbackDebugEnabledRef.current = playbackDebugEnabled;
+  }, [playbackDebugEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/playback-debug', {
+      cache: 'no-store',
+    })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!cancelled) {
+          setPlaybackDebugEnabled(Boolean(payload?.enabled));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPlaybackDebugEnabled(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const applyPlaybackMode = (mode: SourcePlaybackMode) => {
     playbackModeRef.current = mode;
@@ -526,6 +606,94 @@ function PlayPageClient() {
     } catch (error) {
       console.warn('播放反馈上报失败', error);
     }
+  };
+
+  const getPlaybackDebugVideoSnapshot = () => {
+    const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+    return {
+      currentTime:
+        typeof video?.currentTime === 'number'
+          ? Number(video.currentTime.toFixed(2))
+          : null,
+      duration:
+        typeof video?.duration === 'number' && Number.isFinite(video.duration)
+          ? Number(video.duration.toFixed(2))
+          : null,
+      readyState: video?.readyState ?? null,
+      networkState: video?.networkState ?? null,
+      paused: video?.paused ?? null,
+      ended: video?.ended ?? null,
+    };
+  };
+
+  const sendPlaybackDebugLog = (payload: PlaybackDebugLogPayload) => {
+    const body = JSON.stringify(payload);
+    if (
+      typeof navigator !== 'undefined' &&
+      typeof navigator.sendBeacon === 'function'
+    ) {
+      try {
+        const blob = new Blob([body], { type: 'application/json' });
+        if (navigator.sendBeacon('/api/playback-debug', blob)) {
+          return;
+        }
+      } catch {
+        /* fall back to fetch */
+      }
+    }
+
+    void fetch('/api/playback-debug', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body,
+      keepalive: true,
+    }).catch(() => undefined);
+  };
+
+  const emitPlaybackDebugLog = (
+    eventType: string,
+    message: string,
+    details: Record<string, unknown> = {}
+  ) => {
+    if (!playbackDebugEnabledRef.current) {
+      return;
+    }
+
+    const videoSnapshot = getPlaybackDebugVideoSnapshot();
+    const policy = playbackPolicyRef.current;
+    const event: PlaybackDebugEvent = {
+      eventType,
+      message,
+      createdAt: Date.now(),
+      currentTime: videoSnapshot.currentTime,
+      details,
+    };
+
+    setPlaybackDebugEvents((prev) => [event, ...prev].slice(0, 20));
+
+    const payload: PlaybackDebugLogPayload = {
+      sessionId: playbackDebugSessionIdRef.current,
+      eventType,
+      sourceKey: getCurrentSourceKey() || null,
+      playbackUrl: videoUrlRef.current || null,
+      title: videoTitleRef.current || null,
+      runtime: policy?.runtime || null,
+      playlistFilter: policy?.playlistFilter || null,
+      segmentMode: policy?.segmentMode || null,
+      recoveryProfile: policy?.recoveryProfile || null,
+      ...videoSnapshot,
+      details: {
+        message,
+        ...details,
+      },
+      userAgent:
+        typeof navigator !== 'undefined' ? navigator.userAgent : null,
+    };
+
+    console.info(`[播放调试] ${message}`, payload);
+    sendPlaybackDebugLog(payload);
   };
 
   // 播放源优选函数
@@ -1020,6 +1188,11 @@ function PlayPageClient() {
     setVideoLoadingStage('sourceChanging');
     setIsVideoLoading(true);
     setError(null);
+    emitPlaybackDebugLog('switch-full-proxy', '已升级到完整代理播放', {
+      fromUrl: videoUrlRef.current,
+      toUrl: proxyUrl,
+      resumeTime: resumePlan.resumeTime,
+    });
     setVideoUrl(proxyUrl);
     return true;
   };
@@ -1039,6 +1212,12 @@ function PlayPageClient() {
     );
 
     console.warn(`${reason}，自动切换到播放源: ${nextSource.source_name}`);
+    emitPlaybackDebugLog('switch-source', '已自动切换到其他播放源', {
+      reason,
+      nextSource: nextSource.source,
+      nextId: nextSource.id,
+      nextTitle: nextSource.title,
+    });
     resetHlsRecoveryCounters();
     void handleSourceChange(nextSource.source, nextSource.id, nextSource.title);
     return true;
@@ -1102,6 +1281,17 @@ function PlayPageClient() {
     playbackPolicyLogKeysRef.current.add(logKey);
 
     console.info('[播放策略] 当前播放链路', {
+      directUrl,
+      playbackUrl: proxyUrl,
+      playbackMode: policy.mode,
+      runtime: policy.runtime,
+      playlistFilter: policy.playlistFilter,
+      segmentMode: policy.segmentMode,
+      recoveryProfile: policy.recoveryProfile,
+      reason: policy.reason,
+    });
+
+    emitPlaybackDebugLog('playback-policy', '已选择播放策略', {
       directUrl,
       playbackUrl: proxyUrl,
       playbackMode: policy.mode,
@@ -1214,6 +1404,16 @@ function PlayPageClient() {
       segmentMode: playbackPolicyRef.current?.segmentMode,
     });
 
+    emitPlaybackDebugLog('native-recovery', `${reason}，${plan.reason}`, {
+      action: plan.action,
+      currentTime: Number((video.currentTime || 0).toFixed(2)),
+      readyState: video.readyState,
+      networkState: video.networkState,
+      stallCount: state.stallCount,
+      sourceReloadAttempts: state.sourceReloadAttempts,
+      fullProxyAttempted: state.fullProxyAttempted,
+    });
+
     switch (plan.action) {
       case 'resume-playback':
         void video.play().catch(() => undefined);
@@ -1300,6 +1500,12 @@ function PlayPageClient() {
         return;
       }
 
+      emitPlaybackDebugLog('native-stall-suspected', reason, {
+        currentTime: Number((video.currentTime || 0).toFixed(2)),
+        readyState: video.readyState,
+        networkState: video.networkState,
+      });
+
       waitingRecoveryTimerRef.current = window.setTimeout(() => {
         waitingRecoveryTimerRef.current = null;
         if (video.paused || video.ended || recordProgressIfAdvanced()) {
@@ -1366,6 +1572,11 @@ function PlayPageClient() {
     }
 
     console.info('[播放策略][native] 已启用原生 HLS 卡死监控', {
+      playbackUrl,
+      segmentMode: playbackPolicyRef.current?.segmentMode,
+      playlistFilter: playbackPolicyRef.current?.playlistFilter,
+    });
+    emitPlaybackDebugLog('native-watchdog-enabled', '已启用原生 HLS 卡死监控', {
       playbackUrl,
       segmentMode: playbackPolicyRef.current?.segmentMode,
       playlistFilter: playbackPolicyRef.current?.playlistFilter,
@@ -2228,6 +2439,18 @@ function PlayPageClient() {
                   return;
                 }
 
+                emitPlaybackDebugLog('hls-recovery', reason || plan.reason, {
+                  action: plan.action,
+                  planReason: plan.reason,
+                  errorType,
+                  errorDetails,
+                  fatal,
+                  stallCount: hlsRecoveryStateRef.current.stallCount,
+                  networkRecoveryAttempts:
+                    hlsRecoveryStateRef.current.networkRecoveryAttempts,
+                  mediaRecoveryAttempts:
+                    hlsRecoveryStateRef.current.mediaRecoveryAttempts,
+                });
                 executeRecoveryPlan(reason || plan.reason, plan.action);
               };
 
@@ -2389,6 +2612,9 @@ function PlayPageClient() {
         // 监听视频可播放事件，这时恢复播放进度更可靠
         artPlayerRef.current.on('video:canplay', () => {
           markPlaybackHealthy(artPlayerRef.current.currentTime || 0);
+          emitPlaybackDebugLog('video-canplay', '视频进入可播放状态', {
+            duration: artPlayerRef.current.duration || 0,
+          });
 
           // 若存在需要恢复的播放进度，则跳转
           if (resumeTimeRef.current && resumeTimeRef.current > 0) {
@@ -2467,6 +2693,14 @@ function PlayPageClient() {
 
         artPlayerRef.current.on('error', (err: any) => {
           console.error('播放器错误:', err);
+          emitPlaybackDebugLog('player-error', '播放器报告错误', {
+            error:
+              err instanceof Error
+                ? err.message
+                : typeof err === 'string'
+                ? err
+                : String(err || 'unknown'),
+          });
           const video = artPlayerRef.current?.video as
             | HTMLVideoElement
             | undefined;
@@ -2714,6 +2948,54 @@ function PlayPageClient() {
               {/* 换源加载蒙层 */}
               {isVideoLoading && (
                 <PlayerLoadingOverlay stage={videoLoadingStage} />
+              )}
+
+              {playbackDebugEnabled && (
+                <div className='pointer-events-none absolute bottom-3 left-3 right-3 z-30 max-h-[45%] overflow-hidden rounded-ui-md border border-amber-400/40 bg-black/80 p-3 text-xs text-amber-50 shadow-ui-strong backdrop-blur md:left-auto md:w-[420px]'>
+                  <div className='mb-2 flex items-center justify-between gap-3'>
+                    <span className='font-semibold'>播放调试</span>
+                    <span className='text-amber-200'>
+                      {playbackPolicyRef.current?.runtime || '-'} /{' '}
+                      {playbackPolicyRef.current?.segmentMode || '-'}
+                    </span>
+                  </div>
+                  <div className='mb-2 grid grid-cols-2 gap-2 text-amber-100/90'>
+                    <div>位置：{formatDebugPlaybackTime(currentPlayTime)}</div>
+                    <div>模式：{playbackMode}</div>
+                    <div>
+                      过滤：
+                      {playbackPolicyRef.current?.playlistFilter || '-'}
+                    </div>
+                    <div>
+                      会话：
+                      {playbackDebugSessionIdRef.current.slice(0, 8)}
+                    </div>
+                  </div>
+                  <div className='max-h-32 space-y-1 overflow-hidden'>
+                    {playbackDebugEvents.length === 0 ? (
+                      <div className='text-amber-100/70'>等待播放事件...</div>
+                    ) : (
+                      playbackDebugEvents.slice(0, 5).map((event) => (
+                        <div
+                          key={`${event.createdAt}-${event.eventType}`}
+                          className='rounded bg-white/5 px-2 py-1'
+                        >
+                          <div className='flex justify-between gap-2'>
+                            <span className='font-medium'>
+                              {event.eventType}
+                            </span>
+                            <span>
+                              {formatDebugPlaybackTime(event.currentTime)}
+                            </span>
+                          </div>
+                          <div className='truncate text-amber-100/80'>
+                            {event.message}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </Surface>

@@ -6,6 +6,7 @@ export interface AdminConfig {
     SiteInterfaceCacheTime: number;
     ImageProxy: string;
     DoubanProxy: string;
+    PlaybackDebugEnabled?: boolean;
   };
   UserConfig: {
     AllowRegister: boolean;
