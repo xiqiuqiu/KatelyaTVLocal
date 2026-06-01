@@ -256,6 +256,7 @@ function PlayPageClient() {
   const playbackPolicyLogKeysRef = useRef(new Set<string>());
   const playbackPolicyRef = useRef<HlsPlaybackPolicyResult | null>(null);
   const [playbackDebugEnabled, setPlaybackDebugEnabled] = useState(false);
+  const [playbackDebugCollapsed, setPlaybackDebugCollapsed] = useState(true);
   const [playbackDebugEvents, setPlaybackDebugEvents] = useState<
     PlaybackDebugEvent[]
   >([]);
@@ -2951,50 +2952,73 @@ function PlayPageClient() {
               )}
 
               {playbackDebugEnabled && (
-                <div className='pointer-events-none absolute bottom-3 left-3 right-3 z-30 max-h-[45%] overflow-hidden rounded-ui-md border border-amber-400/40 bg-black/80 p-3 text-xs text-amber-50 shadow-ui-strong backdrop-blur md:left-auto md:w-[420px]'>
-                  <div className='mb-2 flex items-center justify-between gap-3'>
-                    <span className='font-semibold'>播放调试</span>
-                    <span className='text-amber-200'>
-                      {playbackPolicyRef.current?.runtime || '-'} /{' '}
-                      {playbackPolicyRef.current?.segmentMode || '-'}
-                    </span>
-                  </div>
-                  <div className='mb-2 grid grid-cols-2 gap-2 text-amber-100/90'>
-                    <div>位置：{formatDebugPlaybackTime(currentPlayTime)}</div>
-                    <div>模式：{playbackMode}</div>
-                    <div>
-                      过滤：
-                      {playbackPolicyRef.current?.playlistFilter || '-'}
-                    </div>
-                    <div>
-                      会话：
-                      {playbackDebugSessionIdRef.current.slice(0, 8)}
-                    </div>
-                  </div>
-                  <div className='max-h-32 space-y-1 overflow-hidden'>
-                    {playbackDebugEvents.length === 0 ? (
-                      <div className='text-amber-100/70'>等待播放事件...</div>
-                    ) : (
-                      playbackDebugEvents.slice(0, 5).map((event) => (
-                        <div
-                          key={`${event.createdAt}-${event.eventType}`}
-                          className='rounded bg-white/5 px-2 py-1'
+                <div className='absolute bottom-3 right-3 z-30 text-xs text-amber-50'>
+                  {playbackDebugCollapsed ? (
+                    <button
+                      type='button'
+                      onClick={() => setPlaybackDebugCollapsed(false)}
+                      className='rounded-full border border-amber-400/40 bg-black/75 px-3 py-1.5 font-medium text-amber-100 shadow-ui-strong backdrop-blur transition hover:bg-black/90'
+                    >
+                      调试 · {playbackDebugEvents.length}
+                    </button>
+                  ) : (
+                    <div className='w-[min(300px,calc(100vw-2rem))] overflow-hidden rounded-ui-md border border-amber-400/40 bg-black/80 p-2.5 shadow-ui-strong backdrop-blur'>
+                      <div className='mb-2 flex items-center justify-between gap-2'>
+                        <span className='font-semibold'>播放调试</span>
+                        <button
+                          type='button'
+                          onClick={() => setPlaybackDebugCollapsed(true)}
+                          className='rounded border border-white/10 bg-white/10 px-2 py-0.5 text-[11px] text-amber-100 transition hover:bg-white/20'
                         >
-                          <div className='flex justify-between gap-2'>
-                            <span className='font-medium'>
-                              {event.eventType}
-                            </span>
-                            <span>
-                              {formatDebugPlaybackTime(event.currentTime)}
-                            </span>
-                          </div>
-                          <div className='truncate text-amber-100/80'>
-                            {event.message}
-                          </div>
+                          收起
+                        </button>
+                      </div>
+                      <div className='mb-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-amber-100/90'>
+                        <div>
+                          位置：{formatDebugPlaybackTime(currentPlayTime)}
                         </div>
-                      ))
-                    )}
-                  </div>
+                        <div>模式：{playbackMode}</div>
+                        <div>
+                          运行：
+                          {playbackPolicyRef.current?.runtime || '-'}
+                        </div>
+                        <div>
+                          分片：
+                          {playbackPolicyRef.current?.segmentMode || '-'}
+                        </div>
+                        <div className='col-span-2 truncate'>
+                          过滤：
+                          {playbackPolicyRef.current?.playlistFilter || '-'}
+                        </div>
+                      </div>
+                      <div className='max-h-24 space-y-1 overflow-hidden'>
+                        {playbackDebugEvents.length === 0 ? (
+                          <div className='text-amber-100/70'>
+                            等待播放事件...
+                          </div>
+                        ) : (
+                          playbackDebugEvents.slice(0, 3).map((event) => (
+                            <div
+                              key={`${event.createdAt}-${event.eventType}`}
+                              className='rounded bg-white/5 px-2 py-1'
+                            >
+                              <div className='flex justify-between gap-2'>
+                                <span className='truncate font-medium'>
+                                  {event.eventType}
+                                </span>
+                                <span>
+                                  {formatDebugPlaybackTime(event.currentTime)}
+                                </span>
+                              </div>
+                              <div className='truncate text-amber-100/80'>
+                                {event.message}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
