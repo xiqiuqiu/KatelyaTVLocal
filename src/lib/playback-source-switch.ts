@@ -10,6 +10,28 @@ interface SourceSwitchResumePlan {
   saveAfterCanPlay: boolean;
 }
 
+interface SourceSwitchTargetEpisodeInput {
+  currentEpisodeIndex: number;
+  episodeCount: number;
+  requireCurrentEpisode?: boolean;
+}
+
+export function getSourceSwitchTargetEpisodeIndex({
+  currentEpisodeIndex,
+  episodeCount,
+  requireCurrentEpisode = false,
+}: SourceSwitchTargetEpisodeInput): number | null {
+  if (episodeCount <= 0) {
+    return null;
+  }
+
+  if (currentEpisodeIndex < episodeCount) {
+    return currentEpisodeIndex;
+  }
+
+  return requireCurrentEpisode ? null : 0;
+}
+
 export function getSourceSwitchResumePlan({
   currentEpisodeIndex,
   targetEpisodeIndex,

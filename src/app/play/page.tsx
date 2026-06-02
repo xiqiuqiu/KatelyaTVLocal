@@ -34,14 +34,20 @@ import {
   resolveHlsPlaybackPolicy,
 } from '@/lib/hls-playback-policy';
 import { getHlsRecoveryPlan } from '@/lib/hls-recovery';
-import { getNativeVideoRecoveryPlan } from '@/lib/native-video-recovery';
+import {
+  getNativeVideoRecoveryPlan,
+  shouldSwitchSourceForRepeatedNativeFailure,
+} from '@/lib/native-video-recovery';
 import {
   type PlayRecordSaveReason,
   type PlayRecordSaveSnapshot,
   getPlayRecordHeartbeatIntervalMs,
   shouldSavePlayRecord,
 } from '@/lib/play-record-save-policy';
-import { getSourceSwitchResumePlan } from '@/lib/playback-source-switch';
+import {
+  getSourceSwitchResumePlan,
+  getSourceSwitchTargetEpisodeIndex,
+} from '@/lib/playback-source-switch';
 import { getBrowserProbeBudget } from '@/lib/source-preference';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import {
@@ -86,6 +92,10 @@ declare global {
 }
 
 const directAdFilterDebugLogKeys = new Set<string>();
+const NATIVE_EVENT_RECOVERY_DELAY_MS = 8000;
+const NATIVE_FALSE_PLAYING_CHECK_DELAY_MS = 9000;
+const NATIVE_STALL_RECOVERY_THRESHOLD_MS = 12000;
+const NATIVE_WATCHDOG_INTERVAL_MS = 3000;
 
 interface PlaybackDebugEvent {
   eventType: string;
@@ -135,6 +145,13 @@ interface NativeFailureWindow {
   position: number;
   count: number;
   updatedAt: number;
+}
+
+interface SourceChangeOptions {
+  autoRecovery?: boolean;
+  resumeTime?: number | null;
+  reason?: string;
+  autoPlayAfterReady?: boolean;
 }
 
 function createPlaybackDebugSessionId() {
@@ -278,6 +295,7 @@ function PlayPageClient() {
   const nativeFailureWindowRef = useRef<NativeFailureWindow | null>(null);
   const sourceFallbackAttemptedRef = useRef(false);
   const sourceSwitchSavePendingRef = useRef(false);
+  const sourceSwitchAutoPlayPendingRef = useRef(false);
   const playbackPolicyLogKeysRef = useRef(new Set<string>());
   const playbackPolicyRef = useRef<HlsPlaybackPolicyResult | null>(null);
   const [playbackDebugEnabled, setPlaybackDebugEnabled] = useState(false);
@@ -585,6 +603,7 @@ function PlayPageClient() {
 
   const getNextRecoverySource = () => {
     const currentSourceKey = getCurrentSourceKey();
+    const targetEpisodeIndex = currentEpisodeIndexRef.current;
 
     return [...availableSourcesRef.current]
       .filter((source) => {
@@ -598,6 +617,10 @@ function PlayPageClient() {
         }
 
         if (!source.episodes || source.episodes.length === 0) {
+          return false;
+        }
+
+        if (source.episodes.length <= targetEpisodeIndex) {
           return false;
         }
 
@@ -1397,6 +1420,7 @@ function PlayPageClient() {
       emitPlaybackDebugLog('switch-source-unavailable', '无可用候选播放源', {
         reason,
         sourceKey: getCurrentSourceKey(),
+        currentEpisodeIndex: currentEpisodeIndexRef.current,
       });
       return false;
     }
@@ -1406,8 +1430,10 @@ function PlayPageClient() {
       typeof video?.currentTime === 'number'
         ? video.currentTime
         : artPlayerRef.current?.currentTime || 0;
-    if (currentPlayTime > 0) {
-      resumeTimeRef.current = Number((currentPlayTime + 3).toFixed(2));
+    const recoveryResumeTime =
+      currentPlayTime > 0 ? Number((currentPlayTime + 3).toFixed(2)) : null;
+    if (recoveryResumeTime) {
+      resumeTimeRef.current = recoveryResumeTime;
       sourceSwitchSavePendingRef.current = true;
     }
 
@@ -1425,10 +1451,16 @@ function PlayPageClient() {
       nextSource: nextSource.source,
       nextId: nextSource.id,
       nextTitle: nextSource.title,
-      resumeTime: resumeTimeRef.current,
+      currentEpisodeIndex: currentEpisodeIndexRef.current,
+      resumeTime: recoveryResumeTime,
     });
     resetHlsRecoveryCounters();
-    void handleSourceChange(nextSource.source, nextSource.id, nextSource.title);
+    void handleSourceChange(nextSource.source, nextSource.id, nextSource.title, {
+      autoRecovery: true,
+      resumeTime: recoveryResumeTime,
+      reason,
+      autoPlayAfterReady: true,
+    });
     return true;
   };
 
@@ -1599,10 +1631,12 @@ function PlayPageClient() {
     const mediaSourceUnavailable = isNativeMediaSourceUnavailable(video);
     const failureWindow = recordNativeFailureWindow(video);
     const repeatedFailureAtSamePosition =
-      failureWindow.count >= 2 &&
-      (mediaSourceUnavailable ||
-        state.fullProxyAttempted ||
-        playbackPolicyRef.current?.segmentMode === 'proxy');
+      shouldSwitchSourceForRepeatedNativeFailure({
+        failureCount: failureWindow.count,
+        mediaSourceUnavailable,
+        fullProxyAttempted: state.fullProxyAttempted,
+        segmentMode: playbackPolicyRef.current?.segmentMode || 'direct',
+      });
     const plan = getNativeVideoRecoveryPlan({
       stallCount: state.stallCount,
       sourceReloadAttempts: state.sourceReloadAttempts,
@@ -1701,6 +1735,42 @@ function PlayPageClient() {
     }
   };
 
+  const requestNativeRecoveryAutoplay = (
+    video: HTMLVideoElement | null | undefined,
+    context: Record<string, unknown>
+  ) => {
+    if (!video || playbackPolicyRef.current?.runtime !== 'native-hls') {
+      return;
+    }
+
+    void video
+      .play()
+      .then(() => {
+        emitPlaybackDebugLog(
+          'native-autoplay-resumed',
+          '自动切源后已恢复播放',
+          context,
+          {
+            playbackUrl: video.currentSrc || video.src || videoUrlRef.current,
+          }
+        );
+      })
+      .catch((error) => {
+        emitPlaybackDebugLog(
+          'native-autoplay-blocked',
+          '自动切源后浏览器阻止了自动播放，需要用户手动继续',
+          {
+            ...context,
+            errorName: error instanceof Error ? error.name : null,
+            errorMessage: error instanceof Error ? error.message : String(error),
+          },
+          {
+            playbackUrl: video.currentSrc || video.src || videoUrlRef.current,
+          }
+        );
+      });
+  };
+
   const isNativeVideoRecoveryActive = () =>
     playbackPolicyRef.current?.recoveryProfile === 'native-video';
 
@@ -1715,7 +1785,7 @@ function PlayPageClient() {
 
   const scheduleNativeRecoveryFromArtEvent = (
     reason: string,
-    delayMs = 4000
+    delayMs = NATIVE_EVENT_RECOVERY_DELAY_MS
   ) => {
     if (!isNativeVideoRecoveryActive() || typeof window === 'undefined') {
       return;
@@ -1821,7 +1891,7 @@ function PlayPageClient() {
         playbackUrl,
         '原生播放器假播放，播放时间未推进'
       );
-    }, 4500);
+    }, NATIVE_FALSE_PLAYING_CHECK_DELAY_MS);
   };
 
   const attachNativeVideoRecovery = (
@@ -1879,13 +1949,10 @@ function PlayPageClient() {
       waitingRecoveryTimerRef.current = window.setTimeout(() => {
         waitingRecoveryTimerRef.current = null;
         const mediaSourceUnavailable = isNativeMediaSourceUnavailable(video);
-        const recentBufferIssue =
-          Date.now() - state.lastBufferIssueAt <= 20000;
         if (
           video.ended ||
           (video.paused &&
             !mediaSourceUnavailable &&
-            !recentBufferIssue &&
             !isVideoLoadingRef.current) ||
           recordProgressIfAdvanced()
         ) {
@@ -1894,7 +1961,7 @@ function PlayPageClient() {
         state.stallCount += 1;
         state.lastProgressAt = Date.now();
         executeNativeVideoRecovery(video, playbackUrl, reason);
-      }, 4000);
+      }, NATIVE_EVENT_RECOVERY_DELAY_MS);
     };
 
     const handleWaiting = () => scheduleNativeRecovery('原生播放器等待缓冲超时');
@@ -1931,15 +1998,14 @@ function PlayPageClient() {
       nativeWatchdogTimerRef.current = window.setInterval(() => {
         const mediaSourceUnavailable = isNativeMediaSourceUnavailable(video);
         const stalledForMs = Date.now() - state.lastProgressAt;
-        const recentBufferIssue = Date.now() - state.lastBufferIssueAt <= 20000;
 
         if (
           video.paused &&
           !video.ended &&
           !mediaSourceUnavailable &&
           video.readyState >= 2 &&
-          stalledForMs >= 6000 &&
-          (recentBufferIssue || isVideoLoadingRef.current)
+          stalledForMs >= NATIVE_STALL_RECOVERY_THRESHOLD_MS &&
+          isVideoLoadingRef.current
         ) {
           const now = Date.now();
           if (now - state.lastPausedStallLogAt >= 8000) {
@@ -1985,7 +2051,7 @@ function PlayPageClient() {
           return;
         }
 
-        if (stalledForMs < 6000) {
+        if (stalledForMs < NATIVE_STALL_RECOVERY_THRESHOLD_MS) {
           return;
         }
 
@@ -1996,7 +2062,7 @@ function PlayPageClient() {
           playbackUrl,
           `原生播放器播放时间 ${Math.round(stalledForMs / 1000)} 秒未推进`
         );
-      }, 3000);
+      }, NATIVE_WATCHDOG_INTERVAL_MS);
     }
 
     console.info('[播放策略][native] 已启用原生 HLS 卡死监控', {
@@ -2252,19 +2318,29 @@ function PlayPageClient() {
   const handleSourceChange = async (
     newSource: string,
     newId: string,
-    newTitle: string
+    newTitle: string,
+    options: SourceChangeOptions = {}
   ) => {
     try {
       // 显示换源加载状态
       setVideoLoadingStage('sourceChanging');
       setIsVideoLoading(true);
       sourceSwitchSavePendingRef.current = false;
+      sourceSwitchAutoPlayPendingRef.current = false;
 
       // 记录当前播放进度（仅在同一集数切换时恢复）
-      const currentPlayTime = artPlayerRef.current?.currentTime || 0;
+      const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+      const currentPlayTime =
+        typeof video?.currentTime === 'number'
+          ? video.currentTime
+          : artPlayerRef.current?.currentTime || 0;
       console.log('换源前当前播放时间:', currentPlayTime);
 
-      const newDetail = availableSources.find(
+      const sourceList =
+        availableSourcesRef.current.length > 0
+          ? availableSourcesRef.current
+          : availableSources;
+      const newDetail = sourceList.find(
         (source) => source.source === newSource && source.id === newId
       );
       if (!newDetail) {
@@ -2281,22 +2357,58 @@ function PlayPageClient() {
       }
 
       // 尝试跳转到当前正在播放的集数
-      let targetIndex = currentEpisodeIndex;
+      const activeEpisodeIndex = currentEpisodeIndexRef.current;
+      const targetIndex = getSourceSwitchTargetEpisodeIndex({
+        currentEpisodeIndex: activeEpisodeIndex,
+        episodeCount: newDetail.episodes?.length || 0,
+        requireCurrentEpisode: Boolean(options.autoRecovery),
+      });
 
-      // 如果当前集数超出新源的范围，则跳转到第一集
-      if (!newDetail.episodes || targetIndex >= newDetail.episodes.length) {
-        targetIndex = 0;
+      if (targetIndex === null) {
+        setIsVideoLoading(false);
+        emitPlaybackDebugLog(
+          'switch-source-skip-episode-mismatch',
+          '候选播放源不包含当前集，已跳过自动切源',
+          {
+            reason: options.reason,
+            nextSource: newSource,
+            nextId: newId,
+            currentEpisodeIndex: activeEpisodeIndex,
+            nextEpisodeCount: newDetail.episodes?.length || 0,
+          }
+        );
+        return;
       }
       sourceFallbackAttemptedRef.current = false;
 
+      const plannedResumeTime =
+        typeof options.resumeTime === 'number' && options.resumeTime > 0
+          ? options.resumeTime
+          : resumeTimeRef.current;
       const resumePlan = getSourceSwitchResumePlan({
-        currentEpisodeIndex,
+        currentEpisodeIndex: activeEpisodeIndex,
         targetEpisodeIndex: targetIndex,
         currentPlayTime,
-        existingResumeTime: resumeTimeRef.current,
+        existingResumeTime: plannedResumeTime,
       });
       resumeTimeRef.current = resumePlan.resumeTime;
       sourceSwitchSavePendingRef.current = resumePlan.saveAfterCanPlay;
+      sourceSwitchAutoPlayPendingRef.current = Boolean(
+        options.autoPlayAfterReady
+      );
+
+      if (options.autoRecovery) {
+        emitPlaybackDebugLog('switch-source-resume-planned', '已规划自动切源恢复点', {
+          reason: options.reason,
+          nextSource: newSource,
+          nextId: newId,
+          currentEpisodeIndex: activeEpisodeIndex,
+          targetEpisodeIndex: targetIndex,
+          currentPlayTime,
+          resumeTime: resumePlan.resumeTime,
+          autoPlayAfterReady: sourceSwitchAutoPlayPendingRef.current,
+        });
+      }
 
       // 更新URL参数（不刷新页面）
       const newUrl = new URL(window.location.href);
@@ -3106,6 +3218,7 @@ function PlayPageClient() {
           );
 
           // 若存在需要恢复的播放进度，则跳转
+          let appliedResumeTime: number | null = null;
           if (resumeTimeRef.current && resumeTimeRef.current > 0) {
             try {
               const duration = artPlayerRef.current.duration || 0;
@@ -3114,7 +3227,22 @@ function PlayPageClient() {
                 target = Math.max(0, duration - 5);
               }
               artPlayerRef.current.currentTime = target;
+              appliedResumeTime = target;
               console.log('成功恢复播放进度到:', resumeTimeRef.current);
+              emitPlaybackDebugLog(
+                'switch-source-resume-applied',
+                '已在新播放源应用恢复进度',
+                {
+                  resumeTime: target,
+                  originalResumeTime: resumeTimeRef.current,
+                  duration,
+                  sourceKey: getCurrentSourceKey(),
+                },
+                {
+                  playbackUrl:
+                    artPlayerRef.current?.video?.currentSrc || videoUrlRef.current,
+                }
+              );
             } catch (err) {
               console.warn('恢复播放进度失败:', err);
             }
@@ -3133,6 +3261,20 @@ function PlayPageClient() {
 
           // 隐藏换源加载状态
           setIsVideoLoading(false);
+
+          const shouldAutoPlayAfterSourceSwitch =
+            sourceSwitchAutoPlayPendingRef.current;
+          sourceSwitchAutoPlayPendingRef.current = false;
+          if (shouldAutoPlayAfterSourceSwitch) {
+            requestNativeRecoveryAutoplay(
+              artPlayerRef.current?.video as HTMLVideoElement | undefined,
+              {
+                trigger: 'video-canplay',
+                resumeTime: appliedResumeTime,
+                sourceKey: getCurrentSourceKey(),
+              }
+            );
+          }
 
           if (sourceSwitchSavePendingRef.current) {
             sourceSwitchSavePendingRef.current = false;

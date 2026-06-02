@@ -21,6 +21,27 @@ export interface NativeVideoRecoveryPlan {
   reason: string;
 }
 
+interface RepeatedNativeFailureInput {
+  failureCount: number;
+  mediaSourceUnavailable: boolean;
+  fullProxyAttempted: boolean;
+  segmentMode: 'direct' | 'proxy';
+}
+
+const REPEATED_NATIVE_FAILURE_SWITCH_COUNT = 3;
+
+export function shouldSwitchSourceForRepeatedNativeFailure({
+  failureCount,
+  mediaSourceUnavailable,
+  fullProxyAttempted,
+  segmentMode,
+}: RepeatedNativeFailureInput): boolean {
+  return (
+    failureCount >= REPEATED_NATIVE_FAILURE_SWITCH_COUNT &&
+    (mediaSourceUnavailable || fullProxyAttempted || segmentMode === 'proxy')
+  );
+}
+
 export function getNativeVideoRecoveryPlan({
   stallCount,
   sourceReloadAttempts,

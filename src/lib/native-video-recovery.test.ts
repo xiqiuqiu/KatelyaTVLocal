@@ -1,4 +1,7 @@
-import { getNativeVideoRecoveryPlan } from './native-video-recovery';
+import {
+  getNativeVideoRecoveryPlan,
+  shouldSwitchSourceForRepeatedNativeFailure,
+} from './native-video-recovery';
 
 describe('getNativeVideoRecoveryPlan', () => {
   it('tries to resume native playback before changing the source', () => {
@@ -101,5 +104,40 @@ describe('getNativeVideoRecoveryPlan', () => {
       action: 'switch-source',
       reason: '同一播放位置重复失败，切换到其他播放源',
     });
+  });
+});
+
+describe('shouldSwitchSourceForRepeatedNativeFailure', () => {
+  it('does not switch source after only two same-position failures', () => {
+    expect(
+      shouldSwitchSourceForRepeatedNativeFailure({
+        failureCount: 2,
+        mediaSourceUnavailable: true,
+        fullProxyAttempted: false,
+        segmentMode: 'direct',
+      })
+    ).toBe(false);
+  });
+
+  it('switches source after three same-position failures with a strong failure signal', () => {
+    expect(
+      shouldSwitchSourceForRepeatedNativeFailure({
+        failureCount: 3,
+        mediaSourceUnavailable: true,
+        fullProxyAttempted: false,
+        segmentMode: 'direct',
+      })
+    ).toBe(true);
+  });
+
+  it('does not switch source without a media-source or proxy failure signal', () => {
+    expect(
+      shouldSwitchSourceForRepeatedNativeFailure({
+        failureCount: 3,
+        mediaSourceUnavailable: false,
+        fullProxyAttempted: false,
+        segmentMode: 'direct',
+      })
+    ).toBe(false);
   });
 });
