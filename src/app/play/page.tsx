@@ -410,6 +410,7 @@ function PlayPageClient() {
     lastObservedTime: 0,
     lastProgressAt: 0,
     lastPausedStallLogAt: 0,
+    lastBufferIssueAt: 0,
   });
 
   // 折叠状态（仅在 lg 及以上屏幕有效）
@@ -534,6 +535,7 @@ function PlayPageClient() {
     nativeRecoveryStateRef.current.lastObservedTime = 0;
     nativeRecoveryStateRef.current.lastProgressAt = 0;
     nativeRecoveryStateRef.current.lastPausedStallLogAt = 0;
+    nativeRecoveryStateRef.current.lastBufferIssueAt = 0;
   };
 
   const markPlaybackHealthy = (currentTime?: number) => {
@@ -1723,6 +1725,8 @@ function PlayPageClient() {
         return;
       }
 
+      state.lastBufferIssueAt = Date.now();
+
       emitPlaybackDebugLog(
         'native-stall-suspected',
         reason,
@@ -1739,9 +1743,14 @@ function PlayPageClient() {
       waitingRecoveryTimerRef.current = window.setTimeout(() => {
         waitingRecoveryTimerRef.current = null;
         const mediaSourceUnavailable = isNativeMediaSourceUnavailable(video);
+        const recentBufferIssue =
+          Date.now() - state.lastBufferIssueAt <= 20000;
         if (
           video.ended ||
-          (video.paused && !mediaSourceUnavailable) ||
+          (video.paused &&
+            !mediaSourceUnavailable &&
+            !recentBufferIssue &&
+            !isVideoLoadingRef.current) ||
           recordProgressIfAdvanced()
         ) {
           return;
@@ -1785,13 +1794,15 @@ function PlayPageClient() {
       nativeWatchdogTimerRef.current = window.setInterval(() => {
         const mediaSourceUnavailable = isNativeMediaSourceUnavailable(video);
         const stalledForMs = Date.now() - state.lastProgressAt;
+        const recentBufferIssue = Date.now() - state.lastBufferIssueAt <= 20000;
 
         if (
           video.paused &&
           !video.ended &&
           !mediaSourceUnavailable &&
           video.readyState >= 2 &&
-          stalledForMs >= 6000
+          stalledForMs >= 6000 &&
+          (recentBufferIssue || isVideoLoadingRef.current)
         ) {
           const now = Date.now();
           if (now - state.lastPausedStallLogAt >= 8000) {
@@ -1815,6 +1826,14 @@ function PlayPageClient() {
               }
             );
           }
+          state.stallCount += 1;
+          state.lastProgressAt = Date.now();
+          executeNativeVideoRecovery(
+            video,
+            playbackUrl,
+            `原生播放器暂停卡死 ${Math.round(stalledForMs / 1000)} 秒`
+          );
+          return;
         }
 
         if (
