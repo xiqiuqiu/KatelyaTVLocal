@@ -307,6 +307,8 @@ function PlayPageClient() {
     playbackModeRef.current = playbackMode;
   }, [playbackMode]);
 
+  const isVideoLoadingRef = useRef(true);
+
   useEffect(() => {
     playbackDebugEnabledRef.current = playbackDebugEnabled;
   }, [playbackDebugEnabled]);
@@ -407,6 +409,7 @@ function PlayPageClient() {
     fullProxyAttempted: false,
     lastObservedTime: 0,
     lastProgressAt: 0,
+    lastPausedStallLogAt: 0,
   });
 
   // 折叠状态（仅在 lg 及以上屏幕有效）
@@ -434,6 +437,10 @@ function PlayPageClient() {
 
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    isVideoLoadingRef.current = isVideoLoading;
+  }, [isVideoLoading]);
 
   useEffect(() => {
     availableSourcesRef.current = availableSources;
@@ -526,6 +533,7 @@ function PlayPageClient() {
       playbackPolicyRef.current?.segmentMode === 'proxy';
     nativeRecoveryStateRef.current.lastObservedTime = 0;
     nativeRecoveryStateRef.current.lastProgressAt = 0;
+    nativeRecoveryStateRef.current.lastPausedStallLogAt = 0;
   };
 
   const markPlaybackHealthy = (currentTime?: number) => {
@@ -819,6 +827,42 @@ function PlayPageClient() {
 
     console.info(`[播放调试] ${message}`, payload);
     sendPlaybackDebugLog(payload);
+  };
+
+  const emitNativeVideoStateDebugLog = (
+    eventType: string,
+    message: string,
+    details: Record<string, unknown> = {}
+  ) => {
+    if (playbackPolicyRef.current?.recoveryProfile !== 'native-video') {
+      return;
+    }
+
+    const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+    emitPlaybackDebugLog(
+      eventType,
+      message,
+      {
+        ...details,
+        isVideoLoading: isVideoLoadingRef.current,
+        currentSrc: video?.currentSrc || null,
+        currentTime:
+          typeof video?.currentTime === 'number'
+            ? Number(video.currentTime.toFixed(2))
+            : null,
+        duration:
+          typeof video?.duration === 'number' && Number.isFinite(video.duration)
+            ? Number(video.duration.toFixed(2))
+            : null,
+        readyState: video?.readyState ?? null,
+        networkState: video?.networkState ?? null,
+        paused: video?.paused ?? null,
+        ended: video?.ended ?? null,
+      },
+      {
+        playbackUrl: video?.currentSrc || videoUrlRef.current,
+      }
+    );
   };
 
   // 播放源优选函数
@@ -1740,6 +1784,39 @@ function PlayPageClient() {
     if (typeof window !== 'undefined') {
       nativeWatchdogTimerRef.current = window.setInterval(() => {
         const mediaSourceUnavailable = isNativeMediaSourceUnavailable(video);
+        const stalledForMs = Date.now() - state.lastProgressAt;
+
+        if (
+          video.paused &&
+          !video.ended &&
+          !mediaSourceUnavailable &&
+          video.readyState >= 2 &&
+          stalledForMs >= 6000
+        ) {
+          const now = Date.now();
+          if (now - state.lastPausedStallLogAt >= 8000) {
+            state.lastPausedStallLogAt = now;
+            emitPlaybackDebugLog(
+              'native-paused-stall',
+              `原生播放器处于暂停但播放时间 ${Math.round(
+                stalledForMs / 1000
+              )} 秒未推进`,
+              {
+                currentTime: Number((video.currentTime || 0).toFixed(2)),
+                readyState: video.readyState,
+                networkState: video.networkState,
+                paused: video.paused,
+                ended: video.ended,
+                isVideoLoading: isVideoLoadingRef.current,
+                stalledForSeconds: Math.round(stalledForMs / 1000),
+              },
+              {
+                playbackUrl: playbackUrl || video.currentSrc,
+              }
+            );
+          }
+        }
+
         if (
           video.ended ||
           (video.paused && !mediaSourceUnavailable) ||
@@ -1752,7 +1829,6 @@ function PlayPageClient() {
           return;
         }
 
-        const stalledForMs = Date.now() - state.lastProgressAt;
         if (stalledForMs < 6000) {
           return;
         }
@@ -2806,6 +2882,41 @@ function PlayPageClient() {
           lastVolumeRef.current = artPlayerRef.current.volume;
         });
 
+        artPlayerRef.current.on('video:waiting', () => {
+          emitNativeVideoStateDebugLog(
+            'native-video-waiting',
+            '原生播放器进入等待缓冲状态'
+          );
+        });
+
+        artPlayerRef.current.on('video:stalled', () => {
+          emitNativeVideoStateDebugLog(
+            'native-video-stalled',
+            '原生播放器报告媒体数据停滞'
+          );
+        });
+
+        artPlayerRef.current.on('video:suspend', () => {
+          emitNativeVideoStateDebugLog(
+            'native-video-suspend',
+            '原生播放器暂停拉取媒体数据'
+          );
+        });
+
+        artPlayerRef.current.on('video:play', () => {
+          emitNativeVideoStateDebugLog(
+            'native-video-play',
+            '原生播放器收到播放请求'
+          );
+        });
+
+        artPlayerRef.current.on('video:pause', () => {
+          emitNativeVideoStateDebugLog(
+            'native-video-pause',
+            '原生播放器进入暂停状态'
+          );
+        });
+
         // 监听播放时间更新（用于跳过功能）
         artPlayerRef.current.on('video:timeupdate', () => {
           const currentTime = artPlayerRef.current.currentTime || 0;
@@ -2907,6 +3018,10 @@ function PlayPageClient() {
 
         artPlayerRef.current.on('video:playing', () => {
           markPlaybackHealthy(artPlayerRef.current.currentTime || 0);
+          emitNativeVideoStateDebugLog(
+            'native-video-playing',
+            '原生播放器恢复播放推进'
+          );
         });
 
         artPlayerRef.current.on('error', (err: any) => {
