@@ -395,6 +395,7 @@ function PlayPageClient() {
   const startupFeedbackSentRef = useRef(false);
   const waitingRecoveryTimerRef = useRef<number | null>(null);
   const nativeWatchdogTimerRef = useRef<number | null>(null);
+  const nativeFalsePlayingTimerRef = useRef<number | null>(null);
   const autoRecoveredSourceKeysRef = useRef<Set<string>>(new Set());
   const hlsRecoveryStateRef = useRef({
     stallCount: 0,
@@ -520,9 +521,20 @@ function PlayPageClient() {
     }
   };
 
+  const clearNativeFalsePlayingTimer = () => {
+    if (
+      typeof window !== 'undefined' &&
+      nativeFalsePlayingTimerRef.current !== null
+    ) {
+      window.clearTimeout(nativeFalsePlayingTimerRef.current);
+      nativeFalsePlayingTimerRef.current = null;
+    }
+  };
+
   const resetHlsRecoveryCounters = () => {
     clearWaitingRecoveryTimer();
     clearNativeWatchdogTimer();
+    clearNativeFalsePlayingTimer();
     hlsRecoveryStateRef.current.stallCount = 0;
     hlsRecoveryStateRef.current.networkRecoveryAttempts = 0;
     hlsRecoveryStateRef.current.mediaRecoveryAttempts = 0;
@@ -1689,6 +1701,129 @@ function PlayPageClient() {
     }
   };
 
+  const isNativeVideoRecoveryActive = () =>
+    playbackPolicyRef.current?.recoveryProfile === 'native-video';
+
+  const getNativeVideoElement = () =>
+    artPlayerRef.current?.video as HTMLVideoElement | undefined;
+
+  const getNativeRecoveryPlaybackUrl = (video?: HTMLVideoElement | null) =>
+    videoUrlRef.current ||
+    video?.currentSrc ||
+    playbackPolicyRef.current?.url ||
+    '';
+
+  const scheduleNativeRecoveryFromArtEvent = (
+    reason: string,
+    delayMs = 4000
+  ) => {
+    if (!isNativeVideoRecoveryActive() || typeof window === 'undefined') {
+      return;
+    }
+
+    const video = getNativeVideoElement();
+    if (!video) {
+      emitPlaybackDebugLog('native-recovery-missing-video', reason, {
+        reason,
+      });
+      return;
+    }
+
+    const playbackUrl = getNativeRecoveryPlaybackUrl(video);
+    const state = nativeRecoveryStateRef.current;
+    state.lastBufferIssueAt = Date.now();
+    clearWaitingRecoveryTimer();
+
+    emitPlaybackDebugLog(
+      'native-stall-suspected',
+      reason,
+      {
+        source: 'artplayer-event',
+        currentTime: Number((video.currentTime || 0).toFixed(2)),
+        readyState: video.readyState,
+        networkState: video.networkState,
+        paused: video.paused,
+        ended: video.ended,
+      },
+      {
+        playbackUrl,
+      }
+    );
+
+    waitingRecoveryTimerRef.current = window.setTimeout(() => {
+      waitingRecoveryTimerRef.current = null;
+      if (video.ended) {
+        return;
+      }
+
+      const currentTime = video.currentTime || 0;
+      const advanced = currentTime > state.lastObservedTime + 0.25;
+      if (advanced) {
+        state.lastObservedTime = currentTime;
+        state.lastProgressAt = Date.now();
+        state.stallCount = 0;
+        markPlaybackHealthy(currentTime);
+        return;
+      }
+
+      state.stallCount += 1;
+      state.lastProgressAt = Date.now();
+      executeNativeVideoRecovery(video, playbackUrl, reason);
+    }, delayMs);
+  };
+
+  const scheduleNativeFalsePlayingCheck = () => {
+    if (!isNativeVideoRecoveryActive() || typeof window === 'undefined') {
+      return;
+    }
+
+    const video = getNativeVideoElement();
+    if (!video) {
+      return;
+    }
+
+    clearNativeFalsePlayingTimer();
+    const startTime = video.currentTime || 0;
+    const playbackUrl = getNativeRecoveryPlaybackUrl(video);
+
+    nativeFalsePlayingTimerRef.current = window.setTimeout(() => {
+      nativeFalsePlayingTimerRef.current = null;
+      const currentVideo = getNativeVideoElement();
+      if (!currentVideo || currentVideo.ended || currentVideo.paused) {
+        return;
+      }
+
+      const currentTime = currentVideo.currentTime || 0;
+      if (currentTime > startTime + 0.25) {
+        return;
+      }
+
+      emitPlaybackDebugLog(
+        'native-false-playing',
+        '原生播放器报告播放中但播放时间未推进',
+        {
+          startTime: Number(startTime.toFixed(2)),
+          currentTime: Number(currentTime.toFixed(2)),
+          readyState: currentVideo.readyState,
+          networkState: currentVideo.networkState,
+          paused: currentVideo.paused,
+          ended: currentVideo.ended,
+        },
+        {
+          playbackUrl,
+        }
+      );
+
+      nativeRecoveryStateRef.current.stallCount += 1;
+      nativeRecoveryStateRef.current.lastProgressAt = Date.now();
+      executeNativeVideoRecovery(
+        currentVideo,
+        playbackUrl,
+        '原生播放器假播放，播放时间未推进'
+      );
+    }, 4500);
+  };
+
   const attachNativeVideoRecovery = (
     video: HTMLVideoElement,
     playbackUrl: string
@@ -1711,6 +1846,7 @@ function PlayPageClient() {
         state.lastObservedTime = currentTime;
         state.lastProgressAt = Date.now();
         state.stallCount = 0;
+        clearNativeFalsePlayingTimer();
         markPlaybackHealthy(currentTime);
         return true;
       }
@@ -1772,6 +1908,7 @@ function PlayPageClient() {
     };
     const handlePlaying = () => {
       recordProgressIfAdvanced();
+      scheduleNativeFalsePlayingCheck();
     };
     const handleTimeupdate = () => {
       recordProgressIfAdvanced();
@@ -2906,6 +3043,7 @@ function PlayPageClient() {
             'native-video-waiting',
             '原生播放器进入等待缓冲状态'
           );
+          scheduleNativeRecoveryFromArtEvent('原生播放器等待缓冲超时');
         });
 
         artPlayerRef.current.on('video:stalled', () => {
@@ -2913,6 +3051,7 @@ function PlayPageClient() {
             'native-video-stalled',
             '原生播放器报告媒体数据停滞'
           );
+          scheduleNativeRecoveryFromArtEvent('原生播放器分片加载停滞');
         });
 
         artPlayerRef.current.on('video:suspend', () => {
@@ -2920,6 +3059,7 @@ function PlayPageClient() {
             'native-video-suspend',
             '原生播放器暂停拉取媒体数据'
           );
+          scheduleNativeRecoveryFromArtEvent('原生播放器暂停拉取媒体数据');
         });
 
         artPlayerRef.current.on('video:play', () => {
@@ -2927,6 +3067,7 @@ function PlayPageClient() {
             'native-video-play',
             '原生播放器收到播放请求'
           );
+          scheduleNativeFalsePlayingCheck();
         });
 
         artPlayerRef.current.on('video:pause', () => {
@@ -3041,6 +3182,7 @@ function PlayPageClient() {
             'native-video-playing',
             '原生播放器恢复播放推进'
           );
+          scheduleNativeFalsePlayingCheck();
         });
 
         artPlayerRef.current.on('error', (err: any) => {
@@ -3146,6 +3288,25 @@ function PlayPageClient() {
             artPlayerRef.current.video as HTMLVideoElement,
             videoUrl
           );
+          if (playbackPolicyRef.current?.runtime === 'native-hls') {
+            const video = artPlayerRef.current.video as HTMLVideoElement;
+            if (!video.currentSrc && !video.src) {
+              video.src = videoUrl;
+            }
+            attachNativeVideoRecovery(video, videoUrl);
+            emitPlaybackDebugLog(
+              'native-watchdog-forced',
+              '已在播放器创建后确认原生 HLS 监控',
+              {
+                currentSrc: video.currentSrc || video.src || null,
+                readyState: video.readyState,
+                networkState: video.networkState,
+              },
+              {
+                playbackUrl: video.currentSrc || videoUrl,
+              }
+            );
+          }
         }
       } catch (err) {
         console.error('创建播放器失败:', err);
@@ -3169,6 +3330,7 @@ function PlayPageClient() {
 
       clearWaitingRecoveryTimer();
       clearNativeWatchdogTimer();
+      clearNativeFalsePlayingTimer();
       if (artPlayerRef.current?.video) {
         removeNativeVideoRecoveryListeners(
           artPlayerRef.current.video as HTMLVideoElement
