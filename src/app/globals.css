@@ -427,40 +427,6 @@
   z-index: 2;
 }
 
-/* iOS Safari兼容性优化 */
-@supports (-webkit-touch-callout: none) {
-  /* iOS Safari特定样式 */
-  .animate-pulse {
-    animation: none;
-  }
-
-  .particle {
-    animation: none;
-    opacity: 0.4;
-  }
-
-  .shape {
-    animation: none;
-    opacity: 0.2;
-  }
-
-  .logo-background-glow {
-    animation: none;
-  }
-
-  .main-katelya-logo {
-    animation: none;
-  }
-
-  .katelya-logo {
-    animation: none;
-  }
-
-  .bottom-logo {
-    animation: none;
-  }
-}
-
 /* 基础样式 */
 @tailwind base;
 @tailwind components;
