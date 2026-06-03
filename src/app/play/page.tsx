@@ -35,7 +35,12 @@ import {
 } from '@/lib/hls-playback-policy';
 import { getHlsRecoveryPlan } from '@/lib/hls-recovery';
 import {
+  NATIVE_EVENT_RECOVERY_DELAY_MS,
+  NATIVE_FALSE_PLAYING_CHECK_DELAY_MS,
+  NATIVE_WATCHDOG_INTERVAL_MS,
   getNativeVideoRecoveryPlan,
+  shouldRecoverNativePausedStall,
+  shouldRecoverNativeWatchdogStall,
   shouldSwitchSourceForRepeatedNativeFailure,
 } from '@/lib/native-video-recovery';
 import {
@@ -45,6 +50,9 @@ import {
   shouldSavePlayRecord,
 } from '@/lib/play-record-save-policy';
 import {
+  clampSourceSwitchResumeTime,
+  getAutoRecoveryResumeTime,
+  getNextRecoverySourceCandidate,
   getSourceSwitchResumePlan,
   getSourceSwitchTargetEpisodeIndex,
 } from '@/lib/playback-source-switch';
@@ -92,10 +100,6 @@ declare global {
 }
 
 const directAdFilterDebugLogKeys = new Set<string>();
-const NATIVE_EVENT_RECOVERY_DELAY_MS = 8000;
-const NATIVE_FALSE_PLAYING_CHECK_DELAY_MS = 9000;
-const NATIVE_STALL_RECOVERY_THRESHOLD_MS = 12000;
-const NATIVE_WATCHDOG_INTERVAL_MS = 3000;
 
 interface PlaybackDebugEvent {
   eventType: string;
@@ -587,52 +591,25 @@ function PlayPageClient() {
     nativeRecoveryStateRef.current.stallCount = 0;
   };
 
-  const getRecoverySourcePriority = (source: SearchResult) => {
-    const sourceKey = getSourceIdentityKey(source.source, source.id);
-    const status =
-      precomputedSourceStatusesRef.current.get(sourceKey) ||
-      getRememberedSourceStatus(source.episodes);
-
-    if (status?.kind === 'direct') return 0;
-    if (!status || status.kind === 'idle' || status.kind === 'probing') {
-      return 1;
-    }
-    if (status?.kind === 'proxy') return 2;
-    return 3;
-  };
-
   const getNextRecoverySource = () => {
-    const currentSourceKey = getCurrentSourceKey();
-    const targetEpisodeIndex = currentEpisodeIndexRef.current;
-
-    return [...availableSourcesRef.current]
-      .filter((source) => {
+    return getNextRecoverySourceCandidate({
+      candidates: availableSourcesRef.current,
+      currentSourceKey: getCurrentSourceKey(),
+      recoveredSourceKeys: autoRecoveredSourceKeysRef.current,
+      currentEpisodeIndex: currentEpisodeIndexRef.current,
+      getSourceKey: (source) => getSourceIdentityKey(source.source, source.id),
+      getEpisodeCount: (source) => source.episodes?.length || 0,
+      getStatusKind: (source) => {
+        if (!source.episodes) {
+          return 'unavailable';
+        }
         const sourceKey = getSourceIdentityKey(source.source, source.id);
-        if (sourceKey === currentSourceKey) {
-          return false;
-        }
-
-        if (autoRecoveredSourceKeysRef.current.has(sourceKey)) {
-          return false;
-        }
-
-        if (!source.episodes || source.episodes.length === 0) {
-          return false;
-        }
-
-        if (source.episodes.length <= targetEpisodeIndex) {
-          return false;
-        }
-
         const status =
           precomputedSourceStatusesRef.current.get(sourceKey) ||
           getRememberedSourceStatus(source.episodes);
-
-        return status?.kind !== 'unavailable';
-      })
-      .sort(
-        (a, b) => getRecoverySourcePriority(a) - getRecoverySourcePriority(b)
-      )[0];
+        return status?.kind;
+      },
+    });
   };
 
   const tryNudgePlayback = (video: HTMLVideoElement | null) => {
@@ -1430,8 +1407,7 @@ function PlayPageClient() {
       typeof video?.currentTime === 'number'
         ? video.currentTime
         : artPlayerRef.current?.currentTime || 0;
-    const recoveryResumeTime =
-      currentPlayTime > 0 ? Number((currentPlayTime + 3).toFixed(2)) : null;
+    const recoveryResumeTime = getAutoRecoveryResumeTime(currentPlayTime);
     if (recoveryResumeTime) {
       resumeTimeRef.current = recoveryResumeTime;
       sourceSwitchSavePendingRef.current = true;
@@ -1999,14 +1975,14 @@ function PlayPageClient() {
         const mediaSourceUnavailable = isNativeMediaSourceUnavailable(video);
         const stalledForMs = Date.now() - state.lastProgressAt;
 
-        if (
-          video.paused &&
-          !video.ended &&
-          !mediaSourceUnavailable &&
-          video.readyState >= 2 &&
-          stalledForMs >= NATIVE_STALL_RECOVERY_THRESHOLD_MS &&
-          isVideoLoadingRef.current
-        ) {
+        if (shouldRecoverNativePausedStall({
+          paused: video.paused,
+          ended: video.ended,
+          mediaSourceUnavailable,
+          readyState: video.readyState,
+          stalledForMs,
+          isVideoLoading: isVideoLoadingRef.current,
+        })) {
           const now = Date.now();
           if (now - state.lastPausedStallLogAt >= 8000) {
             state.lastPausedStallLogAt = now;
@@ -2039,19 +2015,17 @@ function PlayPageClient() {
           return;
         }
 
-        if (
-          video.ended ||
-          (video.paused && !mediaSourceUnavailable) ||
-          (video.readyState === 0 && !mediaSourceUnavailable)
-        ) {
-          return;
-        }
-
         if (recordProgressIfAdvanced()) {
           return;
         }
 
-        if (stalledForMs < NATIVE_STALL_RECOVERY_THRESHOLD_MS) {
+        if (!shouldRecoverNativeWatchdogStall({
+          ended: video.ended,
+          paused: video.paused,
+          mediaSourceUnavailable,
+          readyState: video.readyState,
+          stalledForMs,
+        })) {
           return;
         }
 
@@ -3222,10 +3196,10 @@ function PlayPageClient() {
           if (resumeTimeRef.current && resumeTimeRef.current > 0) {
             try {
               const duration = artPlayerRef.current.duration || 0;
-              let target = resumeTimeRef.current;
-              if (duration && target >= duration - 2) {
-                target = Math.max(0, duration - 5);
-              }
+              const target = clampSourceSwitchResumeTime({
+                resumeTime: resumeTimeRef.current,
+                duration,
+              });
               artPlayerRef.current.currentTime = target;
               appliedResumeTime = target;
               console.log('成功恢复播放进度到:', resumeTimeRef.current);

@@ -21,11 +21,33 @@ export interface NativeVideoRecoveryPlan {
   reason: string;
 }
 
+export const NATIVE_EVENT_RECOVERY_DELAY_MS = 8000;
+export const NATIVE_FALSE_PLAYING_CHECK_DELAY_MS = 9000;
+export const NATIVE_STALL_RECOVERY_THRESHOLD_MS = 12000;
+export const NATIVE_WATCHDOG_INTERVAL_MS = 3000;
+
 interface RepeatedNativeFailureInput {
   failureCount: number;
   mediaSourceUnavailable: boolean;
   fullProxyAttempted: boolean;
   segmentMode: 'direct' | 'proxy';
+}
+
+interface NativePausedStallInput {
+  paused: boolean;
+  ended: boolean;
+  mediaSourceUnavailable: boolean;
+  readyState: number;
+  stalledForMs: number;
+  isVideoLoading: boolean;
+}
+
+interface NativeWatchdogStallInput {
+  ended: boolean;
+  paused: boolean;
+  mediaSourceUnavailable: boolean;
+  readyState: number;
+  stalledForMs: number;
 }
 
 const REPEATED_NATIVE_FAILURE_SWITCH_COUNT = 3;
@@ -40,6 +62,42 @@ export function shouldSwitchSourceForRepeatedNativeFailure({
     failureCount >= REPEATED_NATIVE_FAILURE_SWITCH_COUNT &&
     (mediaSourceUnavailable || fullProxyAttempted || segmentMode === 'proxy')
   );
+}
+
+export function shouldRecoverNativePausedStall({
+  paused,
+  ended,
+  mediaSourceUnavailable,
+  readyState,
+  stalledForMs,
+  isVideoLoading,
+}: NativePausedStallInput): boolean {
+  return (
+    paused &&
+    !ended &&
+    !mediaSourceUnavailable &&
+    readyState >= 2 &&
+    stalledForMs >= NATIVE_STALL_RECOVERY_THRESHOLD_MS &&
+    isVideoLoading
+  );
+}
+
+export function shouldRecoverNativeWatchdogStall({
+  ended,
+  paused,
+  mediaSourceUnavailable,
+  readyState,
+  stalledForMs,
+}: NativeWatchdogStallInput): boolean {
+  if (
+    ended ||
+    (paused && !mediaSourceUnavailable) ||
+    (readyState === 0 && !mediaSourceUnavailable)
+  ) {
+    return false;
+  }
+
+  return stalledForMs >= NATIVE_STALL_RECOVERY_THRESHOLD_MS;
 }
 
 export function getNativeVideoRecoveryPlan({

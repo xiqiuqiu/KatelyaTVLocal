@@ -1,5 +1,9 @@
 import {
   getNativeVideoRecoveryPlan,
+  NATIVE_FALSE_PLAYING_CHECK_DELAY_MS,
+  NATIVE_STALL_RECOVERY_THRESHOLD_MS,
+  shouldRecoverNativePausedStall,
+  shouldRecoverNativeWatchdogStall,
   shouldSwitchSourceForRepeatedNativeFailure,
 } from './native-video-recovery';
 
@@ -139,5 +143,97 @@ describe('shouldSwitchSourceForRepeatedNativeFailure', () => {
         segmentMode: 'direct',
       })
     ).toBe(false);
+  });
+});
+
+describe('native recovery timing guards', () => {
+  it('keeps false-playing detection above short iOS startup jitter', () => {
+    expect(NATIVE_FALSE_PLAYING_CHECK_DELAY_MS).toBeGreaterThanOrEqual(9000);
+  });
+
+  it('does not treat seven seconds without progress as a watchdog stall', () => {
+    expect(
+      shouldRecoverNativeWatchdogStall({
+        ended: false,
+        paused: false,
+        mediaSourceUnavailable: false,
+        readyState: 3,
+        stalledForMs: 7000,
+      })
+    ).toBe(false);
+  });
+
+  it('recovers active native playback only after the conservative stall threshold', () => {
+    expect(
+      shouldRecoverNativeWatchdogStall({
+        ended: false,
+        paused: false,
+        mediaSourceUnavailable: false,
+        readyState: 3,
+        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
+      })
+    ).toBe(true);
+  });
+
+  it('does not recover a normal user pause outside loading state', () => {
+    expect(
+      shouldRecoverNativePausedStall({
+        paused: true,
+        ended: false,
+        mediaSourceUnavailable: false,
+        readyState: 3,
+        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
+        isVideoLoading: false,
+      })
+    ).toBe(false);
+  });
+
+  it('allows paused native recovery while the player is still in loading state', () => {
+    expect(
+      shouldRecoverNativePausedStall({
+        paused: true,
+        ended: false,
+        mediaSourceUnavailable: false,
+        readyState: 3,
+        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
+        isVideoLoading: true,
+      })
+    ).toBe(true);
+  });
+
+  it('does not recover ended videos even when no progress is observed', () => {
+    expect(
+      shouldRecoverNativeWatchdogStall({
+        ended: true,
+        paused: false,
+        mediaSourceUnavailable: false,
+        readyState: 3,
+        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
+      })
+    ).toBe(false);
+  });
+
+  it('keeps readyState zero without a media-source error from triggering recovery', () => {
+    expect(
+      shouldRecoverNativeWatchdogStall({
+        ended: false,
+        paused: false,
+        mediaSourceUnavailable: false,
+        readyState: 0,
+        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
+      })
+    ).toBe(false);
+  });
+
+  it('allows media-source-unavailable failures to recover after the threshold', () => {
+    expect(
+      shouldRecoverNativeWatchdogStall({
+        ended: false,
+        paused: true,
+        mediaSourceUnavailable: true,
+        readyState: 0,
+        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
+      })
+    ).toBe(true);
   });
 });
