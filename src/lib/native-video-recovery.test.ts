@@ -1,4 +1,5 @@
 import {
+  getNativePlaybackNudgeTime,
   getNativeVideoRecoveryPlan,
   NATIVE_FALSE_PLAYING_CHECK_DELAY_MS,
   NATIVE_STALL_RECOVERY_THRESHOLD_MS,
@@ -108,6 +109,35 @@ describe('getNativeVideoRecoveryPlan', () => {
       action: 'switch-source',
       reason: '同一播放位置重复失败，切换到其他播放源',
     });
+  });
+});
+
+describe('getNativePlaybackNudgeTime', () => {
+  it('nudges forward inside the current buffered range', () => {
+    expect(
+      getNativePlaybackNudgeTime({
+        currentTime: 10,
+        bufferedRanges: [{ start: 9, end: 12 }],
+      })
+    ).toBe(10.35);
+  });
+
+  it('jumps just inside the next buffered range when current time is near it', () => {
+    expect(
+      getNativePlaybackNudgeTime({
+        currentTime: 10,
+        bufferedRanges: [{ start: 11, end: 13 }],
+      })
+    ).toBe(11.05);
+  });
+
+  it('does not return an out-of-range target for tiny buffered ranges', () => {
+    expect(
+      getNativePlaybackNudgeTime({
+        currentTime: 10,
+        bufferedRanges: [{ start: 11, end: 11.04 }],
+      })
+    ).toBeNull();
   });
 });
 

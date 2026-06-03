@@ -157,6 +157,18 @@ describe('detectAppleNativeHlsEnvironment', () => {
     ).toBe(true);
   });
 
+  it('prefers userAgentData platform for iPad desktop UA detection', () => {
+    expect(
+      detectAppleNativeHlsEnvironment({
+        userAgent:
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+        platform: '',
+        userAgentDataPlatform: 'MacIntel',
+        maxTouchPoints: 5,
+      })
+    ).toBe(true);
+  });
+
   it('does not treat a standard Mac desktop (no touch) as an Apple native HLS environment', () => {
     expect(
       detectAppleNativeHlsEnvironment({

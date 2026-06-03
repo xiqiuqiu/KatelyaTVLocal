@@ -2,8 +2,6 @@
 
 'use client';
 
-export const runtime = 'edge';
-
 import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
@@ -35,10 +33,11 @@ import {
 } from '@/lib/hls-playback-policy';
 import { getHlsRecoveryPlan } from '@/lib/hls-recovery';
 import {
+  getNativePlaybackNudgeTime,
+  getNativeVideoRecoveryPlan,
   NATIVE_EVENT_RECOVERY_DELAY_MS,
   NATIVE_FALSE_PLAYING_CHECK_DELAY_MS,
   NATIVE_WATCHDOG_INTERVAL_MS,
-  getNativeVideoRecoveryPlan,
   shouldRecoverNativePausedStall,
   shouldRecoverNativeWatchdogStall,
   shouldSwitchSourceForRepeatedNativeFailure,
@@ -86,14 +85,14 @@ import PlayerSidebar from '@/components/player/PlayerSidebar';
 import SkipController from '@/components/SkipController';
 import Surface from '@/components/ui/Surface';
 
+export const runtime = 'edge';
+
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
   interface HTMLVideoElement {
     hls?: any;
     recoveryWaitingListener?: EventListener;
     recoveryPlayingListener?: EventListener;
-    recoveryStalledListener?: EventListener;
-    recoverySuspendListener?: EventListener;
     recoveryErrorListener?: EventListener;
     recoveryTimeupdateListener?: EventListener;
   }
@@ -619,23 +618,18 @@ function PlayPageClient() {
 
     const buffered = video.buffered;
     const currentTime = video.currentTime || 0;
+    const bufferedRanges = Array.from({ length: buffered.length }, (_, index) => ({
+      start: buffered.start(index),
+      end: buffered.end(index),
+    }));
 
-    for (let index = 0; index < buffered.length; index += 1) {
-      const start = buffered.start(index);
-      const end = buffered.end(index);
-
-      if (currentTime >= start - 0.5 && currentTime <= end + 0.5) {
-        const nudgedTime = Math.min(end - 0.1, currentTime + 0.35);
-        if (nudgedTime > currentTime + 0.01) {
-          video.currentTime = nudgedTime;
-          return true;
-        }
-      }
-
-      if (currentTime < start && start - currentTime < 1.5) {
-        video.currentTime = Math.min(start + 0.05, end - 0.05);
-        return true;
-      }
+    const nudgedTime = getNativePlaybackNudgeTime({
+      currentTime,
+      bufferedRanges,
+    });
+    if (nudgedTime !== null) {
+      video.currentTime = nudgedTime;
+      return true;
     }
 
     void video.play().catch(() => undefined);
@@ -1466,6 +1460,12 @@ function PlayPageClient() {
         typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
       platform:
         typeof navigator !== 'undefined' ? navigator.platform : undefined,
+      userAgentDataPlatform:
+        typeof navigator !== 'undefined'
+          ? (navigator as Navigator & {
+              userAgentData?: { platform?: string };
+            }).userAgentData?.platform
+          : undefined,
       maxTouchPoints:
         typeof navigator !== 'undefined'
           ? navigator.maxTouchPoints
@@ -1575,16 +1575,6 @@ function PlayPageClient() {
     if (video.recoveryPlayingListener) {
       video.removeEventListener('playing', video.recoveryPlayingListener);
       video.recoveryPlayingListener = undefined;
-    }
-
-    if (video.recoveryStalledListener) {
-      video.removeEventListener('stalled', video.recoveryStalledListener);
-      video.recoveryStalledListener = undefined;
-    }
-
-    if (video.recoverySuspendListener) {
-      video.removeEventListener('suspend', video.recoverySuspendListener);
-      video.recoverySuspendListener = undefined;
     }
 
     if (video.recoveryErrorListener) {
@@ -1901,48 +1891,6 @@ function PlayPageClient() {
       return false;
     };
 
-    const scheduleNativeRecovery = (reason: string) => {
-      clearWaitingRecoveryTimer();
-      if (typeof window === 'undefined') {
-        return;
-      }
-
-      state.lastBufferIssueAt = Date.now();
-
-      emitPlaybackDebugLog(
-        'native-stall-suspected',
-        reason,
-        {
-          currentTime: Number((video.currentTime || 0).toFixed(2)),
-          readyState: video.readyState,
-          networkState: video.networkState,
-        },
-        {
-          playbackUrl,
-        }
-      );
-
-      waitingRecoveryTimerRef.current = window.setTimeout(() => {
-        waitingRecoveryTimerRef.current = null;
-        const mediaSourceUnavailable = isNativeMediaSourceUnavailable(video);
-        if (
-          video.ended ||
-          (video.paused &&
-            !mediaSourceUnavailable &&
-            !isVideoLoadingRef.current) ||
-          recordProgressIfAdvanced()
-        ) {
-          return;
-        }
-        state.stallCount += 1;
-        state.lastProgressAt = Date.now();
-        executeNativeVideoRecovery(video, playbackUrl, reason);
-      }, NATIVE_EVENT_RECOVERY_DELAY_MS);
-    };
-
-    const handleWaiting = () => scheduleNativeRecovery('原生播放器等待缓冲超时');
-    const handleStalled = () => scheduleNativeRecovery('原生播放器分片加载停滞');
-    const handleSuspend = () => scheduleNativeRecovery('原生播放器暂停拉取媒体数据');
     const handleError = () => {
       clearWaitingRecoveryTimer();
       state.stallCount = Math.max(state.stallCount + 1, 3);
@@ -1957,16 +1905,10 @@ function PlayPageClient() {
       recordProgressIfAdvanced();
     };
 
-    video.recoveryWaitingListener = handleWaiting;
     video.recoveryPlayingListener = handlePlaying;
-    video.recoveryStalledListener = handleStalled;
-    video.recoverySuspendListener = handleSuspend;
     video.recoveryErrorListener = handleError;
     video.recoveryTimeupdateListener = handleTimeupdate;
-    video.addEventListener('waiting', handleWaiting);
     video.addEventListener('playing', handlePlaying);
-    video.addEventListener('stalled', handleStalled);
-    video.addEventListener('suspend', handleSuspend);
     video.addEventListener('error', handleError);
     video.addEventListener('timeupdate', handleTimeupdate);
 

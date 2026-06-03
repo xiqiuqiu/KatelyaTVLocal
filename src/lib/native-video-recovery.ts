@@ -50,6 +50,16 @@ interface NativeWatchdogStallInput {
   stalledForMs: number;
 }
 
+interface NativePlaybackNudgeRange {
+  start: number;
+  end: number;
+}
+
+interface NativePlaybackNudgeInput {
+  currentTime: number;
+  bufferedRanges: NativePlaybackNudgeRange[];
+}
+
 const REPEATED_NATIVE_FAILURE_SWITCH_COUNT = 3;
 
 export function shouldSwitchSourceForRepeatedNativeFailure({
@@ -98,6 +108,37 @@ export function shouldRecoverNativeWatchdogStall({
   }
 
   return stalledForMs >= NATIVE_STALL_RECOVERY_THRESHOLD_MS;
+}
+
+export function getNativePlaybackNudgeTime({
+  currentTime,
+  bufferedRanges,
+}: NativePlaybackNudgeInput): number | null {
+  for (const { start, end } of bufferedRanges) {
+    if (end <= start) {
+      continue;
+    }
+
+    if (currentTime >= start - 0.5 && currentTime <= end + 0.5) {
+      const nudgedTime = Math.min(end - 0.1, currentTime + 0.35);
+      if (
+        nudgedTime > currentTime + 0.01 &&
+        nudgedTime >= start &&
+        nudgedTime <= end
+      ) {
+        return Number(nudgedTime.toFixed(2));
+      }
+    }
+
+    if (currentTime < start && start - currentTime < 1.5) {
+      const nudgedTime = Math.min(start + 0.05, end - 0.05);
+      if (nudgedTime >= start && nudgedTime <= end) {
+        return Number(nudgedTime.toFixed(2));
+      }
+    }
+  }
+
+  return null;
 }
 
 export function getNativeVideoRecoveryPlan({

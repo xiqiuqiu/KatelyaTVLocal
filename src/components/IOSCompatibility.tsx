@@ -7,20 +7,18 @@ interface IOSCompatibilityProps {
 }
 
 export function IOSCompatibility({ children }: IOSCompatibilityProps) {
-  const [isIOS, setIsIOS] = useState(false);
-  const [isSafari, setIsSafari] = useState(false);
+  const [isIOSWebKit, setIsIOSWebKit] = useState(false);
 
   useEffect(() => {
-    // 检测iOS设备
-    const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    setIsIOS(iOS);
+    const userAgent = navigator.userAgent;
+    const iOSDevice = /iPad|iPhone|iPod/.test(userAgent);
+    const iPadDesktopMode =
+      navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+    const iOSWebKit = iOSDevice || iPadDesktopMode;
 
-    // 检测Safari浏览器
-    const safari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    setIsSafari(safari);
+    setIsIOSWebKit(iOSWebKit);
 
-    // 如果是iOS Safari，添加特定的CSS类
-    if (iOS && safari) {
+    if (iOSWebKit) {
       document.documentElement.classList.add('ios-safari');
       document.body.classList.add('ios-safari');
     }
@@ -32,19 +30,10 @@ export function IOSCompatibility({ children }: IOSCompatibilityProps) {
     };
   }, []);
 
-  // 如果是iOS Safari，应用特定的样式优化
   useEffect(() => {
-    if (isIOS && isSafari) {
-      // 禁用一些可能导致性能问题的CSS属性
+    if (isIOSWebKit) {
       const style = document.createElement('style');
       style.textContent = `
-        .ios-safari * {
-          -webkit-transform: translateZ(0);
-          transform: translateZ(0);
-          -webkit-backface-visibility: hidden;
-          backface-visibility: hidden;
-        }
-        
         .ios-safari .animate-pulse {
           animation: none !important;
         }
@@ -91,10 +80,10 @@ export function IOSCompatibility({ children }: IOSCompatibilityProps) {
       document.head.appendChild(style);
 
       return () => {
-        document.head.removeChild(style);
+        style.remove();
       };
     }
-  }, [isIOS, isSafari]);
+  }, [isIOSWebKit]);
 
   return <>{children}</>;
 }

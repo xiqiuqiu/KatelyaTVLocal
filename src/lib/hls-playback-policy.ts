@@ -14,6 +14,7 @@ export type HlsPlaybackPolicyReason =
 export interface AppleNativeHlsDetectionInput {
   userAgent?: string | null;
   platform?: string | null;
+  userAgentDataPlatform?: string | null;
   maxTouchPoints?: number | null;
   hasWebKitPointConversion?: boolean;
 }
@@ -40,6 +41,7 @@ export interface HlsPlaybackPolicyResult {
 export function detectAppleNativeHlsEnvironment({
   userAgent,
   platform,
+  userAgentDataPlatform,
   maxTouchPoints,
   hasWebKitPointConversion,
 }: AppleNativeHlsDetectionInput): boolean {
@@ -48,7 +50,7 @@ export function detectAppleNativeHlsEnvironment({
   }
 
   const normalizedUserAgent = userAgent || '';
-  const normalizedPlatform = platform || '';
+  const normalizedPlatform = userAgentDataPlatform || platform || '';
 
   if (/\b(iPad|iPhone|iPod)\b/i.test(normalizedUserAgent)) {
     return true;
