@@ -465,6 +465,7 @@ export function getHlsProxyUrl(): string | null {
 
 interface HlsProxyUrlOptions {
   mediaSegmentMode?: 'proxy' | 'direct';
+  filterAds?: boolean;
 }
 
 /**
@@ -479,10 +480,14 @@ export function buildHlsProxyUrl(
   const proxyUrl = getHlsProxyUrl();
   if (!proxyUrl) return null;
 
-  const url = `${proxyUrl}${encodeURIComponent(originalUrl)}`;
+  let url = `${proxyUrl}${encodeURIComponent(originalUrl)}`;
 
   if (options.mediaSegmentMode === 'direct') {
-    return `${url}${url.includes('?') ? '&' : '?'}segmentMode=direct`;
+    url = `${url}${url.includes('?') ? '&' : '?'}segmentMode=direct`;
+  }
+
+  if (options.filterAds === false) {
+    url = `${url}${url.includes('?') ? '&' : '?'}filterAds=0`;
   }
 
   return url;

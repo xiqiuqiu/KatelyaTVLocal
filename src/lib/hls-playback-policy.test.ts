@@ -10,7 +10,7 @@ describe('resolveHlsPlaybackPolicy', () => {
   const adFilteringProxyUrl =
     '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8&segmentMode=direct';
 
-  it('uses proxy filtering on iPad Chrome because it runs through the Apple HLS environment', () => {
+  it('uses stable direct playback on iPad Chrome because proxy playlists can stall Apple HLS', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
@@ -19,14 +19,14 @@ describe('resolveHlsPlaybackPolicy', () => {
       isAppleNativeHlsEnvironment: true,
     });
 
-    expect(result.mode).toBe('proxy');
-    expect(result.url).toBe(adFilteringProxyUrl);
+    expect(result.mode).toBe('direct');
+    expect(result.url).toBe(directUrl);
     expect(result.runtime).toBe('native-hls');
-    expect(result.playlistFilter).toBe('proxy-playlist');
+    expect(result.playlistFilter).toBe('none');
     expect(result.segmentMode).toBe('direct');
     expect(result.recoveryProfile).toBe('native-video');
-    expect(result.forcedProxyForAdFiltering).toBe(true);
-    expect(result.reason).toBe('apple-native-hls-ad-filter');
+    expect(result.forcedProxyForAdFiltering).toBe(false);
+    expect(result.reason).toBe('apple-native-hls-stable-direct');
   });
 
   it('keeps direct-first playback for Android and desktop browser environments', () => {
@@ -96,8 +96,9 @@ describe('resolveHlsPlaybackPolicy', () => {
 
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
+    expect(result.playlistFilter).toBe('none');
     expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('proxy-unavailable');
+    expect(result.reason).toBe('apple-native-hls-stable-direct');
   });
 });
 

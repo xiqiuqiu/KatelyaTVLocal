@@ -1,13 +1,14 @@
 import type { SourcePlaybackMode } from './types';
 
 export type HlsPlaybackRuntime = 'hlsjs' | 'native-hls';
-export type HlsPlaylistFilterMode = 'client-loader' | 'proxy-playlist';
+export type HlsPlaylistFilterMode = 'client-loader' | 'proxy-playlist' | 'none';
 export type HlsSegmentMode = 'direct' | 'proxy';
 export type HlsRecoveryProfile = 'hlsjs' | 'native-video';
 
 export type HlsPlaybackPolicyReason =
   | 'remembered-proxy'
   | 'apple-native-hls-ad-filter'
+  | 'apple-native-hls-stable-direct'
   | 'direct-preferred'
   | 'proxy-unavailable';
 
@@ -66,7 +67,6 @@ export function detectAppleNativeHlsEnvironment({
 export function resolveHlsPlaybackPolicy({
   directUrl,
   proxyUrl,
-  adFilteringProxyUrl,
   rememberedPlaybackMode,
   isAppleNativeHlsEnvironment,
 }: HlsPlaybackPolicyInput): HlsPlaybackPolicyResult {
@@ -95,9 +95,7 @@ export function resolveHlsPlaybackPolicy({
       mode: 'direct',
       url: directUrl,
       runtime,
-      playlistFilter: isAppleNativeHlsEnvironment
-        ? 'proxy-playlist'
-        : 'client-loader',
+      playlistFilter: isAppleNativeHlsEnvironment ? 'none' : 'client-loader',
       segmentMode: 'direct',
       recoveryProfile,
       reason: 'proxy-unavailable',
@@ -106,29 +104,14 @@ export function resolveHlsPlaybackPolicy({
   }
 
   if (isAppleNativeHlsEnvironment) {
-    const appleAdFilteringProxyUrl = adFilteringProxyUrl || proxyUrl;
-
-    if (appleAdFilteringProxyUrl) {
-      return {
-        mode: 'proxy',
-        url: appleAdFilteringProxyUrl,
-        runtime,
-        playlistFilter: 'proxy-playlist',
-        segmentMode: adFilteringProxyUrl ? 'direct' : 'proxy',
-        recoveryProfile,
-        reason: 'apple-native-hls-ad-filter',
-        forcedProxyForAdFiltering: true,
-      };
-    }
-
     return {
       mode: 'direct',
       url: directUrl,
       runtime,
-      playlistFilter: 'proxy-playlist',
+      playlistFilter: 'none',
       segmentMode: 'direct',
       recoveryProfile,
-      reason: 'proxy-unavailable',
+      reason: 'apple-native-hls-stable-direct',
       forcedProxyForAdFiltering: false,
     };
   }

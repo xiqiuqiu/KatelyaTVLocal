@@ -143,6 +143,27 @@ interface PlaybackDebugCanplaySnapshot {
   emittedAt: number;
 }
 
+interface IosAdObservationResponse {
+  observeOnly?: boolean;
+  removed?: boolean;
+  targetUrl?: string;
+  removedLineCount?: number;
+  summary?: {
+    candidateAdBlocks?: number;
+    cueOutCount?: number;
+    cueInCount?: number;
+    scte35Count?: number;
+    daterangeCount?: number;
+    cueMarkerBlocks?: number;
+    scte35Blocks?: number;
+    daterangeBlocks?: number;
+    keywordBlocks?: number;
+    alternateHostBlocks?: number;
+    primaryHost?: string | null;
+    removedBlocks?: unknown[];
+  };
+}
+
 interface NativeFailureWindow {
   sourceKey: string;
   position: number;
@@ -1291,6 +1312,9 @@ function PlayPageClient() {
     const adFilteringProxyUrl = buildHlsProxyUrl(directUrl, {
       mediaSegmentMode: 'direct',
     });
+    const observationUrl = buildHlsProxyUrl(directUrl, {
+      filterAds: false,
+    });
     const rememberedPlaybackMode =
       rememberedStatus?.kind === 'proxy'
         ? 'proxy'
@@ -1308,6 +1332,7 @@ function PlayPageClient() {
       playbackPolicy.segmentMode === 'proxy';
     applyPlaybackMode(playbackPolicy.mode);
     logHlsPlaybackPolicy(directUrl, playbackPolicy.url, playbackPolicy);
+    observeIosAdSignals(directUrl, observationUrl, playbackPolicy);
 
     const nextUrl = playbackPolicy.url;
 
@@ -1527,6 +1552,19 @@ function PlayPageClient() {
       }
     );
 
+    if (policy.reason === 'apple-native-hls-stable-direct') {
+      console.info(
+        '[播放策略][iOS] 当前终端使用原生 HLS 直连播放，仅记录广告信号',
+        {
+          directUrl,
+          playbackMode: policy.mode,
+          runtime: policy.runtime,
+          segmentMode: policy.segmentMode,
+        }
+      );
+      return;
+    }
+
     if (policy.reason === 'apple-native-hls-ad-filter') {
       console.info(
         '[去广告][播放策略] 当前终端可能使用系统 HLS，已使用代理过滤播放列表',
@@ -1541,13 +1579,89 @@ function PlayPageClient() {
       return;
     }
 
-    console.warn(
-      '[去广告][播放策略] 当前终端可能绕过前端过滤，但代理地址不可用，暂时使用直连播放',
-      {
-        directUrl,
-        playbackMode: policy.mode,
-      }
-    );
+    if (policy.reason === 'proxy-unavailable') {
+      console.warn(
+        '[去广告][播放策略] 当前终端可能绕过前端过滤，但代理地址不可用，暂时使用直连播放',
+        {
+          directUrl,
+          playbackMode: policy.mode,
+        }
+      );
+    }
+  };
+
+  const observeIosAdSignals = (
+    directUrl: string,
+    proxyUrl: string | null,
+    policy: HlsPlaybackPolicyResult
+  ) => {
+    if (
+      policy.runtime !== 'native-hls' ||
+      policy.playlistFilter !== 'none' ||
+      !playbackDebugEnabledRef.current ||
+      !directUrl ||
+      !proxyUrl
+    ) {
+      return;
+    }
+
+    const observationUrl = `${proxyUrl}${
+      proxyUrl.includes('?') ? '&' : '?'
+    }observeOnly=1`;
+    const sourceKey = getCurrentSourceKey();
+    const episodeIndex = currentEpisodeIndexRef.current;
+
+    void fetch(observationUrl, {
+      cache: 'no-store',
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`observe failed: ${response.status}`);
+        }
+        return (await response.json()) as IosAdObservationResponse;
+      })
+      .then((payload) => {
+        emitPlaybackDebugLog(
+          'ios-ad-observe',
+          'iOS 直连播放广告信号观测完成',
+          {
+            directUrl,
+            observationUrl,
+            sourceKey,
+            episodeIndex,
+            removed: false,
+            targetUrl: payload.targetUrl || directUrl,
+            removedLineCount: payload.removedLineCount ?? 0,
+            summary: payload.summary || null,
+          },
+          {
+            playbackUrl: directUrl,
+            policy,
+          }
+        );
+      })
+      .catch((error) => {
+        emitPlaybackDebugLog(
+          'ios-ad-observe-failed',
+          'iOS 直连播放广告信号观测失败',
+          {
+            directUrl,
+            observationUrl,
+            sourceKey,
+            episodeIndex,
+            error:
+              error instanceof Error
+                ? error.message
+                : typeof error === 'string'
+                ? error
+                : 'unknown',
+          },
+          {
+            playbackUrl: directUrl,
+            policy,
+          }
+        );
+      });
   };
 
   const showPlayerNotice = (art: any, message: string) => {
@@ -1682,6 +1796,13 @@ function PlayPageClient() {
         return true;
       }
       case 'switch-full-proxy':
+        if (playbackPolicyRef.current?.reason === 'apple-native-hls-stable-direct') {
+          if (trySwitchToNextAvailableSource(`${plan.reason}，iOS 默认直连不自动升级代理`)) {
+            return true;
+          }
+          setError('当前播放源在 iOS 直连模式下无法恢复，请稍后重试或手动换源');
+          return true;
+        }
         state.fullProxyAttempted = true;
         if (trySwitchToProxyPlayback()) {
           console.warn('[播放恢复][native] 已升级到完整代理线路');

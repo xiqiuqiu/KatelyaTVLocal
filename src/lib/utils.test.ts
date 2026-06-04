@@ -118,6 +118,20 @@ describe('source status behavior', () => {
     );
   });
 
+  it('can build an HLS proxy URL with ad filtering disabled', () => {
+    window.RUNTIME_CONFIG = {
+      HLS_PROXY: '/api/hls-proxy?url=',
+    };
+
+    expect(
+      buildHlsProxyUrl('https://media.example.com/show/index.m3u8', {
+        filterAds: false,
+      })
+    ).toBe(
+      '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8&filterAds=0'
+    );
+  });
+
   it('adds bounded card image options to proxied image URLs', () => {
     window.RUNTIME_CONFIG = {
       IMAGE_PROXY: '/api/image-proxy?url=',

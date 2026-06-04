@@ -22,6 +22,26 @@ const PLAYLIST_CONTENT_TYPES = [
 
 const proxyAdFilterDebugLogKeys = new Set<string>();
 
+function buildProxyPrefix(
+  requestUrl: URL,
+  mediaSegmentMode: HlsMediaSegmentMode,
+  shouldFilterAds: boolean
+): string {
+  const params = new URLSearchParams();
+
+  if (mediaSegmentMode === 'direct') {
+    params.set('segmentMode', 'direct');
+  }
+
+  if (!shouldFilterAds) {
+    params.set('filterAds', '0');
+  }
+
+  params.set('url', '');
+
+  return `${requestUrl.origin}/api/hls-proxy?${params.toString()}`;
+}
+
 function logProxyAdFilterDebug(
   targetUrl: string,
   originalContent: string,
@@ -144,6 +164,8 @@ export async function GET(request: Request) {
     requestUrl.searchParams.get('segmentMode') === 'direct'
       ? 'direct'
       : 'proxy';
+  const shouldFilterAds = requestUrl.searchParams.get('filterAds') !== '0';
+  const observeOnly = requestUrl.searchParams.get('observeOnly') === '1';
 
   if (!targetUrl) {
     const response = NextResponse.json(
@@ -179,10 +201,11 @@ export async function GET(request: Request) {
       return addCorsHeaders(response);
     }
 
-    const proxyPrefix =
-      mediaSegmentMode === 'direct'
-        ? `${requestUrl.origin}/api/hls-proxy?segmentMode=direct&url=`
-        : `${requestUrl.origin}/api/hls-proxy?url=`;
+    const proxyPrefix = buildProxyPrefix(
+      requestUrl,
+      mediaSegmentMode,
+      shouldFilterAds
+    );
     const isPlaylist = isPlaylistResponse(
       targetUrl,
       upstreamResponse.headers.get('content-type')
@@ -190,9 +213,38 @@ export async function GET(request: Request) {
 
     if (isPlaylist) {
       const playlistContent = await upstreamResponse.text();
-      const filteredPlaylist = filterAdsFromM3U8(playlistContent, targetUrl);
 
-      logProxyAdFilterDebug(targetUrl, playlistContent, filteredPlaylist);
+      if (observeOnly) {
+        const observedPlaylist = filterAdsFromM3U8(playlistContent, targetUrl);
+        const adDebugInfo = getM3U8AdFilterDebugInfo(
+          playlistContent,
+          observedPlaylist,
+          targetUrl
+        );
+        const response = NextResponse.json(
+          {
+            observeOnly: true,
+            removed: false,
+            targetUrl,
+            summary: adDebugInfo.summary,
+            removedLineCount: adDebugInfo.removedLineCount,
+          },
+          {
+            headers: {
+              'Cache-Control': 'no-store',
+            },
+          }
+        );
+        return addCorsHeaders(response);
+      }
+
+      const filteredPlaylist = shouldFilterAds
+        ? filterAdsFromM3U8(playlistContent, targetUrl)
+        : playlistContent;
+
+      if (shouldFilterAds) {
+        logProxyAdFilterDebug(targetUrl, playlistContent, filteredPlaylist);
+      }
 
       const rewrittenPlaylist = rewritePlaylistContent(
         filteredPlaylist,
