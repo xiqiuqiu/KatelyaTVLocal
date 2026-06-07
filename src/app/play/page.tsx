@@ -1913,6 +1913,12 @@ function PlayPageClient() {
         return;
       }
 
+      if (video.paused && !isNativeMediaSourceUnavailable(video)) {
+        state.stallCount = 0;
+        state.lastProgressAt = Date.now();
+        return;
+      }
+
       const currentTime = video.currentTime || 0;
       const advanced = currentTime > state.lastObservedTime + 0.25;
       if (advanced) {
@@ -3220,6 +3226,10 @@ function PlayPageClient() {
         });
 
         artPlayerRef.current.on('video:pause', () => {
+          clearWaitingRecoveryTimer();
+          clearNativeFalsePlayingTimer();
+          nativeRecoveryStateRef.current.stallCount = 0;
+          nativeRecoveryStateRef.current.lastProgressAt = Date.now();
           emitNativeVideoStateDebugLog(
             'native-video-pause',
             '原生播放器进入暂停状态'

@@ -218,7 +218,7 @@ describe('native recovery timing guards', () => {
     ).toBe(false);
   });
 
-  it('allows paused native recovery while the player is still in loading state', () => {
+  it('does not resume paused native playback even while the player is still in loading state', () => {
     expect(
       shouldRecoverNativePausedStall({
         paused: true,
@@ -228,7 +228,7 @@ describe('native recovery timing guards', () => {
         stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
         isVideoLoading: true,
       })
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('does not recover ended videos even when no progress is observed', () => {

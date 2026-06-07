@@ -74,22 +74,10 @@ export function shouldSwitchSourceForRepeatedNativeFailure({
   );
 }
 
-export function shouldRecoverNativePausedStall({
-  paused,
-  ended,
-  mediaSourceUnavailable,
-  readyState,
-  stalledForMs,
-  isVideoLoading,
-}: NativePausedStallInput): boolean {
-  return (
-    paused &&
-    !ended &&
-    !mediaSourceUnavailable &&
-    readyState >= 2 &&
-    stalledForMs >= NATIVE_STALL_RECOVERY_THRESHOLD_MS &&
-    isVideoLoading
-  );
+export function shouldRecoverNativePausedStall(
+  _input: NativePausedStallInput
+): boolean {
+  return false;
 }
 
 export function shouldRecoverNativeWatchdogStall({
