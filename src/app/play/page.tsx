@@ -32,6 +32,7 @@ import {
   resolveHlsPlaybackPolicy,
 } from '@/lib/hls-playback-policy';
 import { getHlsRecoveryPlan } from '@/lib/hls-recovery';
+import { stopVideoElementLoading } from '@/lib/media-cleanup';
 import {
   getNativePlaybackNudgeTime,
   getNativeVideoRecoveryPlan,
@@ -1560,6 +1561,25 @@ function PlayPageClient() {
     }
   };
 
+  const disposeCurrentPlayer = () => {
+    const player = artPlayerRef.current;
+    const video = player?.video as HTMLVideoElement | undefined;
+
+    if (video) {
+      removeNativeVideoRecoveryListeners(video);
+      stopVideoElementLoading(video);
+    }
+
+    if (player) {
+      try {
+        player.destroy();
+      } catch (error) {
+        console.warn('销毁播放器失败:', error);
+      }
+      artPlayerRef.current = null;
+    }
+  };
+
   const executeNativeVideoRecovery = (
     video: HTMLVideoElement,
     playbackUrl: string,
@@ -2711,19 +2731,7 @@ function PlayPageClient() {
         }
 
         // native HLS 运行时或首次创建：销毁之前的播放器实例并创建新的
-        if (artPlayerRef.current) {
-          if (artPlayerRef.current.video && artPlayerRef.current.video.hls) {
-            artPlayerRef.current.video.hls.destroy();
-          }
-          if (artPlayerRef.current.video) {
-            removeNativeVideoRecoveryListeners(
-              artPlayerRef.current.video as HTMLVideoElement
-            );
-          }
-          // 销毁播放器实例
-          artPlayerRef.current.destroy();
-          artPlayerRef.current = null;
-        }
+        disposeCurrentPlayer();
 
         const CustomHlsJsLoader = createCustomHlsJsLoader(Hls);
 
@@ -3385,11 +3393,7 @@ function PlayPageClient() {
       clearWaitingRecoveryTimer();
       clearNativeWatchdogTimer();
       clearNativeFalsePlayingTimer();
-      if (artPlayerRef.current?.video) {
-        removeNativeVideoRecoveryListeners(
-          artPlayerRef.current.video as HTMLVideoElement
-        );
-      }
+      disposeCurrentPlayer();
     };
   }, []);
 
