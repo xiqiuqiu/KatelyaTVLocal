@@ -290,4 +290,66 @@ describe('EpisodeSelector playback sidebar controls', () => {
       );
     });
   });
+
+  it('orders source rows by precomputed selection score instead of forcing current first', async () => {
+    const availableSources: SearchResult[] = [
+      {
+        id: 'current',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'better',
+        source: 'source-b',
+        title: 'better source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/b.m3u8'],
+        source_name: '推荐源',
+      },
+    ];
+    const scores = new Map([
+      [
+        'source-a-current',
+        {
+          sourceKey: 'source-a-current',
+          score: 60,
+          reason: 'current',
+          source: availableSources[0],
+          originalIndex: 0,
+        },
+      ],
+      [
+        'source-b-better',
+        {
+          sourceKey: 'source-b-better',
+          score: 95,
+          reason: 'better',
+          source: availableSources[1],
+          originalIndex: 1,
+        },
+      ],
+    ]);
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='current'
+        availableSources={availableSources}
+        sourceSelectionScores={scores}
+      />
+    );
+
+    const buttons = await screen.findAllByRole('button', {
+      name: /线路/,
+    });
+    expect(buttons[0]).toHaveAccessibleName('切换线路 推荐源');
+    expect(buttons[1]).toHaveAccessibleName('当前线路 当前源');
+  });
 });

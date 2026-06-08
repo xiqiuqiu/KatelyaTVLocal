@@ -9,6 +9,7 @@ const DEFAULT_SOURCE_PREFERENCE_BATCH_SIZE = 20;
 type Fetcher = typeof fetch;
 
 interface FetchSourcePreferencesOptions {
+  allowLiveProbeFallback?: boolean;
   fetcher?: Fetcher;
   batchSize?: number;
   endpoint?: string;
@@ -90,7 +91,12 @@ export async function fetchSourcePreferencesInBatches(
         'Content-Type': 'application/json',
       },
       cache: 'no-store',
-      body: JSON.stringify({ sources: batch }),
+      body: JSON.stringify({
+        sources: batch,
+        ...(options.allowLiveProbeFallback === undefined
+          ? {}
+          : { allowLiveProbeFallback: options.allowLiveProbeFallback }),
+      }),
     });
 
     if (!response.ok) {

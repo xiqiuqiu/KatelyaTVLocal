@@ -56,4 +56,45 @@ describe('source preference client batching', () => {
     );
     expect(response.rankingSource).toBe('live');
   });
+
+  it('passes the live fallback preference to every batch request', async () => {
+    const requests: unknown[] = [];
+    const fetchMock = jest.fn(async (_url: string, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)));
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          orderedSourceKeys: [],
+          results: [],
+          generatedAt: 1710000000000,
+          rankingSource: 'd1',
+          confidence: 'medium',
+        }),
+      };
+    });
+
+    const sources = Array.from({ length: 3 }, (_, index) => ({
+      sourceKey: `source-${index}`,
+      episodeUrl: `https://example.com/${index}.m3u8`,
+    }));
+
+    await fetchSourcePreferencesInBatches(sources, {
+      fetcher: fetchMock as unknown as typeof fetch,
+      batchSize: 2,
+      allowLiveProbeFallback: false,
+    });
+
+    expect(requests).toEqual([
+      {
+        sources: sources.slice(0, 2),
+        allowLiveProbeFallback: false,
+      },
+      {
+        sources: sources.slice(2),
+        allowLiveProbeFallback: false,
+      },
+    ]);
+  });
 });

@@ -55,8 +55,12 @@ import {
   getSourceSwitchResumePlan,
   getSourceSwitchTargetEpisodeIndex,
 } from '@/lib/playback-source-switch';
-import { getBrowserProbeBudget } from '@/lib/source-preference';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
+import {
+  buildSourceSelectionScores,
+  sortSourcesBySelectionScore,
+  SourceSelectionScore,
+} from '@/lib/source-selection';
 import {
   PlaybackFeedbackInput,
   SearchResult,
@@ -71,7 +75,6 @@ import {
   getRememberedSourceStatus,
   getSourceIdentityKey,
   getVideoResolutionFromM3u8,
-  probeSourcePlayback,
   processImageUrl,
   rememberSourceDomainPreference,
 } from '@/lib/utils';
@@ -86,6 +89,11 @@ import SkipController from '@/components/SkipController';
 import Surface from '@/components/ui/Surface';
 
 export const runtime = 'edge';
+
+const SOURCE_PREFERENCE_FAST_BUDGET_MS = 500;
+const SOURCE_SELECTION_TOTAL_BUDGET_MS = 2500;
+const SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS = 1800;
+const SOURCE_SELECTION_DEEP_PROBE_LIMIT = 3;
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
@@ -426,11 +434,17 @@ function PlayPageClient() {
   const [precomputedSourceStatuses, setPrecomputedSourceStatuses] = useState<
     Map<string, SourceStatus>
   >(new Map());
+  const [sourceSelectionScores, setSourceSelectionScores] = useState<
+    Map<string, SourceSelectionScore>
+  >(new Map());
   const availableSourcesRef = useRef<SearchResult[]>([]);
   const precomputedVideoInfoRef = useRef<Map<string, SourceVideoInfo>>(
     new Map()
   );
   const precomputedSourceStatusesRef = useRef<Map<string, SourceStatus>>(
+    new Map()
+  );
+  const sourceSelectionScoresRef = useRef<Map<string, SourceSelectionScore>>(
     new Map()
   );
   const playbackStartupStartedAtRef = useRef<number | null>(null);
@@ -499,6 +513,10 @@ function PlayPageClient() {
   }, [precomputedSourceStatuses]);
 
   useEffect(() => {
+    sourceSelectionScoresRef.current = sourceSelectionScores;
+  }, [sourceSelectionScores]);
+
+  useEffect(() => {
     autoRecoveredSourceKeysRef.current.clear();
   }, [currentEpisodeIndex]);
 
@@ -529,6 +547,23 @@ function PlayPageClient() {
 
   const getCurrentSourceKey = () =>
     getSourceIdentityKey(currentSourceRef.current, currentIdRef.current);
+
+  const updateSourceSelectionScores = (
+    sources: SearchResult[],
+    statuses: Map<string, SourceStatus>,
+    measured: Map<string, SourceVideoInfo>
+  ) => {
+    const nextScores = buildSourceSelectionScores({
+      sources,
+      statuses,
+      measured,
+      currentEpisodeIndex: currentEpisodeIndexRef.current,
+      getSourceKey: (source) => getSourceIdentityKey(source.source, source.id),
+    });
+    sourceSelectionScoresRef.current = nextScores;
+    setSourceSelectionScores(new Map(nextScores));
+    return nextScores;
+  };
 
   const getCurrentPlaybackDomain = () => {
     const directUrl = originalVideoUrlRef.current;
@@ -629,6 +664,10 @@ function PlayPageClient() {
           getRememberedSourceStatus(source.episodes);
         return status?.kind;
       },
+      getCandidateScore: (source) =>
+        sourceSelectionScoresRef.current.get(
+          getSourceIdentityKey(source.source, source.id)
+        )?.score,
     });
   };
 
@@ -901,23 +940,23 @@ function PlayPageClient() {
     if (sources.length === 1) {
       setPrecomputedSourceStatuses(new Map());
       setPrecomputedVideoInfo(new Map());
+      updateSourceSelectionScores(sources, new Map(), new Map());
       return sources[0];
     }
 
-    const sourceEntries = sources.map((source) => ({
+    const startedAt = Date.now();
+    const sourceEntries = sources.map((source, originalIndex) => ({
       source,
+      originalIndex,
       sourceKey: getSourceIdentityKey(source.source, source.id),
       rememberedStatus: getRememberedSourceStatus(source.episodes),
     }));
-
-    const sourceEntryMap = new Map(
-      sourceEntries.map((entry) => [entry.sourceKey, entry])
-    );
-    const effectiveStatusMap = new Map<string, SourceStatus | null>();
+    const statusMap = new Map<string, SourceStatus>();
+    const videoInfoMap = new Map<string, SourceVideoInfo>();
 
     sourceEntries.forEach(({ source, sourceKey, rememberedStatus }) => {
       if (!source.episodes || source.episodes.length === 0) {
-        effectiveStatusMap.set(
+        statusMap.set(
           sourceKey,
           createSourceStatus('unavailable', {
             reason: '该播放源没有可用剧集',
@@ -926,34 +965,20 @@ function PlayPageClient() {
         return;
       }
 
-      effectiveStatusMap.set(sourceKey, rememberedStatus || null);
+      if (rememberedStatus) {
+        statusMap.set(sourceKey, rememberedStatus);
+      }
     });
 
-    let orderedSourceKeys = sourceEntries.map(({ sourceKey }) => sourceKey);
-    const seededVideoInfoMap = new Map<string, SourceVideoInfo>();
+    const commitSelectionState = () => {
+      setPrecomputedSourceStatuses(new Map(statusMap));
+      setPrecomputedVideoInfo(new Map(videoInfoMap));
+      return updateSourceSelectionScores(sources, statusMap, videoInfoMap);
+    };
 
-    try {
-      const probeEpisodeIndex = Math.max(
-        0,
-        Math.min(currentEpisodeIndexRef.current, sources[0].episodes.length - 1)
-      );
-      const preferenceData = await fetchSourcePreferencesInBatches(
-        sourceEntries.map(({ source, sourceKey }) => ({
-          sourceKey,
-          episodeUrl:
-            source.episodes?.[
-              Math.max(
-                0,
-                Math.min(probeEpisodeIndex, source.episodes.length - 1)
-              )
-            ] || null,
-        }))
-      );
-
-      if (preferenceData.orderedSourceKeys.length > 0) {
-        orderedSourceKeys = preferenceData.orderedSourceKeys;
-      }
-
+    const applyPreferenceResults = (preferenceData: Awaited<
+      ReturnType<typeof fetchSourcePreferencesInBatches>
+    >) => {
       preferenceData.results.forEach((result) => {
         const measured = buildVideoInfoFromPreferenceResult(result);
         const nextStatus = createSourceStatus(result.kind, {
@@ -966,9 +991,9 @@ function PlayPageClient() {
           rankScore: result.rankScore,
         });
 
-        effectiveStatusMap.set(result.sourceKey, nextStatus);
+        statusMap.set(result.sourceKey, nextStatus);
         if (measured) {
-          seededVideoInfoMap.set(result.sourceKey, measured);
+          videoInfoMap.set(result.sourceKey, measured);
         }
         rememberSourceDomainPreference(
           result.domain || null,
@@ -976,315 +1001,148 @@ function PlayPageClient() {
           result.reason
         );
       });
+
+      commitSelectionState();
+    };
+
+    const requestSources = sourceEntries.map(({ source, sourceKey }) => {
+      const episodeIndex = Math.max(
+        0,
+        Math.min(
+          currentEpisodeIndexRef.current,
+          Math.max(0, (source.episodes?.length || 1) - 1)
+        )
+      );
+      return {
+        sourceKey,
+        episodeUrl: source.episodes?.[episodeIndex] || null,
+      };
+    });
+
+    const preferencePromise = fetchSourcePreferencesInBatches(requestSources, {
+      allowLiveProbeFallback: false,
+    });
+    let preferenceSettled = false;
+    try {
+      const preferenceData = await Promise.race([
+        preferencePromise.then((data) => {
+          preferenceSettled = true;
+          return data;
+        }),
+        new Promise<null>((resolve) =>
+          window.setTimeout(resolve, SOURCE_PREFERENCE_FAST_BUDGET_MS, null)
+        ),
+      ]);
+
+      if (preferenceData) {
+        applyPreferenceResults(preferenceData);
+      }
     } catch (error) {
-      const fallbackProbeCandidates = sourceEntries
-        .filter(({ sourceKey, source }) => {
-          const status = effectiveStatusMap.get(sourceKey);
-          return (
-            source.episodes?.length &&
-            (!status || status.kind === 'idle' || status.kind === 'probing')
-          );
-        })
-        .slice(0, 6);
-
-      await Promise.all(
-        fallbackProbeCandidates.map(async ({ source, sourceKey }) => {
-          const probeEpisodeIndex = Math.max(
-            0,
-            Math.min(currentEpisodeIndexRef.current, source.episodes.length - 1)
-          );
-          const episodeUrl = source.episodes?.[probeEpisodeIndex];
-          if (!episodeUrl) {
-            return;
-          }
-
-          const probeResult = await probeSourcePlayback(episodeUrl);
-          effectiveStatusMap.set(
-            sourceKey,
-            createSourceStatus(probeResult.kind, {
-              reason: probeResult.reason,
-              playbackMode:
-                probeResult.kind === 'unavailable'
-                  ? undefined
-                  : probeResult.kind,
-              domain: probeResult.domain || null,
-            })
-          );
-          rememberSourceDomainPreference(
-            probeResult.domain || null,
-            probeResult.kind,
-            probeResult.reason
-          );
-        })
-      );
-
-      console.warn('批量优选失败，已回退到逐源探测', error);
+      preferenceSettled = true;
+      console.warn('快速线路优选读取失败，继续使用本地状态', error);
     }
 
-    const orderedEntries = orderedSourceKeys
-      .map((sourceKey) => sourceEntryMap.get(sourceKey))
-      .filter(Boolean) as typeof sourceEntries;
-    const orderedKeySet = new Set(
-      orderedEntries.map((entry) => entry.sourceKey)
+    if (!preferenceSettled) {
+      void preferencePromise
+        .then(applyPreferenceResults)
+        .catch((error) => {
+          console.warn('后台线路优选读取失败', error);
+        });
+    }
+
+    let selectionScores = commitSelectionState();
+    const orderedSources = sortSourcesBySelectionScore(sources, selectionScores, (source) =>
+      getSourceIdentityKey(source.source, source.id)
     );
-    sourceEntries.forEach((entry) => {
-      if (!orderedKeySet.has(entry.sourceKey)) {
-        orderedEntries.push(entry);
-      }
-    });
+    const deepProbeCandidates = orderedSources
+      .filter((source) => {
+        const sourceKey = getSourceIdentityKey(source.source, source.id);
+        const status = statusMap.get(sourceKey);
+        return (
+          source.episodes?.length &&
+          (!status || status.kind === 'direct' || status.kind === 'idle')
+        );
+      })
+      .slice(0, SOURCE_SELECTION_DEEP_PROBE_LIMIT);
 
-    const normalizedStatusMap = new Map<string, SourceStatus>();
-    orderedEntries.forEach(({ sourceKey }) => {
-      const status = effectiveStatusMap.get(sourceKey);
-      if (status) {
-        normalizedStatusMap.set(sourceKey, status);
-      }
-    });
-    setPrecomputedSourceStatuses(new Map(normalizedStatusMap));
+    const remainingBudget = Math.max(
+      0,
+      SOURCE_SELECTION_TOTAL_BUDGET_MS - (Date.now() - startedAt)
+    );
 
-    const directProbeCandidates = orderedEntries
-      .filter(
-        ({ sourceKey }) => normalizedStatusMap.get(sourceKey)?.kind === 'direct'
-      )
-      .slice(0, getBrowserProbeBudget(orderedEntries.length));
-
-    if (directProbeCandidates.length === 0) {
-      const firstAvailableSource = orderedEntries.find(
-        ({ sourceKey }) =>
-          normalizedStatusMap.get(sourceKey)?.kind !== 'unavailable'
+    const deepProbePromises = deepProbeCandidates.map(async (source) => {
+      const sourceKey = getSourceIdentityKey(source.source, source.id);
+      const episodeIndex = Math.max(
+        0,
+        Math.min(currentEpisodeIndexRef.current, source.episodes.length - 1)
       );
-      setPrecomputedVideoInfo(new Map(seededVideoInfoMap));
-      return firstAvailableSource?.source || sources[0];
-    }
+      const episodeUrl = source.episodes[episodeIndex];
 
-    // 将播放源均分为两批，并发测速各批，避免一次性过多请求
-    const batchSize = Math.ceil(directProbeCandidates.length / 2);
-    const allResults: Array<{
-      source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    } | null> = [];
-
-    for (
-      let start = 0;
-      start < directProbeCandidates.length;
-      start += batchSize
-    ) {
-      const batchSources = directProbeCandidates.slice(
-        start,
-        start + batchSize
-      );
-      const batchResults = await Promise.all(
-        batchSources.map(async ({ source }) => {
-          try {
-            // 使用当前集做测速，避免某一集异常导致整源误判
-            if (!source.episodes || source.episodes.length === 0) {
-              console.warn(`播放源 ${source.source_name} 没有可用的播放地址`);
-              return null;
-            }
-
-            const probeEpisodeIndex = Math.max(
-              0,
-              Math.min(
-                currentEpisodeIndexRef.current,
-                source.episodes.length - 1
-              )
-            );
-            const episodeUrl = source.episodes[probeEpisodeIndex];
-            const testResult = await getVideoResolutionFromM3u8(episodeUrl);
-            const status = normalizedStatusMap.get(
-              getSourceIdentityKey(source.source, source.id)
-            );
-            rememberSourceDomainPreference(status?.domain || null, 'direct');
-
-            return {
-              source,
-              testResult,
-            };
-          } catch (error) {
-            return null;
-          }
-        })
-      );
-      allResults.push(...batchResults);
-    }
-
-    // 等待所有测速完成，包含成功和失败的结果
-    // 保存所有测速结果到 precomputedVideoInfo，供 EpisodeSelector 使用（包含错误结果）
-    const newVideoInfoMap = new Map<
-      string,
-      {
-        quality: string;
-        loadSpeed: string;
-        pingTime: number;
-        hasError?: boolean;
-        errorReason?: string;
-      }
-    >();
-    allResults.forEach((result, index) => {
-      const candidate = directProbeCandidates[index];
-      if (!candidate) {
-        return;
-      }
-
-      const sourceKey = candidate.sourceKey;
-
-      if (result) {
-        // 成功的结果
-        newVideoInfoMap.set(sourceKey, result.testResult);
-      } else {
-        newVideoInfoMap.set(sourceKey, {
+      try {
+        const testResult = await getVideoResolutionFromM3u8(episodeUrl, {
+          timeoutMs: SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS,
+        });
+        videoInfoMap.set(sourceKey, testResult);
+        const previousStatus = statusMap.get(sourceKey);
+        statusMap.set(
+          sourceKey,
+          createSourceStatus('direct', {
+            reason: previousStatus?.reason || '浏览器可直接播放',
+            playbackMode: 'direct',
+            domain: previousStatus?.domain || null,
+            measured: testResult,
+            updatedAt: previousStatus?.updatedAt,
+            rankingSource: previousStatus?.rankingSource,
+            rankScore: previousStatus?.rankScore,
+          })
+        );
+        rememberSourceDomainPreference(previousStatus?.domain || null, 'direct');
+      } catch (error) {
+        videoInfoMap.set(sourceKey, {
           quality: '错误',
           loadSpeed: '未知',
           pingTime: 0,
           hasError: true,
-          errorReason: '初始化测速失败，可尝试播放',
+          errorReason:
+            error instanceof Error ? error.message : '初始化测速失败，可尝试播放',
         });
+      } finally {
+        selectionScores = commitSelectionState();
       }
     });
 
-    // 过滤出成功的结果用于优选计算
-    const successfulResults = allResults.filter(Boolean) as Array<{
-      source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    }>;
-
-    const mergedVideoInfoMap = new Map(seededVideoInfoMap);
-    newVideoInfoMap.forEach((value, key) => {
-      mergedVideoInfoMap.set(key, value);
-    });
-
-    setPrecomputedVideoInfo(mergedVideoInfoMap);
-
-    if (successfulResults.length === 0) {
-      console.warn('候选播放源测速都失败，回退到第一个未标记不可用的播放源');
-      const fallbackSource = orderedEntries.find(
-        ({ sourceKey }) =>
-          normalizedStatusMap.get(sourceKey)?.kind !== 'unavailable'
-      );
-      return fallbackSource?.source || sources[0];
+    if (deepProbePromises.length > 0 && remainingBudget > 0) {
+      await Promise.race([
+        Promise.allSettled(deepProbePromises),
+        new Promise<void>((resolve) =>
+          window.setTimeout(resolve, remainingBudget)
+        ),
+      ]);
     }
 
-    // 找出所有有效速度的最大值，用于线性映射
-    const validSpeeds = successfulResults
-      .map((result) => {
-        const speedStr = result.testResult.loadSpeed;
-        if (speedStr === '未知' || speedStr === '测量中...') return 0;
-
-        const match = speedStr.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
-        if (!match) return 0;
-
-        const value = parseFloat(match[1]);
-        const unit = match[2];
-        return unit === 'MB/s' ? value * 1024 : value; // 统一转换为 KB/s
-      })
-      .filter((speed) => speed > 0);
-
-    const maxSpeed = validSpeeds.length > 0 ? Math.max(...validSpeeds) : 1024; // 默认1MB/s作为基准
-
-    // 找出所有有效延迟的最小值和最大值，用于线性映射
-    const validPings = successfulResults
-      .map((result) => result.testResult.pingTime)
-      .filter((ping) => ping > 0);
-
-    const minPing = validPings.length > 0 ? Math.min(...validPings) : 50;
-    const maxPing = validPings.length > 0 ? Math.max(...validPings) : 1000;
-
-    // 计算每个结果的评分
-    const resultsWithScore = successfulResults.map((result) => ({
-      ...result,
-      score: calculateSourceScore(
-        result.testResult,
-        maxSpeed,
-        minPing,
-        maxPing
-      ),
-    }));
-
-    // 按综合评分排序，选择最佳播放源
-    resultsWithScore.sort((a, b) => b.score - a.score);
-
-    console.log('播放源评分排序结果:');
-    resultsWithScore.forEach((result, index) => {
-      console.log(
-        `${index + 1}. ${
-          result.source.source_name
-        } - 评分: ${result.score.toFixed(2)} (${result.testResult.quality}, ${
-          result.testResult.loadSpeed
-        }, ${result.testResult.pingTime}ms)`
-      );
+    void Promise.allSettled(deepProbePromises).then(() => {
+      commitSelectionState();
     });
 
-    return resultsWithScore[0].source;
-  };
+    selectionScores = sourceSelectionScoresRef.current.size
+      ? sourceSelectionScoresRef.current
+      : selectionScores;
+    const finalSource = sortSourcesBySelectionScore(
+      sources,
+      selectionScores,
+      (source) => getSourceIdentityKey(source.source, source.id)
+    ).find((source) => {
+      const status = statusMap.get(getSourceIdentityKey(source.source, source.id));
+      return status?.kind !== 'unavailable';
+    });
 
-  // 计算播放源综合评分
-  const calculateSourceScore = (
-    testResult: {
-      quality: string;
-      loadSpeed: string;
-      pingTime: number;
-    },
-    maxSpeed: number,
-    minPing: number,
-    maxPing: number
-  ): number => {
-    let score = 0;
+    console.log('播放源优选结果:', {
+      selected: finalSource?.source_name,
+      waitedMs: Date.now() - startedAt,
+      deepProbeCount: deepProbeCandidates.length,
+    });
 
-    // 分辨率评分 (40% 权重)
-    const qualityScore = (() => {
-      switch (testResult.quality) {
-        case '4K':
-          return 100;
-        case '2K':
-          return 85;
-        case '1080p':
-          return 75;
-        case '720p':
-          return 60;
-        case '480p':
-          return 40;
-        case 'SD':
-          return 20;
-        default:
-          return 0;
-      }
-    })();
-    score += qualityScore * 0.4;
-
-    // 下载速度评分 (40% 权重) - 基于最大速度线性映射
-    const speedScore = (() => {
-      const speedStr = testResult.loadSpeed;
-      if (speedStr === '未知' || speedStr === '测量中...') return 30;
-
-      // 解析速度值
-      const match = speedStr.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
-      if (!match) return 30;
-
-      const value = parseFloat(match[1]);
-      const unit = match[2];
-      const speedKBps = unit === 'MB/s' ? value * 1024 : value;
-
-      // 基于最大速度线性映射，最高100分
-      const speedRatio = speedKBps / maxSpeed;
-      return Math.min(100, Math.max(0, speedRatio * 100));
-    })();
-    score += speedScore * 0.4;
-
-    // 网络延迟评分 (20% 权重) - 基于延迟范围线性映射
-    const pingScore = (() => {
-      const ping = testResult.pingTime;
-      if (ping <= 0) return 0; // 无效延迟给默认分
-
-      // 如果所有延迟都相同，给满分
-      if (maxPing === minPing) return 100;
-
-      // 线性映射：最低延迟=100分，最高延迟=0分
-      const pingRatio = (maxPing - ping) / (maxPing - minPing);
-      return Math.min(100, Math.max(0, pingRatio * 100));
-    })();
-    score += pingScore * 0.2;
-
-    return Math.round(score * 100) / 100; // 保留两位小数
+    return finalSource || sources[0];
   };
 
   // 更新视频地址
@@ -2245,6 +2103,7 @@ function PlayPageClient() {
       setLoading(true);
       setPrecomputedVideoInfo(new Map());
       setPrecomputedSourceStatuses(new Map());
+      setSourceSelectionScores(new Map());
       setLoadingStage(currentSource && currentId ? 'fetching' : 'searching');
       setLoadingMessage(
         currentSource && currentId ? '正在获取视频详情...' : '正在搜索播放源...'
@@ -2290,6 +2149,12 @@ function PlayPageClient() {
         setLoadingMessage('正在优选最佳播放源...');
 
         detailData = await preferBestSource(sourcesInfo);
+      } else {
+        updateSourceSelectionScores(
+          sourcesInfo,
+          precomputedSourceStatusesRef.current,
+          precomputedVideoInfoRef.current
+        );
       }
 
       console.log(detailData.source, detailData.id);
@@ -3776,6 +3641,7 @@ function PlayPageClient() {
                 sourceSearchError={sourceSearchError}
                 precomputedVideoInfo={precomputedVideoInfo}
                 precomputedSourceStatuses={precomputedSourceStatuses}
+                sourceSelectionScores={sourceSelectionScores}
               />
             </div>
 

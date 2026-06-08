@@ -42,9 +42,13 @@ interface SourceProbeRow {
 interface PlaybackFeedbackRow {
   sourceKey: string;
   playbackDomain: string | null;
+  startupSuccess: number;
+  startupTimeMs: number | null;
+  switchedToProxy: number;
   browserQuality: string | null;
   browserPingMs: number | null;
   browserSpeedLabel: string | null;
+  sessionError: string | null;
   recordedAt: number;
 }
 
@@ -81,6 +85,27 @@ function dedupeLatestByKey<T extends { sourceKey: string }>(
   });
 
   return latestByKey;
+}
+
+function getFeedbackRankAdjustment(rows: PlaybackFeedbackRow[]): number {
+  return rows.reduce((score, row) => {
+    let next = score;
+    if (row.startupSuccess) {
+      next += 2;
+    } else {
+      next -= 14;
+    }
+
+    if (row.startupTimeMs && row.startupTimeMs > 5000) {
+      next -= 6;
+    }
+
+    if (row.switchedToProxy) {
+      next -= 4;
+    }
+
+    return next;
+  }, 0);
 }
 
 function inferKindFromSnapshot(
@@ -186,13 +211,16 @@ export async function readLatestSourceRanks(
           `SELECT
              source_key AS sourceKey,
              playback_domain AS playbackDomain,
+             startup_success AS startupSuccess,
+             startup_time_ms AS startupTimeMs,
+             switched_to_proxy AS switchedToProxy,
              browser_quality AS browserQuality,
              browser_ping_ms AS browserPingMs,
              browser_speed_label AS browserSpeedLabel,
+             session_error AS sessionError,
              recorded_at AS recordedAt
            FROM playback_feedback_events
            WHERE source_key IN (${placeholders})
-             AND startup_success = 1
              AND recorded_at >= ?
            ORDER BY recorded_at DESC`
         )
@@ -201,7 +229,15 @@ export async function readLatestSourceRanks(
     ).results || [];
 
   const latestProbeByKey = dedupeLatestByKey(probeRows);
-  const latestFeedbackByKey = dedupeLatestByKey(feedbackRows);
+  const latestFeedbackByKey = dedupeLatestByKey(
+    feedbackRows.filter((row) => Boolean(row.startupSuccess))
+  );
+  const feedbackRowsByKey = new Map<string, PlaybackFeedbackRow[]>();
+  feedbackRows.forEach((row) => {
+    const rows = feedbackRowsByKey.get(row.sourceKey) || [];
+    rows.push(row);
+    feedbackRowsByKey.set(row.sourceKey, rows);
+  });
   const seenKeys = new Set<string>();
 
   return snapshotRows
@@ -217,6 +253,9 @@ export async function readLatestSourceRanks(
       const probe = latestProbeByKey.get(snapshot.sourceKey);
       const feedback = latestFeedbackByKey.get(snapshot.sourceKey);
       const kind = probe?.kind || inferKindFromSnapshot(snapshot);
+      const feedbackAdjustment = getFeedbackRankAdjustment(
+        feedbackRowsByKey.get(snapshot.sourceKey) || []
+      );
 
       return {
         sourceKey: snapshot.sourceKey,
@@ -234,10 +273,10 @@ export async function readLatestSourceRanks(
         updatedAt: Math.max(
           snapshot.updatedAt,
           probe?.measuredAt || 0,
-          feedback?.recordedAt || 0
+          feedbackRowsByKey.get(snapshot.sourceKey)?.[0]?.recordedAt || 0
         ),
         rankingSource: 'd1',
-        rankScore: snapshot.finalScore,
+        rankScore: Number((snapshot.finalScore + feedbackAdjustment).toFixed(2)),
       } satisfies SourcePreferenceResult;
     });
 }

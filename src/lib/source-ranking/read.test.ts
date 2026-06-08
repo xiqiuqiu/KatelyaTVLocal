@@ -48,10 +48,26 @@ describe('source ranking read', () => {
           {
             sourceKey: 'alpha',
             playbackDomain: 'feedback.alpha.example',
+            startupSuccess: 1,
+            startupTimeMs: 1200,
+            switchedToProxy: 0,
             browserQuality: '4K',
             browserPingMs: 88,
             browserSpeedLabel: '2.4 MB/s',
+            sessionError: null,
             recordedAt: 1710000300000,
+          },
+          {
+            sourceKey: 'beta',
+            playbackDomain: 'feedback.beta.example',
+            startupSuccess: 0,
+            startupTimeMs: 6200,
+            switchedToProxy: 1,
+            browserQuality: null,
+            browserPingMs: null,
+            browserSpeedLabel: null,
+            sessionError: 'startup failed',
+            recordedAt: 1710000350000,
           },
         ],
       });
@@ -106,7 +122,7 @@ describe('source ranking read', () => {
         speedKbps: 2450,
         updatedAt: 1710000300000,
         rankingSource: 'd1',
-        rankScore: 91.5,
+        rankScore: 93.5,
       },
       {
         sourceKey: 'beta',
@@ -118,9 +134,9 @@ describe('source ranking read', () => {
         pingTimeMs: null,
         latencyMs: null,
         speedKbps: null,
-        updatedAt: 1710000100000,
+        updatedAt: 1710000350000,
         rankingSource: 'd1',
-        rankScore: 80.2,
+        rankScore: 56.2,
       },
     ]);
   });

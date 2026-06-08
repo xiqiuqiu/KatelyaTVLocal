@@ -39,6 +39,7 @@ interface RecoverySourceCandidateInput<T extends RecoverySourceCandidate> {
   getSourceKey?: (candidate: T) => string;
   getEpisodeCount?: (candidate: T) => number;
   getStatusKind?: (candidate: T) => RecoverySourceStatusKind | null | undefined;
+  getCandidateScore?: (candidate: T) => number | null | undefined;
 }
 
 interface AutoRecoveryResumeInput {
@@ -116,6 +117,7 @@ export function getNextRecoverySourceCandidate<T extends RecoverySourceCandidate
   getSourceKey = (candidate) => `${candidate.source}-${candidate.id}`,
   getEpisodeCount = (candidate) => candidate.episodes?.length || 0,
   getStatusKind = (candidate) => candidate.statusKind,
+  getCandidateScore,
 }: RecoverySourceCandidateInput<T>): T | undefined {
   const targetEpisodeIndex = Math.max(0, currentEpisodeIndex);
 
@@ -136,11 +138,24 @@ export function getNextRecoverySourceCandidate<T extends RecoverySourceCandidate
 
       return getStatusKind(candidate) !== 'unavailable';
     })
-    .sort(
-      (a, b) =>
+    .sort((a, b) => {
+      const scoreA = getCandidateScore?.(a);
+      const scoreB = getCandidateScore?.(b);
+      if (typeof scoreA === 'number' && typeof scoreB === 'number') {
+        if (scoreA !== scoreB) {
+          return scoreB - scoreA;
+        }
+      } else if (typeof scoreA === 'number') {
+        return -1;
+      } else if (typeof scoreB === 'number') {
+        return 1;
+      }
+
+      return (
         getRecoverySourcePriority(getStatusKind(a)) -
         getRecoverySourcePriority(getStatusKind(b))
-    )[0];
+      );
+    })[0];
 }
 
 export function getSourceSwitchResumePlan({

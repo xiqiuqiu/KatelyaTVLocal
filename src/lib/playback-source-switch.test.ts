@@ -264,4 +264,20 @@ describe('getNextRecoverySourceCandidate', () => {
       })
     ).toEqual(unknownCandidates[1]);
   });
+
+  it('prefers the highest scored usable recovery source', () => {
+    expect(
+      getNextRecoverySourceCandidate({
+        candidates,
+        currentSourceKey: 'current-1',
+        recoveredSourceKeys: new Set<string>(),
+        currentEpisodeIndex: 2,
+        getCandidateScore: (candidate) => {
+          if (candidate.source === 'proxy') return 99;
+          if (candidate.source === 'direct') return 10;
+          return 0;
+        },
+      })
+    ).toEqual(candidates[3]);
+  });
 });

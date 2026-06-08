@@ -6,6 +6,10 @@ import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
+import {
+  sortSourcesBySelectionScore,
+  SourceSelectionScore,
+} from '@/lib/source-selection';
 import { SearchResult, SourceStatus, SourceVideoInfo } from '@/lib/types';
 import {
   createPlayableSourceStatus,
@@ -41,6 +45,8 @@ interface EpisodeSelectorProps {
   precomputedVideoInfo?: Map<string, SourceVideoInfo>;
   /** 预计算的播放源状态，避免重复服务端探测 */
   precomputedSourceStatuses?: Map<string, SourceStatus>;
+  /** 预计算的播放源评分，用于线路面板排序 */
+  sourceSelectionScores?: Map<string, SourceSelectionScore>;
 }
 
 /**
@@ -60,6 +66,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   sourceSearchError = null,
   precomputedVideoInfo,
   precomputedSourceStatuses,
+  sourceSelectionScores,
 }) => {
   const router = useRouter();
   const pageCount = Math.ceil(totalEpisodes / episodesPerPage);
@@ -944,18 +951,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             availableSources.length > 0 && (
               <div className='flex min-h-0 flex-1 flex-col'>
                 <div className='grid flex-1 grid-cols-1 gap-2 overflow-y-auto pb-3 pr-0.5 sm:grid-cols-2 2xl:grid-cols-1'>
-                  {[...availableSources]
-                    .sort((a, b) => {
-                      const aIsCurrent =
-                        a.source?.toString() === currentSource?.toString() &&
-                        a.id?.toString() === currentId?.toString();
-                      const bIsCurrent =
-                        b.source?.toString() === currentSource?.toString() &&
-                        b.id?.toString() === currentId?.toString();
-                      if (aIsCurrent && !bIsCurrent) return -1;
-                      if (!aIsCurrent && bIsCurrent) return 1;
-                      return 0;
-                    })
+                  {sortSourcesBySelectionScore(
+                    availableSources,
+                    sourceSelectionScores || new Map(),
+                    (source) => getSourceIdentityKey(source.source, source.id)
+                  )
                     .map((source) => {
                       const isCurrentSource =
                         source.source?.toString() ===
