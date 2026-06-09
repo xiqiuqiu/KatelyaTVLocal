@@ -38,6 +38,7 @@ import Swal from 'sweetalert2';
 
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getRuntimeCurrentUser } from '@/lib/auth';
+import { buildRegistrationInviteLink } from '@/lib/registration/invite-link';
 
 import PageLayout from '@/components/PageLayout';
 
@@ -805,8 +806,13 @@ const InviteConfig = () => {
   };
 
   const handleCopyInvite = async (code: string) => {
-    await navigator.clipboard.writeText(code);
-    showSuccess('邀请码已复制');
+    const inviteLink = buildRegistrationInviteLink({
+      code,
+      origin: window.location.origin,
+    });
+
+    await navigator.clipboard.writeText(inviteLink);
+    showSuccess('邀请链接已复制');
   };
 
   return (
@@ -940,7 +946,7 @@ const InviteConfig = () => {
                           className='inline-flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors'
                         >
                           <Copy className='h-3 w-3' />
-                          复制
+                          复制链接
                         </button>
                         {!invite.disabled && (
                           <button

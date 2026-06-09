@@ -43,6 +43,8 @@ This project evolved from MoonTV as a community continuation. Original authors a
 
 - **Turnstile verification** &mdash; Cloudflare Turnstile anti-bot protection for registration
 - **Registration invite system** &mdash; admin-managed invite codes for controlled user registration
+- **Invite links** &mdash; admin invite copying produces `/login?inviteCode=YOUR_CODE`
+  links that prefill the registration invite field
 - **Secure sessions** &mdash; httpOnly cookies signed with HMAC-SHA256
 - **Password hashing** &mdash; PBKDF2-SHA256 with 100,000 iterations
 
@@ -77,18 +79,18 @@ This project evolved from MoonTV as a community continuation. Original authors a
 
 ## Tech Stack
 
-| Category   | Dependencies                                          |
-| ---------- | ----------------------------------------------------- |
-| Framework  | Next.js 14 &middot; App Router                        |
+| Category   | Dependencies                                               |
+| ---------- | ---------------------------------------------------------- |
+| Framework  | Next.js 14 &middot; App Router                             |
 | UI & Style | Tailwind CSS 3 &middot; Framer Motion &middot; Headless UI |
-| Language   | TypeScript 4.9                                        |
-| Player     | ArtPlayer &middot; HLS.js                             |
-| State      | React Hooks &middot; Context API                      |
-| Validation | Zod                                                   |
-| Auth       | PBKDF2-SHA256 &middot; HMAC-SHA256 &middot; Turnstile |
-| Quality    | ESLint &middot; Prettier &middot; Jest &middot; Husky |
-| PWA        | next-pwa                                              |
-| Deploy     | Docker &middot; Vercel &middot; Cloudflare Pages      |
+| Language   | TypeScript 4.9                                             |
+| Player     | ArtPlayer &middot; HLS.js                                  |
+| State      | React Hooks &middot; Context API                           |
+| Validation | Zod                                                        |
+| Auth       | PBKDF2-SHA256 &middot; HMAC-SHA256 &middot; Turnstile      |
+| Quality    | ESLint &middot; Prettier &middot; Jest &middot; Husky      |
+| PWA        | next-pwa                                                   |
+| Deploy     | Docker &middot; Vercel &middot; Cloudflare Pages           |
 
 ## Deployment
 
@@ -293,7 +295,7 @@ For recommended config files, see the download links in the deployment sections 
 | `USERNAME`            | Admin username (non-localstorage modes)                                       | (empty)           |
 | `SITE_NAME`           | Site display name                                                             | `KatelyaTV`       |
 | `ANNOUNCEMENT`        | Site-wide announcement banner text                                            | (disclaimer text) |
-| `DOCKER_ENV`           | Set to `true` in Docker to read config.json at runtime                        | (empty)           |
+| `DOCKER_ENV`          | Set to `true` in Docker to read config.json at runtime                        | (empty)           |
 
 ### Storage
 
@@ -320,38 +322,38 @@ For recommended config files, see the download links in the deployment sections 
 
 ### Turnstile & Registration Security
 
-| Variable                              | Description                            | Default |
-| ------------------------------------- | -------------------------------------- | ------- |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`      | Cloudflare Turnstile site key          | (empty) |
-| `TURNSTILE_SECRET_KEY`                | Cloudflare Turnstile secret key        | (empty) |
-| `REGISTER_TURNSTILE_REQUIRED`         | Require Turnstile on registration      | `false` |
-| `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | Require invite code for registration  | `false` |
-| `REGISTER_INVITE_REQUIRED`            | Server-side invite requirement         | (empty) |
-| `REGISTER_PASSWORD_MIN_LENGTH`        | Minimum password length                | `6`     |
-| `REGISTER_IP_WINDOW_SECONDS`          | IP rate-limit window (seconds)         | `3600`  |
-| `REGISTER_IP_WINDOW_LIMIT`            | Max registrations per IP per window    | `3`     |
+| Variable                               | Description                          | Default |
+| -------------------------------------- | ------------------------------------ | ------- |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`       | Cloudflare Turnstile site key        | (empty) |
+| `TURNSTILE_SECRET_KEY`                 | Cloudflare Turnstile secret key      | (empty) |
+| `REGISTER_TURNSTILE_REQUIRED`          | Require Turnstile on registration    | `false` |
+| `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | Require invite code for registration | `false` |
+| `REGISTER_INVITE_REQUIRED`             | Server-side invite requirement       | (empty) |
+| `REGISTER_PASSWORD_MIN_LENGTH`         | Minimum password length              | `6`     |
+| `REGISTER_IP_WINDOW_SECONDS`           | IP rate-limit window (seconds)       | `3600`  |
+| `REGISTER_IP_WINDOW_LIMIT`             | Max registrations per IP per window  | `3`     |
 
 ### AI Find Assistant
 
-| Variable                  | Description                                  | Default                     |
-| ------------------------- | -------------------------------------------- | --------------------------- |
-| `AI_FIND_ENABLED`         | Enable AI find assistant                     | `false`                     |
-| `AI_BASE_URL`             | OpenAI-compatible API base URL               | `https://api.openai.com/v1` |
-| `AI_API_KEY`              | Server-side API key                          | (empty)                     |
-| `AI_MODEL`                | Model name                                   | (empty)                     |
-| `AI_FIND_DEBUG`           | Enable debug logging                         | `false`                     |
-| `AI_TEMPERATURE`          | Model temperature (0-2)                      | `0.2`                       |
-| `AI_REQUEST_TIMEOUT_MS`   | Request timeout                              | `20000`                     |
-| `AI_MAX_TOKENS`           | Max response tokens                          | `800`                       |
-| `AI_THINKING_MODE`        | Thinking mode: `auto`, `enabled`, `disabled` | `auto`                      |
-| `AI_MAX_RESULTS`          | Max candidate queries                        | `5`                         |
-| `AI_DAILY_LIMIT_PER_USER` | Daily usage limit per user                   | `20`                        |
-| `AI_DAILY_LIMIT_PER_IP`   | Daily usage limit per IP                     | `60`                        |
-| `AI_DAILY_LIMIT_GLOBAL`   | Global daily usage limit                     | (unlimited)                 |
-| `AI_GROUP_DAILY_LIMIT_PER_USER` | Group search daily limit per user      | `50`                        |
-| `AI_GROUP_DAILY_LIMIT_PER_IP`   | Group search daily limit per IP        | `120`                       |
-| `AI_GROUP_DAILY_LIMIT_GLOBAL`   | Group search global daily limit         | (unlimited)                 |
-| `AI_CACHE_TTL_SECONDS`    | Search cache TTL                             | `1800`                      |
+| Variable                        | Description                                  | Default                     |
+| ------------------------------- | -------------------------------------------- | --------------------------- |
+| `AI_FIND_ENABLED`               | Enable AI find assistant                     | `false`                     |
+| `AI_BASE_URL`                   | OpenAI-compatible API base URL               | `https://api.openai.com/v1` |
+| `AI_API_KEY`                    | Server-side API key                          | (empty)                     |
+| `AI_MODEL`                      | Model name                                   | (empty)                     |
+| `AI_FIND_DEBUG`                 | Enable debug logging                         | `false`                     |
+| `AI_TEMPERATURE`                | Model temperature (0-2)                      | `0.2`                       |
+| `AI_REQUEST_TIMEOUT_MS`         | Request timeout                              | `20000`                     |
+| `AI_MAX_TOKENS`                 | Max response tokens                          | `800`                       |
+| `AI_THINKING_MODE`              | Thinking mode: `auto`, `enabled`, `disabled` | `auto`                      |
+| `AI_MAX_RESULTS`                | Max candidate queries                        | `5`                         |
+| `AI_DAILY_LIMIT_PER_USER`       | Daily usage limit per user                   | `20`                        |
+| `AI_DAILY_LIMIT_PER_IP`         | Daily usage limit per IP                     | `60`                        |
+| `AI_DAILY_LIMIT_GLOBAL`         | Global daily usage limit                     | (unlimited)                 |
+| `AI_GROUP_DAILY_LIMIT_PER_USER` | Group search daily limit per user            | `50`                        |
+| `AI_GROUP_DAILY_LIMIT_PER_IP`   | Group search daily limit per IP              | `120`                       |
+| `AI_GROUP_DAILY_LIMIT_GLOBAL`   | Group search global daily limit              | (unlimited)                 |
+| `AI_CACHE_TTL_SECONDS`          | Search cache TTL                             | `1800`                      |
 
 ### Cloudflare Source Ranking
 

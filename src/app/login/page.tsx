@@ -17,6 +17,8 @@ import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
+import { getInviteCodeFromSearchParams } from '@/lib/registration/invite-link';
+
 import IOSCompatibility from '@/components/IOSCompatibility';
 import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -52,6 +54,13 @@ function LoginPageClient() {
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
   const [registerInviteRequired, setRegisterInviteRequired] = useState(true);
   const { siteName } = useSite();
+
+  useEffect(() => {
+    const inviteCodeFromUrl = getInviteCodeFromSearchParams(searchParams);
+    if (inviteCodeFromUrl) {
+      setInviteCode(inviteCodeFromUrl);
+    }
+  }, [searchParams]);
 
   // 在客户端挂载后设置配置
   useEffect(() => {

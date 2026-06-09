@@ -43,6 +43,8 @@
 
 - **Turnstile 验证** &mdash; Cloudflare Turnstile 人机验证，保护注册
 - **注册邀请系统** &mdash; 管理员可创建邀请码，控制用户注册
+- **邀请链接** &mdash; 管理端复制邀请码时会生成 `/login?inviteCode=YOUR_CODE`
+  链接，打开后自动回填注册页邀请码
 - **安全会话** &mdash; httpOnly Cookie + HMAC-SHA256 签名
 - **密码哈希** &mdash; PBKDF2-SHA256（100,000 次迭代）
 
@@ -77,30 +79,30 @@
 
 ## 技术栈
 
-| 分类       | 技术依赖                                               |
-| ---------- | ------------------------------------------------------ |
-| 框架       | Next.js 14 &middot; App Router                         |
-| UI 与样式  | Tailwind CSS 3 &middot; Framer Motion &middot; Headless UI |
-| 语言       | TypeScript 4.9                                         |
-| 播放器     | ArtPlayer &middot; HLS.js                              |
-| 状态管理   | React Hooks &middot; Context API                       |
-| 数据校验   | Zod                                                    |
-| 认证       | PBKDF2-SHA256 &middot; HMAC-SHA256 &middot; Turnstile  |
-| 代码质量   | ESLint &middot; Prettier &middot; Jest &middot; Husky  |
-| PWA        | next-pwa                                               |
-| 部署       | Docker &middot; Vercel &middot; Cloudflare Pages       |
+| 分类      | 技术依赖                                                   |
+| --------- | ---------------------------------------------------------- |
+| 框架      | Next.js 14 &middot; App Router                             |
+| UI 与样式 | Tailwind CSS 3 &middot; Framer Motion &middot; Headless UI |
+| 语言      | TypeScript 4.9                                             |
+| 播放器    | ArtPlayer &middot; HLS.js                                  |
+| 状态管理  | React Hooks &middot; Context API                           |
+| 数据校验  | Zod                                                        |
+| 认证      | PBKDF2-SHA256 &middot; HMAC-SHA256 &middot; Turnstile      |
+| 代码质量  | ESLint &middot; Prettier &middot; Jest &middot; Husky      |
+| PWA       | next-pwa                                                   |
+| 部署      | Docker &middot; Vercel &middot; Cloudflare Pages           |
 
 ## 部署
 
 ### 部署方案对比
 
-| 方案              | 难度   | 多用户       | 数据可靠性 | 适用场景             |
-| ----------------- | ------ | ------------ | ---------- | -------------------- |
-| Docker（单容器）  | 简单   | 否           | 中等       | 个人使用，最快速     |
-| Docker + Redis    | 中等   | 是           | 高         | 家庭/团队使用        |
-| Docker + Kvrocks  | 中等   | 是           | 极高       | 生产环境，零数据丢失 |
-| Vercel            | 简单   | 否           | 低         | 快速试用，无需服务器 |
-| Cloudflare Pages  | 高级   | 是（需 D1）  | 高         | 技术爱好者           |
+| 方案             | 难度 | 多用户      | 数据可靠性 | 适用场景             |
+| ---------------- | ---- | ----------- | ---------- | -------------------- |
+| Docker（单容器） | 简单 | 否          | 中等       | 个人使用，最快速     |
+| Docker + Redis   | 中等 | 是          | 高         | 家庭/团队使用        |
+| Docker + Kvrocks | 中等 | 是          | 极高       | 生产环境，零数据丢失 |
+| Vercel           | 简单 | 否          | 低         | 快速试用，无需服务器 |
+| Cloudflare Pages | 高级 | 是（需 D1） | 高         | 技术爱好者           |
 
 ---
 
@@ -286,83 +288,83 @@ KatelyaTV 使用标准 Apple CMS V10 API 格式。在项目根目录创建 `conf
 
 ### 核心配置
 
-| 变量                  | 描述                                                  | 默认值     |
-| --------------------- | ----------------------------------------------------- | ---------- |
-| `PASSWORD`            | 站点访问密码（必填）                                  | （空）     |
-| `AUTH_SIGNING_SECRET` | 会话 Cookie 的 HMAC-SHA256 签名密钥（非 localstorage 必填） | （空） |
-| `USERNAME`            | 管理员用户名（非 localstorage 模式）                  | （空）     |
-| `SITE_NAME`           | 站点显示名称                                          | `KatelyaTV` |
-| `ANNOUNCEMENT`        | 站点公告横幅文字                                      | （免责声明） |
-| `DOCKER_ENV`          | Docker 中设为 `true`，在运行时读取 config.json         | （空）     |
+| 变量                  | 描述                                                        | 默认值       |
+| --------------------- | ----------------------------------------------------------- | ------------ |
+| `PASSWORD`            | 站点访问密码（必填）                                        | （空）       |
+| `AUTH_SIGNING_SECRET` | 会话 Cookie 的 HMAC-SHA256 签名密钥（非 localstorage 必填） | （空）       |
+| `USERNAME`            | 管理员用户名（非 localstorage 模式）                        | （空）       |
+| `SITE_NAME`           | 站点显示名称                                                | `KatelyaTV`  |
+| `ANNOUNCEMENT`        | 站点公告横幅文字                                            | （免责声明） |
+| `DOCKER_ENV`          | Docker 中设为 `true`，在运行时读取 config.json              | （空）       |
 
 ### 存储配置
 
-| 变量                          | 描述                                 | 可选值                                              | 默认值         |
-| ----------------------------- | ------------------------------------ | --------------------------------------------------- | -------------- |
-| `NEXT_PUBLIC_STORAGE_TYPE`    | 存储后端                             | `localstorage`、`redis`、`kvrocks`、`d1`、`upstash` | `localstorage` |
-| `REDIS_URL`                   | Redis 连接地址                       | 连接 URL                                            | （空）         |
-| `KVROCKS_URL`                 | Kvrocks 连接地址                     | 连接 URL                                            | （空）         |
-| `KVROCKS_PASSWORD`            | Kvrocks 密码                         | 字符串                                              | （空）         |
-| `KVROCKS_DATABASE`            | Kvrocks 数据库编号                   | `0`-`15`                                            | `0`            |
-| `UPSTASH_URL`                 | Upstash Redis URL                    | 连接 URL                                            | （空）         |
-| `UPSTASH_TOKEN`               | Upstash Redis Token                  | Token 字符串                                        | （空）         |
-| `NEXT_PUBLIC_ENABLE_REGISTER` | 允许用户注册（仅非 localstorage）    | `true` / `false`                                    | `false`        |
+| 变量                          | 描述                              | 可选值                                              | 默认值         |
+| ----------------------------- | --------------------------------- | --------------------------------------------------- | -------------- |
+| `NEXT_PUBLIC_STORAGE_TYPE`    | 存储后端                          | `localstorage`、`redis`、`kvrocks`、`d1`、`upstash` | `localstorage` |
+| `REDIS_URL`                   | Redis 连接地址                    | 连接 URL                                            | （空）         |
+| `KVROCKS_URL`                 | Kvrocks 连接地址                  | 连接 URL                                            | （空）         |
+| `KVROCKS_PASSWORD`            | Kvrocks 密码                      | 字符串                                              | （空）         |
+| `KVROCKS_DATABASE`            | Kvrocks 数据库编号                | `0`-`15`                                            | `0`            |
+| `UPSTASH_URL`                 | Upstash Redis URL                 | 连接 URL                                            | （空）         |
+| `UPSTASH_TOKEN`               | Upstash Redis Token               | Token 字符串                                        | （空）         |
+| `NEXT_PUBLIC_ENABLE_REGISTER` | 允许用户注册（仅非 localstorage） | `true` / `false`                                    | `false`        |
 
 ### 搜索与代理
 
-| 变量                          | 描述                         | 默认值 |
-| ----------------------------- | ---------------------------- | ------ |
-| `NEXT_PUBLIC_SEARCH_MAX_PAGE` | 最大搜索页数                 | `5`    |
-| `NEXT_PUBLIC_IMAGE_PROXY`     | 浏览器端图片代理 URL 前缀    | （空） |
-| `NEXT_PUBLIC_DOUBAN_PROXY`    | 浏览器端豆瓣 API 代理 URL    | （空） |
-| `NEXT_PUBLIC_SOURCE_PROBE`    | 浏览器端源站探测代理         | （空） |
-| `NEXT_PUBLIC_HLS_PROXY`       | 浏览器端 HLS 流代理          | （空） |
+| 变量                          | 描述                      | 默认值 |
+| ----------------------------- | ------------------------- | ------ |
+| `NEXT_PUBLIC_SEARCH_MAX_PAGE` | 最大搜索页数              | `5`    |
+| `NEXT_PUBLIC_IMAGE_PROXY`     | 浏览器端图片代理 URL 前缀 | （空） |
+| `NEXT_PUBLIC_DOUBAN_PROXY`    | 浏览器端豆瓣 API 代理 URL | （空） |
+| `NEXT_PUBLIC_SOURCE_PROBE`    | 浏览器端源站探测代理      | （空） |
+| `NEXT_PUBLIC_HLS_PROXY`       | 浏览器端 HLS 流代理       | （空） |
 
 ### Turnstile 与注册安全
 
-| 变量                                  | 描述                             | 默认值  |
-| ------------------------------------- | -------------------------------- | ------- |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`      | Cloudflare Turnstile 站点密钥    | （空）  |
-| `TURNSTILE_SECRET_KEY`                | Cloudflare Turnstile 密钥        | （空）  |
-| `REGISTER_TURNSTILE_REQUIRED`         | 注册时要求 Turnstile 验证        | `false` |
-| `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | 注册需要邀请码                   | `false` |
-| `REGISTER_INVITE_REQUIRED`            | 服务端邀请要求                   | （空）  |
-| `REGISTER_PASSWORD_MIN_LENGTH`        | 密码最小长度                     | `6`     |
-| `REGISTER_IP_WINDOW_SECONDS`          | IP 速率限制时间窗口（秒）        | `3600`  |
-| `REGISTER_IP_WINDOW_LIMIT`            | 每 IP 每窗口最大注册次数         | `3`     |
+| 变量                                   | 描述                          | 默认值  |
+| -------------------------------------- | ----------------------------- | ------- |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`       | Cloudflare Turnstile 站点密钥 | （空）  |
+| `TURNSTILE_SECRET_KEY`                 | Cloudflare Turnstile 密钥     | （空）  |
+| `REGISTER_TURNSTILE_REQUIRED`          | 注册时要求 Turnstile 验证     | `false` |
+| `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | 注册需要邀请码                | `false` |
+| `REGISTER_INVITE_REQUIRED`             | 服务端邀请要求                | （空）  |
+| `REGISTER_PASSWORD_MIN_LENGTH`         | 密码最小长度                  | `6`     |
+| `REGISTER_IP_WINDOW_SECONDS`           | IP 速率限制时间窗口（秒）     | `3600`  |
+| `REGISTER_IP_WINDOW_LIMIT`             | 每 IP 每窗口最大注册次数      | `3`     |
 
 ### AI 找片助手
 
-| 变量                          | 描述                                      | 默认值                     |
-| ----------------------------- | ----------------------------------------- | -------------------------- |
-| `AI_FIND_ENABLED`             | 启用 AI 找片助手                          | `false`                    |
-| `AI_BASE_URL`                 | OpenAI 兼容 API 地址                       | `https://api.openai.com/v1` |
-| `AI_API_KEY`                  | 服务端 API Key                             | （空）                     |
-| `AI_MODEL`                    | 模型名称                                  | （空）                     |
-| `AI_FIND_DEBUG`               | 启用调试日志                              | `false`                    |
-| `AI_TEMPERATURE`              | 模型温度（0-2）                            | `0.2`                      |
-| `AI_REQUEST_TIMEOUT_MS`       | 请求超时时间                              | `20000`                    |
-| `AI_MAX_TOKENS`               | 最大返回 Token 数                         | `800`                      |
-| `AI_THINKING_MODE`            | 思考模式：`auto`、`enabled`、`disabled`   | `auto`                     |
-| `AI_MAX_RESULTS`              | 最大候选搜索词                            | `5`                        |
-| `AI_DAILY_LIMIT_PER_USER`     | 每用户每日用量限制                        | `20`                       |
-| `AI_DAILY_LIMIT_PER_IP`       | 每 IP 每日用量限制                        | `60`                       |
-| `AI_DAILY_LIMIT_GLOBAL`       | 全局每日用量限制                          | （无限制）                 |
-| `AI_GROUP_DAILY_LIMIT_PER_USER` | 批量搜索每用户每日限制                  | `50`                       |
-| `AI_GROUP_DAILY_LIMIT_PER_IP`   | 批量搜索每 IP 每日限制                  | `120`                      |
-| `AI_GROUP_DAILY_LIMIT_GLOBAL`   | 批量搜索全局每日限制                    | （无限制）                 |
-| `AI_CACHE_TTL_SECONDS`        | 搜索缓存 TTL                              | `1800`                     |
+| 变量                            | 描述                                    | 默认值                      |
+| ------------------------------- | --------------------------------------- | --------------------------- |
+| `AI_FIND_ENABLED`               | 启用 AI 找片助手                        | `false`                     |
+| `AI_BASE_URL`                   | OpenAI 兼容 API 地址                    | `https://api.openai.com/v1` |
+| `AI_API_KEY`                    | 服务端 API Key                          | （空）                      |
+| `AI_MODEL`                      | 模型名称                                | （空）                      |
+| `AI_FIND_DEBUG`                 | 启用调试日志                            | `false`                     |
+| `AI_TEMPERATURE`                | 模型温度（0-2）                         | `0.2`                       |
+| `AI_REQUEST_TIMEOUT_MS`         | 请求超时时间                            | `20000`                     |
+| `AI_MAX_TOKENS`                 | 最大返回 Token 数                       | `800`                       |
+| `AI_THINKING_MODE`              | 思考模式：`auto`、`enabled`、`disabled` | `auto`                      |
+| `AI_MAX_RESULTS`                | 最大候选搜索词                          | `5`                         |
+| `AI_DAILY_LIMIT_PER_USER`       | 每用户每日用量限制                      | `20`                        |
+| `AI_DAILY_LIMIT_PER_IP`         | 每 IP 每日用量限制                      | `60`                        |
+| `AI_DAILY_LIMIT_GLOBAL`         | 全局每日用量限制                        | （无限制）                  |
+| `AI_GROUP_DAILY_LIMIT_PER_USER` | 批量搜索每用户每日限制                  | `50`                        |
+| `AI_GROUP_DAILY_LIMIT_PER_IP`   | 批量搜索每 IP 每日限制                  | `120`                       |
+| `AI_GROUP_DAILY_LIMIT_GLOBAL`   | 批量搜索全局每日限制                    | （无限制）                  |
+| `AI_CACHE_TTL_SECONDS`          | 搜索缓存 TTL                            | `1800`                      |
 
 ### Cloudflare 源站评分
 
-| 变量                                  | 描述                               | 默认值  |
-| ------------------------------------- | ---------------------------------- | ------- |
-| `SOURCE_RANKING_ENABLED`              | 启用源站评分                       | `false` |
-| `NEXT_PUBLIC_SOURCE_RANKING_ENABLED`  | 向前端公开评分状态                 | `false` |
-| `SOURCE_RANKING_FALLBACK_TO_LIVE`     | 降级到实时探测                     | `true`  |
-| `SOURCE_RANKING_CRON_ENABLED`         | 启用定时健康检查                   | `false` |
-| `SOURCE_RANKING_HAS_D1`               | 覆盖 D1 可用性（仅测试用）         | `false` |
-| `CRON_API_TOKEN`                      | `/api/cron` 接口的认证 Token       | （空）  |
+| 变量                                 | 描述                         | 默认值  |
+| ------------------------------------ | ---------------------------- | ------- |
+| `SOURCE_RANKING_ENABLED`             | 启用源站评分                 | `false` |
+| `NEXT_PUBLIC_SOURCE_RANKING_ENABLED` | 向前端公开评分状态           | `false` |
+| `SOURCE_RANKING_FALLBACK_TO_LIVE`    | 降级到实时探测               | `true`  |
+| `SOURCE_RANKING_CRON_ENABLED`        | 启用定时健康检查             | `false` |
+| `SOURCE_RANKING_HAS_D1`              | 覆盖 D1 可用性（仅测试用）   | `false` |
+| `CRON_API_TOKEN`                     | `/api/cron` 接口的认证 Token | （空）  |
 
 ### 验证部署
 
