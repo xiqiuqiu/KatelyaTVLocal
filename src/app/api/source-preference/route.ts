@@ -183,10 +183,11 @@ export async function POST(request: Request) {
   const missingSources = payload.sources.filter(
     (source) => source.sourceKey && !rankedKeys.has(source.sourceKey)
   );
+  const allowLiveProbeFallback =
+    payload.allowLiveProbeFallback ?? runtime.fallbackToLive;
   const shouldFallbackToLive =
-    rankedResults.length === 0 ||
-    ((payload.allowLiveProbeFallback ?? runtime.fallbackToLive) &&
-      missingSources.length > 0);
+    allowLiveProbeFallback &&
+    (rankedResults.length === 0 || missingSources.length > 0);
   const liveResults = shouldFallbackToLive
     ? await probeSourcesLive(
         rankedResults.length > 0 ? missingSources : payload.sources,
@@ -213,6 +214,10 @@ export async function POST(request: Request) {
     rankedResults.length > 0 && liveResults.length > 0
       ? 'mixed'
       : rankedResults.length > 0
+      ? 'd1'
+      : liveResults.length > 0
+      ? 'live'
+      : runtime.enabled && runtime.hasD1
       ? 'd1'
       : 'live';
 

@@ -235,4 +235,103 @@ describe('source preference route', () => {
       }),
     ]);
   });
+
+  it('does not live probe when fallback is disabled and d1 has no matching rank', async () => {
+    mockedReadLatestSourceRanks.mockResolvedValue([]);
+
+    const response = await POST(
+      new Request('https://app.example.com/api/source-preference', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://app.example.com',
+        },
+        body: JSON.stringify({
+          allowLiveProbeFallback: false,
+          sources: [
+            {
+              sourceKey: 'maotaizy-132249',
+              episodeUrl: 'https://media.example/1.m3u8',
+            },
+          ],
+        }),
+      })
+    );
+
+    expect(mockedReadLatestSourceRanks).toHaveBeenCalledWith(
+      expect.any(Object),
+      ['maotaizy-132249']
+    );
+    expect(mockedProbeSourcePlaybackWithCache).not.toHaveBeenCalled();
+
+    const payload = (await response.json()) as {
+      rankingSource: string;
+      confidence: string;
+      orderedSourceKeys: string[];
+      results: Array<Record<string, unknown>>;
+    };
+
+    expect(payload.rankingSource).toBe('d1');
+    expect(payload.confidence).toBe('low');
+    expect(payload.orderedSourceKeys).toEqual([]);
+    expect(payload.results).toEqual([]);
+  });
+
+  it('keeps partial d1 ranks without probing missing sources when fallback is disabled', async () => {
+    mockedReadLatestSourceRanks.mockResolvedValue([
+      {
+        sourceKey: 'alpha',
+        kind: 'direct',
+        reason: '7 天快照优先直连',
+        domain: 'alpha.example',
+        rankScore: 88,
+        updatedAt: 1710000000000,
+        rankingSource: 'd1',
+      },
+    ]);
+
+    const response = await POST(
+      new Request('https://app.example.com/api/source-preference', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://app.example.com',
+        },
+        body: JSON.stringify({
+          allowLiveProbeFallback: false,
+          sources: [
+            {
+              sourceKey: 'alpha',
+              episodeUrl: 'https://alpha.example/1.m3u8',
+            },
+            {
+              sourceKey: 'beta',
+              episodeUrl: 'https://beta.example/1.m3u8',
+            },
+          ],
+        }),
+      })
+    );
+
+    expect(mockedProbeSourcePlaybackWithCache).not.toHaveBeenCalled();
+
+    const payload = (await response.json()) as {
+      rankingSource: string;
+      confidence: string;
+      orderedSourceKeys: string[];
+      results: Array<Record<string, unknown>>;
+    };
+
+    expect(payload.rankingSource).toBe('d1');
+    expect(payload.confidence).toBe('medium');
+    expect(payload.orderedSourceKeys).toEqual(['alpha']);
+    expect(payload.results).toEqual([
+      expect.objectContaining({
+        sourceKey: 'alpha',
+        kind: 'direct',
+        rankingSource: 'd1',
+        rankScore: 88,
+      }),
+    ]);
+  });
 });
