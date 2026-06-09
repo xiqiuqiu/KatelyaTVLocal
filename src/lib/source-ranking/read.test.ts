@@ -1,7 +1,7 @@
 import { readLatestSourceRanks } from '@/lib/source-ranking/read';
 
 describe('source ranking read', () => {
-  it('reads only requested 24h snapshot rows and merges latest probe plus feedback details', async () => {
+  it('reads requested 7-day snapshot rows and merges latest probe plus feedback details', async () => {
     const all = jest
       .fn()
       .mockResolvedValueOnce({
@@ -89,7 +89,7 @@ describe('source ranking read', () => {
     expect(bind).toHaveBeenNthCalledWith(
       1,
       '24h',
-      1709914000000,
+      1709395600000,
       'alpha',
       'beta',
       'missing'
@@ -99,14 +99,14 @@ describe('source ranking read', () => {
       'alpha',
       'beta',
       'missing',
-      1709914000000
+      1709395600000
     );
     expect(bind).toHaveBeenNthCalledWith(
       3,
       'alpha',
       'beta',
       'missing',
-      1709914000000
+      1709395600000
     );
     expect(results).toEqual([
       {
@@ -122,7 +122,7 @@ describe('source ranking read', () => {
         speedKbps: 2450,
         updatedAt: 1710000300000,
         rankingSource: 'd1',
-        rankScore: 93.5,
+        rankScore: 99.5,
       },
       {
         sourceKey: 'beta',

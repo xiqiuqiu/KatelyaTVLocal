@@ -13,13 +13,30 @@ describe('source ranking offline probe', () => {
     probeSourcePlaybackUpstream as jest.MockedFunction<
       typeof probeSourcePlaybackUpstream
     >;
+  const originalFetch = global.fetch;
+
+  function mockTextResponse(text: string) {
+    return {
+      ok: true,
+      text: async () => text,
+    } as Response;
+  }
+
+  function mockBinaryResponse(bytes: number) {
+    return {
+      ok: true,
+      arrayBuffer: async () => new Uint8Array(bytes).buffer,
+    } as Response;
+  }
 
   afterEach(() => {
     jest.restoreAllMocks();
     mockedProbeSourcePlaybackUpstream.mockReset();
+    global.fetch = originalFetch;
+    jest.useRealTimers();
   });
 
-  it('maps upstream direct probe results into offline ranking shape', async () => {
+  it('maps upstream direct probe results and hls metrics into offline ranking shape', async () => {
     mockedProbeSourcePlaybackUpstream.mockResolvedValue({
       kind: 'direct',
       reason: '媒体地址可直接跨域访问',
@@ -27,6 +44,57 @@ describe('source ranking offline probe', () => {
       upstreamStatus: 200,
       probeTimeMs: 321,
     });
+    jest.spyOn(Date, 'now')
+      .mockReturnValueOnce(1710000000000)
+      .mockReturnValueOnce(1710000000100)
+      .mockReturnValueOnce(1710000000350);
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock;
+    fetchMock.mockResolvedValueOnce(
+      mockTextResponse(
+        `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=2400000,RESOLUTION=1920x1080
+high/index.m3u8`
+      )
+    ).mockResolvedValueOnce(
+      mockTextResponse(
+        `#EXTM3U
+#EXTINF:4,
+seg-1.ts`
+      )
+    ).mockResolvedValueOnce(
+      mockBinaryResponse(256 * 1024)
+    );
+
+    const result = await probePlaybackForRanking(
+      'https://media.example.com/video.m3u8',
+      'https://app.example.com'
+    );
+
+    expect(result).toEqual({
+      kind: 'direct',
+      reason: '媒体地址可直接跨域访问',
+      domain: 'media.example.com',
+      upstreamStatus: 200,
+      probeTimeMs: 321,
+      resolutionLabel: '1080p',
+      firstSegmentLatencyMs: expect.any(Number),
+      firstSegmentSpeedKbps: expect.any(Number),
+    });
+    expect(result.firstSegmentLatencyMs).toBeGreaterThan(0);
+    expect(result.firstSegmentSpeedKbps).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps playability result when hls metric probing fails', async () => {
+    mockedProbeSourcePlaybackUpstream.mockResolvedValue({
+      kind: 'proxy',
+      reason: '需要代理',
+      domain: 'media.example.com',
+      upstreamStatus: 403,
+      probeTimeMs: 654,
+    });
+    global.fetch = jest.fn().mockRejectedValue(new Error('timeout'));
 
     await expect(
       probePlaybackForRanking(
@@ -34,11 +102,11 @@ describe('source ranking offline probe', () => {
         'https://app.example.com'
       )
     ).resolves.toEqual({
-      kind: 'direct',
-      reason: '媒体地址可直接跨域访问',
+      kind: 'proxy',
+      reason: '需要代理',
       domain: 'media.example.com',
-      upstreamStatus: 200,
-      probeTimeMs: 321,
+      upstreamStatus: 403,
+      probeTimeMs: 654,
       resolutionLabel: null,
       firstSegmentLatencyMs: null,
       firstSegmentSpeedKbps: null,

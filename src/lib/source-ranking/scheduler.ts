@@ -45,6 +45,7 @@ interface RecentFeedbackSampleRow {
   sourceKey: string;
   title: string | null;
   recordedAt: number;
+  eventCount?: number;
 }
 
 interface SampledProbeTask extends OfflineProbeTask {
@@ -104,11 +105,17 @@ export interface LowFrequencySourceRankingOptions {
   ) => Promise<void>;
 }
 
-const MAX_RECENT_RECORDS = 12;
-const MAX_TASKS_TOTAL = 12;
+const MAX_SAMPLE_CANDIDATES = 48;
+const MAX_SAMPLES_PER_USER = 2;
+const MAX_TASKS_TOTAL = 48;
 const MAX_TASKS_PER_SOURCE = 3;
 const MAX_EPISODES_PER_DETAIL = 3;
 const DEFAULT_WINDOW_KEY = '24h';
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FEEDBACK_SAMPLE_LOOKBACK_MS = 7 * DAY_MS;
+const PROBE_RESULT_RETENTION_MS = 30 * DAY_MS;
+const PLAYBACK_FEEDBACK_RETENTION_MS = 60 * DAY_MS;
+const PROBE_RUN_RETENTION_MS = 90 * DAY_MS;
 
 function createId(prefix = 'source-ranking'): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
@@ -239,19 +246,25 @@ async function loadRecentPlaySamples(
   for (const userName of Array.from(userSet)) {
     try {
       const playRecords = await getPlayRecords(userName);
-      Object.entries(playRecords).forEach(([key, record]) => {
-        const parsedKey = parseRecordKey(key);
-        if (!parsedKey) {
-          return;
-        }
+      const userSamples = Object.entries(playRecords)
+        .map(([key, record]) => {
+          const parsedKey = parseRecordKey(key);
+          if (!parsedKey) {
+            return null;
+          }
 
-        samples.push({
-          userName,
-          source: parsedKey.source,
-          id: parsedKey.id,
-          record,
-        });
-      });
+          return {
+            userName,
+            source: parsedKey.source,
+            id: parsedKey.id,
+            record,
+          } satisfies RecentPlaySample;
+        })
+        .filter((sample): sample is RecentPlaySample => Boolean(sample))
+        .sort((left, right) => right.record.save_time - left.record.save_time)
+        .slice(0, MAX_SAMPLES_PER_USER);
+
+      samples.push(...userSamples);
     } catch (error) {
       console.error(`source ranking: load play records failed for ${userName}`, error);
     }
@@ -259,52 +272,106 @@ async function loadRecentPlaySamples(
 
   return samples
     .sort((left, right) => right.record.save_time - left.record.save_time)
-    .slice(0, MAX_RECENT_RECORDS);
+    .slice(0, MAX_SAMPLE_CANDIDATES);
 }
 
-async function loadRecentFeedbackSamples(
-  database: D1DatabaseLike
+function feedbackRowToSample(
+  row: RecentFeedbackSampleRow,
+  userName: string
+): RecentPlaySample | null {
+  const parsed = parseSourceIdentityKey(row.sourceKey);
+  if (!parsed) {
+    return null;
+  }
+
+  return {
+    userName,
+    source: parsed.source,
+    id: parsed.id,
+    record: {
+      title: row.title || parsed.id,
+      source_name: parsed.source,
+      cover: '',
+      year: '',
+      index: 1,
+      total_episodes: 1,
+      play_time: 0,
+      total_time: 0,
+      save_time: row.recordedAt,
+      search_title: row.title || parsed.id,
+    },
+  };
+}
+
+async function loadFeedbackDerivedSamples(
+  database: D1DatabaseLike,
+  now: number
 ): Promise<RecentPlaySample[]> {
-  const result = await database
+  const cutoffTime = now - FEEDBACK_SAMPLE_LOOKBACK_MS;
+  const priorityResult = await database
     .prepare(
       `SELECT
          source_key AS sourceKey,
          title,
          recorded_at AS recordedAt
        FROM playback_feedback_events
-       WHERE startup_success = 1
-       ORDER BY recorded_at DESC
+       WHERE recorded_at >= ?
+       ORDER BY
+         CASE
+           WHEN startup_success = 0 THEN 0
+           WHEN startup_time_ms > 5000 THEN 1
+           WHEN switched_to_proxy = 1 THEN 2
+           ELSE 3
+         END,
+         recorded_at DESC
        LIMIT ?`
     )
-    .bind(MAX_RECENT_RECORDS)
+    .bind(cutoffTime, MAX_SAMPLE_CANDIDATES)
+    .all<RecentFeedbackSampleRow>();
+  const popularResult = await database
+    .prepare(
+      `SELECT
+         source_key AS sourceKey,
+         MAX(title) AS title,
+         MAX(recorded_at) AS recordedAt,
+         COUNT(*) AS eventCount
+       FROM playback_feedback_events
+       WHERE recorded_at >= ?
+       GROUP BY source_key
+       ORDER BY eventCount DESC, recordedAt DESC
+       LIMIT ?`
+    )
+    .bind(cutoffTime, MAX_SAMPLE_CANDIDATES)
     .all<RecentFeedbackSampleRow>();
 
-  return (result.results || [])
-    .map((row) => {
-      const parsed = parseSourceIdentityKey(row.sourceKey);
-      if (!parsed) {
-        return null;
-      }
+  return mergeProbeSamples([
+    ...(priorityResult.results || [])
+      .map((row) => feedbackRowToSample(row, 'feedback-priority'))
+      .filter((sample): sample is RecentPlaySample => Boolean(sample)),
+    ...(popularResult.results || [])
+      .map((row) => feedbackRowToSample(row, 'feedback-popular'))
+      .filter((sample): sample is RecentPlaySample => Boolean(sample)),
+  ]);
+}
 
-      return {
-        userName: 'feedback-fallback',
-        source: parsed.source,
-        id: parsed.id,
-        record: {
-          title: row.title || parsed.id,
-          source_name: parsed.source,
-          cover: '',
-          year: '',
-          index: 1,
-          total_episodes: 1,
-          play_time: 0,
-          total_time: 0,
-          save_time: row.recordedAt,
-          search_title: row.title || parsed.id,
-        },
-      } satisfies RecentPlaySample;
-    })
-    .filter((sample): sample is RecentPlaySample => Boolean(sample));
+function mergeProbeSamples(samples: RecentPlaySample[]): RecentPlaySample[] {
+  const seen = new Set<string>();
+  const merged: RecentPlaySample[] = [];
+
+  for (const sample of samples) {
+    const key = `${sample.source}+${sample.id}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    merged.push(sample);
+    if (merged.length >= MAX_SAMPLE_CANDIDATES) {
+      break;
+    }
+  }
+
+  return merged;
 }
 
 async function buildProbeTasksFromRecentPlays(
@@ -443,7 +510,25 @@ async function insertProbeRun(
        (id, trigger_type, started_at, status, notes)
        VALUES (?, ?, ?, ?, ?)`
     )
-    .bind(runId, triggerType, startedAt, 'running', 'low-frequency personal check')
+    .bind(runId, triggerType, startedAt, 'running', 'bounded multi-user source check')
+    .run();
+}
+
+async function cleanupOldSourceRankingData(
+  database: D1DatabaseLike,
+  now: number
+): Promise<void> {
+  await database
+    .prepare('DELETE FROM source_probe_results WHERE measured_at < ?')
+    .bind(now - PROBE_RESULT_RETENTION_MS)
+    .run();
+  await database
+    .prepare('DELETE FROM playback_feedback_events WHERE recorded_at < ?')
+    .bind(now - PLAYBACK_FEEDBACK_RETENTION_MS)
+    .run();
+  await database
+    .prepare('DELETE FROM source_probe_runs WHERE started_at < ?')
+    .bind(now - PROBE_RUN_RETENTION_MS)
     .run();
 }
 
@@ -561,10 +646,11 @@ export async function runLowFrequencySourceRankingCheck(
   await insertProbeRun(database, runId, triggerType, startedAt);
 
   try {
-    let samples = await loadRecentPlaySamples(getUsers, getPlayRecords);
-    if (samples.length === 0) {
-      samples = await loadRecentFeedbackSamples(database);
-    }
+    await cleanupOldSourceRankingData(database, startedAt);
+
+    const playSamples = await loadRecentPlaySamples(getUsers, getPlayRecords);
+    const feedbackSamples = await loadFeedbackDerivedSamples(database, startedAt);
+    const samples = mergeProbeSamples([...playSamples, ...feedbackSamples]);
     sampledRecordCount = samples.length;
 
     let tasks: SampledProbeTask[] = [];

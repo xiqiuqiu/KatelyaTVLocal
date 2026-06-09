@@ -256,7 +256,7 @@ describe('source ranking scheduler', () => {
         'cron',
         1710000000001,
         'running',
-        'low-frequency personal check',
+        'bounded multi-user source check',
       ]);
       expect(runUpdate?.values?.[1]).toBe('completed');
       expect(snapshotWrites).toHaveLength(2);
@@ -353,5 +353,96 @@ describe('source ranking scheduler', () => {
       errorCount: 0,
     });
     expect(persistedTasks).toEqual(['mdzy-16302']);
+  });
+
+  it('caps multi-user sampling and total probe tasks', async () => {
+    const originalUsername = process.env.USERNAME;
+    delete process.env.USERNAME;
+    const statements: StatementRecord[] = [];
+    const persistedTasks: string[] = [];
+    const fetchDetail = jest.fn<
+      Promise<SearchResult>,
+      [{ source: string; id: string; fallbackTitle?: string }]
+    >(({ source, id }) =>
+      Promise.resolve({
+        id,
+        title: `${source}-${id}`,
+        poster: '',
+        episodes: [
+          `https://${source}.example.com/${id}-1.m3u8`,
+          `https://${source}.example.com/${id}-2.m3u8`,
+          `https://${source}.example.com/${id}-3.m3u8`,
+        ],
+        source,
+        source_name: source,
+        year: '2026',
+      })
+    );
+
+    try {
+      const result = await runLowFrequencySourceRankingCheck({
+        env: { DB: createFakeDatabase(statements) },
+        origin: 'https://app.example.com',
+        idFactory: () => 'run-budget',
+        now: () => 1710000000000,
+        getUsers: async () =>
+          Array.from({ length: 10 }, (_, index) => `user-${index}`),
+        getPlayRecords: async (userName) => {
+          const userIndex = Number(userName.split('-')[1]);
+          return Object.fromEntries(
+            Array.from({ length: 5 }, (_, index) => [
+              `src${userIndex}-${index}+video-${index}`,
+              createPlayRecord({
+                title: `${userName}-${index}`,
+                source_name: `src${userIndex}-${index}`,
+                save_time: 1000 - index,
+                search_title: `${userName}-${index}`,
+              }),
+            ])
+          );
+        },
+        fetchDetail,
+        probePlayback: async () => ({
+          kind: 'direct',
+          domain: 'media.example.com',
+          reason: '可直连',
+          upstreamStatus: 200,
+          probeTimeMs: 100,
+          resolutionLabel: '1080p',
+          firstSegmentLatencyMs: 120,
+          firstSegmentSpeedKbps: 4000,
+        }),
+        persistProbeResult: async (_env, _runId, task) => {
+          persistedTasks.push(task.sourceKey);
+        },
+      });
+
+      expect(result.sampledRecordCount).toBe(20);
+      expect(result.taskCount).toBe(48);
+      expect(persistedTasks).toHaveLength(48);
+      expect(fetchDetail).toHaveBeenCalledTimes(16);
+      expect(
+        fetchDetail.mock.calls.filter(([options]) =>
+          options.source.startsWith('src0-')
+        )
+      ).toHaveLength(2);
+      expect(
+        statements.filter((statement) =>
+          statement.sql.includes('DELETE FROM source_probe_results')
+        )
+      ).toHaveLength(1);
+      expect(
+        statements.filter((statement) =>
+          statement.sql.includes('DELETE FROM playback_feedback_events')
+        )
+      ).toHaveLength(1);
+      expect(
+        statements.filter((statement) =>
+          statement.sql.includes('DELETE FROM source_probe_runs')
+        )
+      ).toHaveLength(1);
+    } finally {
+      process.env.USERNAME = originalUsername;
+    }
   });
 });

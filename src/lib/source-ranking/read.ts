@@ -52,6 +52,9 @@ interface PlaybackFeedbackRow {
   recordedAt: number;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const SNAPSHOT_LOOKBACK_MS = 7 * DAY_MS;
+
 function getSourceRankingDatabase(
   env?: RuntimeSource
 ): D1DatabaseLike | null {
@@ -91,13 +94,19 @@ function getFeedbackRankAdjustment(rows: PlaybackFeedbackRow[]): number {
   return rows.reduce((score, row) => {
     let next = score;
     if (row.startupSuccess) {
-      next += 2;
+      next += 4;
     } else {
       next -= 14;
     }
 
-    if (row.startupTimeMs && row.startupTimeMs > 5000) {
-      next -= 6;
+    if (typeof row.startupTimeMs === 'number') {
+      if (row.startupSuccess && row.startupTimeMs < 2500) {
+        next += 4;
+      }
+
+      if (row.startupTimeMs > 5000) {
+        next -= 6;
+      }
     }
 
     if (row.switchedToProxy) {
@@ -106,6 +115,15 @@ function getFeedbackRankAdjustment(rows: PlaybackFeedbackRow[]): number {
 
     return next;
   }, 0);
+}
+
+function getFreshnessRankAdjustment(updatedAt: number, now: number): number {
+  const ageDays = Math.max(0, (now - updatedAt) / DAY_MS);
+  if (ageDays <= 1) {
+    return 0;
+  }
+
+  return -Number(Math.min(8, (ageDays - 1) * 1.5).toFixed(2));
 }
 
 function inferKindFromSnapshot(
@@ -153,7 +171,7 @@ export async function readLatestSourceRanks(
   }
 
   const placeholders = buildPlaceholders(sourceKeys.length);
-  const cutoffTime = now - 24 * 60 * 60 * 1000;
+  const cutoffTime = now - SNAPSHOT_LOOKBACK_MS;
   const snapshotRows =
     (
       await db
@@ -256,6 +274,10 @@ export async function readLatestSourceRanks(
       const feedbackAdjustment = getFeedbackRankAdjustment(
         feedbackRowsByKey.get(snapshot.sourceKey) || []
       );
+      const freshnessAdjustment = getFreshnessRankAdjustment(
+        snapshot.updatedAt,
+        now
+      );
 
       return {
         sourceKey: snapshot.sourceKey,
@@ -276,7 +298,13 @@ export async function readLatestSourceRanks(
           feedbackRowsByKey.get(snapshot.sourceKey)?.[0]?.recordedAt || 0
         ),
         rankingSource: 'd1',
-        rankScore: Number((snapshot.finalScore + feedbackAdjustment).toFixed(2)),
+        rankScore: Number(
+          (
+            snapshot.finalScore +
+            feedbackAdjustment +
+            freshnessAdjustment
+          ).toFixed(2)
+        ),
       } satisfies SourcePreferenceResult;
     });
 }
