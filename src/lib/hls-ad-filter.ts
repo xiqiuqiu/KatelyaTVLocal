@@ -692,6 +692,18 @@ export function getM3U8AdFilterDebugInfo(
   };
 }
 
+export function observeM3U8AdSignals(
+  content: string,
+  baseUrl?: string
+): M3U8AdFilterDebugInfo {
+  const simulatedFilteredContent = filterAdsFromM3U8(content, baseUrl);
+  return getM3U8AdFilterDebugInfo(
+    content,
+    simulatedFilteredContent,
+    baseUrl
+  );
+}
+
 function formatDurationClock(totalSeconds: number): string {
   const roundedSeconds = Math.max(0, Math.round(totalSeconds));
   const minutes = Math.floor(roundedSeconds / 60);

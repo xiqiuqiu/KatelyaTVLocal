@@ -117,7 +117,7 @@ describe('hls proxy route', () => {
     jest.restoreAllMocks();
   });
 
-  it('keeps filtering ads by default for existing proxy callers', async () => {
+  it('keeps ad-like segments by default for playable proxy callers', async () => {
     const response = await GET(
       new MockRequest(
         'https://app.example.com/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8'
@@ -125,7 +125,10 @@ describe('hls proxy route', () => {
     );
 
     const body = await response.text();
-    expect(body).not.toContain('ad-1.ts');
+    expect(body).toContain(
+      'https://app.example.com/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Fad-1.ts'
+    );
+    expect(body).toContain('#EXT-X-CUE-OUT:20');
     expect(body).toContain(
       'https://app.example.com/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Fcontent-before.ts'
     );

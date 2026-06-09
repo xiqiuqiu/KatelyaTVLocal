@@ -81,7 +81,7 @@ describe('admin playback debug route', () => {
         playbackDomain: 'example.com',
         title: '鬼泣',
         runtime: 'native-hls',
-        playlistFilter: 'proxy-playlist',
+        playlistFilter: 'proxy-observe',
         segmentMode: 'direct',
         recoveryProfile: 'native-video',
         currentTime: 438.2,

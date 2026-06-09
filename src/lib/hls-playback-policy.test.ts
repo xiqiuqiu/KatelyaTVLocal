@@ -41,7 +41,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
     expect(result.runtime).toBe('hlsjs');
-    expect(result.playlistFilter).toBe('client-loader');
+    expect(result.playlistFilter).toBe('client-observe');
     expect(result.segmentMode).toBe('direct');
     expect(result.recoveryProfile).toBe('hlsjs');
     expect(result.forcedProxyForAdFiltering).toBe(false);
@@ -60,7 +60,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.mode).toBe('proxy');
     expect(result.url).toBe(proxyUrl);
     expect(result.runtime).toBe('hlsjs');
-    expect(result.playlistFilter).toBe('proxy-playlist');
+    expect(result.playlistFilter).toBe('proxy-observe');
     expect(result.segmentMode).toBe('proxy');
     expect(result.recoveryProfile).toBe('hlsjs');
     expect(result.forcedProxyForAdFiltering).toBe(false);
@@ -79,7 +79,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.mode).toBe('proxy');
     expect(result.url).toBe(proxyUrl);
     expect(result.runtime).toBe('native-hls');
-    expect(result.playlistFilter).toBe('proxy-playlist');
+    expect(result.playlistFilter).toBe('proxy-observe');
     expect(result.segmentMode).toBe('proxy');
     expect(result.recoveryProfile).toBe('native-video');
     expect(result.forcedProxyForAdFiltering).toBe(false);

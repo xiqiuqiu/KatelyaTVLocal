@@ -1,7 +1,7 @@
 export type PlaybackDebugRuntime = 'hlsjs' | 'native-hls' | string;
 export type PlaybackDebugPlaylistFilter =
-  | 'client-loader'
-  | 'proxy-playlist'
+  | 'client-observe'
+  | 'proxy-observe'
   | string;
 export type PlaybackDebugSegmentMode = 'direct' | 'proxy' | string;
 export type PlaybackDebugRecoveryProfile = 'hlsjs' | 'native-video' | string;

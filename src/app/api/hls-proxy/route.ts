@@ -2,14 +2,11 @@ import { NextResponse } from 'next/server';
 
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
 import {
-  filterAdsFromM3U8,
   formatM3U8AdFilterDebugMessage,
-  getM3U8AdFilterDebugInfo,
+  observeM3U8AdSignals,
 } from '@/lib/hls-ad-filter';
-import {
-  HlsMediaSegmentMode,
-  rewritePlaylistContent,
-} from '@/lib/hls-proxy-rewrite';
+import type { HlsMediaSegmentMode } from '@/lib/hls-proxy-rewrite';
+import { rewritePlaylistContent } from '@/lib/hls-proxy-rewrite';
 
 export const runtime = 'edge';
 
@@ -20,7 +17,7 @@ const PLAYLIST_CONTENT_TYPES = [
   'audio/x-mpegurl',
 ];
 
-const proxyAdFilterDebugLogKeys = new Set<string>();
+const proxyAdObserveDebugLogKeys = new Set<string>();
 
 function buildProxyPrefix(
   requestUrl: URL,
@@ -42,16 +39,11 @@ function buildProxyPrefix(
   return `${requestUrl.origin}/api/hls-proxy?${params.toString()}`;
 }
 
-function logProxyAdFilterDebug(
+function logProxyAdObserveDebug(
   targetUrl: string,
-  originalContent: string,
-  filteredContent: string
+  playlistContent: string
 ): void {
-  const debugInfo = getM3U8AdFilterDebugInfo(
-    originalContent,
-    filteredContent,
-    targetUrl
-  );
+  const debugInfo = observeM3U8AdSignals(playlistContent, targetUrl);
 
   if (!debugInfo.shouldLog) {
     return;
@@ -68,17 +60,20 @@ function logProxyAdFilterDebug(
     removedBlocks: debugInfo.summary.removedBlocks.length,
   });
 
-  if (proxyAdFilterDebugLogKeys.has(logKey)) {
+  if (proxyAdObserveDebugLogKeys.has(logKey)) {
     return;
   }
 
-  proxyAdFilterDebugLogKeys.add(logKey);
+  proxyAdObserveDebugLogKeys.add(logKey);
 
-  const message = `[去广告][代理] ${formatM3U8AdFilterDebugMessage(debugInfo)}`;
+  const message = `[去广告][代理观测] ${formatM3U8AdFilterDebugMessage(
+    debugInfo
+  )}，仅记录，未移除分片`;
 
   console.log(message, {
     targetUrl,
-    removedLineCount: debugInfo.removedLineCount,
+    wouldRemoveLineCount: debugInfo.removedLineCount,
+    removed: false,
     removedBlocks: debugInfo.summary.removedBlocks,
     summary: debugInfo.summary,
   });
@@ -215,12 +210,7 @@ export async function GET(request: Request) {
       const playlistContent = await upstreamResponse.text();
 
       if (observeOnly) {
-        const observedPlaylist = filterAdsFromM3U8(playlistContent, targetUrl);
-        const adDebugInfo = getM3U8AdFilterDebugInfo(
-          playlistContent,
-          observedPlaylist,
-          targetUrl
-        );
+        const adDebugInfo = observeM3U8AdSignals(playlistContent, targetUrl);
         const response = NextResponse.json(
           {
             observeOnly: true,
@@ -228,6 +218,7 @@ export async function GET(request: Request) {
             targetUrl,
             summary: adDebugInfo.summary,
             removedLineCount: adDebugInfo.removedLineCount,
+            wouldRemoveLineCount: adDebugInfo.removedLineCount,
           },
           {
             headers: {
@@ -238,16 +229,12 @@ export async function GET(request: Request) {
         return addCorsHeaders(response);
       }
 
-      const filteredPlaylist = shouldFilterAds
-        ? filterAdsFromM3U8(playlistContent, targetUrl)
-        : playlistContent;
-
       if (shouldFilterAds) {
-        logProxyAdFilterDebug(targetUrl, playlistContent, filteredPlaylist);
+        logProxyAdObserveDebug(targetUrl, playlistContent);
       }
 
       const rewrittenPlaylist = rewritePlaylistContent(
-        filteredPlaylist,
+        playlistContent,
         targetUrl,
         proxyPrefix,
         { mediaSegmentMode }

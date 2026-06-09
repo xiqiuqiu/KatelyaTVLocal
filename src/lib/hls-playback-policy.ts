@@ -1,7 +1,10 @@
 import type { SourcePlaybackMode } from './types';
 
 export type HlsPlaybackRuntime = 'hlsjs' | 'native-hls';
-export type HlsPlaylistFilterMode = 'client-loader' | 'proxy-playlist' | 'none';
+export type HlsPlaylistFilterMode =
+  | 'client-observe'
+  | 'proxy-observe'
+  | 'none';
 export type HlsSegmentMode = 'direct' | 'proxy';
 export type HlsRecoveryProfile = 'hlsjs' | 'native-video';
 
@@ -83,7 +86,7 @@ export function resolveHlsPlaybackPolicy({
         mode: 'proxy',
         url: proxyUrl,
         runtime,
-        playlistFilter: 'proxy-playlist',
+        playlistFilter: 'proxy-observe',
         segmentMode: 'proxy',
         recoveryProfile,
         reason: 'remembered-proxy',
@@ -95,7 +98,7 @@ export function resolveHlsPlaybackPolicy({
       mode: 'direct',
       url: directUrl,
       runtime,
-      playlistFilter: isAppleNativeHlsEnvironment ? 'none' : 'client-loader',
+      playlistFilter: isAppleNativeHlsEnvironment ? 'none' : 'client-observe',
       segmentMode: 'direct',
       recoveryProfile,
       reason: 'proxy-unavailable',
@@ -120,7 +123,7 @@ export function resolveHlsPlaybackPolicy({
     mode: 'direct',
     url: directUrl,
     runtime,
-    playlistFilter: 'client-loader',
+    playlistFilter: 'client-observe',
     segmentMode: 'direct',
     recoveryProfile,
     reason: 'direct-preferred',

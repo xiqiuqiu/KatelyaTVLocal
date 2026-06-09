@@ -21,10 +21,10 @@ import {
   savePlayRecord,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import type { M3U8AdFilterDebugInfo } from '@/lib/hls-ad-filter';
 import {
-  filterAdsFromM3U8,
   formatM3U8AdFilterDebugMessage,
-  getM3U8AdFilterDebugInfo,
+  observeM3U8AdSignals,
 } from '@/lib/hls-ad-filter';
 import type { HlsPlaybackPolicyResult } from '@/lib/hls-playback-policy';
 import {
@@ -207,20 +207,15 @@ function formatDebugPlaybackTime(value?: number | null) {
   return `${minutes}:${seconds}`;
 }
 
-function logDirectAdFilterDebug(
+function logDirectAdObserveDebug(
   playlistUrl: string | undefined,
   originalContent: string,
-  filteredContent: string,
   playlistType: string | undefined
-): void {
-  const debugInfo = getM3U8AdFilterDebugInfo(
-    originalContent,
-    filteredContent,
-    playlistUrl
-  );
+): M3U8AdFilterDebugInfo | null {
+  const debugInfo = observeM3U8AdSignals(originalContent, playlistUrl);
 
   if (!debugInfo.shouldLog) {
-    return;
+    return null;
   }
 
   const logKey = JSON.stringify({
@@ -236,17 +231,20 @@ function logDirectAdFilterDebug(
   });
 
   if (directAdFilterDebugLogKeys.has(logKey)) {
-    return;
+    return null;
   }
 
   directAdFilterDebugLogKeys.add(logKey);
 
-  const message = `[去广告][直连] ${formatM3U8AdFilterDebugMessage(debugInfo)}`;
+  const message = `[去广告][直连观测] ${formatM3U8AdFilterDebugMessage(
+    debugInfo
+  )}，仅记录，未移除分片`;
 
   console.log(message, {
     playlistUrl,
     playlistType,
-    removedLineCount: debugInfo.removedLineCount,
+    wouldRemoveLineCount: debugInfo.removedLineCount,
+    removed: false,
     removedBlocks: debugInfo.summary.removedBlocks,
     summary: debugInfo.summary,
   });
@@ -265,6 +263,8 @@ function logDirectAdFilterDebug(
       }))
     );
   }
+
+  return debugInfo;
 }
 
 function PlayPageClient() {
@@ -1239,7 +1239,7 @@ function PlayPageClient() {
           ...currentPolicy,
           mode: 'proxy',
           url: proxyUrl,
-          playlistFilter: 'proxy-playlist',
+          playlistFilter: 'proxy-observe',
           segmentMode: 'proxy',
           forcedProxyForAdFiltering: false,
           reason: 'remembered-proxy',
@@ -1426,7 +1426,7 @@ function PlayPageClient() {
 
     if (policy.reason === 'apple-native-hls-ad-filter') {
       console.info(
-        '[去广告][播放策略] 当前终端可能使用系统 HLS，已使用代理过滤播放列表',
+        '[去广告][播放策略] 当前终端可能使用系统 HLS，已使用代理播放并仅观测广告信号',
         {
           directUrl,
           proxyUrl,
@@ -1440,7 +1440,7 @@ function PlayPageClient() {
 
     if (policy.reason === 'proxy-unavailable') {
       console.warn(
-        '[去广告][播放策略] 当前终端可能绕过前端过滤，但代理地址不可用，暂时使用直连播放',
+        '[去广告][播放策略] 代理地址不可用，暂时使用直连播放并仅观测广告信号',
         {
           directUrl,
           playbackMode: policy.mode,
@@ -2022,23 +2022,34 @@ function PlayPageClient() {
               stats: any,
               context: any
             ) {
-              // 如果是m3u8文件，处理内容以移除广告分段
+              // 如果是m3u8文件，仅观测广告信号，不改写播放器实际使用的playlist。
               if (response.data && typeof response.data === 'string') {
                 const originalContent = response.data;
                 const playlistUrl = response.url || context?.url;
-                const filteredContent = filterAdsFromM3U8(
-                  originalContent,
-                  playlistUrl
-                );
-
-                logDirectAdFilterDebug(
+                const debugInfo = logDirectAdObserveDebug(
                   playlistUrl,
                   originalContent,
-                  filteredContent,
                   context?.type
                 );
-
-                response.data = filteredContent;
+                if (debugInfo) {
+                  emitPlaybackDebugLog(
+                    'hlsjs-ad-observe',
+                    'HLS.js 直连播放广告信号观测完成',
+                    {
+                      playlistUrl,
+                      playlistType: context?.type || null,
+                      removed: false,
+                      removedLineCount: debugInfo.removedLineCount,
+                      wouldRemoveLineCount: debugInfo.removedLineCount,
+                      summary: debugInfo.summary,
+                      sourceKey: getCurrentSourceKey() || null,
+                      episodeIndex: currentEpisodeIndexRef.current,
+                    },
+                    {
+                      playbackUrl: playlistUrl || videoUrlRef.current,
+                    }
+                  );
+                }
               }
               return onSuccess(response, stats, context, null);
             };

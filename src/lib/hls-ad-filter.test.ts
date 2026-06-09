@@ -2,6 +2,7 @@ import {
   filterAdsFromM3U8,
   formatM3U8AdFilterDebugMessage,
   getM3U8AdFilterDebugInfo,
+  observeM3U8AdSignals,
 } from './hls-ad-filter';
 import { KNOWN_HLS_AD_RULES } from './hls-ad-rules';
 
@@ -454,6 +455,34 @@ describe('filterAdsFromM3U8', () => {
       'ruyi-ryplay-22s-midroll-v1'
     );
     expect(formatM3U8AdFilterDebugMessage(debugInfo)).toContain('6 个片段');
+  });
+
+  it('observes ad signals without requiring callers to use a filtered playlist', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXTINF:10,',
+      'https://media.example.com/content-before.ts',
+      '#EXT-X-CUE-OUT:20',
+      '#EXTINF:10,',
+      'https://media.example.com/ad-1.ts',
+      '#EXTINF:10,',
+      'https://media.example.com/ad-2.ts',
+      '#EXT-X-CUE-IN',
+      '#EXTINF:10,',
+      'https://media.example.com/content-after.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    const debugInfo = observeM3U8AdSignals(
+      input,
+      'https://media.example.com/index.m3u8'
+    );
+
+    expect(debugInfo.shouldLog).toBe(true);
+    expect(debugInfo.removedLineCount).toBeGreaterThan(0);
+    expect(debugInfo.summary.removedBlocks.length).toBeGreaterThan(0);
+    expect(input).toContain('ad-1.ts');
   });
 
   it('keeps generic tiny inline segments unless a source-specific rule matches', () => {
