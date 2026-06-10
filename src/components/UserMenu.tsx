@@ -93,6 +93,7 @@ export const UserMenu: React.FC = () => {
   };
 
   const handleAdminPanel = () => {
+    setIsOpen(false);
     router.push('/admin');
   };
 
@@ -158,6 +159,12 @@ export const UserMenu: React.FC = () => {
   // 检查是否显示管理面板按钮
   const showAdminPanel =
     authInfo?.role === 'owner' || authInfo?.role === 'admin';
+
+  useEffect(() => {
+    if (showAdminPanel) {
+      router.prefetch('/admin');
+    }
+  }, [router, showAdminPanel]);
 
   // 检查是否显示修改密码按钮
   const showChangePassword =
@@ -227,7 +234,12 @@ export const UserMenu: React.FC = () => {
 
           {/* 管理面板按钮 */}
           {showAdminPanel && (
-            <button onClick={handleAdminPanel} className={menuItemClassName}>
+            <button
+              onClick={handleAdminPanel}
+              onFocus={() => router.prefetch('/admin')}
+              onMouseEnter={() => router.prefetch('/admin')}
+              className={menuItemClassName}
+            >
               <Shield className='h-4 w-4' />
               <span>管理面板</span>
             </button>
