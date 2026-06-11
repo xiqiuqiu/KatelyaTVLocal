@@ -315,7 +315,7 @@ function buildBlock(
     endTimeSeconds: startTimeSeconds + durationSeconds,
     hasCueMarker: lines.some((line) => {
       const trimmedLine = line.trim();
-      return isCueOutLine(trimmedLine) || isCueInLine(trimmedLine);
+      return isCueOutLine(trimmedLine);
     }),
     hasScte35: lines.some((line) => isScte35Line(line.trim())),
     hasAdDaterange: lines.some((line) => isAdDaterangeLine(line.trim())),

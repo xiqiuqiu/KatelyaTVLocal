@@ -258,6 +258,54 @@ describe('filterAdsFromM3U8', () => {
     expect(applyM3U8AdFiltering(input, analysis)).not.toContain('ad-1.ts');
   });
 
+  it('does not treat cue-in-only content after an ad break as an ad window', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXTINF:10,',
+      'content-before.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXT-X-CUE-OUT:20',
+      '#EXTINF:10,',
+      'ad-1.ts',
+      '#EXTINF:10,',
+      'ad-2.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXT-X-CUE-IN',
+      '#EXTINF:10,',
+      'content-after-1.ts',
+      '#EXTINF:10,',
+      'content-after-2.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    const analysis = analyzeM3U8AdCandidates(
+      input,
+      'https://media.example.com/show/index.m3u8'
+    );
+
+    expect(
+      analysis.candidates.filter((candidate) => candidate.action === 'filter')
+    ).toEqual([
+      expect.objectContaining({
+        startTimeSeconds: 10,
+        endTimeSeconds: 30,
+        segmentCount: 2,
+        confidence: 'high',
+        action: 'filter',
+      }),
+    ]);
+    expect(
+      analysis.candidates.filter((candidate) => candidate.action === 'filter')
+    ).not.toContainEqual(
+      expect.objectContaining({
+        sampleUrls: expect.arrayContaining([
+          expect.stringContaining('content-after'),
+        ]),
+      })
+    );
+  });
+
   it('observes low-confidence short discontinuity blocks without filtering them', () => {
     const input = [
       '#EXTM3U',
