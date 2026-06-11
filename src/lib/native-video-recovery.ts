@@ -40,6 +40,7 @@ interface NativePausedStallInput {
   readyState: number;
   stalledForMs: number;
   isVideoLoading: boolean;
+  recentlyHadBufferIssue: boolean;
 }
 
 interface NativeWatchdogStallInput {
@@ -60,6 +61,12 @@ interface NativePlaybackNudgeInput {
   bufferedRanges: NativePlaybackNudgeRange[];
 }
 
+interface NativePauseResetInput {
+  isVideoLoading: boolean;
+  mediaSourceUnavailable: boolean;
+  recentlyHadBufferIssue: boolean;
+}
+
 const REPEATED_NATIVE_FAILURE_SWITCH_COUNT = 3;
 
 export function shouldSwitchSourceForRepeatedNativeFailure({
@@ -75,9 +82,26 @@ export function shouldSwitchSourceForRepeatedNativeFailure({
 }
 
 export function shouldRecoverNativePausedStall(
-  _input: NativePausedStallInput
+  {
+    paused,
+    ended,
+    mediaSourceUnavailable,
+    stalledForMs,
+  }: NativePausedStallInput
 ): boolean {
-  return false;
+  if (!paused || ended || !mediaSourceUnavailable) {
+    return false;
+  }
+
+  return stalledForMs >= NATIVE_STALL_RECOVERY_THRESHOLD_MS;
+}
+
+export function shouldResetNativeRecoveryOnPause({
+  isVideoLoading,
+  mediaSourceUnavailable,
+  recentlyHadBufferIssue,
+}: NativePauseResetInput): boolean {
+  return !isVideoLoading && !mediaSourceUnavailable && !recentlyHadBufferIssue;
 }
 
 export function shouldRecoverNativeWatchdogStall({

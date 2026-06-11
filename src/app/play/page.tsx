@@ -47,6 +47,7 @@ import {
   NATIVE_EVENT_RECOVERY_DELAY_MS,
   NATIVE_FALSE_PLAYING_CHECK_DELAY_MS,
   NATIVE_WATCHDOG_INTERVAL_MS,
+  shouldResetNativeRecoveryOnPause,
   shouldRecoverNativePausedStall,
   shouldRecoverNativeWatchdogStall,
   shouldSwitchSourceForRepeatedNativeFailure,
@@ -102,6 +103,7 @@ export const runtime = 'edge';
 const SOURCE_PREFERENCE_FAST_BUDGET_MS = 500;
 const SOURCE_SELECTION_TOTAL_BUDGET_MS = 2500;
 const SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS = 1800;
+const NATIVE_RECENT_BUFFER_ISSUE_WINDOW_MS = 30000;
 const SOURCE_SELECTION_DEEP_PROBE_LIMIT = 3;
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
@@ -1977,8 +1979,12 @@ function PlayPageClient() {
 
     if (typeof window !== 'undefined') {
       nativeWatchdogTimerRef.current = window.setInterval(() => {
+        const now = Date.now();
         const mediaSourceUnavailable = isNativeMediaSourceUnavailable(video);
-        const stalledForMs = Date.now() - state.lastProgressAt;
+        const stalledForMs = now - state.lastProgressAt;
+        const recentlyHadBufferIssue =
+          state.lastBufferIssueAt > 0 &&
+          now - state.lastBufferIssueAt <= NATIVE_RECENT_BUFFER_ISSUE_WINDOW_MS;
 
         if (shouldRecoverNativePausedStall({
           paused: video.paused,
@@ -1987,8 +1993,8 @@ function PlayPageClient() {
           readyState: video.readyState,
           stalledForMs,
           isVideoLoading: isVideoLoadingRef.current,
+          recentlyHadBufferIssue,
         })) {
-          const now = Date.now();
           if (now - state.lastPausedStallLogAt >= 8000) {
             state.lastPausedStallLogAt = now;
             emitPlaybackDebugLog(
@@ -2003,6 +2009,7 @@ function PlayPageClient() {
                 paused: video.paused,
                 ended: video.ended,
                 isVideoLoading: isVideoLoadingRef.current,
+                recentlyHadBufferIssue,
                 stalledForSeconds: Math.round(stalledForMs / 1000),
               },
               {
@@ -3192,13 +3199,32 @@ function PlayPageClient() {
         });
 
         artPlayerRef.current.on('video:pause', () => {
-          clearWaitingRecoveryTimer();
-          clearNativeFalsePlayingTimer();
-          nativeRecoveryStateRef.current.stallCount = 0;
-          nativeRecoveryStateRef.current.lastProgressAt = Date.now();
+          const video = artPlayerRef.current.video as HTMLVideoElement | undefined;
+          const state = nativeRecoveryStateRef.current;
+          const now = Date.now();
+          const mediaSourceUnavailable = video
+            ? isNativeMediaSourceUnavailable(video)
+            : false;
+          const recentlyHadBufferIssue =
+            state.lastBufferIssueAt > 0 &&
+            now - state.lastBufferIssueAt <= NATIVE_RECENT_BUFFER_ISSUE_WINDOW_MS;
+          const shouldResetRecovery = shouldResetNativeRecoveryOnPause({
+            isVideoLoading: isVideoLoadingRef.current,
+            mediaSourceUnavailable,
+            recentlyHadBufferIssue,
+          });
+
+          if (shouldResetRecovery) {
+            clearWaitingRecoveryTimer();
+            clearNativeFalsePlayingTimer();
+            state.stallCount = 0;
+            state.lastProgressAt = now;
+          }
           emitNativeVideoStateDebugLog(
             'native-video-pause',
-            '原生播放器进入暂停状态'
+            shouldResetRecovery
+              ? '原生播放器进入暂停状态'
+              : '原生播放器在缓冲异常后进入暂停状态，保留恢复状态'
           );
         });
 

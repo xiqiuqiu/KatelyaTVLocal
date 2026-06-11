@@ -3,6 +3,7 @@ import {
   getNativeVideoRecoveryPlan,
   NATIVE_FALSE_PLAYING_CHECK_DELAY_MS,
   NATIVE_STALL_RECOVERY_THRESHOLD_MS,
+  shouldResetNativeRecoveryOnPause,
   shouldRecoverNativePausedStall,
   shouldRecoverNativeWatchdogStall,
   shouldSwitchSourceForRepeatedNativeFailure,
@@ -214,11 +215,12 @@ describe('native recovery timing guards', () => {
         readyState: 3,
         stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
         isVideoLoading: false,
+        recentlyHadBufferIssue: false,
       })
     ).toBe(false);
   });
 
-  it('does not resume paused native playback even while the player is still in loading state', () => {
+  it('does not recover a user pause just because the loading indicator is still visible', () => {
     expect(
       shouldRecoverNativePausedStall({
         paused: true,
@@ -227,8 +229,51 @@ describe('native recovery timing guards', () => {
         readyState: 3,
         stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
         isVideoLoading: true,
+        recentlyHadBufferIssue: false,
       })
     ).toBe(false);
+  });
+
+  it('does not auto-resume paused native playback after a recent buffer issue', () => {
+    expect(
+      shouldRecoverNativePausedStall({
+        paused: true,
+        ended: false,
+        mediaSourceUnavailable: false,
+        readyState: 2,
+        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
+        isVideoLoading: false,
+        recentlyHadBufferIssue: true,
+      })
+    ).toBe(false);
+  });
+
+  it('does not recover a recent paused buffer issue before the stall threshold', () => {
+    expect(
+      shouldRecoverNativePausedStall({
+        paused: true,
+        ended: false,
+        mediaSourceUnavailable: false,
+        readyState: 2,
+        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS - 1,
+        isVideoLoading: false,
+        recentlyHadBufferIssue: true,
+      })
+    ).toBe(false);
+  });
+
+  it('recovers paused media-source-unavailable failures after the threshold', () => {
+    expect(
+      shouldRecoverNativePausedStall({
+        paused: true,
+        ended: false,
+        mediaSourceUnavailable: true,
+        readyState: 0,
+        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
+        isVideoLoading: false,
+        recentlyHadBufferIssue: false,
+      })
+    ).toBe(true);
   });
 
   it('does not recover ended videos even when no progress is observed', () => {
@@ -265,5 +310,37 @@ describe('native recovery timing guards', () => {
         stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
       })
     ).toBe(true);
+  });
+});
+
+describe('shouldResetNativeRecoveryOnPause', () => {
+  it('resets recovery state for a normal user pause', () => {
+    expect(
+      shouldResetNativeRecoveryOnPause({
+        isVideoLoading: false,
+        mediaSourceUnavailable: false,
+        recentlyHadBufferIssue: false,
+      })
+    ).toBe(true);
+  });
+
+  it('does not reset recovery state when pause follows a recent buffer issue', () => {
+    expect(
+      shouldResetNativeRecoveryOnPause({
+        isVideoLoading: false,
+        mediaSourceUnavailable: false,
+        recentlyHadBufferIssue: true,
+      })
+    ).toBe(false);
+  });
+
+  it('does not reset recovery state when the media source is unavailable', () => {
+    expect(
+      shouldResetNativeRecoveryOnPause({
+        isVideoLoading: false,
+        mediaSourceUnavailable: true,
+        recentlyHadBufferIssue: false,
+      })
+    ).toBe(false);
   });
 });
