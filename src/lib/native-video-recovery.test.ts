@@ -1,9 +1,12 @@
 import {
   getNativeJitterDecision,
   getNativePlaybackNudgeTime,
+  getNativeRecoveryAction,
+  getNativeStallSeverity,
   getNativeVideoRecoveryPlan,
   NATIVE_JITTER_WINDOW_MS,
   NATIVE_FALSE_PLAYING_CHECK_DELAY_MS,
+  NATIVE_HARD_STALL_THRESHOLD_MS,
   NATIVE_PLAY_RESUME_GRACE_MS,
   NATIVE_STALL_RECOVERY_THRESHOLD_MS,
   shouldIgnoreNativeStall,
@@ -477,7 +480,7 @@ describe('getNativeJitterDecision', () => {
       })
     ).toMatchObject({
       isJitter: true,
-      shouldSwitchSource: true,
+      shouldSwitchSource: false,
     });
   });
 
@@ -504,6 +507,155 @@ describe('getNativeJitterDecision', () => {
     ).toMatchObject({
       isJitter: false,
       eventCount: 1,
+    });
+  });
+});
+
+describe('getNativeStallSeverity', () => {
+  it('keeps ordinary buffering in observe mode', () => {
+    expect(
+      getNativeStallSeverity({
+        ended: false,
+        paused: false,
+        mediaSourceUnavailable: false,
+        readyState: 2,
+        networkState: 2,
+        stalledForMs: 8_000,
+        hasRecentProgress: true,
+      })
+    ).toBe('observe');
+  });
+
+  it('treats false-playing as a soft stall before the hard threshold', () => {
+    expect(
+      getNativeStallSeverity({
+        ended: false,
+        paused: false,
+        mediaSourceUnavailable: false,
+        readyState: 3,
+        networkState: 2,
+        stalledForMs: NATIVE_HARD_STALL_THRESHOLD_MS - 1,
+        hasRecentProgress: false,
+      })
+    ).toBe('soft-stall');
+  });
+
+  it('promotes active playback to hard stall only after the hard threshold', () => {
+    expect(
+      getNativeStallSeverity({
+        ended: false,
+        paused: false,
+        mediaSourceUnavailable: false,
+        readyState: 3,
+        networkState: 2,
+        stalledForMs: NATIVE_HARD_STALL_THRESHOLD_MS,
+        hasRecentProgress: false,
+      })
+    ).toBe('hard-stall');
+  });
+
+  it('treats explicit native media failure as source failed', () => {
+    expect(
+      getNativeStallSeverity({
+        ended: false,
+        paused: false,
+        mediaSourceUnavailable: true,
+        readyState: 0,
+        networkState: 3,
+        stalledForMs: 1_000,
+        hasRecentProgress: false,
+      })
+    ).toBe('source-failed');
+  });
+
+  it('does not recover normal paused playback', () => {
+    expect(
+      getNativeStallSeverity({
+        ended: false,
+        paused: true,
+        mediaSourceUnavailable: false,
+        readyState: 2,
+        networkState: 2,
+        stalledForMs: NATIVE_HARD_STALL_THRESHOLD_MS,
+        hasRecentProgress: false,
+      })
+    ).toBe('observe');
+  });
+});
+
+describe('getNativeRecoveryAction', () => {
+  it('does not recover while browser autoplay is locked', () => {
+    expect(
+      getNativeRecoveryAction({
+        severity: 'hard-stall',
+        playIntent: 'playing',
+        browserAutoplayLocked: true,
+        hasAlternativeSource: true,
+        sourceRecoveryAttempts: 0,
+      })
+    ).toEqual({
+      action: 'observe',
+      reason: '浏览器阻止自动播放，等待用户手动继续',
+    });
+  });
+
+  it('observes soft stalls without resuming playback', () => {
+    expect(
+      getNativeRecoveryAction({
+        severity: 'soft-stall',
+        playIntent: 'playing',
+        browserAutoplayLocked: false,
+        hasAlternativeSource: true,
+        sourceRecoveryAttempts: 0,
+      })
+    ).toEqual({
+      action: 'observe',
+      reason: '原生播放器短暂缓冲，继续观察',
+    });
+  });
+
+  it('uses one low-frequency resume for a hard stall', () => {
+    expect(
+      getNativeRecoveryAction({
+        severity: 'hard-stall',
+        playIntent: 'playing',
+        browserAutoplayLocked: false,
+        hasAlternativeSource: true,
+        sourceRecoveryAttempts: 0,
+      })
+    ).toEqual({
+      action: 'resume-playback',
+      reason: '原生播放器长时间未推进，尝试恢复播放',
+    });
+  });
+
+  it('switches source after a hard stall resume already failed', () => {
+    expect(
+      getNativeRecoveryAction({
+        severity: 'hard-stall',
+        playIntent: 'playing',
+        browserAutoplayLocked: false,
+        hasAlternativeSource: true,
+        sourceRecoveryAttempts: 1,
+      })
+    ).toEqual({
+      action: 'switch-source',
+      reason: '原生播放器长时间未推进且恢复失败，切换到其他播放源',
+    });
+  });
+
+  it('switches source immediately for source failed state', () => {
+    expect(
+      getNativeRecoveryAction({
+        severity: 'source-failed',
+        playIntent: 'playing',
+        browserAutoplayLocked: false,
+        hasAlternativeSource: true,
+        sourceRecoveryAttempts: 0,
+      })
+    ).toEqual({
+      action: 'switch-source',
+      reason: '原生播放器判定当前媒体源不可用，切换到其他播放源',
     });
   });
 });

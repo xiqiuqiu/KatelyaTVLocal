@@ -25,11 +25,21 @@ export const NATIVE_EVENT_RECOVERY_DELAY_MS = 8000;
 export const NATIVE_FALSE_PLAYING_CHECK_DELAY_MS = 9000;
 export const NATIVE_PLAY_RESUME_GRACE_MS = 10000;
 export const NATIVE_STALL_RECOVERY_THRESHOLD_MS = 12000;
+export const NATIVE_HARD_STALL_THRESHOLD_MS = 30000;
 export const NATIVE_WATCHDOG_INTERVAL_MS = 3000;
 export const NATIVE_JITTER_WINDOW_MS = 30000;
 
 export type NativePlaybackIntent = 'playing' | 'paused';
 export type NativeJitterEventType = 'waiting' | 'stalled' | 'suspend';
+export type NativeStallSeverity =
+  | 'observe'
+  | 'soft-stall'
+  | 'hard-stall'
+  | 'source-failed';
+export type NativeLowFrequencyRecoveryAction =
+  | 'observe'
+  | 'resume-playback'
+  | 'switch-source';
 
 export interface NativeJitterEvent {
   type: NativeJitterEventType;
@@ -47,6 +57,11 @@ export interface NativeJitterDecision {
   jitterWindowCount: number;
   events: NativeJitterEvent[];
   reasons: string[];
+}
+
+export interface NativeRecoveryActionDecision {
+  action: NativeLowFrequencyRecoveryAction;
+  reason: string;
 }
 
 interface RepeatedNativeFailureInput {
@@ -104,11 +119,28 @@ interface NativeJitterDecisionInput {
   windowMs?: number;
 }
 
+interface NativeStallSeverityInput {
+  ended: boolean;
+  paused: boolean;
+  mediaSourceUnavailable: boolean;
+  readyState: number;
+  networkState: number;
+  stalledForMs: number;
+  hasRecentProgress: boolean;
+}
+
+interface NativeRecoveryActionInput {
+  severity: NativeStallSeverity;
+  playIntent: NativePlaybackIntent;
+  browserAutoplayLocked: boolean;
+  hasAlternativeSource: boolean;
+  sourceRecoveryAttempts: number;
+}
+
 const REPEATED_NATIVE_FAILURE_SWITCH_COUNT = 3;
 const NATIVE_JITTER_EVENT_THRESHOLD = 4;
 const NATIVE_JITTER_ROLLBACK_THRESHOLD_SECONDS = 2;
 const NATIVE_JITTER_ROLLBACK_THRESHOLD_COUNT = 2;
-const NATIVE_JITTER_SWITCH_WINDOW_COUNT = 2;
 
 export function shouldSwitchSourceForRepeatedNativeFailure({
   failureCount,
@@ -215,14 +247,110 @@ export function getNativeJitterDecision({
 
   return {
     isJitter,
-    shouldSwitchSource:
-      isJitter && jitterWindowCount >= NATIVE_JITTER_SWITCH_WINDOW_COUNT,
+    shouldSwitchSource: false,
     eventCount: activeEvents.length,
     rollbackCount,
     maxRollbackSeconds: Number(maxRollbackSeconds.toFixed(2)),
     jitterWindowCount,
     events: activeEvents,
     reasons,
+  };
+}
+
+export function getNativeStallSeverity({
+  ended,
+  paused,
+  mediaSourceUnavailable,
+  readyState,
+  networkState,
+  stalledForMs,
+  hasRecentProgress,
+}: NativeStallSeverityInput): NativeStallSeverity {
+  if (ended) {
+    return 'observe';
+  }
+
+  if (mediaSourceUnavailable || (readyState === 0 && networkState === 3)) {
+    return 'source-failed';
+  }
+
+  if (paused) {
+    return 'observe';
+  }
+
+  if (hasRecentProgress) {
+    return 'observe';
+  }
+
+  if (stalledForMs >= NATIVE_HARD_STALL_THRESHOLD_MS) {
+    return 'hard-stall';
+  }
+
+  return 'soft-stall';
+}
+
+export function getNativeRecoveryAction({
+  severity,
+  playIntent,
+  browserAutoplayLocked,
+  hasAlternativeSource,
+  sourceRecoveryAttempts,
+}: NativeRecoveryActionInput): NativeRecoveryActionDecision {
+  if (browserAutoplayLocked) {
+    return {
+      action: 'observe',
+      reason: '浏览器阻止自动播放，等待用户手动继续',
+    };
+  }
+
+  if (playIntent === 'paused') {
+    return {
+      action: 'observe',
+      reason: '用户暂停播放，停止自动恢复',
+    };
+  }
+
+  if (severity === 'source-failed') {
+    return hasAlternativeSource
+      ? {
+          action: 'switch-source',
+          reason: '原生播放器判定当前媒体源不可用，切换到其他播放源',
+        }
+      : {
+          action: 'observe',
+          reason: '原生播放器判定当前媒体源不可用，但没有其他播放源',
+        };
+  }
+
+  if (severity === 'hard-stall') {
+    if (sourceRecoveryAttempts <= 0) {
+      return {
+        action: 'resume-playback',
+        reason: '原生播放器长时间未推进，尝试恢复播放',
+      };
+    }
+
+    return hasAlternativeSource
+      ? {
+          action: 'switch-source',
+          reason: '原生播放器长时间未推进且恢复失败，切换到其他播放源',
+        }
+      : {
+          action: 'observe',
+          reason: '原生播放器长时间未推进，但没有其他播放源',
+        };
+  }
+
+  if (severity === 'soft-stall') {
+    return {
+      action: 'observe',
+      reason: '原生播放器短暂缓冲，继续观察',
+    };
+  }
+
+  return {
+    action: 'observe',
+    reason: '原生播放器状态正常，继续观察',
   };
 }
 
