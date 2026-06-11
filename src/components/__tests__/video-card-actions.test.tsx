@@ -66,7 +66,11 @@ describe('VideoCard', () => {
     saveFavoriteMock.mockReset();
     subscribeToDataUpdatesMock.mockClear();
 
-    isFavoritedMock.mockResolvedValue(false);
+    isFavoritedMock.mockReturnValue(
+      new Promise(() => {
+        // Keep pending so action-only tests do not get async favorite updates.
+      })
+    );
     saveFavoriteMock.mockResolvedValue(undefined);
     deleteFavoriteMock.mockResolvedValue(undefined);
     deletePlayRecordMock.mockResolvedValue(undefined);
@@ -91,6 +95,39 @@ describe('VideoCard', () => {
     expect(push).toHaveBeenCalledWith(
       expect.stringContaining('/play?source=test&id=1')
     );
+  });
+
+  it('shows immediate opening feedback and blocks repeated card opens', async () => {
+    render(
+      <VideoCard
+        id='1'
+        source='test'
+        title='示例影片'
+        poster='https://example.com/poster.jpg'
+        episodes={12}
+        source_name='测试源'
+        year='2026'
+        from='favorite'
+      />
+    );
+
+    const titleButton = screen.getByRole('button', { name: '打开 示例影片' });
+    const posterButton = screen.getByRole('button', {
+      name: '打开 示例影片 海报',
+    });
+
+    fireEvent.click(titleButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('正在打开')).toBeInTheDocument();
+    });
+    expect(titleButton).toBeDisabled();
+    expect(posterButton).toBeDisabled();
+    expect(posterButton).toHaveAttribute('aria-busy', 'true');
+
+    fireEvent.click(titleButton);
+
+    expect(push).toHaveBeenCalledTimes(1);
   });
 
   it('favorite clicks do not route away from the card', async () => {

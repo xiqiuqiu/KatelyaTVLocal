@@ -1,7 +1,13 @@
-import { CheckCircle, Heart, Link, PlayCircleIcon } from 'lucide-react';
+import { CheckCircle, Heart, Link, Loader2, PlayCircleIcon } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from 'react';
 
 import {
   type Favorite,
@@ -67,6 +73,9 @@ export default function VideoCard({
   const router = useRouter();
   const [favorited, setFavorited] = useState(false);
   const [hasImageLoaded, setHasImageLoaded] = useState(false);
+  const [isOpening, setIsOpening] = useState(false);
+  const [isNavigationPending, startNavigationTransition] = useTransition();
+  const showOpeningState = isOpening || isNavigationPending;
 
   const isAggregate = from === 'search' && !!items?.length;
 
@@ -212,26 +221,30 @@ export default function VideoCard({
   );
 
   const handleClick = useCallback(() => {
+    if (showOpeningState) return;
+
+    let href = '';
+
     if (from === 'douban') {
-      router.push(
-        `/play?title=${encodeURIComponent(actualTitle.trim())}${
-          actualYear ? `&year=${actualYear}` : ''
-        }${actualSearchType ? `&stype=${actualSearchType}` : ''}`
-      );
-      return;
+      href = `/play?title=${encodeURIComponent(actualTitle.trim())}${
+        actualYear ? `&year=${actualYear}` : ''
+      }${actualSearchType ? `&stype=${actualSearchType}` : ''}`;
+    } else if (actualSource && actualId) {
+      href = `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(
+        actualTitle
+      )}${actualYear ? `&year=${actualYear}` : ''}${
+        isAggregate ? '&prefer=true' : ''
+      }${
+        actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''
+      }${actualSearchType ? `&stype=${actualSearchType}` : ''}`;
     }
 
-    if (actualSource && actualId) {
-      router.push(
-        `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(
-          actualTitle
-        )}${actualYear ? `&year=${actualYear}` : ''}${
-          isAggregate ? '&prefer=true' : ''
-        }${
-          actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''
-        }${actualSearchType ? `&stype=${actualSearchType}` : ''}`
-      );
-    }
+    if (!href) return;
+
+    setIsOpening(true);
+    startNavigationTransition(() => {
+      router.push(href);
+    });
   }, [
     actualId,
     actualQuery,
@@ -242,6 +255,7 @@ export default function VideoCard({
     from,
     isAggregate,
     router,
+    showOpeningState,
   ]);
 
   const config = useMemo(() => {
@@ -330,20 +344,39 @@ export default function VideoCard({
 
           <button
             aria-label={posterActionLabel}
+            aria-busy={showOpeningState}
             className='absolute inset-0 z-10 rounded-[inherit]'
+            disabled={showOpeningState}
             onClick={handleClick}
             type='button'
           />
 
-          <div className='pointer-events-none absolute inset-0 bg-gradient-to-t from-[rgb(var(--ui-bg)/0.9)] via-[rgb(var(--ui-bg)/0.2)] to-transparent opacity-80 transition-opacity duration-300 group-hover:opacity-100' />
+          <div
+            className={`pointer-events-none absolute inset-0 bg-gradient-to-t from-[rgb(var(--ui-bg)/0.9)] via-[rgb(var(--ui-bg)/0.2)] to-transparent transition-opacity duration-300 group-hover:opacity-100 ${
+              showOpeningState ? 'opacity-100' : 'opacity-80'
+            }`}
+          />
 
-          {config.showPlayButton ? (
-            <div className='pointer-events-none absolute inset-0 z-10 flex items-center justify-center opacity-0 transition-all duration-300 ease-in-out delay-75 group-hover:opacity-100'>
-              <PlayCircleIcon
-                className='fill-transparent text-[rgb(var(--ui-text))] drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out'
-                size={isSmall ? 34 : 52}
-                strokeWidth={0.9}
-              />
+          {config.showPlayButton || showOpeningState ? (
+            <div
+              className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-all duration-300 ease-in-out ${
+                showOpeningState
+                  ? 'opacity-100'
+                  : 'opacity-0 delay-75 group-hover:opacity-100'
+              }`}
+            >
+              {showOpeningState ? (
+                <span className='inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/55 px-3 py-2 text-xs font-medium text-white shadow-ui-soft backdrop-blur-md'>
+                  <Loader2 className='animate-spin' size={16} />
+                  正在打开
+                </span>
+              ) : (
+                <PlayCircleIcon
+                  className='fill-transparent text-[rgb(var(--ui-text))] drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out'
+                  size={isSmall ? 34 : 52}
+                  strokeWidth={0.9}
+                />
+              )}
             </div>
           ) : null}
 
@@ -430,11 +463,17 @@ export default function VideoCard({
           className={`block w-full truncate font-semibold text-[rgb(var(--ui-text))] transition-colors duration-300 hover:text-[rgb(var(--ui-success))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent ${
             isSmall ? 'text-lg leading-6' : 'text-base leading-5'
           }`}
+          disabled={showOpeningState}
           onClick={handleClick}
           title={actualTitle}
           type='button'
         >
-          {actualTitle}
+          <span className='inline-flex min-w-0 items-center justify-center gap-1.5'>
+            {showOpeningState ? (
+              <Loader2 className='shrink-0 animate-spin' size={14} />
+            ) : null}
+            <span className='truncate'>{actualTitle}</span>
+          </span>
         </button>
 
         {config.showSourceName && source_name ? (
