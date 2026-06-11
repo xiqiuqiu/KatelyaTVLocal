@@ -10,7 +10,7 @@ describe('resolveHlsPlaybackPolicy', () => {
   const adFilteringProxyUrl =
     '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8&segmentMode=direct';
 
-  it('uses stable direct playback on iPad Chrome because proxy playlists can stall Apple HLS', () => {
+  it('uses stable direct playback with native skip on iPad Chrome because proxy playlists can stall Apple HLS', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
@@ -22,14 +22,14 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
     expect(result.runtime).toBe('native-hls');
-    expect(result.playlistFilter).toBe('none');
+    expect(result.playlistFilter).toBe('ios-skip');
     expect(result.segmentMode).toBe('direct');
     expect(result.recoveryProfile).toBe('native-video');
     expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('apple-native-hls-stable-direct');
+    expect(result.reason).toBe('apple-native-hls-ios-skip');
   });
 
-  it('keeps direct-first playback for Android and desktop browser environments', () => {
+  it('keeps direct-first playback and enables client filtering for Android and desktop browser environments', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
@@ -41,7 +41,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
     expect(result.runtime).toBe('hlsjs');
-    expect(result.playlistFilter).toBe('client-observe');
+    expect(result.playlistFilter).toBe('client-filter');
     expect(result.segmentMode).toBe('direct');
     expect(result.recoveryProfile).toBe('hlsjs');
     expect(result.forcedProxyForAdFiltering).toBe(false);
@@ -60,7 +60,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.mode).toBe('proxy');
     expect(result.url).toBe(proxyUrl);
     expect(result.runtime).toBe('hlsjs');
-    expect(result.playlistFilter).toBe('proxy-observe');
+    expect(result.playlistFilter).toBe('proxy-filter');
     expect(result.segmentMode).toBe('proxy');
     expect(result.recoveryProfile).toBe('hlsjs');
     expect(result.forcedProxyForAdFiltering).toBe(false);
@@ -79,7 +79,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.mode).toBe('proxy');
     expect(result.url).toBe(proxyUrl);
     expect(result.runtime).toBe('native-hls');
-    expect(result.playlistFilter).toBe('proxy-observe');
+    expect(result.playlistFilter).toBe('proxy-filter');
     expect(result.segmentMode).toBe('proxy');
     expect(result.recoveryProfile).toBe('native-video');
     expect(result.forcedProxyForAdFiltering).toBe(false);
@@ -96,9 +96,9 @@ describe('resolveHlsPlaybackPolicy', () => {
 
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
-    expect(result.playlistFilter).toBe('none');
+    expect(result.playlistFilter).toBe('ios-skip');
     expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('apple-native-hls-stable-direct');
+    expect(result.reason).toBe('apple-native-hls-ios-skip');
   });
 });
 

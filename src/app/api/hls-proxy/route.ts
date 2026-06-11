@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
 import {
+  analyzeM3U8AdCandidates,
+  applyM3U8AdFiltering,
   formatM3U8AdFilterDebugMessage,
   observeM3U8AdSignals,
 } from '@/lib/hls-ad-filter';
@@ -210,15 +212,16 @@ export async function GET(request: Request) {
       const playlistContent = await upstreamResponse.text();
 
       if (observeOnly) {
-        const adDebugInfo = observeM3U8AdSignals(playlistContent, targetUrl);
+        const adAnalysis = analyzeM3U8AdCandidates(playlistContent, targetUrl);
         const response = NextResponse.json(
           {
             observeOnly: true,
             removed: false,
             targetUrl,
-            summary: adDebugInfo.summary,
-            removedLineCount: adDebugInfo.removedLineCount,
-            wouldRemoveLineCount: adDebugInfo.removedLineCount,
+            candidates: adAnalysis.candidates,
+            summary: adAnalysis.summary,
+            removedLineCount: adAnalysis.removedLineCount,
+            wouldRemoveLineCount: adAnalysis.removedLineCount,
           },
           {
             headers: {
@@ -233,8 +236,15 @@ export async function GET(request: Request) {
         logProxyAdObserveDebug(targetUrl, playlistContent);
       }
 
+      const adAnalysis = shouldFilterAds
+        ? analyzeM3U8AdCandidates(playlistContent, targetUrl)
+        : null;
+      const playablePlaylistContent =
+        shouldFilterAds && adAnalysis
+          ? applyM3U8AdFiltering(playlistContent, adAnalysis)
+          : playlistContent;
       const rewrittenPlaylist = rewritePlaylistContent(
-        playlistContent,
+        playablePlaylistContent,
         targetUrl,
         proxyPrefix,
         { mediaSegmentMode }

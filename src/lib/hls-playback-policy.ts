@@ -2,6 +2,9 @@ import type { SourcePlaybackMode } from './types';
 
 export type HlsPlaybackRuntime = 'hlsjs' | 'native-hls';
 export type HlsPlaylistFilterMode =
+  | 'client-filter'
+  | 'proxy-filter'
+  | 'ios-skip'
   | 'client-observe'
   | 'proxy-observe'
   | 'none';
@@ -10,8 +13,7 @@ export type HlsRecoveryProfile = 'hlsjs' | 'native-video';
 
 export type HlsPlaybackPolicyReason =
   | 'remembered-proxy'
-  | 'apple-native-hls-ad-filter'
-  | 'apple-native-hls-stable-direct'
+  | 'apple-native-hls-ios-skip'
   | 'direct-preferred'
   | 'proxy-unavailable';
 
@@ -86,7 +88,7 @@ export function resolveHlsPlaybackPolicy({
         mode: 'proxy',
         url: proxyUrl,
         runtime,
-        playlistFilter: 'proxy-observe',
+        playlistFilter: 'proxy-filter',
         segmentMode: 'proxy',
         recoveryProfile,
         reason: 'remembered-proxy',
@@ -98,7 +100,7 @@ export function resolveHlsPlaybackPolicy({
       mode: 'direct',
       url: directUrl,
       runtime,
-      playlistFilter: isAppleNativeHlsEnvironment ? 'none' : 'client-observe',
+      playlistFilter: isAppleNativeHlsEnvironment ? 'ios-skip' : 'client-filter',
       segmentMode: 'direct',
       recoveryProfile,
       reason: 'proxy-unavailable',
@@ -111,10 +113,10 @@ export function resolveHlsPlaybackPolicy({
       mode: 'direct',
       url: directUrl,
       runtime,
-      playlistFilter: 'none',
+      playlistFilter: 'ios-skip',
       segmentMode: 'direct',
       recoveryProfile,
-      reason: 'apple-native-hls-stable-direct',
+      reason: 'apple-native-hls-ios-skip',
       forcedProxyForAdFiltering: false,
     };
   }
@@ -123,7 +125,7 @@ export function resolveHlsPlaybackPolicy({
     mode: 'direct',
     url: directUrl,
     runtime,
-    playlistFilter: 'client-observe',
+    playlistFilter: 'client-filter',
     segmentMode: 'direct',
     recoveryProfile,
     reason: 'direct-preferred',

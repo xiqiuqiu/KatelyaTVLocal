@@ -23,9 +23,17 @@ import {
 } from '@/lib/db.client';
 import type { M3U8AdFilterDebugInfo } from '@/lib/hls-ad-filter';
 import {
+  analyzeM3U8AdCandidates,
+  applyM3U8AdFiltering,
   formatM3U8AdFilterDebugMessage,
+  getM3U8AdFilterDebugInfo,
   observeM3U8AdSignals,
 } from '@/lib/hls-ad-filter';
+import type { HlsAdSkipWindow } from '@/lib/hls-ad-skip';
+import {
+  getHlsAdSkipDecision,
+  toHlsAdSkipWindows,
+} from '@/lib/hls-ad-skip';
 import type { HlsPlaybackPolicyResult } from '@/lib/hls-playback-policy';
 import {
   detectAppleNativeHlsEnvironment,
@@ -104,6 +112,7 @@ declare global {
     recoveryPlayingListener?: EventListener;
     recoveryErrorListener?: EventListener;
     recoveryTimeupdateListener?: EventListener;
+    recoverySeekingListener?: EventListener;
   }
 }
 
@@ -157,6 +166,7 @@ interface IosAdObservationResponse {
   removed?: boolean;
   targetUrl?: string;
   removedLineCount?: number;
+  candidates?: Parameters<typeof toHlsAdSkipWindows>[0];
   summary?: {
     candidateAdBlocks?: number;
     cueOutCount?: number;
@@ -331,6 +341,9 @@ function PlayPageClient() {
   const sourceSwitchAutoPlayPendingRef = useRef(false);
   const playbackPolicyLogKeysRef = useRef(new Set<string>());
   const playbackPolicyRef = useRef<HlsPlaybackPolicyResult | null>(null);
+  const nativeAdSkipWindowsRef = useRef<HlsAdSkipWindow[]>([]);
+  const nativeAdSkipLastWindowKeyRef = useRef<string | null>(null);
+  const nativeAdSkipLastUserSeekAtRef = useRef<number | null>(null);
   const [playbackDebugEnabled, setPlaybackDebugEnabled] = useState(false);
   const [playbackDebugCollapsed, setPlaybackDebugCollapsed] = useState(true);
   const [playbackDebugEvents, setPlaybackDebugEvents] = useState<
@@ -1163,6 +1176,9 @@ function PlayPageClient() {
     originalVideoUrlRef.current = directUrl;
     sourceFallbackAttemptedRef.current = false;
     nativeFailureWindowRef.current = null;
+    nativeAdSkipWindowsRef.current = [];
+    nativeAdSkipLastWindowKeyRef.current = null;
+    nativeAdSkipLastUserSeekAtRef.current = null;
 
     const rememberedStatus = detailData
       ? getRememberedSourceStatus(detailData.episodes)
@@ -1239,7 +1255,7 @@ function PlayPageClient() {
           ...currentPolicy,
           mode: 'proxy',
           url: proxyUrl,
-          playlistFilter: 'proxy-observe',
+          playlistFilter: 'proxy-filter',
           segmentMode: 'proxy',
           forcedProxyForAdFiltering: false,
           reason: 'remembered-proxy',
@@ -1411,25 +1427,11 @@ function PlayPageClient() {
       }
     );
 
-    if (policy.reason === 'apple-native-hls-stable-direct') {
+    if (policy.reason === 'apple-native-hls-ios-skip') {
       console.info(
-        '[播放策略][iOS] 当前终端使用原生 HLS 直连播放，仅记录广告信号',
+        '[播放策略][iOS] 当前终端使用原生 HLS 直连播放，旁路分析广告时间窗并自动跳过',
         {
           directUrl,
-          playbackMode: policy.mode,
-          runtime: policy.runtime,
-          segmentMode: policy.segmentMode,
-        }
-      );
-      return;
-    }
-
-    if (policy.reason === 'apple-native-hls-ad-filter') {
-      console.info(
-        '[去广告][播放策略] 当前终端可能使用系统 HLS，已使用代理播放并仅观测广告信号',
-        {
-          directUrl,
-          proxyUrl,
           playbackMode: policy.mode,
           runtime: policy.runtime,
           segmentMode: policy.segmentMode,
@@ -1456,8 +1458,7 @@ function PlayPageClient() {
   ) => {
     if (
       policy.runtime !== 'native-hls' ||
-      policy.playlistFilter !== 'none' ||
-      !playbackDebugEnabledRef.current ||
+      policy.playlistFilter !== 'ios-skip' ||
       !directUrl ||
       !proxyUrl
     ) {
@@ -1480,6 +1481,9 @@ function PlayPageClient() {
         return (await response.json()) as IosAdObservationResponse;
       })
       .then((payload) => {
+        const skipWindows = toHlsAdSkipWindows(payload.candidates || []);
+        nativeAdSkipWindowsRef.current = skipWindows;
+        nativeAdSkipLastWindowKeyRef.current = null;
         emitPlaybackDebugLog(
           'ios-ad-observe',
           'iOS 直连播放广告信号观测完成',
@@ -1489,6 +1493,8 @@ function PlayPageClient() {
             sourceKey,
             episodeIndex,
             removed: false,
+            skipWindowCount: skipWindows.length,
+            skipWindows,
             targetUrl: payload.targetUrl || directUrl,
             removedLineCount: payload.removedLineCount ?? 0,
             summary: payload.summary || null,
@@ -1558,6 +1564,11 @@ function PlayPageClient() {
     if (video.recoveryTimeupdateListener) {
       video.removeEventListener('timeupdate', video.recoveryTimeupdateListener);
       video.recoveryTimeupdateListener = undefined;
+    }
+
+    if (video.recoverySeekingListener) {
+      video.removeEventListener('seeking', video.recoverySeekingListener);
+      video.recoverySeekingListener = undefined;
     }
   };
 
@@ -1674,7 +1685,7 @@ function PlayPageClient() {
         return true;
       }
       case 'switch-full-proxy':
-        if (playbackPolicyRef.current?.reason === 'apple-native-hls-stable-direct') {
+        if (playbackPolicyRef.current?.reason === 'apple-native-hls-ios-skip') {
           if (trySwitchToNextAvailableSource(`${plan.reason}，iOS 默认直连不自动升级代理`)) {
             return true;
           }
@@ -1865,6 +1876,45 @@ function PlayPageClient() {
     }, NATIVE_FALSE_PLAYING_CHECK_DELAY_MS);
   };
 
+  const trySkipNativeAdWindow = (
+    video: HTMLVideoElement,
+    playbackUrl: string
+  ) => {
+    if (playbackPolicyRef.current?.playlistFilter !== 'ios-skip') {
+      return false;
+    }
+
+    const decision = getHlsAdSkipDecision({
+      currentTimeSeconds: video.currentTime || 0,
+      windows: nativeAdSkipWindowsRef.current,
+      lastSkippedWindowKey: nativeAdSkipLastWindowKeyRef.current,
+      lastUserSeekAtMs: nativeAdSkipLastUserSeekAtRef.current,
+      nowMs: Date.now(),
+    });
+
+    if (!decision.shouldSkip || decision.targetTimeSeconds == null) {
+      return false;
+    }
+
+    const fromTime = video.currentTime || 0;
+    nativeAdSkipLastWindowKeyRef.current = decision.windowKey;
+    video.currentTime = decision.targetTimeSeconds;
+    emitPlaybackDebugLog(
+      'ios-ad-skip',
+      'iOS 原生 HLS 已跳过高置信广告时间窗',
+      {
+        fromTime: Number(fromTime.toFixed(2)),
+        targetTime: Number(decision.targetTimeSeconds.toFixed(2)),
+        window: decision.window || null,
+        windowKey: decision.windowKey,
+      },
+      {
+        playbackUrl,
+      }
+    );
+    return true;
+  };
+
   const attachNativeVideoRecovery = (
     video: HTMLVideoElement,
     playbackUrl: string
@@ -1907,15 +1957,23 @@ function PlayPageClient() {
       scheduleNativeFalsePlayingCheck();
     };
     const handleTimeupdate = () => {
+      if (trySkipNativeAdWindow(video, playbackUrl)) {
+        return;
+      }
       recordProgressIfAdvanced();
+    };
+    const handleSeeking = () => {
+      nativeAdSkipLastUserSeekAtRef.current = Date.now();
     };
 
     video.recoveryPlayingListener = handlePlaying;
     video.recoveryErrorListener = handleError;
     video.recoveryTimeupdateListener = handleTimeupdate;
+    video.recoverySeekingListener = handleSeeking;
     video.addEventListener('playing', handlePlaying);
     video.addEventListener('error', handleError);
     video.addEventListener('timeupdate', handleTimeupdate);
+    video.addEventListener('seeking', handleSeeking);
 
     if (typeof window !== 'undefined') {
       nativeWatchdogTimerRef.current = window.setInterval(() => {
@@ -2022,25 +2080,49 @@ function PlayPageClient() {
               stats: any,
               context: any
             ) {
-              // 如果是m3u8文件，仅观测广告信号，不改写播放器实际使用的playlist。
+              // 如果是m3u8文件，按播放策略决定是否改写播放器实际使用的playlist。
               if (response.data && typeof response.data === 'string') {
                 const originalContent = response.data;
                 const playlistUrl = response.url || context?.url;
-                const debugInfo = logDirectAdObserveDebug(
-                  playlistUrl,
-                  originalContent,
-                  context?.type
-                );
+                const policy = playbackPolicyRef.current;
+                const shouldFilter =
+                  policy?.runtime === 'hlsjs' &&
+                  policy.playlistFilter === 'client-filter';
+                const analysis = shouldFilter
+                  ? analyzeM3U8AdCandidates(originalContent, playlistUrl)
+                  : null;
+                const filteredContent = analysis
+                  ? applyM3U8AdFiltering(originalContent, analysis)
+                  : originalContent;
+                if (shouldFilter) {
+                  response.data = filteredContent;
+                }
+                const debugInfo = shouldFilter
+                  ? getM3U8AdFilterDebugInfo(
+                      originalContent,
+                      filteredContent,
+                      playlistUrl
+                    )
+                  : logDirectAdObserveDebug(
+                      playlistUrl,
+                      originalContent,
+                      context?.type
+                    );
                 if (debugInfo) {
                   emitPlaybackDebugLog(
-                    'hlsjs-ad-observe',
-                    'HLS.js 直连播放广告信号观测完成',
+                    shouldFilter ? 'hlsjs-ad-filter' : 'hlsjs-ad-observe',
+                    shouldFilter
+                      ? 'HLS.js 直连播放已应用广告过滤'
+                      : 'HLS.js 直连播放广告信号观测完成',
                     {
                       playlistUrl,
                       playlistType: context?.type || null,
-                      removed: false,
+                      removed: shouldFilter,
                       removedLineCount: debugInfo.removedLineCount,
-                      wouldRemoveLineCount: debugInfo.removedLineCount,
+                      wouldRemoveLineCount: shouldFilter
+                        ? undefined
+                        : debugInfo.removedLineCount,
+                      candidates: analysis?.candidates || [],
                       summary: debugInfo.summary,
                       sourceKey: getCurrentSourceKey() || null,
                       episodeIndex: currentEpisodeIndexRef.current,
