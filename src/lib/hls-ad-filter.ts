@@ -11,6 +11,8 @@ const CUE_OUT_TAG = '#EXT-X-CUE-OUT';
 const CUE_IN_TAG = '#EXT-X-CUE-IN';
 const SCTE35_TAG = '#EXT-X-SCTE35';
 const DATERANGE_TAG = '#EXT-X-DATERANGE';
+const MAX_AUTO_FILTER_AD_DURATION_SECONDS = 180;
+const MAX_AUTO_FILTER_AD_SEGMENTS = 60;
 
 const AD_URL_PATTERNS = [/\/ads?(?:[/_-]|$)/i, /advertisement/i, /commercial/i];
 
@@ -652,13 +654,26 @@ function isAdBlock(
   primaryHost: string | null,
   knownRuleMatch: KnownHlsAdRuleMatch | null
 ): boolean {
-  return getAdBlockReasons(
+  const reasons = getAdBlockReasons(
     block,
     blockIndex,
     blocks,
     primaryHost,
     knownRuleMatch
-  ).some((reason) => reason !== 'url-keyword');
+  );
+
+  if (!reasons.some((reason) => reason !== 'url-keyword')) {
+    return false;
+  }
+
+  if (knownRuleMatch) {
+    return true;
+  }
+
+  return (
+    block.durationSeconds <= MAX_AUTO_FILTER_AD_DURATION_SECONDS &&
+    block.segmentCount <= MAX_AUTO_FILTER_AD_SEGMENTS
+  );
 }
 
 function filterDiscontinuityBlocks(
@@ -786,9 +801,12 @@ export function getM3U8AdDebugSummary(
       reasons: blockReasons[blockIndex],
     }))
     .filter(
-      ({ block, reasons }) =>
+      ({ block, blockIndex, reasons }) =>
         block.segmentCount > 0 &&
-        reasons.some((reason) => reason !== 'url-keyword')
+        reasons.some((reason) => reason !== 'url-keyword') &&
+        (knownRuleMatches[blockIndex] ||
+          (block.durationSeconds <= MAX_AUTO_FILTER_AD_DURATION_SECONDS &&
+            block.segmentCount <= MAX_AUTO_FILTER_AD_SEGMENTS))
     )
     .map(({ block, blockIndex, reasons }) =>
       createRemovedBlockInfo(block, reasons, knownRuleMatches[blockIndex])

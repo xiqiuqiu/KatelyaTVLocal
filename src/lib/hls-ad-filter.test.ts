@@ -306,6 +306,36 @@ describe('filterAdsFromM3U8', () => {
     );
   });
 
+  it('does not auto-filter implausibly large cue-marked content blocks', () => {
+    const largeContent = createSegments(61, 'content-after');
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXTINF:10,',
+      'content-before.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXT-X-CUE-OUT:798',
+      ...largeContent,
+      '#EXT-X-CUE-IN',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    const analysis = analyzeM3U8AdCandidates(
+      input,
+      'https://media.example.com/show/index.m3u8'
+    );
+
+    expect(analysis.summary.removedBlocks).toEqual([]);
+    expect(analysis.candidates).not.toContainEqual(
+      expect.objectContaining({
+        action: 'filter',
+      })
+    );
+    expect(applyM3U8AdFiltering(input, analysis)).toContain(
+      'content-after-61.ts'
+    );
+  });
+
   it('observes low-confidence short discontinuity blocks without filtering them', () => {
     const input = [
       '#EXTM3U',
