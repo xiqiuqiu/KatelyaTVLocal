@@ -3,7 +3,7 @@
 'use client';
 
 import { KeyRound, LogOut, Shield, User, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -31,6 +31,7 @@ const inputClassName =
 
 export const UserMenu: React.FC = () => {
   const router = useRouter();
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
@@ -47,6 +48,10 @@ export const UserMenu: React.FC = () => {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    setIsOpen(false);
+  }, [pathname]);
 
   // 获取认证信息和存储类型
   useEffect(() => {

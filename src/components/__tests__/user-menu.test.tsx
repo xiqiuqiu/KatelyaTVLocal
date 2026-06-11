@@ -4,12 +4,14 @@ import { UserMenu } from '@/components/UserMenu';
 
 const push = jest.fn();
 const prefetch = jest.fn();
+let mockPathname = '/';
 let currentUser: {
   username: string;
   role: 'owner' | 'admin' | 'user';
 } = { username: 'tester', role: 'user' };
 
 jest.mock('next/navigation', () => ({
+  usePathname: () => mockPathname,
   useRouter: () => ({ prefetch, push }),
 }));
 
@@ -21,6 +23,7 @@ describe('UserMenu', () => {
   beforeEach(() => {
     push.mockClear();
     prefetch.mockClear();
+    mockPathname = '/';
     currentUser = { username: 'tester', role: 'user' };
     window.RUNTIME_CONFIG = {
       STORAGE_TYPE: 'd1',
@@ -89,6 +92,30 @@ describe('UserMenu', () => {
     fireEvent.click(await screen.findByText('管理面板'));
 
     expect(push).toHaveBeenCalledWith('/admin');
+    expect(screen.queryByText('管理面板')).not.toBeInTheDocument();
+  });
+
+  it('closes the account menu when the route changes', async () => {
+    currentUser = { username: 'admin', role: 'admin' };
+    window.RUNTIME_CONFIG = {
+      STORAGE_TYPE: 'd1',
+      CURRENT_USER: currentUser,
+    };
+    global.fetch = jest.fn().mockResolvedValue({
+      json: jest.fn().mockResolvedValue({
+        authenticated: true,
+        user: currentUser,
+      }),
+    }) as jest.Mock;
+
+    const { rerender } = render(<UserMenu />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+    expect(await screen.findByText('管理面板')).toBeInTheDocument();
+
+    mockPathname = '/admin';
+    rerender(<UserMenu />);
+
     expect(screen.queryByText('管理面板')).not.toBeInTheDocument();
   });
 });
