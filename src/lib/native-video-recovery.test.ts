@@ -1,8 +1,12 @@
 import {
+  getNativeJitterDecision,
   getNativePlaybackNudgeTime,
   getNativeVideoRecoveryPlan,
+  NATIVE_JITTER_WINDOW_MS,
   NATIVE_FALSE_PLAYING_CHECK_DELAY_MS,
+  NATIVE_PLAY_RESUME_GRACE_MS,
   NATIVE_STALL_RECOVERY_THRESHOLD_MS,
+  shouldIgnoreNativeStall,
   shouldResetNativeRecoveryOnPause,
   shouldRecoverNativePausedStall,
   shouldRecoverNativeWatchdogStall,
@@ -182,6 +186,12 @@ describe('native recovery timing guards', () => {
     expect(NATIVE_FALSE_PLAYING_CHECK_DELAY_MS).toBeGreaterThanOrEqual(9000);
   });
 
+  it('keeps the post-resume grace window above false-playing detection', () => {
+    expect(NATIVE_PLAY_RESUME_GRACE_MS).toBeGreaterThanOrEqual(
+      NATIVE_FALSE_PLAYING_CHECK_DELAY_MS
+    );
+  });
+
   it('does not treat seven seconds without progress as a watchdog stall', () => {
     expect(
       shouldRecoverNativeWatchdogStall({
@@ -342,5 +352,158 @@ describe('shouldResetNativeRecoveryOnPause', () => {
         recentlyHadBufferIssue: false,
       })
     ).toBe(false);
+  });
+});
+
+describe('shouldIgnoreNativeStall', () => {
+  it('ignores stalls while the user intends playback to stay paused', () => {
+    expect(
+      shouldIgnoreNativeStall({
+        playIntent: 'paused',
+        mediaSourceUnavailable: false,
+        nowMs: 20_000,
+        ignoreStallUntilMs: 0,
+      })
+    ).toBe(true);
+  });
+
+  it('does not ignore media-source-unavailable failures while paused', () => {
+    expect(
+      shouldIgnoreNativeStall({
+        playIntent: 'paused',
+        mediaSourceUnavailable: true,
+        nowMs: 20_000,
+        ignoreStallUntilMs: 0,
+      })
+    ).toBe(false);
+  });
+
+  it('ignores stalls during the post-resume grace window', () => {
+    expect(
+      shouldIgnoreNativeStall({
+        playIntent: 'playing',
+        mediaSourceUnavailable: false,
+        nowMs: 12_000,
+        ignoreStallUntilMs: 15_000,
+      })
+    ).toBe(true);
+  });
+
+  it('allows stall detection after the post-resume grace window', () => {
+    expect(
+      shouldIgnoreNativeStall({
+        playIntent: 'playing',
+        mediaSourceUnavailable: false,
+        nowMs: 16_000,
+        ignoreStallUntilMs: 15_000,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('getNativeJitterDecision', () => {
+  it('does not flag a single stalled event as jitter', () => {
+    expect(
+      getNativeJitterDecision({
+        events: [
+          {
+            type: 'stalled',
+            atMs: 1_000,
+            currentTime: 10,
+            readyState: 4,
+          },
+        ],
+        nowMs: 1_000,
+        previousJitterWindows: 0,
+      })
+    ).toMatchObject({
+      isJitter: false,
+      shouldSwitchSource: false,
+      eventCount: 1,
+      rollbackCount: 0,
+    });
+  });
+
+  it('flags frequent waiting and stalled events inside the jitter window', () => {
+    expect(
+      getNativeJitterDecision({
+        events: [
+          { type: 'waiting', atMs: 1_000, currentTime: 10, readyState: 2 },
+          { type: 'stalled', atMs: 2_000, currentTime: 11, readyState: 4 },
+          { type: 'suspend', atMs: 3_000, currentTime: 12, readyState: 4 },
+          { type: 'waiting', atMs: 4_000, currentTime: 13, readyState: 2 },
+        ],
+        nowMs: 4_000,
+        previousJitterWindows: 0,
+      })
+    ).toMatchObject({
+      isJitter: true,
+      shouldSwitchSource: false,
+      eventCount: 4,
+      rollbackCount: 0,
+    });
+  });
+
+  it('flags repeated currentTime rollback as jitter', () => {
+    expect(
+      getNativeJitterDecision({
+        events: [
+          { type: 'waiting', atMs: 1_000, currentTime: 324.59, readyState: 2 },
+          { type: 'waiting', atMs: 2_000, currentTime: 334.74, readyState: 2 },
+          { type: 'waiting', atMs: 3_000, currentTime: 328.32, readyState: 2 },
+          { type: 'stalled', atMs: 4_000, currentTime: 318.32, readyState: 4 },
+        ],
+        nowMs: 4_000,
+        previousJitterWindows: 0,
+      })
+    ).toMatchObject({
+      isJitter: true,
+      rollbackCount: 2,
+      maxRollbackSeconds: 10,
+    });
+  });
+
+  it('switches source after two consecutive jitter windows', () => {
+    expect(
+      getNativeJitterDecision({
+        events: [
+          { type: 'waiting', atMs: 1_000, currentTime: 10, readyState: 2 },
+          { type: 'stalled', atMs: 2_000, currentTime: 11, readyState: 4 },
+          { type: 'suspend', atMs: 3_000, currentTime: 12, readyState: 4 },
+          { type: 'waiting', atMs: 4_000, currentTime: 13, readyState: 2 },
+        ],
+        nowMs: 4_000,
+        previousJitterWindows: 1,
+      })
+    ).toMatchObject({
+      isJitter: true,
+      shouldSwitchSource: true,
+    });
+  });
+
+  it('drops events outside the rolling jitter window', () => {
+    expect(
+      getNativeJitterDecision({
+        events: [
+          {
+            type: 'waiting',
+            atMs: 1_000,
+            currentTime: 10,
+            readyState: 2,
+          },
+          {
+            type: 'stalled',
+            atMs: NATIVE_JITTER_WINDOW_MS + 2_000,
+            currentTime: 20,
+            readyState: 4,
+          },
+        ],
+        nowMs: NATIVE_JITTER_WINDOW_MS + 2_000,
+        previousJitterWindows: 0,
+      })
+    ).toMatchObject({
+      isJitter: false,
+      eventCount: 1,
+    });
   });
 });

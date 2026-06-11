@@ -23,8 +23,31 @@ export interface NativeVideoRecoveryPlan {
 
 export const NATIVE_EVENT_RECOVERY_DELAY_MS = 8000;
 export const NATIVE_FALSE_PLAYING_CHECK_DELAY_MS = 9000;
+export const NATIVE_PLAY_RESUME_GRACE_MS = 10000;
 export const NATIVE_STALL_RECOVERY_THRESHOLD_MS = 12000;
 export const NATIVE_WATCHDOG_INTERVAL_MS = 3000;
+export const NATIVE_JITTER_WINDOW_MS = 30000;
+
+export type NativePlaybackIntent = 'playing' | 'paused';
+export type NativeJitterEventType = 'waiting' | 'stalled' | 'suspend';
+
+export interface NativeJitterEvent {
+  type: NativeJitterEventType;
+  atMs: number;
+  currentTime: number;
+  readyState: number;
+}
+
+export interface NativeJitterDecision {
+  isJitter: boolean;
+  shouldSwitchSource: boolean;
+  eventCount: number;
+  rollbackCount: number;
+  maxRollbackSeconds: number;
+  jitterWindowCount: number;
+  events: NativeJitterEvent[];
+  reasons: string[];
+}
 
 interface RepeatedNativeFailureInput {
   failureCount: number;
@@ -67,7 +90,25 @@ interface NativePauseResetInput {
   recentlyHadBufferIssue: boolean;
 }
 
+interface NativeStallIgnoreInput {
+  playIntent: NativePlaybackIntent;
+  mediaSourceUnavailable: boolean;
+  nowMs: number;
+  ignoreStallUntilMs: number;
+}
+
+interface NativeJitterDecisionInput {
+  events: NativeJitterEvent[];
+  nowMs: number;
+  previousJitterWindows: number;
+  windowMs?: number;
+}
+
 const REPEATED_NATIVE_FAILURE_SWITCH_COUNT = 3;
+const NATIVE_JITTER_EVENT_THRESHOLD = 4;
+const NATIVE_JITTER_ROLLBACK_THRESHOLD_SECONDS = 2;
+const NATIVE_JITTER_ROLLBACK_THRESHOLD_COUNT = 2;
+const NATIVE_JITTER_SWITCH_WINDOW_COUNT = 2;
 
 export function shouldSwitchSourceForRepeatedNativeFailure({
   failureCount,
@@ -104,6 +145,23 @@ export function shouldResetNativeRecoveryOnPause({
   return !isVideoLoading && !mediaSourceUnavailable && !recentlyHadBufferIssue;
 }
 
+export function shouldIgnoreNativeStall({
+  playIntent,
+  mediaSourceUnavailable,
+  nowMs,
+  ignoreStallUntilMs,
+}: NativeStallIgnoreInput): boolean {
+  if (mediaSourceUnavailable) {
+    return false;
+  }
+
+  if (playIntent === 'paused') {
+    return true;
+  }
+
+  return ignoreStallUntilMs > 0 && nowMs < ignoreStallUntilMs;
+}
+
 export function shouldRecoverNativeWatchdogStall({
   ended,
   paused,
@@ -120,6 +178,52 @@ export function shouldRecoverNativeWatchdogStall({
   }
 
   return stalledForMs >= NATIVE_STALL_RECOVERY_THRESHOLD_MS;
+}
+
+export function getNativeJitterDecision({
+  events,
+  nowMs,
+  previousJitterWindows,
+  windowMs = NATIVE_JITTER_WINDOW_MS,
+}: NativeJitterDecisionInput): NativeJitterDecision {
+  const activeEvents = events
+    .filter((event) => nowMs - event.atMs < windowMs)
+    .sort((first, second) => first.atMs - second.atMs);
+  let rollbackCount = 0;
+  let maxRollbackSeconds = 0;
+
+  for (let index = 1; index < activeEvents.length; index += 1) {
+    const previous = activeEvents[index - 1];
+    const current = activeEvents[index];
+    const rollbackSeconds = previous.currentTime - current.currentTime;
+    if (rollbackSeconds >= NATIVE_JITTER_ROLLBACK_THRESHOLD_SECONDS) {
+      rollbackCount += 1;
+      maxRollbackSeconds = Math.max(maxRollbackSeconds, rollbackSeconds);
+    }
+  }
+
+  const reasons: string[] = [];
+  if (activeEvents.length >= NATIVE_JITTER_EVENT_THRESHOLD) {
+    reasons.push('frequent-buffer-events');
+  }
+  if (rollbackCount >= NATIVE_JITTER_ROLLBACK_THRESHOLD_COUNT) {
+    reasons.push('repeated-current-time-rollback');
+  }
+
+  const isJitter = reasons.length > 0;
+  const jitterWindowCount = isJitter ? previousJitterWindows + 1 : 0;
+
+  return {
+    isJitter,
+    shouldSwitchSource:
+      isJitter && jitterWindowCount >= NATIVE_JITTER_SWITCH_WINDOW_COUNT,
+    eventCount: activeEvents.length,
+    rollbackCount,
+    maxRollbackSeconds: Number(maxRollbackSeconds.toFixed(2)),
+    jitterWindowCount,
+    events: activeEvents,
+    reasons,
+  };
 }
 
 export function getNativePlaybackNudgeTime({
