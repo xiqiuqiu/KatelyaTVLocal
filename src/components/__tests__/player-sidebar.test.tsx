@@ -56,7 +56,7 @@ describe('EpisodeSelector playback sidebar controls', () => {
       [
         'source-a-a',
         createSourceStatus('unavailable', {
-          reason: '测试中不探测真实播放源',
+          reason: '服务端探测失败: 403',
         }),
       ],
     ]);
@@ -95,6 +95,8 @@ describe('EpisodeSelector playback sidebar controls', () => {
     });
 
     expect(screen.getByText('A源')).toBeInTheDocument();
+    expect(screen.getByText('该线路当前不可用')).toBeInTheDocument();
+    expect(screen.queryByText('服务端探测失败: 403')).not.toBeInTheDocument();
     const unavailableSourceButton = screen.getByRole('button', {
       name: '切换线路 A源',
     });

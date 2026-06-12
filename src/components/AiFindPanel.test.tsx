@@ -258,9 +258,7 @@ describe('AiFindPanel', () => {
       render(<AiFindPanel />);
     });
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'saved query' })
-    );
+    fireEvent.click(await screen.findByRole('button', { name: 'saved query' }));
 
     await waitFor(() => {
       expect(screen.getAllByText('saved title').length).toBeGreaterThan(0);
@@ -341,5 +339,15 @@ describe('AiFindPanel', () => {
     candidateQueries.forEach((candidate) => {
       expect(screen.getAllByText(candidate.query).length).toBeGreaterThan(0);
     });
+  });
+
+  it('prefills the input from the search page query', async () => {
+    await act(async () => {
+      render(<AiFindPanel initialQuery='鬼灭之刃' />);
+    });
+
+    expect(screen.getByPlaceholderText(/想看节奏快一点/)).toHaveValue(
+      '鬼灭之刃'
+    );
   });
 });

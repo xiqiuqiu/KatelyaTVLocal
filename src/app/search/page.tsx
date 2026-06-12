@@ -12,6 +12,11 @@ import {
   getSearchHistory,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import {
+  shouldSuggestAiFind,
+  sortSearchResultGroupsByRanking,
+  sortSearchResultsByRanking,
+} from '@/lib/search-result-ranking';
 import { SearchResult } from '@/lib/types';
 import { pageMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
@@ -42,6 +47,7 @@ function SearchPageClient() {
 
   // 从 URL 参数获取搜索词
   const searchQuery = searchParams.get('q') || '';
+  const searchModeParam = searchParams.get('mode') || '';
 
   // 获取默认聚合设置：只读取用户本地设置，默认为 true
   const getDefaultAggregate = () => {
@@ -70,39 +76,19 @@ function SearchPageClient() {
       arr.push(item);
       map.set(key, arr);
     });
-    return Array.from(map.entries()).sort((a, b) => {
-      // 优先排序：标题与搜索词完全一致的排在前面
-      const aExactMatch = a[1][0].title
-        .replaceAll(' ', '')
-        .includes(searchQuery.trim().replaceAll(' ', ''));
-      const bExactMatch = b[1][0].title
-        .replaceAll(' ', '')
-        .includes(searchQuery.trim().replaceAll(' ', ''));
+    return sortSearchResultGroupsByRanking(
+      searchQuery,
+      Array.from(map.entries())
+    );
+  }, [searchQuery, searchResults]);
 
-      if (aExactMatch && !bExactMatch) return -1;
-      if (!aExactMatch && bExactMatch) return 1;
-
-      // 年份排序
-      if (a[1][0].year === b[1][0].year) {
-        return a[0].localeCompare(b[0]);
-      } else {
-        // 处理 unknown 的情况
-        const aYear = a[1][0].year;
-        const bYear = b[1][0].year;
-
-        if (aYear === 'unknown' && bYear === 'unknown') {
-          return 0;
-        } else if (aYear === 'unknown') {
-          return 1; // a 排在后面
-        } else if (bYear === 'unknown') {
-          return -1; // b 排在后面
-        } else {
-          // 都是数字年份，按数字大小排序（大的在前面）
-          return aYear > bYear ? -1 : 1;
-        }
-      }
-    });
-  }, [searchResults]);
+  const shouldShowAiFindGuide = useMemo(
+    () =>
+      searchMode === 'normal' &&
+      showResults &&
+      shouldSuggestAiFind(searchQuery, searchResults),
+    [searchMode, searchQuery, searchResults, showResults]
+  );
 
   useEffect(() => {
     // 无搜索参数时聚焦搜索框
@@ -158,6 +144,10 @@ function SearchPageClient() {
   }, []);
 
   useEffect(() => {
+    setSearchMode(searchModeParam === 'ai' ? 'ai' : 'normal');
+  }, [searchModeParam]);
+
+  useEffect(() => {
     // 当搜索参数变化时更新搜索状态
     const query = searchParams.get('q');
     if (query) {
@@ -177,33 +167,7 @@ function SearchPageClient() {
         `/api/search?q=${encodeURIComponent(query.trim())}`
       );
       const data = await response.json();
-      setSearchResults(
-        data.results.sort((a: SearchResult, b: SearchResult) => {
-          // 优先排序：标题与搜索词完全一致的排在前面
-          const aExactMatch = a.title === query.trim();
-          const bExactMatch = b.title === query.trim();
-
-          if (aExactMatch && !bExactMatch) return -1;
-          if (!aExactMatch && bExactMatch) return 1;
-
-          // 如果都匹配或都不匹配，则按原来的逻辑排序
-          if (a.year === b.year) {
-            return a.title.localeCompare(b.title);
-          } else {
-            // 处理 unknown 的情况
-            if (a.year === 'unknown' && b.year === 'unknown') {
-              return 0;
-            } else if (a.year === 'unknown') {
-              return 1; // a 排在后面
-            } else if (b.year === 'unknown') {
-              return -1; // b 排在后面
-            } else {
-              // 都是数字年份，按数字大小排序（大的在前面）
-              return parseInt(a.year) > parseInt(b.year) ? -1 : 1;
-            }
-          }
-        })
-      );
+      setSearchResults(sortSearchResultsByRanking(query, data.results));
       setShowResults(true);
     } catch (error) {
       setSearchResults([]);
@@ -295,7 +259,7 @@ function SearchPageClient() {
           </Surface>
 
           {searchMode === 'ai' ? (
-            <AiFindPanel />
+            <AiFindPanel initialQuery={searchQuery} />
           ) : isLoading ? (
             <section className='space-y-4'>
               <SectionHeader
@@ -321,6 +285,30 @@ function SearchPageClient() {
                 }`}
                 title={pageSectionLabels.searchResults}
               />
+              {shouldShowAiFindGuide ? (
+                <Surface
+                  className='border-[rgb(var(--ui-success)/0.24)] bg-[linear-gradient(135deg,rgb(var(--ui-success)/0.12),rgb(var(--ui-bg-elevated)/0.58))] p-4 sm:p-5'
+                  variant='plain'
+                >
+                  <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                    <div>
+                      <p className='text-sm font-semibold text-[rgb(var(--ui-text))]'>
+                        结果较多，可以用 AI 精准找片
+                      </p>
+                      <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
+                        会带入当前关键词，按片名线索重新整理候选结果。
+                      </p>
+                    </div>
+                    <button
+                      type='button'
+                      onClick={() => setSearchMode('ai')}
+                      className='inline-flex min-h-10 items-center justify-center rounded-xl bg-[rgb(var(--ui-success))] px-4 text-sm font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition hover:brightness-110'
+                    >
+                      用 AI 精准找片
+                    </button>
+                  </div>
+                </Surface>
+              ) : null}
               {searchResults.length > 0 ? (
                 <PosterGrid
                   key={`search-results-${viewMode}`}

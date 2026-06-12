@@ -16,6 +16,7 @@ import {
   createSourceStatus,
   getRememberedSourceStatus,
   getSourceIdentityKey,
+  getSourceStatusDescription,
   getSourceStatusLabel,
   getVideoResolutionFromM3u8,
   isSourceStatusClickable,
@@ -955,103 +956,67 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     availableSources,
                     sourceSelectionScores || new Map(),
                     (source) => getSourceIdentityKey(source.source, source.id)
-                  )
-                    .map((source) => {
-                      const isCurrentSource =
-                        source.source?.toString() ===
-                          currentSource?.toString() &&
-                        source.id?.toString() === currentId?.toString();
-                      const sourceKey = getSourceIdentityKey(
-                        source.source,
-                        source.id
-                      );
-                      const sourceStatus = getSourceStatus(source);
-                      const isClickable =
-                        !isCurrentSource &&
-                        isSourceStatusClickable(sourceStatus);
-                      const statusLabel = sourceStatus
-                        ? getSourceStatusLabel(sourceStatus)
-                        : '待检测';
-                      const videoInfo = videoInfoMap.get(sourceKey);
-                      const qualityLabel =
-                        videoInfo &&
-                        !videoInfo.hasError &&
-                        videoInfo.quality !== '未知' &&
-                        videoInfo.quality !== '错误'
-                          ? videoInfo.quality
-                          : null;
+                  ).map((source) => {
+                    const isCurrentSource =
+                      source.source?.toString() === currentSource?.toString() &&
+                      source.id?.toString() === currentId?.toString();
+                    const sourceKey = getSourceIdentityKey(
+                      source.source,
+                      source.id
+                    );
+                    const sourceStatus = getSourceStatus(source);
+                    const isClickable =
+                      !isCurrentSource && isSourceStatusClickable(sourceStatus);
+                    const statusLabel = sourceStatus
+                      ? getSourceStatusLabel(sourceStatus)
+                      : '待检测';
+                    const videoInfo = videoInfoMap.get(sourceKey);
+                    const qualityLabel =
+                      videoInfo &&
+                      !videoInfo.hasError &&
+                      videoInfo.quality !== '未知' &&
+                      videoInfo.quality !== '错误'
+                        ? videoInfo.quality
+                        : null;
 
-                      const statusClassName = (() => {
-                        if (!sourceStatus) {
+                    const statusClassName = (() => {
+                      if (!sourceStatus) {
+                        return 'bg-[rgb(var(--ui-border))] text-[rgb(var(--ui-text-muted))]';
+                      }
+
+                      switch (sourceStatus.kind) {
+                        case 'direct':
+                          return 'bg-[rgba(var(--ui-success),0.16)] text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]';
+                        case 'proxy':
+                          return 'bg-[rgba(var(--ui-accent),0.16)] text-[rgb(var(--ui-accent))] ring-1 ring-[rgba(var(--ui-accent),0.38)]';
+                        case 'playable':
+                          return 'bg-[rgba(var(--ui-accent-warm),0.16)] text-[rgb(var(--ui-accent-warm))] ring-1 ring-[rgba(var(--ui-accent-warm),0.38)]';
+                        case 'unavailable':
+                          return 'bg-[rgba(var(--ui-critical),0.16)] text-[rgb(var(--ui-critical))] ring-1 ring-[rgba(var(--ui-critical),0.38)]';
+                        case 'probing':
+                          return 'bg-[rgba(var(--ui-accent-warm),0.16)] text-[rgb(var(--ui-accent-warm))] ring-1 ring-[rgba(var(--ui-accent-warm),0.38)]';
+                        default:
                           return 'bg-[rgb(var(--ui-border))] text-[rgb(var(--ui-text-muted))]';
-                        }
+                      }
+                    })();
 
-                        switch (sourceStatus.kind) {
-                          case 'direct':
-                            return 'bg-[rgba(var(--ui-success),0.16)] text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]';
-                          case 'proxy':
-                            return 'bg-[rgba(var(--ui-accent),0.16)] text-[rgb(var(--ui-accent))] ring-1 ring-[rgba(var(--ui-accent),0.38)]';
-                          case 'playable':
-                            return 'bg-[rgba(var(--ui-accent-warm),0.16)] text-[rgb(var(--ui-accent-warm))] ring-1 ring-[rgba(var(--ui-accent-warm),0.38)]';
-                          case 'unavailable':
-                            return 'bg-[rgba(var(--ui-critical),0.16)] text-[rgb(var(--ui-critical))] ring-1 ring-[rgba(var(--ui-critical),0.38)]';
-                          case 'probing':
-                            return 'bg-[rgba(var(--ui-accent-warm),0.16)] text-[rgb(var(--ui-accent-warm))] ring-1 ring-[rgba(var(--ui-accent-warm),0.38)]';
-                          default:
-                            return 'bg-[rgb(var(--ui-border))] text-[rgb(var(--ui-text-muted))]';
-                        }
-                      })();
+                    const sourceStatusText = getSourceStatusDescription(
+                      sourceStatus,
+                      videoInfo
+                    );
 
-                      const sourceStatusText = (() => {
-                        if (sourceStatus?.kind === 'probing') {
-                          return '正在检测浏览器直连能力...';
-                        }
-
-                        if (videoInfo) {
-                          if (!videoInfo.hasError) {
-                            return `${videoInfo.loadSpeed} · ${videoInfo.pingTime}ms`;
-                          }
-
-                          return (
-                            sourceStatus?.reason ||
-                            videoInfo.errorReason ||
-                            '测速失败，可尝试播放'
-                          );
-                        }
-
-                        if (sourceStatus?.kind === 'proxy') {
-                          return '该源更适合通过代理播放';
-                        }
-
-                        if (sourceStatus?.kind === 'direct') {
-                          return '浏览器可直接播放';
-                        }
-
-                        if (sourceStatus?.kind === 'playable') {
-                          return sourceStatus.reason || '测速失败，可尝试播放';
-                        }
-
-                        if (sourceStatus?.kind === 'unavailable') {
-                          return sourceStatus.reason || '该源当前不可用';
-                        }
-
-                        return '待检测';
-                      })();
-
-                      return (
-                        <button
-                          key={sourceKey}
-                          type='button'
-                          disabled={!isClickable}
-                          aria-current={isCurrentSource ? 'true' : undefined}
-                          aria-label={`${
-                            isCurrentSource ? '当前线路' : '切换线路'
-                          } ${source.source_name}`}
-                          title={`${source.title} · ${sourceStatusText}`}
-                          onClick={() =>
-                            isClickable && handleSourceClick(source)
-                          }
-                          className={`group relative min-w-0 rounded-ui-md border px-3 py-3 text-left transition-all duration-200
+                    return (
+                      <button
+                        key={sourceKey}
+                        type='button'
+                        disabled={!isClickable}
+                        aria-current={isCurrentSource ? 'true' : undefined}
+                        aria-label={`${
+                          isCurrentSource ? '当前线路' : '切换线路'
+                        } ${source.source_name}`}
+                        title={`${source.title} · ${sourceStatusText}`}
+                        onClick={() => isClickable && handleSourceClick(source)}
+                        className={`group relative min-w-0 rounded-ui-md border px-3 py-3 text-left transition-all duration-200
                           ${
                             isCurrentSource
                               ? `${stateActiveClass} cursor-default disabled:opacity-100`
@@ -1059,50 +1024,50 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                               ? stateIdleClass
                               : `${stateMutedClass} cursor-not-allowed`
                           }`.trim()}
-                        >
-                          <div className='flex min-w-0 items-start justify-between gap-2'>
-                            <div className='min-w-0'>
-                              <div className='flex items-center gap-2'>
-                                <span className='truncate text-sm font-semibold text-[rgb(var(--ui-text))]'>
-                                  {source.source_name}
-                                </span>
-                                {isCurrentSource && (
-                                  <span className={currentChipClass}>当前</span>
-                                )}
-                              </div>
-                              <p className='mt-1 truncate text-[11px] text-[rgb(var(--ui-text-muted))]'>
-                                {source.title}
-                              </p>
+                      >
+                        <div className='flex min-w-0 items-start justify-between gap-2'>
+                          <div className='min-w-0'>
+                            <div className='flex items-center gap-2'>
+                              <span className='truncate text-sm font-semibold text-[rgb(var(--ui-text))]'>
+                                {source.source_name}
+                              </span>
+                              {isCurrentSource && (
+                                <span className={currentChipClass}>当前</span>
+                              )}
                             </div>
-                            <span
-                              className={`${statusClassName} shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold`}
-                            >
-                              {statusLabel}
-                            </span>
+                            <p className='mt-1 truncate text-[11px] text-[rgb(var(--ui-text-muted))]'>
+                              {source.title}
+                            </p>
                           </div>
+                          <span
+                            className={`${statusClassName} shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold`}
+                          >
+                            {statusLabel}
+                          </span>
+                        </div>
 
-                          <div className='mt-3 flex flex-wrap items-center gap-1.5'>
-                            {qualityLabel && (
-                              <span className='rounded-full bg-[rgba(var(--ui-success),0.16)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]'>
-                                {qualityLabel}
-                              </span>
-                            )}
-                            {source.episodes.length > 1 && (
-                              <span className={metaChipClass}>
-                                {source.episodes.length} 集
-                              </span>
-                            )}
+                        <div className='mt-3 flex flex-wrap items-center gap-1.5'>
+                          {qualityLabel && (
+                            <span className='rounded-full bg-[rgba(var(--ui-success),0.16)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]'>
+                              {qualityLabel}
+                            </span>
+                          )}
+                          {source.episodes.length > 1 && (
                             <span className={metaChipClass}>
-                              {isClickable ? '可切换' : '不可切换'}
+                              {source.episodes.length} 集
                             </span>
-                          </div>
+                          )}
+                          <span className={metaChipClass}>
+                            {isClickable ? '可切换' : '不可切换'}
+                          </span>
+                        </div>
 
-                          <p className='mt-2 truncate text-[11px] font-medium text-[rgb(var(--ui-text-muted))]'>
-                            {sourceStatusText}
-                          </p>
-                        </button>
-                      );
-                    })}
+                        <p className='mt-2 truncate text-[11px] font-medium text-[rgb(var(--ui-text-muted))]'>
+                          {sourceStatusText}
+                        </p>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className='flex-shrink-0 border-t border-white/10 pt-2'>

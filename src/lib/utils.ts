@@ -177,16 +177,18 @@ export function createSourceStatus(
   };
 }
 
-export function createPlayableSourceStatus(options: {
-  reason?: string;
-  playbackMode?: SourcePlaybackMode;
-  domain?: string | null;
-  measured?: SourceVideoInfo;
-  updatedAt?: number;
-  fromMemory?: boolean;
-  rankingSource?: 'd1' | 'live';
-  rankScore?: number;
-} = {}): SourceStatus {
+export function createPlayableSourceStatus(
+  options: {
+    reason?: string;
+    playbackMode?: SourcePlaybackMode;
+    domain?: string | null;
+    measured?: SourceVideoInfo;
+    updatedAt?: number;
+    fromMemory?: boolean;
+    rankingSource?: 'd1' | 'live';
+    rankScore?: number;
+  } = {}
+): SourceStatus {
   return createSourceStatus('playable', {
     reason: options.reason || '测速失败，可尝试播放',
     playbackMode: options.playbackMode,
@@ -237,15 +239,41 @@ export function getSourceStatusLabel(status: SourceStatus): string {
     case 'probing':
       return '检测中';
     case 'direct':
-      return '直连';
+      return '推荐·直连';
     case 'proxy':
-      return '代理';
+      return '备用·需代理';
     case 'playable':
-      return '可播';
+      return '可尝试';
     case 'unavailable':
       return '不可用';
     default:
       return '待检测';
+  }
+}
+
+export function getSourceStatusDescription(
+  status: SourceStatus | null | undefined,
+  videoInfo?: SourceVideoInfo
+): string {
+  if (status?.kind === 'probing') {
+    return '正在检测当前线路';
+  }
+
+  if (videoInfo && !videoInfo.hasError) {
+    return `${videoInfo.loadSpeed} · ${videoInfo.pingTime}ms`;
+  }
+
+  switch (status?.kind) {
+    case 'direct':
+      return '推荐优先使用，浏览器可直接播放';
+    case 'proxy':
+      return '备用线路，需要代理兜底播放';
+    case 'playable':
+      return '可尝试播放，失败时可换源';
+    case 'unavailable':
+      return '该线路当前不可用';
+    default:
+      return '等待检测线路状态';
   }
 }
 
