@@ -1,5 +1,8 @@
 export type PlaybackDebugRuntime = 'hlsjs' | 'native-hls' | string;
 export type PlaybackDebugPlaylistFilter =
+  | 'client-filter'
+  | 'proxy-filter'
+  | 'ios-skip'
   | 'client-observe'
   | 'proxy-observe'
   | string;

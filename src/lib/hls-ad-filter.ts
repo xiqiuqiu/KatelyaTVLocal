@@ -11,6 +11,8 @@ const CUE_OUT_TAG = '#EXT-X-CUE-OUT';
 const CUE_IN_TAG = '#EXT-X-CUE-IN';
 const SCTE35_TAG = '#EXT-X-SCTE35';
 const DATERANGE_TAG = '#EXT-X-DATERANGE';
+const MAX_AUTO_FILTER_AD_DURATION_SECONDS = 180;
+const MAX_AUTO_FILTER_AD_SEGMENTS = 60;
 
 const AD_URL_PATTERNS = [/\/ads?(?:[/_-]|$)/i, /advertisement/i, /commercial/i];
 
@@ -20,7 +22,38 @@ type AdBlockReason =
   | 'daterange'
   | 'url-keyword'
   | 'alternate-host'
-  | 'known-rule';
+  | 'known-rule'
+  | 'foreign-path'
+  | 'short-discontinuity';
+
+export type M3U8AdCandidateConfidence = 'high' | 'medium' | 'low';
+export type M3U8AdCandidateAction = 'filter' | 'observe' | 'protect';
+
+export type M3U8AdCandidate = {
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  durationSeconds: number;
+  segmentIndexes: number[];
+  segmentCount: number;
+  reasons: AdBlockReason[];
+  confidence: M3U8AdCandidateConfidence;
+  action: M3U8AdCandidateAction;
+  ruleId?: string;
+  ruleName?: string;
+  hosts: string[];
+  sampleUrls: string[];
+};
+
+export type M3U8AdAnalysis = {
+  candidates: M3U8AdCandidate[];
+  summary: M3U8AdDebugSummary;
+  filteredContent: string;
+  removedLineCount: number;
+};
+
+export interface M3U8AdFilteringPolicy {
+  minimumConfidence?: M3U8AdCandidateConfidence;
+}
 
 export type M3U8RemovedAdBlockInfo = {
   reason: AdBlockReason;
@@ -284,7 +317,7 @@ function buildBlock(
     endTimeSeconds: startTimeSeconds + durationSeconds,
     hasCueMarker: lines.some((line) => {
       const trimmedLine = line.trim();
-      return isCueOutLine(trimmedLine) || isCueInLine(trimmedLine);
+      return isCueOutLine(trimmedLine);
     }),
     hasScte35: lines.some((line) => isScte35Line(line.trim())),
     hasAdDaterange: lines.some((line) => isAdDaterangeLine(line.trim())),
@@ -378,9 +411,132 @@ function getKnownSegmentRuleMatches(
   lines: string[],
   baseUrl?: string
 ): KnownHlsAdSegmentRuleMatch[] {
-  return findKnownHlsAdSegmentRuleMatches(splitIntoSegments(lines, baseUrl), {
+  const segments = splitIntoSegments(lines, baseUrl);
+  const knownMatches = findKnownHlsAdSegmentRuleMatches(segments, {
     baseUrl,
   });
+  const knownSegmentIndexes = new Set(
+    knownMatches.flatMap((match) => match.segmentIndexes)
+  );
+  const automaticMatches = findAutomaticForeignPathSegmentMatches(
+    segments,
+    baseUrl
+  ).filter((match) =>
+    match.segmentIndexes.every((index) => !knownSegmentIndexes.has(index))
+  );
+
+  return [...knownMatches, ...automaticMatches];
+}
+
+function isDatedMediaPathOutsideBase(
+  pathname: string,
+  baseDirectory: string
+): boolean {
+  return (
+    !pathname.startsWith(baseDirectory) &&
+    /^\/\d{8}\/[^/]+\/(?:\d+kb|[^/]+)\/hls\/[^/]+\.(?:ts|m4s|mp4)$/i.test(
+      pathname
+    )
+  );
+}
+
+function findAutomaticForeignPathSegmentMatches(
+  segments: PlaylistSegment[],
+  baseUrl?: string
+): KnownHlsAdSegmentRuleMatch[] {
+  const baseHost = extractHost(baseUrl || '');
+  const baseDirectory = (() => {
+    if (!baseUrl) return null;
+    try {
+      const path = new URL(baseUrl).pathname;
+      return path.slice(0, path.lastIndexOf('/') + 1);
+    } catch {
+      return null;
+    }
+  })();
+
+  if (!baseHost || !baseDirectory) {
+    return [];
+  }
+
+  const foreignSegments = segments.filter((segment) => {
+    if (segment.mediaHost !== baseHost) {
+      return false;
+    }
+
+    if (!isDatedMediaPathOutsideBase(segment.pathname, baseDirectory)) {
+      return false;
+    }
+
+    return segment.durationSeconds > 0 && segment.durationSeconds <= 4.5;
+  });
+
+  return groupConsecutivePlaylistSegments(foreignSegments)
+    .filter((group) => {
+      const durationSeconds = group.reduce(
+        (sum, segment) => sum + segment.durationSeconds,
+        0
+      );
+
+      return (
+        group.length >= 6 &&
+        group.length <= 14 &&
+        durationSeconds >= 8 &&
+        durationSeconds <= 35
+      );
+    })
+    .map((group) => ({
+      ruleId: 'auto-foreign-path-short-run-v1',
+      ruleName: '自动识别同域异目录连续短分片',
+      segmentIndexes: group.map((segment) => segment.segmentIndex),
+      segmentCount: group.length,
+      durationSeconds: Number(
+        group
+          .reduce((sum, segment) => sum + segment.durationSeconds, 0)
+          .toFixed(3)
+      ),
+      startTimeSeconds: Number(group[0].startTimeSeconds.toFixed(3)),
+      endTimeSeconds: Number(
+        group[group.length - 1].endTimeSeconds.toFixed(3)
+      ),
+      mediaHosts: Array.from(
+        new Set(
+          group
+            .map((segment) => segment.mediaHost)
+            .filter((host): host is string => Boolean(host))
+        )
+      ),
+      sampleUrls: group.map((segment) => segment.mediaUrl).slice(0, 3),
+    }));
+}
+
+function groupConsecutivePlaylistSegments(
+  segments: PlaylistSegment[]
+): PlaylistSegment[][] {
+  const groups: PlaylistSegment[][] = [];
+  let currentGroup: PlaylistSegment[] = [];
+
+  segments.forEach((segment) => {
+    const previousSegment = currentGroup[currentGroup.length - 1];
+    if (
+      previousSegment &&
+      segment.segmentIndex === previousSegment.segmentIndex + 1
+    ) {
+      currentGroup.push(segment);
+      return;
+    }
+
+    if (currentGroup.length > 0) {
+      groups.push(currentGroup);
+    }
+    currentGroup = [segment];
+  });
+
+  if (currentGroup.length > 0) {
+    groups.push(currentGroup);
+  }
+
+  return groups;
 }
 
 function createRemovedSegmentRunInfo(
@@ -498,9 +654,25 @@ function isAdBlock(
   primaryHost: string | null,
   knownRuleMatch: KnownHlsAdRuleMatch | null
 ): boolean {
+  const reasons = getAdBlockReasons(
+    block,
+    blockIndex,
+    blocks,
+    primaryHost,
+    knownRuleMatch
+  );
+
+  if (!reasons.some((reason) => reason !== 'url-keyword')) {
+    return false;
+  }
+
+  if (knownRuleMatch) {
+    return true;
+  }
+
   return (
-    getAdBlockReasons(block, blockIndex, blocks, primaryHost, knownRuleMatch)
-      .length > 0
+    block.durationSeconds <= MAX_AUTO_FILTER_AD_DURATION_SECONDS &&
+    block.segmentCount <= MAX_AUTO_FILTER_AD_SEGMENTS
   );
 }
 
@@ -629,7 +801,12 @@ export function getM3U8AdDebugSummary(
       reasons: blockReasons[blockIndex],
     }))
     .filter(
-      ({ block, reasons }) => block.segmentCount > 0 && reasons.length > 0
+      ({ block, blockIndex, reasons }) =>
+        block.segmentCount > 0 &&
+        reasons.some((reason) => reason !== 'url-keyword') &&
+        (knownRuleMatches[blockIndex] ||
+          (block.durationSeconds <= MAX_AUTO_FILTER_AD_DURATION_SECONDS &&
+            block.segmentCount <= MAX_AUTO_FILTER_AD_SEGMENTS))
     )
     .map(({ block, blockIndex, reasons }) =>
       createRemovedBlockInfo(block, reasons, knownRuleMatches[blockIndex])
@@ -729,6 +906,10 @@ function formatBlockReason(reason: AdBlockReason): string {
       return '异常域名';
     case 'known-rule':
       return '规则库命中';
+    case 'foreign-path':
+      return '异目录短分片';
+    case 'short-discontinuity':
+      return '短不连续片段';
     default:
       return reason;
   }
@@ -758,6 +939,155 @@ export function formatM3U8AdFilterDebugMessage(
     .join('；');
 
   return `发现 ${debugInfo.summary.removedBlocks.length} 段疑似广告内容：${details}`;
+}
+
+function getCandidateAction(
+  reasons: AdBlockReason[],
+  confidence: M3U8AdCandidateConfidence
+): M3U8AdCandidateAction {
+  if (confidence !== 'high') {
+    return 'observe';
+  }
+
+  if (reasons.length === 1 && reasons[0] === 'short-discontinuity') {
+    return 'observe';
+  }
+
+  return 'filter';
+}
+
+function getBlockCandidateConfidence(
+  reasons: AdBlockReason[]
+): M3U8AdCandidateConfidence {
+  if (
+    reasons.some((reason) =>
+      [
+        'cue-marker',
+        'scte35',
+        'daterange',
+        'alternate-host',
+        'known-rule',
+        'foreign-path',
+      ].includes(reason)
+    )
+  ) {
+    return 'high';
+  }
+
+  if (reasons.includes('url-keyword')) {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
+function createCandidateFromRemovedBlock(
+  block: M3U8RemovedAdBlockInfo
+): M3U8AdCandidate {
+  const reasons: AdBlockReason[] = block.ruleId?.startsWith(
+    'auto-foreign-path'
+  )
+    ? Array.from(new Set<AdBlockReason>([...block.reasons, 'foreign-path']))
+    : block.reasons;
+  const confidence = getBlockCandidateConfidence(reasons);
+
+  return {
+    startTimeSeconds: block.startTimeSeconds,
+    endTimeSeconds: block.endTimeSeconds,
+    durationSeconds: block.durationSeconds,
+    segmentIndexes: [],
+    segmentCount: block.segmentCount,
+    reasons,
+    confidence,
+    action: getCandidateAction(reasons, confidence),
+    ruleId: block.ruleId,
+    ruleName: block.ruleName,
+    hosts: block.hosts,
+    sampleUrls: block.sampleUrls,
+  };
+}
+
+function createLowConfidenceShortBlockCandidates(
+  content: string,
+  baseUrl?: string
+): M3U8AdCandidate[] {
+  const lines = content ? content.split(/\r?\n/) : [];
+  const blocks = splitIntoBlocks(lines, baseUrl);
+  const primaryHost = getPrimaryHost(blocks, baseUrl);
+  const knownRuleMatches = getKnownRuleMatches(blocks, baseUrl);
+
+  const candidates = blocks
+    .map((block, blockIndex) => {
+      const reasons = getAdBlockReasons(
+        block,
+        blockIndex,
+        blocks,
+        primaryHost,
+        knownRuleMatches[blockIndex]
+      );
+
+      if (
+        reasons.length > 0 ||
+        !block.separatorBefore ||
+        block.segmentCount <= 0 ||
+        block.segmentCount > 3 ||
+        block.durationSeconds > 20
+      ) {
+        return null;
+      }
+
+      const candidate: M3U8AdCandidate = {
+        startTimeSeconds: Number(block.startTimeSeconds.toFixed(3)),
+        endTimeSeconds: Number(block.endTimeSeconds.toFixed(3)),
+        durationSeconds: Number(block.durationSeconds.toFixed(3)),
+        segmentIndexes: [] as number[],
+        segmentCount: block.segmentCount,
+        reasons: ['short-discontinuity' as AdBlockReason],
+        confidence: 'low' as M3U8AdCandidateConfidence,
+        action: 'observe' as M3U8AdCandidateAction,
+        hosts: block.mediaHosts,
+        sampleUrls: block.mediaUrls.slice(0, 3),
+      };
+
+      return candidate;
+    })
+    .filter((candidate): candidate is M3U8AdCandidate => Boolean(candidate));
+
+  return candidates;
+}
+
+export function analyzeM3U8AdCandidates(
+  content: string,
+  baseUrl?: string
+): M3U8AdAnalysis {
+  const filteredContent = filterAdsFromM3U8(content, baseUrl);
+  const debugInfo = getM3U8AdFilterDebugInfo(content, filteredContent, baseUrl);
+  const candidates = [
+    ...debugInfo.summary.removedBlocks.map(createCandidateFromRemovedBlock),
+    ...createLowConfidenceShortBlockCandidates(content, baseUrl),
+  ];
+
+  return {
+    candidates,
+    summary: debugInfo.summary,
+    filteredContent,
+    removedLineCount: debugInfo.removedLineCount,
+  };
+}
+
+export function applyM3U8AdFiltering(
+  content: string,
+  analysis: M3U8AdAnalysis,
+  policy: M3U8AdFilteringPolicy = {}
+): string {
+  const minimumConfidence = policy.minimumConfidence || 'high';
+  const shouldFilter = analysis.candidates.some(
+    (candidate) =>
+      candidate.action === 'filter' &&
+      (minimumConfidence !== 'high' || candidate.confidence === 'high')
+  );
+
+  return shouldFilter ? analysis.filteredContent : content;
 }
 
 export function filterAdsFromM3U8(content: string, baseUrl?: string): string {

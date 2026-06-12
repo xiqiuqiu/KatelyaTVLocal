@@ -117,7 +117,7 @@ describe('hls proxy route', () => {
     jest.restoreAllMocks();
   });
 
-  it('keeps ad-like segments by default for playable proxy callers', async () => {
+  it('filters high-confidence ad segments by default for playable proxy callers', async () => {
     const response = await GET(
       new MockRequest(
         'https://app.example.com/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8'
@@ -125,10 +125,8 @@ describe('hls proxy route', () => {
     );
 
     const body = await response.text();
-    expect(body).toContain(
-      'https://app.example.com/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Fad-1.ts'
-    );
-    expect(body).toContain('#EXT-X-CUE-OUT:20');
+    expect(body).not.toContain('ad-1.ts');
+    expect(body).not.toContain('#EXT-X-CUE-OUT:20');
     expect(body).toContain(
       'https://app.example.com/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Fcontent-before.ts'
     );
@@ -158,11 +156,37 @@ describe('hls proxy route', () => {
     const payload = (await response.json()) as {
       observeOnly: boolean;
       removed: boolean;
+      candidates: unknown[];
       summary: { candidateAdBlocks: number; removedBlocks: unknown[] };
     };
     expect(payload.observeOnly).toBe(true);
     expect(payload.removed).toBe(false);
+    expect(payload.candidates.length).toBeGreaterThan(0);
     expect(payload.summary.candidateAdBlocks).toBeGreaterThan(0);
     expect(payload.summary.removedBlocks.length).toBeGreaterThan(0);
+  });
+
+  it('logs actual ad filtering results when high-confidence segments are removed', async () => {
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await GET(
+      new MockRequest(
+        'https://app.example.com/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Fepisode-2%2Findex.m3u8'
+      ) as unknown as Request
+    );
+
+    const filterLog = consoleSpy.mock.calls.find(([message]) =>
+      String(message).includes('[去广告][代理过滤]')
+    );
+    expect(filterLog).toBeDefined();
+    expect(String(filterLog?.[0])).toContain('已移除');
+    expect(filterLog?.[1]).toEqual(
+      expect.objectContaining({
+        removed: true,
+        removedLineCount: expect.any(Number),
+      })
+    );
+
+    consoleSpy.mockRestore();
   });
 });

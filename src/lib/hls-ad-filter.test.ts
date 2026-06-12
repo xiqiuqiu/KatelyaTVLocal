@@ -1,4 +1,6 @@
 import {
+  analyzeM3U8AdCandidates,
+  applyM3U8AdFiltering,
   filterAdsFromM3U8,
   formatM3U8AdFilterDebugMessage,
   getM3U8AdFilterDebugInfo,
@@ -224,6 +226,191 @@ function createRuyiRyplay12JjkS3Episode1Case(): string {
 }
 
 describe('filterAdsFromM3U8', () => {
+  it('analyzes high-confidence explicit ad markers before filtering', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXTINF:10,',
+      'content-before.ts',
+      '#EXT-X-CUE-OUT:20',
+      '#EXTINF:10,',
+      'ad-1.ts',
+      '#EXTINF:10,',
+      'ad-2.ts',
+      '#EXT-X-CUE-IN',
+      '#EXTINF:10,',
+      'content-after.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    const analysis = analyzeM3U8AdCandidates(
+      input,
+      'https://media.example.com/show/index.m3u8'
+    );
+
+    expect(analysis.candidates).toEqual([
+      expect.objectContaining({
+        confidence: 'high',
+        action: 'filter',
+        reasons: expect.arrayContaining(['cue-marker']),
+      }),
+    ]);
+    expect(applyM3U8AdFiltering(input, analysis)).not.toContain('ad-1.ts');
+  });
+
+  it('does not treat cue-in-only content after an ad break as an ad window', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXTINF:10,',
+      'content-before.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXT-X-CUE-OUT:20',
+      '#EXTINF:10,',
+      'ad-1.ts',
+      '#EXTINF:10,',
+      'ad-2.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXT-X-CUE-IN',
+      '#EXTINF:10,',
+      'content-after-1.ts',
+      '#EXTINF:10,',
+      'content-after-2.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    const analysis = analyzeM3U8AdCandidates(
+      input,
+      'https://media.example.com/show/index.m3u8'
+    );
+
+    expect(
+      analysis.candidates.filter((candidate) => candidate.action === 'filter')
+    ).toEqual([
+      expect.objectContaining({
+        startTimeSeconds: 10,
+        endTimeSeconds: 30,
+        segmentCount: 2,
+        confidence: 'high',
+        action: 'filter',
+      }),
+    ]);
+    expect(
+      analysis.candidates.filter((candidate) => candidate.action === 'filter')
+    ).not.toContainEqual(
+      expect.objectContaining({
+        sampleUrls: expect.arrayContaining([
+          expect.stringContaining('content-after'),
+        ]),
+      })
+    );
+  });
+
+  it('does not auto-filter implausibly large cue-marked content blocks', () => {
+    const largeContent = createSegments(61, 'content-after');
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXTINF:10,',
+      'content-before.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXT-X-CUE-OUT:798',
+      ...largeContent,
+      '#EXT-X-CUE-IN',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    const analysis = analyzeM3U8AdCandidates(
+      input,
+      'https://media.example.com/show/index.m3u8'
+    );
+
+    expect(analysis.summary.removedBlocks).toEqual([]);
+    expect(analysis.candidates).not.toContainEqual(
+      expect.objectContaining({
+        action: 'filter',
+      })
+    );
+    expect(applyM3U8AdFiltering(input, analysis)).toContain(
+      'content-after-61.ts'
+    );
+  });
+
+  it('observes low-confidence short discontinuity blocks without filtering them', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXTINF:10,',
+      'main-1.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXTINF:4,',
+      'short-1.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXTINF:10,',
+      'main-2.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    const analysis = analyzeM3U8AdCandidates(
+      input,
+      'https://media.example.com/show/index.m3u8'
+    );
+
+    expect(analysis.candidates).toContainEqual(
+      expect.objectContaining({
+        confidence: 'low',
+        action: 'observe',
+        reasons: ['short-discontinuity'],
+      })
+    );
+    expect(applyM3U8AdFiltering(input, analysis)).toContain('short-1.ts');
+  });
+
+  it('does not filter blocks based only on URL keywords', () => {
+    const input = [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXTINF:10,',
+      'main-1.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXTINF:10,',
+      'https://media.example.com/adventure-scene.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXTINF:10,',
+      'main-2.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+
+    const analysis = analyzeM3U8AdCandidates(
+      input,
+      'https://media.example.com/show/index.m3u8'
+    );
+
+    expect(applyM3U8AdFiltering(input, analysis)).toContain(
+      'adventure-scene.ts'
+    );
+    expect(analysis.summary.removedBlocks).toEqual([]);
+  });
+
+  it('automatically filters same-host foreign dated short segment runs', () => {
+    const input = createModuForeignPathInsertCase();
+    const analysis = analyzeM3U8AdCandidates(
+      input,
+      'https://play.example.com/20230919/zQzvuLQv/1143kb/hls/index.m3u8'
+    );
+
+    expect(analysis.candidates).toContainEqual(
+      expect.objectContaining({
+        ruleId: 'auto-foreign-path-short-run-v1',
+        confidence: 'high',
+        action: 'filter',
+      })
+    );
+    expect(applyM3U8AdFiltering(input, analysis)).not.toContain(
+      'foreign-ad-1.ts'
+    );
+  });
+
   it('records the ruyi ryplay 22-second midroll case in the known rule library', () => {
     expect(
       KNOWN_HLS_AD_RULES.some(
