@@ -12,10 +12,8 @@ export type HlsSegmentMode = 'direct' | 'proxy';
 export type HlsRecoveryProfile = 'hlsjs' | 'native-video';
 
 export type HlsPlaybackPolicyReason =
-  | 'remembered-proxy'
   | 'apple-native-hls-ios-skip'
-  | 'direct-preferred'
-  | 'proxy-unavailable';
+  | 'direct-preferred';
 
 export interface AppleNativeHlsDetectionInput {
   userAgent?: string | null;
@@ -71,8 +69,6 @@ export function detectAppleNativeHlsEnvironment({
 
 export function resolveHlsPlaybackPolicy({
   directUrl,
-  proxyUrl,
-  rememberedPlaybackMode,
   isAppleNativeHlsEnvironment,
 }: HlsPlaybackPolicyInput): HlsPlaybackPolicyResult {
   const runtime: HlsPlaybackRuntime = isAppleNativeHlsEnvironment
@@ -81,32 +77,6 @@ export function resolveHlsPlaybackPolicy({
   const recoveryProfile: HlsRecoveryProfile = isAppleNativeHlsEnvironment
     ? 'native-video'
     : 'hlsjs';
-
-  if (rememberedPlaybackMode === 'proxy') {
-    if (proxyUrl) {
-      return {
-        mode: 'proxy',
-        url: proxyUrl,
-        runtime,
-        playlistFilter: 'proxy-filter',
-        segmentMode: 'proxy',
-        recoveryProfile,
-        reason: 'remembered-proxy',
-        forcedProxyForAdFiltering: false,
-      };
-    }
-
-    return {
-      mode: 'direct',
-      url: directUrl,
-      runtime,
-      playlistFilter: isAppleNativeHlsEnvironment ? 'ios-skip' : 'client-filter',
-      segmentMode: 'direct',
-      recoveryProfile,
-      reason: 'proxy-unavailable',
-      forcedProxyForAdFiltering: false,
-    };
-  }
 
   if (isAppleNativeHlsEnvironment) {
     return {

@@ -39,7 +39,11 @@ import {
   detectAppleNativeHlsEnvironment,
   resolveHlsPlaybackPolicy,
 } from '@/lib/hls-playback-policy';
-import { getHlsRecoveryPlan } from '@/lib/hls-recovery';
+import {
+  type HlsRecoveryAction,
+  getHlsRecoveryPlan,
+  getHlsRecoveryProgressUpdate,
+} from '@/lib/hls-recovery';
 import { stopVideoElementLoading } from '@/lib/media-cleanup';
 import {
   type NativeJitterEvent,
@@ -466,10 +470,18 @@ function PlayPageClient() {
   const autoRecoveredSourceKeysRef = useRef<Set<string>>(new Set());
   const hlsRecoveryStateRef = useRef({
     stallCount: 0,
+    stallWindowStartedAt: 0,
+    stallWindowCount: 0,
     networkRecoveryAttempts: 0,
     mediaRecoveryAttempts: 0,
     lastErrorAt: 0,
     lastPlaybackTime: 0,
+    lastProgressAt: 0,
+    healthyWindowStartedAt: 0,
+    healthyWindowStartedTime: 0,
+    lastHealthyProgressAt: 0,
+    lastRecoveryAction: 'ignore' as HlsRecoveryAction,
+    lastRecoveryActionAt: 0,
   });
   const nativeRecoveryStateRef = useRef({
     stallCount: 0,
@@ -631,10 +643,18 @@ function PlayPageClient() {
     clearNativeWatchdogTimer();
     clearNativeFalsePlayingTimer();
     hlsRecoveryStateRef.current.stallCount = 0;
+    hlsRecoveryStateRef.current.stallWindowStartedAt = 0;
+    hlsRecoveryStateRef.current.stallWindowCount = 0;
     hlsRecoveryStateRef.current.networkRecoveryAttempts = 0;
     hlsRecoveryStateRef.current.mediaRecoveryAttempts = 0;
     hlsRecoveryStateRef.current.lastErrorAt = 0;
     hlsRecoveryStateRef.current.lastPlaybackTime = 0;
+    hlsRecoveryStateRef.current.lastProgressAt = 0;
+    hlsRecoveryStateRef.current.healthyWindowStartedAt = 0;
+    hlsRecoveryStateRef.current.healthyWindowStartedTime = 0;
+    hlsRecoveryStateRef.current.lastHealthyProgressAt = 0;
+    hlsRecoveryStateRef.current.lastRecoveryAction = 'ignore';
+    hlsRecoveryStateRef.current.lastRecoveryActionAt = 0;
     nativeRecoveryStateRef.current.stallCount = 0;
     nativeRecoveryStateRef.current.sourceRecoveryAttempts = 0;
     nativeRecoveryStateRef.current.playIntent = 'paused';
@@ -656,7 +676,6 @@ function PlayPageClient() {
       const lastPlaybackTime = hlsRecoveryStateRef.current.lastPlaybackTime;
       if (currentTime > lastPlaybackTime + 0.25) {
         clearWaitingRecoveryTimer();
-        hlsRecoveryStateRef.current.stallCount = 0;
         nativeRecoveryStateRef.current.stallCount = 0;
         nativeRecoveryStateRef.current.sourceRecoveryAttempts = 0;
         nativeRecoveryStateRef.current.lastProgressAt = Date.now();
@@ -667,9 +686,59 @@ function PlayPageClient() {
     }
 
     clearWaitingRecoveryTimer();
-    hlsRecoveryStateRef.current.stallCount = 0;
     nativeRecoveryStateRef.current.stallCount = 0;
     nativeRecoveryStateRef.current.sourceRecoveryAttempts = 0;
+  };
+
+  const resetHlsStallWindow = (reason: string, currentTime?: number) => {
+    const state = hlsRecoveryStateRef.current;
+    const hadActiveWindow = state.stallWindowCount > 0 || state.stallCount > 0;
+    state.stallCount = 0;
+    state.stallWindowStartedAt = 0;
+    state.stallWindowCount = 0;
+    state.networkRecoveryAttempts = 0;
+    state.mediaRecoveryAttempts = 0;
+    state.lastErrorAt = 0;
+    state.lastRecoveryAction = 'ignore';
+    state.lastRecoveryActionAt = 0;
+    if (typeof currentTime === 'number') {
+      state.lastPlaybackTime = currentTime;
+      state.lastProgressAt = Date.now();
+      state.healthyWindowStartedAt = state.lastProgressAt;
+      state.healthyWindowStartedTime = currentTime;
+      state.lastHealthyProgressAt = state.lastProgressAt;
+    }
+
+    if (hadActiveWindow) {
+      emitPlaybackDebugLog('hls-stall-window-reset', 'HLS.js 卡顿窗口已重置', {
+        reason,
+        currentTime: Number((currentTime || 0).toFixed(2)),
+      });
+    }
+  };
+
+  const markHlsPlaybackProgress = (currentTime: number) => {
+    const state = hlsRecoveryStateRef.current;
+    const now = Date.now();
+    const update = getHlsRecoveryProgressUpdate({
+      currentTime,
+      now,
+      lastProgressTime: state.lastPlaybackTime,
+      lastProgressAt: state.lastProgressAt,
+      healthyWindowStartedAt: state.healthyWindowStartedAt,
+      healthyWindowStartedTime: state.healthyWindowStartedTime,
+      hasActiveStallWindow: state.stallWindowCount > 0 || state.stallCount > 0,
+    });
+
+    state.lastPlaybackTime = update.lastProgressTime;
+    state.lastProgressAt = update.lastProgressAt;
+    state.healthyWindowStartedAt = update.healthyWindowStartedAt;
+    state.healthyWindowStartedTime = update.healthyWindowStartedTime;
+
+    if (update.healthy) {
+      state.lastHealthyProgressAt = now;
+      resetHlsStallWindow('playback-progress-healthy', currentTime);
+    }
   };
 
   const getNextRecoverySource = () => {
@@ -1202,70 +1271,6 @@ function PlayPageClient() {
     }
   };
 
-  const trySwitchToProxyPlayback = () => {
-    const directUrl = originalVideoUrlRef.current;
-    const proxyUrl = buildHlsProxyUrl(directUrl);
-    const currentPlayTime = artPlayerRef.current?.currentTime || 0;
-    const currentPolicy = playbackPolicyRef.current;
-    const isAlreadyFullProxy = currentPolicy
-      ? currentPolicy.segmentMode === 'proxy'
-      : playbackModeRef.current === 'proxy';
-
-    if (
-      isAlreadyFullProxy ||
-      sourceFallbackAttemptedRef.current ||
-      !directUrl ||
-      !proxyUrl
-    ) {
-      return false;
-    }
-
-    const resumePlan = getSourceSwitchResumePlan({
-      currentEpisodeIndex: currentEpisodeIndexRef.current,
-      targetEpisodeIndex: currentEpisodeIndexRef.current,
-      currentPlayTime,
-      existingResumeTime: resumeTimeRef.current,
-    });
-    resumeTimeRef.current = resumePlan.resumeTime;
-    sourceSwitchSavePendingRef.current = resumePlan.saveAfterCanPlay;
-
-    sourceFallbackAttemptedRef.current = true;
-    startupFeedbackSentRef.current = false;
-    playbackStartupStartedAtRef.current = Date.now();
-    playbackPolicyRef.current = currentPolicy
-      ? {
-          ...currentPolicy,
-          mode: 'proxy',
-          url: proxyUrl,
-          playlistFilter: 'proxy-filter',
-          segmentMode: 'proxy',
-          forcedProxyForAdFiltering: false,
-          reason: 'remembered-proxy',
-        }
-      : null;
-    resetHlsRecoveryCounters();
-    applyPlaybackMode('proxy');
-    setVideoLoadingStage('sourceChanging');
-    setIsVideoLoading(true);
-    setError(null);
-    emitPlaybackDebugLog(
-      'switch-full-proxy',
-      '已升级到完整代理播放',
-      {
-        fromUrl: videoUrlRef.current,
-        toUrl: proxyUrl,
-        resumeTime: resumePlan.resumeTime,
-      },
-      {
-        playbackUrl: proxyUrl,
-        policy: playbackPolicyRef.current,
-      }
-    );
-    videoUrlRef.current = proxyUrl;
-    setVideoUrl(proxyUrl);
-    return true;
-  };
-
   const trySwitchToNextAvailableSource = (reason: string) => {
     const nextSource = getNextRecoverySource();
     if (!nextSource) {
@@ -1358,12 +1363,12 @@ function PlayPageClient() {
 
   const logHlsPlaybackPolicy = (
     directUrl: string,
-    proxyUrl: string | null,
+    playbackUrl: string | null,
     policy: HlsPlaybackPolicyResult
   ) => {
     const logKey = JSON.stringify({
       directUrl,
-      proxyUrl,
+      playbackUrl,
       mode: policy.mode,
       runtime: policy.runtime,
       playlistFilter: policy.playlistFilter,
@@ -1380,7 +1385,7 @@ function PlayPageClient() {
 
     console.info('[播放策略] 当前播放链路', {
       directUrl,
-      playbackUrl: proxyUrl,
+      playbackUrl,
       playbackMode: policy.mode,
       runtime: policy.runtime,
       playlistFilter: policy.playlistFilter,
@@ -1421,22 +1426,6 @@ function PlayPageClient() {
       return;
     }
 
-    if (policy.reason === 'proxy-unavailable') {
-      const adStrategy =
-        policy.playlistFilter === 'ios-skip'
-          ? '使用广告时间窗跳过'
-          : policy.playlistFilter === 'client-filter'
-            ? '使用客户端广告过滤'
-            : '继续直连播放';
-      console.warn(
-        `[去广告][播放策略] 代理地址不可用，暂时使用直连播放（${adStrategy}）`,
-        {
-          directUrl,
-          playbackMode: policy.mode,
-          playlistFilter: policy.playlistFilter,
-        }
-      );
-    }
   };
 
   const trySkipNativeAdWindow = (
@@ -1480,7 +1469,7 @@ function PlayPageClient() {
 
   const observeIosAdSignals = (
     directUrl: string,
-    proxyUrl: string | null,
+    observationProxyUrl: string | null,
     policy: HlsPlaybackPolicyResult,
     retryAttempt = 0
   ) => {
@@ -1488,13 +1477,13 @@ function PlayPageClient() {
       policy.runtime !== 'native-hls' ||
       policy.playlistFilter !== 'ios-skip' ||
       !directUrl ||
-      !proxyUrl
+      !observationProxyUrl
     ) {
       return;
     }
 
-    const observationUrl = `${proxyUrl}${
-      proxyUrl.includes('?') ? '&' : '?'
+    const observationUrl = `${observationProxyUrl}${
+      observationProxyUrl.includes('?') ? '&' : '?'
     }observeOnly=1`;
     const sourceKey = getCurrentSourceKey();
     const episodeIndex = currentEpisodeIndexRef.current;
@@ -1564,7 +1553,7 @@ function PlayPageClient() {
 
         if (retryAttempt === 0 && typeof window !== 'undefined') {
           window.setTimeout(() => {
-            observeIosAdSignals(directUrl, proxyUrl, policy, 1);
+            observeIosAdSignals(directUrl, observationProxyUrl, policy, 1);
           }, 3000);
         }
       });
@@ -2966,7 +2955,10 @@ function PlayPageClient() {
 
               ensureVideoSource(video, url);
 
-              const executeRecoveryPlan = (reason: string, action: string) => {
+              const executeRecoveryPlan = (
+                reason: string,
+                action: HlsRecoveryAction
+              ) => {
                 switch (action) {
                   case 'nudge-playback': {
                     console.warn(`${reason}，尝试微调播放位置`);
@@ -2989,15 +2981,6 @@ function PlayPageClient() {
                     hls.recoverMediaError();
                     void video.play().catch(() => undefined);
                     return true;
-                  case 'switch-proxy':
-                    if (trySwitchToProxyPlayback()) {
-                      console.warn(`${reason}，已切换到代理重试`);
-                      hls.destroy();
-                      return true;
-                    }
-                    return trySwitchToNextAvailableSource(
-                      `${reason}，代理回退不可用`
-                    );
                   case 'switch-source':
                     return trySwitchToNextAvailableSource(reason);
                   case 'destroy':
@@ -3017,40 +3000,95 @@ function PlayPageClient() {
                 fatal = false
               ) => {
                 const now = Date.now();
-                if (
-                  hlsRecoveryStateRef.current.lastErrorAt > 0 &&
-                  now - hlsRecoveryStateRef.current.lastErrorAt > 20000
-                ) {
-                  hlsRecoveryStateRef.current.stallCount = 0;
-                  hlsRecoveryStateRef.current.networkRecoveryAttempts = 0;
-                  hlsRecoveryStateRef.current.mediaRecoveryAttempts = 0;
+                const state = hlsRecoveryStateRef.current;
+                const nativeState = nativeRecoveryStateRef.current;
+                const isUserPaused =
+                  nativeState.playIntent === 'paused' &&
+                  nativeState.pauseReason === 'user' &&
+                  video.paused;
+                if (isUserPaused) {
+                  emitPlaybackDebugLog(
+                    'hls-recovery',
+                    '用户暂停期间忽略 HLS.js 恢复',
+                    {
+                      action: 'ignore',
+                      planReason: '用户主动暂停，不执行自动恢复',
+                      errorType,
+                      errorDetails,
+                      fatal,
+                      currentTime: Number((video.currentTime || 0).toFixed(2)),
+                      paused: video.paused,
+                    },
+                    {
+                      playbackUrl: video.currentSrc || videoUrlRef.current,
+                    }
+                  );
+                  return;
                 }
-                hlsRecoveryStateRef.current.lastErrorAt = now;
 
-                if (
+                const isStallDetail =
                   errorDetails === 'bufferStalledError' ||
                   errorDetails === 'bufferNudgeOnStall' ||
-                  errorDetails === 'waitingTimeout'
+                  errorDetails === 'waitingTimeout';
+
+                if (isStallDetail) {
+                  if (
+                    state.stallWindowStartedAt <= 0 ||
+                    now - state.stallWindowStartedAt > 30000
+                  ) {
+                    state.stallWindowStartedAt = now;
+                    state.stallWindowCount = 0;
+                  }
+                  state.stallCount += 1;
+                  state.stallWindowCount += 1;
+                } else if (
+                  state.lastErrorAt > 0 &&
+                  now - state.lastErrorAt > 20000
                 ) {
-                  hlsRecoveryStateRef.current.stallCount += 1;
+                  state.networkRecoveryAttempts = 0;
+                  state.mediaRecoveryAttempts = 0;
                 }
+                state.lastErrorAt = now;
 
                 const plan = getHlsRecoveryPlan({
                   fatal,
                   errorType,
                   errorDetails,
                   playbackMode: playbackModeRef.current,
-                  stallCount: hlsRecoveryStateRef.current.stallCount,
-                  networkRecoveryAttempts:
-                    hlsRecoveryStateRef.current.networkRecoveryAttempts,
-                  mediaRecoveryAttempts:
-                    hlsRecoveryStateRef.current.mediaRecoveryAttempts,
+                  stallCount: state.stallCount,
+                  stallWindowCount: state.stallWindowCount,
+                  networkRecoveryAttempts: state.networkRecoveryAttempts,
+                  mediaRecoveryAttempts: state.mediaRecoveryAttempts,
                   hasAlternativeSource: Boolean(getNextRecoverySource()),
                 });
 
                 if (plan.action === 'ignore') {
                   return;
                 }
+
+                const minRecoveryIntervalMs =
+                  plan.action === 'nudge-playback'
+                    ? 1500
+                    : plan.action === 'restart-load' ||
+                        plan.action === 'recover-media'
+                      ? 5000
+                      : 0;
+                if (
+                  minRecoveryIntervalMs > 0 &&
+                  state.lastRecoveryAction === plan.action &&
+                  state.lastRecoveryActionAt > 0 &&
+                  now - state.lastRecoveryActionAt < minRecoveryIntervalMs
+                ) {
+                  return;
+                }
+
+                const bufferedRanges = Array.from(
+                  { length: video.buffered.length },
+                  (_, index) => ({
+                    start: Number(video.buffered.start(index).toFixed(2)),
+                    end: Number(video.buffered.end(index).toFixed(2)),
+                  })
+                );
 
                 emitPlaybackDebugLog(
                   'hls-recovery',
@@ -3061,16 +3099,29 @@ function PlayPageClient() {
                     errorType,
                     errorDetails,
                     fatal,
-                    stallCount: hlsRecoveryStateRef.current.stallCount,
-                    networkRecoveryAttempts:
-                      hlsRecoveryStateRef.current.networkRecoveryAttempts,
-                    mediaRecoveryAttempts:
-                      hlsRecoveryStateRef.current.mediaRecoveryAttempts,
+                    stallCount: state.stallCount,
+                    stallWindowCount: state.stallWindowCount,
+                    stallWindowAgeMs:
+                      state.stallWindowStartedAt > 0
+                        ? now - state.stallWindowStartedAt
+                        : 0,
+                    networkRecoveryAttempts: state.networkRecoveryAttempts,
+                    mediaRecoveryAttempts: state.mediaRecoveryAttempts,
+                    currentTime: Number((video.currentTime || 0).toFixed(2)),
+                    readyState: video.readyState,
+                    networkState: video.networkState,
+                    paused: video.paused,
+                    ended: video.ended,
+                    playbackMode: playbackModeRef.current,
+                    bufferedRanges,
+                    lastHealthyProgressAt: state.lastHealthyProgressAt,
                   },
                   {
                     playbackUrl: video.currentSrc || videoUrlRef.current,
                   }
                 );
+                state.lastRecoveryAction = plan.action;
+                state.lastRecoveryActionAt = now;
                 executeRecoveryPlan(reason || plan.reason, plan.action);
               };
 
@@ -3281,6 +3332,9 @@ function PlayPageClient() {
             state.stallCount = 0;
             state.sourceRecoveryAttempts = 0;
             state.lastProgressAt = now;
+            if (playbackPolicyRef.current?.runtime !== 'native-hls') {
+              resetHlsStallWindow('user-pause', video?.currentTime || 0);
+            }
           } else {
             state.pauseReason = 'buffering';
           }
@@ -3296,7 +3350,11 @@ function PlayPageClient() {
         artPlayerRef.current.on('video:timeupdate', () => {
           const currentTime = artPlayerRef.current.currentTime || 0;
           setCurrentPlayTime(currentTime);
-          markPlaybackHealthy(currentTime);
+          if (playbackPolicyRef.current?.runtime === 'native-hls') {
+            markPlaybackHealthy(currentTime);
+          } else {
+            markHlsPlaybackProgress(currentTime);
+          }
 
           // 同时更新时长（防止ready事件中获取不到）
           const duration = artPlayerRef.current.duration || 0;
@@ -3307,7 +3365,9 @@ function PlayPageClient() {
 
         // 监听视频可播放事件，这时恢复播放进度更可靠
         artPlayerRef.current.on('video:canplay', () => {
-          markPlaybackHealthy(artPlayerRef.current.currentTime || 0);
+          if (playbackPolicyRef.current?.runtime === 'native-hls') {
+            markPlaybackHealthy(artPlayerRef.current.currentTime || 0);
+          }
           emitPlaybackDebugLog(
             'video-canplay',
             '视频进入可播放状态',
@@ -3422,7 +3482,9 @@ function PlayPageClient() {
         });
 
         artPlayerRef.current.on('video:playing', () => {
-          markPlaybackHealthy(artPlayerRef.current.currentTime || 0);
+          if (playbackPolicyRef.current?.runtime === 'native-hls') {
+            markPlaybackHealthy(artPlayerRef.current.currentTime || 0);
+          }
           emitNativeVideoStateDebugLog(
             'native-video-playing',
             '原生播放器恢复播放推进'
@@ -3466,12 +3528,7 @@ function PlayPageClient() {
             }
           }
 
-          if (trySwitchToProxyPlayback()) {
-            console.log('播放器错误，已切换到代理重试');
-            return;
-          }
-
-          if (trySwitchToNextAvailableSource('播放器错误，代理回退不可用')) {
+          if (trySwitchToNextAvailableSource('播放器错误，自动切换到其他播放源')) {
             return;
           }
 
