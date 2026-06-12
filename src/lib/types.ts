@@ -186,6 +186,7 @@ export interface SourceStatus {
   fromMemory?: boolean;
   rankingSource?: 'd1' | 'live';
   rankScore?: number;
+  localConfidence?: 'low' | 'medium' | 'high';
 }
 
 export interface SourceDomainPreference {
@@ -193,6 +194,19 @@ export interface SourceDomainPreference {
   failCount: number;
   updatedAt: number;
   lastError?: string;
+}
+
+export interface SourcePlaybackQualityPreference {
+  mode: SourcePlaybackMode | 'unavailable';
+  lastPlayableAt?: number;
+  lastFailedAt?: number;
+  startupTimeMs?: number;
+  observedSpeedKbps?: number;
+  browserSpeedLabel?: string;
+  stallCount?: number;
+  confidence?: 'low' | 'medium' | 'high';
+  lastError?: string;
+  updatedAt: number;
 }
 
 export interface SourceProbeResult {

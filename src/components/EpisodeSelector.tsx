@@ -14,7 +14,7 @@ import { SearchResult, SourceStatus, SourceVideoInfo } from '@/lib/types';
 import {
   createPlayableSourceStatus,
   createSourceStatus,
-  getRememberedSourceStatus,
+  getRememberedSourceStatusForSource,
   getSourceIdentityKey,
   getSourceStatusDescription,
   getSourceStatusLabel,
@@ -22,6 +22,7 @@ import {
   isSourceStatusClickable,
   probeSourcePlayback,
   rememberSourceDomainPreference,
+  rememberSourcePlaybackQuality,
 } from '@/lib/utils';
 
 interface EpisodeSelectorProps {
@@ -147,7 +148,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     async (source: SearchResult) => {
       const sourceKey = getSourceIdentityKey(source.source, source.id);
       const existingStatus = sourceStatusMapRef.current.get(sourceKey);
-      const rememberedStatus = getRememberedSourceStatus(source.episodes);
+      const rememberedStatus = getRememberedSourceStatusForSource(
+        sourceKey,
+        source.episodes
+      );
 
       if (existingStatus?.kind === 'probing') {
         return existingStatus;
@@ -239,6 +243,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           'unavailable',
           serverProbeResult.reason
         );
+        rememberSourcePlaybackQuality(sourceKey, unavailableStatus.domain || null, {
+          mode: 'unavailable',
+          lastError: serverProbeResult.reason || '服务端探测失败',
+          confidence: 'medium',
+        });
         return unavailableStatus;
       }
 
@@ -271,6 +280,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           new Map(prev).set(sourceKey, directStatus)
         );
         rememberSourceDomainPreference(directStatus.domain || null, 'direct');
+        rememberSourcePlaybackQuality(sourceKey, directStatus.domain || null, {
+          mode: 'direct',
+          browserSpeedLabel: info.loadSpeed,
+          confidence: 'high',
+        });
         return directStatus;
       } catch (error) {
         const failureReason =
@@ -299,6 +313,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         setSourceStatusMap((prev) =>
           new Map(prev).set(sourceKey, playableStatus)
         );
+        rememberSourcePlaybackQuality(sourceKey, playableStatus.domain || null, {
+          mode: 'unavailable',
+          lastError: failureReason,
+          confidence: 'low',
+        });
         return playableStatus;
       }
     },
@@ -375,7 +394,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       availableSources.forEach((source) => {
         const sourceKey = getSourceIdentityKey(source.source, source.id);
         const previousStatus = prev.get(sourceKey);
-        const rememberedStatus = getRememberedSourceStatus(source.episodes);
+        const rememberedStatus = getRememberedSourceStatusForSource(
+          sourceKey,
+          source.episodes
+        );
         const isCurrentSource =
           source.source?.toString() === currentSource?.toString() &&
           source.id?.toString() === currentId?.toString();
