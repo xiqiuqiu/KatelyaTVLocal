@@ -101,6 +101,22 @@ describe('source status behavior', () => {
     expect(status?.reason).toBe('本机近期播放流畅');
   });
 
+  it('clears source-specific unavailable memory for transient browser probe errors', () => {
+    rememberSourcePlaybackQuality('slow-1', 'media.example.com', {
+      mode: 'unavailable',
+      lastError: 'Timeout loading video metadata',
+    });
+
+    expect(
+      getRememberedSourceStatusForSource('slow-1', [
+        'https://media.example.com/20250508/demo/index.m3u8',
+      ])
+    ).toBeNull();
+    expect(
+      window.localStorage.getItem('sourcePlaybackQualityPreferences')
+    ).toBe('{}');
+  });
+
   it('marks browser speed-test failures as playable instead of unavailable', () => {
     const status = createPlayableSourceStatus({
       reason: '测速失败，可尝试播放',

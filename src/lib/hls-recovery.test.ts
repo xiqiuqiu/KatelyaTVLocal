@@ -315,6 +315,30 @@ describe('shouldTriggerHlsWaitingRecovery', () => {
       reason: 'seek-buffer-grace',
     });
   });
+
+  it('ignores waiting recovery when the video element has been replaced', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        isSameVideoElement: false,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'stale-video',
+    });
+  });
+
+  it('ignores waiting recovery after playback has ended', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        isEnded: true,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'ended',
+    });
+  });
 });
 
 describe('getHlsRecoveryGuardPlaybackUrl', () => {

@@ -268,6 +268,20 @@ export function getSourcePlaybackQualityPreference(
   return preference;
 }
 
+function clearSourcePlaybackQualityPreference(
+  sourceKey: string,
+  domain: string | null
+): void {
+  const key = getSourcePlaybackQualityKey(sourceKey, domain);
+  if (!key || typeof window === 'undefined') return;
+
+  const allPreferences = readSourcePlaybackQualityPreferenceMap();
+  if (!(key in allPreferences)) return;
+
+  delete allPreferences[key];
+  writeSourcePlaybackQualityPreferenceMap(allPreferences);
+}
+
 export function clearSourceDomainPreference(domain: string | null): void {
   if (!domain || typeof window === 'undefined') return;
 
@@ -377,6 +391,11 @@ export function getRememberedSourceStatusForSource(
   }
 
   if (preference.mode === 'unavailable') {
+    if (isTransientBrowserProbeError(preference.lastError)) {
+      clearSourcePlaybackQualityPreference(sourceKey, domain);
+      return getRememberedSourceStatus(episodes);
+    }
+
     return createSourceStatus('unavailable', {
       domain,
       reason: preference.lastError || '该源近期在本机不可用',

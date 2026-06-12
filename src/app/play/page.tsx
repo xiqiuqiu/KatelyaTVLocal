@@ -855,9 +855,15 @@ function PlayPageClient() {
           return 'unavailable';
         }
         const sourceKey = getSourceIdentityKey(source.source, source.id);
+        const rememberedStatus = getRememberedSourceStatusForSource(
+          sourceKey,
+          source.episodes
+        );
+        if (rememberedStatus?.kind === 'unavailable') {
+          return 'unavailable';
+        }
         const status =
-          precomputedSourceStatusesRef.current.get(sourceKey) ||
-          getRememberedSourceStatusForSource(sourceKey, source.episodes);
+          precomputedSourceStatusesRef.current.get(sourceKey) || rememberedStatus;
         return status?.kind;
       },
       getCandidateScore: (source) =>
@@ -1163,6 +1169,8 @@ function PlayPageClient() {
     const sourceKey = getSourceIdentityKey(candidate.source, candidate.id);
     const episodeUrl = candidate.episodes[currentEpisodeIndexRef.current];
     const domain = getSourceDomainFromEpisodes(candidate.episodes);
+    const previousStatus =
+      precomputedSourceStatusesRef.current.get(sourceKey) ?? null;
     progressiveSourceProbeAttemptedKeysRef.current.add(sourceKey);
     progressiveSourceProbeInFlightRef.current = true;
 
@@ -1188,102 +1196,107 @@ function PlayPageClient() {
         timeoutMs: SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS,
       });
 
-      if (hlsRecoveryStateRef.current.playbackSessionId !== sessionId) {
-        return;
-      }
+      if (hlsRecoveryStateRef.current.playbackSessionId === sessionId) {
+        const nextVideoInfo = new Map(precomputedVideoInfoRef.current);
+        nextVideoInfo.set(sourceKey, testResult);
+        setPrecomputedVideoInfo(nextVideoInfo);
 
-      const nextVideoInfo = new Map(precomputedVideoInfoRef.current);
-      nextVideoInfo.set(sourceKey, testResult);
-      setPrecomputedVideoInfo(nextVideoInfo);
-
-      const nextStatuses = new Map(precomputedSourceStatusesRef.current);
-      nextStatuses.set(
-        sourceKey,
-        createSourceStatus('direct', {
-          reason: '本机后台测速通过',
-          playbackMode: 'direct',
-          domain,
-          measured: testResult,
-          fromMemory: true,
-          localConfidence: 'medium',
-        })
-      );
-      setPrecomputedSourceStatuses(nextStatuses);
-      updateSourceSelectionScores(
-        availableSourcesRef.current,
-        nextStatuses,
-        nextVideoInfo
-      );
-      rememberSourcePlaybackQuality(sourceKey, domain, {
-        mode: 'direct',
-        browserSpeedLabel: testResult.loadSpeed,
-        confidence: 'medium',
-      });
-      emitPlaybackDebugLog(
-        'progressive-source-probe-success',
-        '候选源后台测速通过',
-        {
+        const nextStatuses = new Map(precomputedSourceStatusesRef.current);
+        nextStatuses.set(
           sourceKey,
-          quality: testResult.quality,
-          loadSpeed: testResult.loadSpeed,
-          pingTime: testResult.pingTime,
-        }
-      );
+          createSourceStatus('direct', {
+            reason: '本机后台测速通过',
+            playbackMode: 'direct',
+            domain,
+            measured: testResult,
+            fromMemory: true,
+            localConfidence: 'medium',
+          })
+        );
+        setPrecomputedSourceStatuses(nextStatuses);
+        updateSourceSelectionScores(
+          availableSourcesRef.current,
+          nextStatuses,
+          nextVideoInfo
+        );
+        rememberSourcePlaybackQuality(sourceKey, domain, {
+          mode: 'direct',
+          browserSpeedLabel: testResult.loadSpeed,
+          confidence: 'medium',
+        });
+        emitPlaybackDebugLog(
+          'progressive-source-probe-success',
+          '候选源后台测速通过',
+          {
+            sourceKey,
+            quality: testResult.quality,
+            loadSpeed: testResult.loadSpeed,
+            pingTime: testResult.pingTime,
+          }
+        );
+      }
     } catch (error) {
-      if (hlsRecoveryStateRef.current.playbackSessionId !== sessionId) {
-        return;
-      }
-
-      const reason =
-        error instanceof Error ? error.message : '后台测速失败';
-      const nextStatuses = new Map(precomputedSourceStatusesRef.current);
-      nextStatuses.set(
-        sourceKey,
-        createSourceStatus('unavailable', {
-          domain,
-          reason,
-          fromMemory: true,
-          localConfidence: 'low',
-        })
-      );
-      const nextVideoInfo = new Map(precomputedVideoInfoRef.current);
-      nextVideoInfo.set(sourceKey, {
-        quality: '错误',
-        loadSpeed: '未知',
-        pingTime: 0,
-        hasError: true,
-        errorReason: reason,
-      });
-      setPrecomputedSourceStatuses(nextStatuses);
-      setPrecomputedVideoInfo(nextVideoInfo);
-      updateSourceSelectionScores(
-        availableSourcesRef.current,
-        nextStatuses,
-        nextVideoInfo
-      );
-      rememberSourcePlaybackQuality(sourceKey, domain, {
-        mode: 'unavailable',
-        lastError: reason,
-        confidence: 'low',
-      });
-      emitPlaybackDebugLog(
-        'progressive-source-probe-failed',
-        '候选源后台测速失败',
-        {
+      if (hlsRecoveryStateRef.current.playbackSessionId === sessionId) {
+        const reason =
+          error instanceof Error ? error.message : '后台测速失败';
+        const nextStatuses = new Map(precomputedSourceStatusesRef.current);
+        nextStatuses.set(
           sourceKey,
-          reason,
-        }
-      );
+          createSourceStatus('unavailable', {
+            domain,
+            reason,
+            fromMemory: true,
+            localConfidence: 'low',
+          })
+        );
+        const nextVideoInfo = new Map(precomputedVideoInfoRef.current);
+        nextVideoInfo.set(sourceKey, {
+          quality: '错误',
+          loadSpeed: '未知',
+          pingTime: 0,
+          hasError: true,
+          errorReason: reason,
+        });
+        setPrecomputedSourceStatuses(nextStatuses);
+        setPrecomputedVideoInfo(nextVideoInfo);
+        updateSourceSelectionScores(
+          availableSourcesRef.current,
+          nextStatuses,
+          nextVideoInfo
+        );
+        rememberSourcePlaybackQuality(sourceKey, domain, {
+          mode: 'unavailable',
+          lastError: reason,
+          confidence: 'low',
+        });
+        emitPlaybackDebugLog(
+          'progressive-source-probe-failed',
+          '候选源后台测速失败',
+          {
+            sourceKey,
+            reason,
+          }
+        );
+      }
     } finally {
       progressiveSourceProbeInFlightRef.current = false;
-      if (hlsRecoveryStateRef.current.playbackSessionId === sessionId) {
-        if (typeof window !== 'undefined') {
-          clearProgressiveSourceProbeTimer();
-          progressiveSourceProbeTimerRef.current = window.setTimeout(() => {
-            progressiveSourceProbeTimerRef.current = null;
-            void runProgressiveSourceProbe();
-          }, PROGRESSIVE_SOURCE_PROBE_INTERVAL_MS);
+      if (hlsRecoveryStateRef.current.playbackSessionId !== sessionId) {
+        progressiveSourceProbeAttemptedKeysRef.current.delete(sourceKey);
+        const restoredStatuses = new Map(precomputedSourceStatusesRef.current);
+        if (restoredStatuses.get(sourceKey)?.kind === 'probing') {
+          if (previousStatus) {
+            restoredStatuses.set(sourceKey, previousStatus);
+          } else {
+            restoredStatuses.delete(sourceKey);
+          }
+          setPrecomputedSourceStatuses(restoredStatuses);
         }
+      } else if (typeof window !== 'undefined') {
+        clearProgressiveSourceProbeTimer();
+        progressiveSourceProbeTimerRef.current = window.setTimeout(() => {
+          progressiveSourceProbeTimerRef.current = null;
+          void runProgressiveSourceProbe();
+        }, PROGRESSIVE_SOURCE_PROBE_INTERVAL_MS);
       }
     }
   };
@@ -1530,7 +1543,7 @@ function PlayPageClient() {
     }
   };
 
-  const trySwitchToNextAvailableSource = (reason: string) => {
+  const trySwitchToNextAvailableSource = async (reason: string) => {
     const currentSessionId = hlsRecoveryStateRef.current.playbackSessionId;
     if (hlsAutoSourceSwitchSessionRef.current === currentSessionId) {
       emitPlaybackDebugLog(
@@ -1568,12 +1581,10 @@ function PlayPageClient() {
     }
 
     const currentSourceKey = getCurrentSourceKey();
+    const nextSourceKey = getSourceIdentityKey(nextSource.source, nextSource.id);
     if (currentSourceKey) {
       autoRecoveredSourceKeysRef.current.add(currentSourceKey);
     }
-    autoRecoveredSourceKeysRef.current.add(
-      getSourceIdentityKey(nextSource.source, nextSource.id)
-    );
 
     console.warn(`${reason}，自动切换到播放源: ${nextSource.source_name}`);
     emitPlaybackDebugLog('switch-source', '已自动切换到其他播放源', {
@@ -1585,13 +1596,26 @@ function PlayPageClient() {
       resumeTime: recoveryResumeTime,
     });
     hlsAutoSourceSwitchSessionRef.current = currentSessionId;
-    resetHlsRecoveryCounters();
-    void handleSourceChange(nextSource.source, nextSource.id, nextSource.title, {
-      autoRecovery: true,
-      resumeTime: recoveryResumeTime,
-      reason,
-      autoPlayAfterReady: true,
-    });
+
+    const switched = await handleSourceChange(
+      nextSource.source,
+      nextSource.id,
+      nextSource.title,
+      {
+        autoRecovery: true,
+        resumeTime: recoveryResumeTime,
+        reason,
+        autoPlayAfterReady: true,
+      }
+    );
+
+    if (!switched) {
+      autoRecoveredSourceKeysRef.current.delete(nextSourceKey);
+      hlsAutoSourceSwitchSessionRef.current = null;
+      return false;
+    }
+
+    autoRecoveredSourceKeysRef.current.add(nextSourceKey);
     return true;
   };
 
@@ -2250,7 +2274,8 @@ function PlayPageClient() {
 
     if (decision.action === 'switch-source') {
       state.sourceRecoveryAttempts = 0;
-      return trySwitchToNextAvailableSource(decision.reason);
+      void trySwitchToNextAvailableSource(decision.reason);
+      return true;
     }
 
     return false;
@@ -2677,15 +2702,13 @@ function PlayPageClient() {
     newId: string,
     newTitle: string,
     options: SourceChangeOptions = {}
-  ) => {
+  ): Promise<boolean> => {
     try {
       // 显示换源加载状态
       setVideoLoadingStage('sourceChanging');
       setIsVideoLoading(true);
       sourceSwitchSavePendingRef.current = false;
       sourceSwitchAutoPlayPendingRef.current = false;
-      startHlsPlaybackSession();
-      resetHlsRecoveryCounters();
 
       // 记录当前播放进度（仅在同一集数切换时恢复）
       const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
@@ -2705,7 +2728,7 @@ function PlayPageClient() {
       if (!newDetail) {
         setIsVideoLoading(false);
         setError('未找到匹配结果');
-        return;
+        return false;
       }
 
       const rememberedStatus = getRememberedSourceStatusForSource(
@@ -2715,7 +2738,7 @@ function PlayPageClient() {
       if (rememberedStatus?.kind === 'unavailable') {
         setIsVideoLoading(false);
         setError(rememberedStatus.reason || '该播放源当前不可用');
-        return;
+        return false;
       }
 
       // 尝试跳转到当前正在播放的集数
@@ -2739,8 +2762,11 @@ function PlayPageClient() {
             nextEpisodeCount: newDetail.episodes?.length || 0,
           }
         );
-        return;
+        return false;
       }
+
+      startHlsPlaybackSession();
+      resetHlsRecoveryCounters();
       sourceFallbackAttemptedRef.current = false;
 
       const plannedResumeTime =
@@ -2786,10 +2812,12 @@ function PlayPageClient() {
       setCurrentId(newId);
       setDetail(newDetail);
       setCurrentEpisodeIndex(targetIndex);
+      return true;
     } catch (err) {
       // 隐藏换源加载状态
       setIsVideoLoading(false);
       setError(err instanceof Error ? err.message : '换源失败');
+      return false;
     }
   };
 
@@ -3288,7 +3316,8 @@ function PlayPageClient() {
                     void video.play().catch(() => undefined);
                     return true;
                   case 'switch-source':
-                    return trySwitchToNextAvailableSource(reason);
+                    void trySwitchToNextAvailableSource(reason);
+                    return true;
                   case 'destroy':
                     console.error(reason);
                     hls.destroy();
@@ -3390,8 +3419,7 @@ function PlayPageClient() {
                   hasStartedPlayback:
                     state.lastHealthyProgressAt > 0 ||
                     state.lastPlaybackTime > 1 ||
-                    video.currentTime > 1 ||
-                    video.readyState >= 2,
+                    video.currentTime > 1,
                   currentTimeSeconds: video.currentTime || 0,
                   readyState: video.readyState,
                 });
@@ -3964,40 +3992,45 @@ function PlayPageClient() {
             }
           }
 
-          if (trySwitchToNextAvailableSource('播放器错误，自动切换到其他播放源')) {
-            return;
-          }
+          void trySwitchToNextAvailableSource(
+            '播放器错误，自动切换到其他播放源'
+          ).then((switched) => {
+            if (switched) {
+              return;
+            }
 
-          if (!startupFeedbackSentRef.current) {
-            startupFeedbackSentRef.current = true;
-            const startupTimeMs =
-              playbackStartupStartedAtRef.current &&
-              playbackStartupStartedAtRef.current > 0
-                ? Date.now() - playbackStartupStartedAtRef.current
-                : undefined;
-            const sessionError =
-              err instanceof Error
-                ? err.message
-                : typeof err === 'string'
-                ? err
-                : '播放器启动失败';
-            rememberCurrentSourcePlaybackQuality({
-              mode: 'unavailable',
-              startupTimeMs,
-              lastError: sessionError,
-              confidence: 'medium',
-            });
-            void reportPlaybackFeedback({
-              sourceKey: getCurrentSourceKey(),
-              playbackDomain: getCurrentPlaybackDomain(),
-              title: videoTitleRef.current,
-              playbackMode: playbackModeRef.current,
-              startupSuccess: false,
-              startupTimeMs,
-              switchedToProxy: playbackModeRef.current === 'proxy',
-              sessionError,
-            });
-          }
+            if (!startupFeedbackSentRef.current) {
+              startupFeedbackSentRef.current = true;
+              const startupTimeMs =
+                playbackStartupStartedAtRef.current &&
+                playbackStartupStartedAtRef.current > 0
+                  ? Date.now() - playbackStartupStartedAtRef.current
+                  : undefined;
+              const sessionError =
+                err instanceof Error
+                  ? err.message
+                  : typeof err === 'string'
+                  ? err
+                  : '播放器启动失败';
+              rememberCurrentSourcePlaybackQuality({
+                mode: 'unavailable',
+                startupTimeMs,
+                lastError: sessionError,
+                confidence: 'medium',
+              });
+              void reportPlaybackFeedback({
+                sourceKey: getCurrentSourceKey(),
+                playbackDomain: getCurrentPlaybackDomain(),
+                title: videoTitleRef.current,
+                playbackMode: playbackModeRef.current,
+                startupSuccess: false,
+                startupTimeMs,
+                switchedToProxy: playbackModeRef.current === 'proxy',
+                sessionError,
+              });
+            }
+          });
+          return;
         });
 
         // 监听视频播放结束事件，自动播放下一集
