@@ -922,7 +922,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           {!sourceSearchLoading &&
             !sourceSearchError &&
             availableSources.length > 0 && (
-              <div className='mb-2 rounded-ui-sm border border-[rgba(var(--ui-accent),0.22)] bg-[rgba(var(--ui-accent),0.08)] px-3 py-2 text-[11px] leading-relaxed text-[rgb(var(--ui-text-muted))]'>
+              <div className='mb-2 shrink-0 rounded-ui-sm border border-[rgba(var(--ui-accent),0.22)] bg-[rgba(var(--ui-accent),0.08)] px-3 py-2 text-[11px] leading-relaxed text-[rgb(var(--ui-text-muted))]'>
                 线路已按推荐度排序：优先「推荐·直连」，其次「备用·需代理」，不可用线路会自动靠后。
               </div>
             )}
@@ -963,7 +963,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             !sourceSearchError &&
             availableSources.length > 0 && (
               <div className='flex min-h-0 flex-1 flex-col'>
-                <div className='grid flex-1 grid-cols-1 gap-2 overflow-y-auto pb-3 pr-0.5 sm:grid-cols-2 2xl:grid-cols-1'>
+                <div className='flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-3 pr-0.5'>
                   {sortSourcesBySelectionScore(
                     availableSources,
                     sourceSelectionScores || new Map(),
@@ -1022,6 +1022,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                       sourceStatus,
                       selectionScore?.reason
                     );
+                    const sourceDetailText =
+                      recommendationHint !== sourceStatusText
+                        ? recommendationHint
+                        : sourceStatusText;
 
                     return (
                       <button
@@ -1032,9 +1036,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                         aria-label={`${
                           isCurrentSource ? '当前线路' : '切换线路'
                         } ${source.source_name}`}
-                        title={`${source.title} · ${recommendationHint}`}
+                        title={`${source.title} · ${sourceDetailText}`}
                         onClick={() => isClickable && handleSourceClick(source)}
-                        className={`group relative min-h-11 min-w-0 rounded-ui-md border px-3 py-3 text-left transition-all duration-200
+                        className={`group relative w-full shrink-0 rounded-ui-md border px-3 py-3 text-left transition-all duration-200
                           ${
                             isCurrentSource
                               ? `${stateActiveClass} cursor-default disabled:opacity-100`
@@ -1080,11 +1084,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                           </span>
                         </div>
 
-                        <p className='mt-2 truncate text-[11px] font-medium text-[rgb(var(--ui-text-muted))]'>
-                          {sourceStatusText}
-                        </p>
-                        <p className='mt-1 truncate text-[10px] text-[rgb(var(--ui-text-muted))] opacity-90'>
-                          {recommendationHint}
+                        <p className='mt-2 line-clamp-2 text-[11px] font-medium leading-relaxed text-[rgb(var(--ui-text-muted))]'>
+                          {sourceDetailText}
                         </p>
                       </button>
                     );
