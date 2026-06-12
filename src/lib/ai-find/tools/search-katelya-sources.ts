@@ -171,14 +171,18 @@ export async function searchKatelyaSources({
   debugContext,
 }: {
   query: string;
-  limit?: number;
+  limit?: number | null;
   cacheTtlSeconds?: number;
   debugContext?: AiFindDebugContext;
 }): Promise<SearchResult[]> {
   const normalizedQuery = query.trim();
   if (!normalizedQuery) return [];
 
-  const cacheKey = `ai-find:search:${normalizedQuery}:${limit}`;
+  const normalizedLimit =
+    typeof limit === 'number' ? Math.max(1, Math.floor(limit)) : null;
+  const cacheKey = `ai-find:search:${normalizedQuery}:${
+    normalizedLimit ?? 'all'
+  }`;
   const cached = getAiFindCache<SearchResult[]>(cacheKey);
   if (cached) {
     logAiFindDebug({
@@ -186,7 +190,7 @@ export async function searchKatelyaSources({
       event: 'source search cache hit',
       details: {
         query: sanitizeAiFindDebugText(normalizedQuery),
-        limit,
+        limit: normalizedLimit,
         cachedCount: cached.length,
       },
     });
@@ -199,7 +203,7 @@ export async function searchKatelyaSources({
     event: 'source search cache miss',
     details: {
       query: sanitizeAiFindDebugText(normalizedQuery),
-      limit,
+      limit: normalizedLimit,
       cacheTtlSeconds,
     },
   });
@@ -222,7 +226,10 @@ export async function searchKatelyaSources({
       async (site) => searchSiteResults(site, normalizedQuery, debugContext)
     )
   ).flat();
-  const sorted = sortSearchResults(normalizedQuery, results).slice(0, limit);
+  const sortedResults = sortSearchResults(normalizedQuery, results);
+  const sorted = normalizedLimit
+    ? sortedResults.slice(0, normalizedLimit)
+    : sortedResults;
 
   logAiFindDebug({
     context: debugContext,
@@ -348,13 +355,23 @@ export async function buildAiFindResultGroup({
 
   const rawResults = await searchKatelyaSources({
     query: candidate.query,
-    limit: 30,
+    limit: null,
     cacheTtlSeconds,
     debugContext,
   });
+  const constrainedResults = filterSearchResults(rawResults, {
+    type: candidate.type,
+    year: candidate.year,
+  });
+  const resultsForAggregation =
+    candidate.type && candidate.type !== 'unknown'
+      ? constrainedResults
+      : candidate.year
+      ? constrainedResults
+      : rawResults;
   const aggregatedGroups = aggregateSearchResults(
     candidate.query,
-    rawResults
+    resultsForAggregation
   ).slice(0, maxGroups);
   const groups = requestOrigin
     ? await mapWithConcurrency(
@@ -411,6 +428,7 @@ export async function buildAiFindResultGroup({
     details: {
       query: candidate.query,
       rawCount: rawResults.length,
+      constrainedCount: resultsForAggregation.length,
       aggregatedCount: aggregatedGroups.length,
       groupedCount: groups.length,
       requestOriginEnabled: Boolean(requestOrigin),

@@ -2,6 +2,7 @@ import {
   buildHlsProxyUrl,
   createPlayableSourceStatus,
   getRememberedSourceStatus,
+  getSourceStatusDescription,
   getSourceStatusLabel,
   isSourceStatusClickable,
   probeSourcePlayback,
@@ -69,8 +70,41 @@ describe('source status behavior', () => {
     });
 
     expect(status.kind).toBe('playable');
-    expect(getSourceStatusLabel(status)).toBe('可播');
+    expect(getSourceStatusLabel(status)).toBe('可尝试');
+    expect(getSourceStatusDescription(status)).toBe('可尝试播放，失败时可换源');
     expect(isSourceStatusClickable(status)).toBe(true);
+  });
+
+  it('prefers probing status over stale video measurements', () => {
+    expect(
+      getSourceStatusDescription(
+        { kind: 'probing' },
+        {
+          quality: '1080p',
+          loadSpeed: '1.2 MB/s',
+          pingTime: 120,
+        }
+      )
+    ).toBe('正在检测当前线路');
+  });
+
+  it('uses user-facing source status labels and hides raw unavailable reasons', () => {
+    expect(
+      getSourceStatusLabel({
+        kind: 'direct',
+      })
+    ).toBe('推荐·直连');
+    expect(
+      getSourceStatusLabel({
+        kind: 'proxy',
+      })
+    ).toBe('备用·需代理');
+    expect(
+      getSourceStatusDescription({
+        kind: 'unavailable',
+        reason: '服务端探测失败: 403',
+      })
+    ).toBe('该线路当前不可用');
   });
 
   it('falls back to the local probe endpoint when the external probe fails', async () => {

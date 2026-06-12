@@ -113,16 +113,21 @@ export function calculateMeasuredSourceScore(
     if (ping <= 0) return 0;
     if (maxPing === minPing) return 100;
 
-    return Math.min(100, Math.max(0, ((maxPing - ping) / (maxPing - minPing)) * 100));
+    return Math.min(
+      100,
+      Math.max(0, ((maxPing - ping) / (maxPing - minPing)) * 100)
+    );
   })();
   score += pingScore * 0.2;
 
   return Math.round(score * 100) / 100;
 }
 
-export function buildMeasuredScoreContext(
-  measured: SourceVideoInfo[]
-): { maxSpeed: number; minPing: number; maxPing: number } {
+export function buildMeasuredScoreContext(measured: SourceVideoInfo[]): {
+  maxSpeed: number;
+  minPing: number;
+  maxPing: number;
+} {
   const validSpeeds = measured
     .filter((item) => !item.hasError)
     .map((item) => parseSpeedKbps(item.loadSpeed))
@@ -203,11 +208,20 @@ export function sortSourcesBySelectionScore(
   sources: SearchResult[],
   scores: Map<string, SourceSelectionScore>,
   getSourceKey: (source: SearchResult) => string = (source) =>
-    `${source.source}-${source.id}`
+    `${source.source}-${source.id}`,
+  currentSourceKey?: string | null
 ): SearchResult[] {
   return [...sources].sort((a, b) => {
-    const aScore = scores.get(getSourceKey(a));
-    const bScore = scores.get(getSourceKey(b));
+    const aKey = getSourceKey(a);
+    const bKey = getSourceKey(b);
+    const aIsCurrent = Boolean(currentSourceKey) && aKey === currentSourceKey;
+    const bIsCurrent = Boolean(currentSourceKey) && bKey === currentSourceKey;
+
+    if (aIsCurrent && !bIsCurrent) return -1;
+    if (!aIsCurrent && bIsCurrent) return 1;
+
+    const aScore = scores.get(aKey);
+    const bScore = scores.get(bKey);
 
     if (aScore && bScore && aScore.score !== bScore.score) {
       return bScore.score - aScore.score;

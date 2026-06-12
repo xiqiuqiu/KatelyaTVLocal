@@ -5,14 +5,16 @@ import { getSearchHistory, subscribeToDataUpdates } from '@/lib/db.client';
 import SearchPage from '@/app/search/page';
 
 const push = jest.fn();
+let mockSearchParams = new URLSearchParams();
+const mockSearchParamsAdapter = {
+  get: (key: string) => mockSearchParams.get(key),
+};
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
     push,
   }),
-  useSearchParams: () => ({
-    get: () => '',
-  }),
+  useSearchParams: () => mockSearchParamsAdapter,
 }));
 
 jest.mock('@/lib/db.client', () => ({
@@ -23,9 +25,15 @@ jest.mock('@/lib/db.client', () => ({
   subscribeToDataUpdates: jest.fn(),
 }));
 
-jest.mock('@/components/AiFindPanel', () => () => (
-  <div data-testid='ai-find-panel'>AI Find Panel</div>
-));
+jest.mock('@/components/AiFindPanel', () => {
+  return function MockAiFindPanel(props: { initialQuery?: string }) {
+    return (
+      <div data-testid='ai-find-panel'>
+        AI Find Panel {props.initialQuery || ''}
+      </div>
+    );
+  };
+});
 
 jest.mock(
   '@/components/PageLayout',
@@ -107,6 +115,7 @@ describe('SearchPage', () => {
     >;
 
   beforeEach(() => {
+    mockSearchParams = new URLSearchParams();
     mockedGetSearchHistory.mockResolvedValue([]);
     mockedSubscribeToDataUpdates.mockReturnValue(() => undefined);
     (
@@ -114,6 +123,11 @@ describe('SearchPage', () => {
         requestAnimationFrame?: (callback: FrameRequestCallback) => number;
       }
     ).requestAnimationFrame = jest.fn(() => 0);
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = jest
+      .fn()
+      .mockResolvedValue({
+        json: async () => ({ results: [] }),
+      });
   });
 
   afterEach(() => {
@@ -134,6 +148,22 @@ describe('SearchPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'AI 找片' }));
 
     expect(screen.getByTestId('ai-find-panel')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'AI 找片' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+  });
+
+  it('opens AI mode from URL params and passes the search query into the panel', async () => {
+    mockSearchParams = new URLSearchParams('mode=ai&q=鬼灭之刃');
+
+    await act(async () => {
+      render(<SearchPage />);
+    });
+
+    expect(screen.getByTestId('ai-find-panel')).toHaveTextContent(
+      'AI Find Panel 鬼灭之刃'
+    );
     expect(screen.getByRole('button', { name: 'AI 找片' })).toHaveAttribute(
       'aria-pressed',
       'true'

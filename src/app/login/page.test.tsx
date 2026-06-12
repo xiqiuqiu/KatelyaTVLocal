@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import {
   buildRegistrationInviteLink,
@@ -38,9 +38,9 @@ describe('LoginPage invite link', () => {
     expect(
       getInviteCodeFromSearchParams(new URLSearchParams('invite=INV-2'))
     ).toBe('INV-2');
-    expect(getInviteCodeFromSearchParams(new URLSearchParams('code=INV-3'))).toBe(
-      'INV-3'
-    );
+    expect(
+      getInviteCodeFromSearchParams(new URLSearchParams('code=INV-3'))
+    ).toBe('INV-3');
   });
 
   it('builds registration invite links from the current deployment origin', () => {
@@ -62,5 +62,26 @@ describe('LoginPage invite link', () => {
     await waitFor(() => {
       expect(inviteInput).toHaveValue('KATELYA-2026');
     });
+  });
+
+  it('keeps invite code and Turnstile fields on the registration tab only', async () => {
+    window.RUNTIME_CONFIG = {
+      STORAGE_TYPE: 'd1',
+      ENABLE_REGISTER: true,
+      REGISTER_INVITE_REQUIRED: true,
+      TURNSTILE_SITE_KEY: 'site-key',
+    };
+
+    render(<LoginPage />);
+
+    await screen.findByRole('button', { name: '登录', pressed: true });
+
+    expect(screen.queryByLabelText('邀请码')).not.toBeInTheDocument();
+    expect(document.getElementById('register-turnstile')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+
+    expect(await screen.findByLabelText('邀请码')).toBeInTheDocument();
+    expect(document.getElementById('register-turnstile')).not.toBeNull();
   });
 });

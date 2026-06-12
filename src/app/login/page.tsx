@@ -23,6 +23,8 @@ import IOSCompatibility from '@/components/IOSCompatibility';
 import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
+type AuthMode = 'login' | 'register';
+
 declare global {
   interface Window {
     turnstile?: {
@@ -53,12 +55,14 @@ function LoginPageClient() {
   const [enableRegister, setEnableRegister] = useState(false);
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
   const [registerInviteRequired, setRegisterInviteRequired] = useState(true);
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
   const { siteName } = useSite();
 
   useEffect(() => {
     const inviteCodeFromUrl = getInviteCodeFromSearchParams(searchParams);
     if (inviteCodeFromUrl) {
       setInviteCode(inviteCodeFromUrl);
+      setAuthMode('register');
     }
   }, [searchParams]);
 
@@ -78,7 +82,14 @@ function LoginPageClient() {
   }, []);
 
   useEffect(() => {
-    const shouldRenderTurnstile = enableRegister && turnstileSiteKey;
+    if (authMode !== 'register') {
+      setTurnstileToken('');
+    }
+  }, [authMode]);
+
+  useEffect(() => {
+    const shouldRenderTurnstile =
+      authMode === 'register' && enableRegister && turnstileSiteKey;
     if (!shouldRenderTurnstile) return;
 
     const scriptId = 'cf-turnstile-script';
@@ -113,7 +124,7 @@ function LoginPageClient() {
     } else {
       renderTurnstile();
     }
-  }, [enableRegister, turnstileSiteKey]);
+  }, [authMode, enableRegister, turnstileSiteKey]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -188,6 +199,16 @@ function LoginPageClient() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAuthSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    if (authMode === 'register') {
+      e.preventDefault();
+      void handleRegister();
+      return;
+    }
+
+    void handleSubmit(e);
   };
 
   return (
@@ -298,7 +319,33 @@ function LoginPageClient() {
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit} className='space-y-5'>
+              {shouldAskUsername && enableRegister && (
+                <div className='mb-6 grid grid-cols-2 gap-1.5 rounded-ui-md border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg-elevated)/0.62)] p-1.5'>
+                  {[
+                    ['login', '登录'],
+                    ['register', '注册'],
+                  ].map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type='button'
+                      aria-pressed={authMode === mode}
+                      onClick={() => {
+                        setError(null);
+                        setAuthMode(mode as AuthMode);
+                      }}
+                      className={`rounded-ui-sm px-4 py-2.5 text-sm font-semibold transition-all duration-200 ${
+                        authMode === mode
+                          ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
+                          : 'text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface))] hover:text-[rgb(var(--ui-text))]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <form onSubmit={handleAuthSubmit} className='space-y-5'>
                 {shouldAskUsername && (
                   <div>
                     <label
@@ -358,40 +405,42 @@ function LoginPageClient() {
                   </div>
                 </div>
 
-                {shouldAskUsername && enableRegister && (
-                  <>
-                    {registerInviteRequired && (
-                      <div>
-                        <label
-                          htmlFor='inviteCode'
-                          className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text-muted))]'
-                        >
-                          邀请码
-                        </label>
-                        <div className='relative'>
-                          <Hash className='pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
-                          <input
-                            id='inviteCode'
-                            type='text'
-                            autoComplete='off'
-                            className='block w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg-elevated)/0.76)] py-3 pl-12 pr-4 text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.34)] sm:text-base'
-                            placeholder='输入邀请码'
-                            value={inviteCode}
-                            onChange={(e) => setInviteCode(e.target.value)}
-                          />
+                {authMode === 'register' &&
+                  shouldAskUsername &&
+                  enableRegister && (
+                    <>
+                      {registerInviteRequired && (
+                        <div>
+                          <label
+                            htmlFor='inviteCode'
+                            className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text-muted))]'
+                          >
+                            邀请码
+                          </label>
+                          <div className='relative'>
+                            <Hash className='pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
+                            <input
+                              id='inviteCode'
+                              type='text'
+                              autoComplete='off'
+                              className='block w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg-elevated)/0.76)] py-3 pl-12 pr-4 text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.34)] sm:text-base'
+                              placeholder='输入邀请码'
+                              value={inviteCode}
+                              onChange={(e) => setInviteCode(e.target.value)}
+                            />
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {turnstileSiteKey ? (
-                      <div id='register-turnstile' className='min-h-[65px]' />
-                    ) : (
-                      <p className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'>
-                        注册人机验证尚未配置，请稍后再试。
-                      </p>
-                    )}
-                  </>
-                )}
+                      {turnstileSiteKey ? (
+                        <div id='register-turnstile' className='min-h-[65px]' />
+                      ) : (
+                        <p className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'>
+                          注册人机验证尚未配置，请稍后再试。
+                        </p>
+                      )}
+                    </>
+                  )}
 
                 {error && (
                   <p
@@ -402,75 +451,32 @@ function LoginPageClient() {
                   </p>
                 )}
 
-                {shouldAskUsername && enableRegister ? (
-                  <div className='grid gap-3 sm:grid-cols-2'>
-                    <button
-                      type='button'
-                      onClick={handleRegister}
-                      disabled={
-                        !password ||
+                <button
+                  type='submit'
+                  disabled={
+                    authMode === 'register'
+                      ? !password ||
                         !username ||
                         loading ||
                         !turnstileSiteKey ||
                         !turnstileToken ||
                         (registerInviteRequired && !inviteCode.trim())
-                      }
-                      className='inline-flex min-h-12 items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-surface-strong)/0.7)] px-4 py-3 text-base font-semibold text-[rgb(var(--ui-text))] shadow-ui-soft transition-all duration-200 hover:bg-[rgb(var(--ui-surface-strong)/0.92)] disabled:cursor-not-allowed disabled:opacity-50'
-                    >
-                      {loading ? (
-                        <>
-                          <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                          注册中...
-                        </>
-                      ) : (
-                        '注册'
-                      )}
-                    </button>
-                    <button
-                      type='submit'
-                      disabled={
-                        !password ||
-                        loading ||
-                        (shouldAskUsername && !username)
-                      }
-                      className='inline-flex min-h-12 items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-3 text-base font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50'
-                    >
-                      {loading ? (
-                        <>
-                          <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                          登录中...
-                        </>
-                      ) : (
-                        <>
-                          登录
-                          <ArrowRight className='ml-2 h-4 w-4' />
-                        </>
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type='submit'
-                    disabled={
-                      !password ||
-                      loading ||
-                      (shouldAskUsername && !username)
-                    }
-                    className='inline-flex min-h-12 w-full items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-3 text-base font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50'
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                        登录中...
-                      </>
-                    ) : (
-                      <>
-                        登录
-                        <ArrowRight className='ml-2 h-4 w-4' />
-                      </>
-                    )}
-                  </button>
-                )}
+                      : !password || loading || (shouldAskUsername && !username)
+                  }
+                  className='inline-flex min-h-12 w-full items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-3 text-base font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50'
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                      {authMode === 'register' ? '注册中...' : '登录中...'}
+                    </>
+                  ) : (
+                    <>
+                      {authMode === 'register' ? '创建账号' : '登录'}
+                      <ArrowRight className='ml-2 h-4 w-4' />
+                    </>
+                  )}
+                </button>
               </form>
             </div>
           </div>

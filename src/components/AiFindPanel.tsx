@@ -151,7 +151,11 @@ function createPendingGroup(
   };
 }
 
-export default function AiFindPanel() {
+interface AiFindPanelProps {
+  initialQuery?: string;
+}
+
+export default function AiFindPanel({ initialQuery = '' }: AiFindPanelProps) {
   const searchParams = useSearchParams();
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<AiFindResponse | null>(null);
@@ -174,6 +178,7 @@ export default function AiFindPanel() {
   const activeSavedRecordQueryRef = useRef<string | null>(null);
   const deletedSavedRecordIdsRef = useRef<Set<string>>(new Set());
   const formRef = useRef<HTMLFormElement | null>(null);
+  const lastInitialQueryRef = useRef('');
 
   const loadingText = getLoadingText(startedAt);
 
@@ -188,6 +193,16 @@ export default function AiFindPanel() {
       setGroupErrors({});
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const nextInitialQuery = initialQuery.trim();
+    if (!nextInitialQuery || nextInitialQuery === lastInitialQueryRef.current) {
+      return;
+    }
+
+    lastInitialQueryRef.current = nextInitialQuery;
+    setQuery((current) => (current.trim() ? current : nextInitialQuery));
+  }, [initialQuery]);
 
   useEffect(() => {
     let mounted = true;

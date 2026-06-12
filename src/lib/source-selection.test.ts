@@ -101,6 +101,85 @@ describe('buildSourceSelectionScores', () => {
     ]);
   });
 
+  it('pins the current source before higher-scored sources when requested', () => {
+    const sources = [
+      createSource('current', '1'),
+      createSource('fast', '2'),
+      createSource('steady', '3'),
+    ];
+    const scores = buildSourceSelectionScores({
+      sources,
+      statuses: new Map<string, SourceStatus>([
+        ['current-1', { kind: 'playable', reason: 'current but lower score' }],
+        ['fast-2', { kind: 'direct', reason: 'fast source', rankScore: 90 }],
+        [
+          'steady-3',
+          { kind: 'direct', reason: 'steady source', rankScore: 50 },
+        ],
+      ]),
+      currentEpisodeIndex: 0,
+    });
+
+    const sorted = sortSourcesBySelectionScore(
+      sources,
+      scores,
+      undefined,
+      'current-1'
+    );
+
+    expect(sorted).toEqual([sources[0], sources[1], sources[2]]);
+  });
+
+  it('keeps scored ordering for non-current sources after pinning current source', () => {
+    const sources = [
+      createSource('current', '1'),
+      createSource('middle', '2'),
+      createSource('best', '3'),
+    ];
+    const scores = buildSourceSelectionScores({
+      sources,
+      statuses: new Map<string, SourceStatus>([
+        ['current-1', { kind: 'playable', reason: 'current' }],
+        ['middle-2', { kind: 'direct', reason: 'middle', rankScore: 30 }],
+        ['best-3', { kind: 'direct', reason: 'best', rankScore: 80 }],
+      ]),
+      currentEpisodeIndex: 0,
+    });
+
+    const sorted = sortSourcesBySelectionScore(
+      sources,
+      scores,
+      undefined,
+      'current-1'
+    );
+
+    expect(sorted).toEqual([sources[0], sources[2], sources[1]]);
+  });
+
+  it('falls back to normal scored ordering when the current source key is missing', () => {
+    const sources = [
+      createSource('current', '1'),
+      createSource('fast', '2'),
+      createSource('steady', '3'),
+    ];
+    const scores = buildSourceSelectionScores({
+      sources,
+      statuses: new Map<string, SourceStatus>([
+        ['current-1', { kind: 'playable', reason: 'current but lower score' }],
+        ['fast-2', { kind: 'direct', reason: 'fast source', rankScore: 90 }],
+        [
+          'steady-3',
+          { kind: 'direct', reason: 'steady source', rankScore: 50 },
+        ],
+      ]),
+      currentEpisodeIndex: 0,
+    });
+
+    expect(
+      sortSourcesBySelectionScore(sources, scores, undefined, 'missing-9')
+    ).toEqual([sources[1], sources[2], sources[0]]);
+  });
+
   it('penalizes sources that do not contain the current episode', () => {
     const [short, complete] = [
       createSource('short', '1', ['a']),
