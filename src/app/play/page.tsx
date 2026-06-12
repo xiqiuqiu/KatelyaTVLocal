@@ -1873,7 +1873,7 @@ function PlayPageClient() {
       window.clearInterval(interval);
       endLoadingStallExclude();
     };
-  }, [isVideoLoading, videoLoadingStage]);
+  }, [isVideoLoading, videoLoadingStage, currentSource, currentId]);
 
   const requestNativeRecoveryAutoplay = (
     video: HTMLVideoElement | null | undefined,
@@ -2754,6 +2754,10 @@ function PlayPageClient() {
       setCurrentId(newId);
       setDetail(newDetail);
       setCurrentEpisodeIndex(targetIndex);
+
+      if (options.autoRecovery) {
+        resetLoadingStallTracking();
+      }
     } catch (err) {
       enterPlaybackFailure(
         err instanceof Error ? err.message : 'switch-failed'
