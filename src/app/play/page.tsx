@@ -511,6 +511,7 @@ function PlayPageClient() {
     lastProgressAt: 0,
     lastBufferIssueAt: 0,
     lastRecoveryObserveLogAt: 0,
+    lastArtBufferLogAt: 0,
     lastJitterLogAt: 0,
     lastJitterWindowAt: 0,
     jitterWindowCount: 0,
@@ -697,6 +698,7 @@ function PlayPageClient() {
     nativeRecoveryStateRef.current.lastProgressAt = 0;
     nativeRecoveryStateRef.current.lastBufferIssueAt = 0;
     nativeRecoveryStateRef.current.lastRecoveryObserveLogAt = 0;
+    nativeRecoveryStateRef.current.lastArtBufferLogAt = 0;
     nativeRecoveryStateRef.current.lastJitterLogAt = 0;
     nativeRecoveryStateRef.current.lastJitterWindowAt = 0;
     nativeRecoveryStateRef.current.jitterWindowCount = 0;
@@ -1871,7 +1873,7 @@ function PlayPageClient() {
       window.clearInterval(interval);
       endLoadingStallExclude();
     };
-  }, [isVideoLoading, videoLoadingStage, videoUrl]);
+  }, [isVideoLoading, videoLoadingStage]);
 
   const requestNativeRecoveryAutoplay = (
     video: HTMLVideoElement | null | undefined,
@@ -2045,22 +2047,26 @@ function PlayPageClient() {
       recordNativeJitterEvent(jitterEventType, video, playbackUrl, reason);
     }
 
-    emitPlaybackDebugLog(
-      'native-buffer-observed',
-      reason,
-      {
-        source: 'artplayer-event',
-        currentTime: Number((video.currentTime || 0).toFixed(2)),
-        readyState: video.readyState,
-        networkState: video.networkState,
-        paused: video.paused,
-        ended: video.ended,
-        playIntent: state.playIntent,
-      },
-      {
-        playbackUrl,
-      }
-    );
+    const now = Date.now();
+    if (now - state.lastArtBufferLogAt >= 8000) {
+      state.lastArtBufferLogAt = now;
+      emitPlaybackDebugLog(
+        'native-buffer-observed',
+        reason,
+        {
+          source: 'artplayer-event',
+          currentTime: Number((video.currentTime || 0).toFixed(2)),
+          readyState: video.readyState,
+          networkState: video.networkState,
+          paused: video.paused,
+          ended: video.ended,
+          playIntent: state.playIntent,
+        },
+        {
+          playbackUrl,
+        }
+      );
+    }
   };
 
   const scheduleNativeFalsePlayingCheck = () => {
@@ -2242,6 +2248,7 @@ function PlayPageClient() {
     state.lastProgressAt = now;
     state.lastBufferIssueAt = 0;
     state.lastRecoveryObserveLogAt = 0;
+    state.lastArtBufferLogAt = 0;
     state.lastJitterLogAt = 0;
     state.lastJitterWindowAt = 0;
     state.jitterWindowCount = 0;
@@ -3401,8 +3408,22 @@ function PlayPageClient() {
                   return;
                 }
 
+                const waitingStartedAt = Date.now();
+                const waitingStartedTime = video.currentTime || 0;
                 waitingRecoveryTimerRef.current = window.setTimeout(() => {
                   waitingRecoveryTimerRef.current = null;
+                  const state = hlsRecoveryStateRef.current;
+                  const progressedSinceWaiting =
+                    (video.currentTime || 0) > waitingStartedTime + 0.1;
+                  const progressedRecently =
+                    Date.now() - state.lastProgressAt < 4000;
+                  if (
+                    !video.paused &&
+                    !video.ended &&
+                    (progressedSinceWaiting || progressedRecently)
+                  ) {
+                    return;
+                  }
                   triggerRecovery(
                     '播放器等待缓冲超时',
                     'mediaError',
@@ -3413,6 +3434,7 @@ function PlayPageClient() {
               };
 
               const handleVideoPlaying = () => {
+                clearWaitingRecoveryTimer();
                 markPlaybackHealthy(video.currentTime || 0);
               };
 
@@ -3524,10 +3546,6 @@ function PlayPageClient() {
         });
 
         artPlayerRef.current.on('video:waiting', () => {
-          emitNativeVideoStateDebugLog(
-            'native-video-waiting',
-            '原生播放器进入等待缓冲状态'
-          );
           scheduleNativeRecoveryFromArtEvent(
             '原生播放器等待缓冲超时',
             'waiting'
@@ -3535,10 +3553,6 @@ function PlayPageClient() {
         });
 
         artPlayerRef.current.on('video:stalled', () => {
-          emitNativeVideoStateDebugLog(
-            'native-video-stalled',
-            '原生播放器报告媒体数据停滞'
-          );
           scheduleNativeRecoveryFromArtEvent(
             '原生播放器分片加载停滞',
             'stalled'
@@ -3546,10 +3560,6 @@ function PlayPageClient() {
         });
 
         artPlayerRef.current.on('video:suspend', () => {
-          emitNativeVideoStateDebugLog(
-            'native-video-suspend',
-            '原生播放器暂停拉取媒体数据'
-          );
           scheduleNativeRecoveryFromArtEvent(
             '原生播放器暂停拉取媒体数据',
             'suspend'
