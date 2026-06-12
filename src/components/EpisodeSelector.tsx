@@ -115,6 +115,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
   // 是否倒序显示
   const [descending, setDescending] = useState<boolean>(false);
+  const currentSourceKey =
+    currentSource && currentId
+      ? getSourceIdentityKey(currentSource, currentId)
+      : null;
 
   // 获取视频信息的函数
   const getSourceStatus = useCallback((source: SearchResult) => {
@@ -955,7 +959,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                   {sortSourcesBySelectionScore(
                     availableSources,
                     sourceSelectionScores || new Map(),
-                    (source) => getSourceIdentityKey(source.source, source.id)
+                    (source) => getSourceIdentityKey(source.source, source.id),
+                    currentSourceKey
                   ).map((source) => {
                     const isCurrentSource =
                       source.source?.toString() === currentSource?.toString() &&
