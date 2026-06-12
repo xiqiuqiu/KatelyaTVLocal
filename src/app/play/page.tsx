@@ -3191,6 +3191,13 @@ function PlayPageClient() {
                   networkRecoveryAttempts: state.networkRecoveryAttempts,
                   mediaRecoveryAttempts: state.mediaRecoveryAttempts,
                   hasAlternativeSource: Boolean(getNextRecoverySource()),
+                  hasStartedPlayback:
+                    state.lastHealthyProgressAt > 0 ||
+                    state.lastPlaybackTime > 1 ||
+                    video.currentTime > 1 ||
+                    video.readyState >= 2,
+                  currentTimeSeconds: video.currentTime || 0,
+                  readyState: video.readyState,
                 });
 
                 if (plan.action === 'ignore') {

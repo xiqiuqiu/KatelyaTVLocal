@@ -81,6 +81,72 @@ describe('getHlsRecoveryPlan', () => {
     });
   });
 
+  it('switches source immediately when a manifest fails before playback starts', () => {
+    expect(
+      getHlsRecoveryPlan({
+        fatal: true,
+        errorType: 'networkError',
+        errorDetails: 'manifestLoadError',
+        playbackMode: 'direct',
+        stallCount: 0,
+        stallWindowCount: 0,
+        networkRecoveryAttempts: 0,
+        mediaRecoveryAttempts: 0,
+        hasAlternativeSource: true,
+        hasStartedPlayback: false,
+        currentTimeSeconds: 0,
+        readyState: 0,
+      })
+    ).toEqual({
+      action: 'switch-source',
+      reason: '当前线路起播失败，切换到其他播放源',
+    });
+  });
+
+  it('does not switch source for startup manifest failure when no alternative source exists', () => {
+    expect(
+      getHlsRecoveryPlan({
+        fatal: true,
+        errorType: 'networkError',
+        errorDetails: 'manifestLoadError',
+        playbackMode: 'direct',
+        stallCount: 0,
+        stallWindowCount: 0,
+        networkRecoveryAttempts: 0,
+        mediaRecoveryAttempts: 0,
+        hasAlternativeSource: false,
+        hasStartedPlayback: false,
+        currentTimeSeconds: 0,
+        readyState: 0,
+      })
+    ).toEqual({
+      action: 'restart-load',
+      reason: '致命网络错误，重新拉取分片',
+    });
+  });
+
+  it('restarts load for fatal manifest errors after playback has started', () => {
+    expect(
+      getHlsRecoveryPlan({
+        fatal: true,
+        errorType: 'networkError',
+        errorDetails: 'manifestLoadError',
+        playbackMode: 'direct',
+        stallCount: 0,
+        stallWindowCount: 0,
+        networkRecoveryAttempts: 0,
+        mediaRecoveryAttempts: 0,
+        hasAlternativeSource: true,
+        hasStartedPlayback: true,
+        currentTimeSeconds: 120,
+        readyState: 4,
+      })
+    ).toEqual({
+      action: 'restart-load',
+      reason: '致命网络错误，重新拉取分片',
+    });
+  });
+
   it('escalates repeated network errors to source switching instead of proxy playback', () => {
     expect(
       getHlsRecoveryPlan({
