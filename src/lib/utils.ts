@@ -277,6 +277,30 @@ export function getSourceStatusDescription(
   }
 }
 
+export function getSourceRecommendationHint(
+  status: SourceStatus | null | undefined,
+  selectionReason?: string
+): string {
+  if (selectionReason?.trim()) {
+    return selectionReason;
+  }
+
+  switch (status?.kind) {
+    case 'direct':
+      return '系统推荐当前源，直连播放更稳定';
+    case 'proxy':
+      return '备用可用，主线路失败时可切换';
+    case 'playable':
+      return '可尝试播放，建议优先选择推荐线路';
+    case 'unavailable':
+      return '当前不可用，系统会自动避开';
+    case 'probing':
+      return '正在检测是否适合当前浏览器';
+    default:
+      return '等待检测完成后给出推荐';
+  }
+}
+
 export function isSourceStatusClickable(
   status: SourceStatus | null | undefined
 ): boolean {

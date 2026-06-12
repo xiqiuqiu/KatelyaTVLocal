@@ -1,5 +1,10 @@
 import { getAvailableApiSites } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
+import {
+  getSearchResultNoiseScore,
+  sortSearchResultGroupsByRanking,
+  sortSearchResultsByRanking,
+} from '@/lib/search-result-ranking';
 import type { SearchResult } from '@/lib/types';
 
 import { rankSearchResultGroupItems } from './rank-playable-results';
@@ -109,6 +114,58 @@ export function aggregateSearchResults(
     items,
     playbackHint: 'unknown',
   }));
+}
+
+export function filterAiFindGroupVariants(
+  candidate: Pick<AiFindCandidateQuery, 'type'>,
+  query: string,
+  items: SearchResult[]
+): SearchResult[] {
+  const rankedItems = sortSearchResultsByRanking(query, items);
+
+  if (candidate.type === 'movie') {
+    return rankedItems;
+  }
+
+  const cleanCandidates = rankedItems.filter(
+    (item) => getSearchResultNoiseScore(item) === 0
+  );
+
+  if (cleanCandidates.length === 0) {
+    return rankedItems;
+  }
+
+  const noisyItems = rankedItems.filter(
+    (item) => getSearchResultNoiseScore(item) > 0
+  );
+
+  return [...cleanCandidates, ...noisyItems];
+}
+
+export function rankAggregatedAiFindGroups(
+  query: string,
+  candidate: Pick<AiFindCandidateQuery, 'type'>,
+  groups: AiFindAggregatedResult[]
+): AiFindAggregatedResult[] {
+  const sortedEntries = sortSearchResultGroupsByRanking(
+    query,
+    groups.map((group) => [group.groupKey, group.items])
+  );
+
+  return sortedEntries.map(([groupKey, items]) => {
+    const rankedItems = filterAiFindGroupVariants(candidate, query, items);
+    const leadItem = rankedItems[0];
+
+    return {
+      groupKey,
+      title: leadItem.title,
+      year: leadItem.year || 'unknown',
+      type: getSearchResultType(leadItem),
+      poster: leadItem.poster,
+      items: rankedItems,
+      playbackHint: 'unknown',
+    };
+  });
 }
 
 async function searchSiteResults(
@@ -369,9 +426,10 @@ export async function buildAiFindResultGroup({
       : candidate.year
       ? constrainedResults
       : rawResults;
-  const aggregatedGroups = aggregateSearchResults(
+  const aggregatedGroups = rankAggregatedAiFindGroups(
     candidate.query,
-    resultsForAggregation
+    candidate,
+    aggregateSearchResults(candidate.query, resultsForAggregation)
   ).slice(0, maxGroups);
   const groups = requestOrigin
     ? await mapWithConcurrency(

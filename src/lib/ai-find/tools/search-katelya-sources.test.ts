@@ -5,6 +5,7 @@ import type { SearchResult } from '@/lib/types';
 import {
   aggregateSearchResults,
   buildAiFindResultGroup,
+  filterAiFindGroupVariants,
 } from './search-katelya-sources';
 
 jest.mock('@/lib/config', () => ({
@@ -112,5 +113,77 @@ describe('AI find Katelya source aggregation', () => {
     expect(group.groups.some((item) => item.title.includes('剧场版'))).toBe(
       false
     );
+  });
+
+  it('ranks TV main season above theater variants when year and type are unknown', async () => {
+    mockedSearchFromApi.mockResolvedValue([
+      makeResult({
+        id: 'theater-1',
+        title: '鬼灭之刃 剧场版 无限城篇',
+        year: '2025',
+        episodes: ['movie.m3u8'],
+      }),
+      makeResult({
+        id: 'commentary-1',
+        title: '鬼灭之刃 电影解说',
+        year: '2020',
+        episodes: ['commentary.m3u8'],
+      }),
+      makeResult({
+        id: 'tv-main',
+        title: '鬼灭之刃',
+        year: '2019',
+        episodes: Array.from(
+          { length: 26 },
+          (_, index) => `episode-${index + 1}.m3u8`
+        ),
+      }),
+      makeResult({
+        id: 'mandarin-1',
+        title: '鬼灭之刃 国语版',
+        year: '2019',
+        episodes: Array.from({ length: 26 }, (_, index) => `cn-${index}.m3u8`),
+      }),
+    ]);
+
+    const group = await buildAiFindResultGroup({
+      candidate: {
+        query: '鬼灭之刃',
+        reason: '默认找 TV 正片',
+        confidence: 'high',
+      },
+      maxGroups: 8,
+      cacheTtlSeconds: 0,
+    });
+
+    expect(group.groups[0]).toMatchObject({
+      title: '鬼灭之刃',
+      year: '2019',
+      type: 'tv',
+    });
+    expect(group.groups[0].items[0].episodes).toHaveLength(26);
+    expect(group.groups[0].items[0].title).toBe('鬼灭之刃');
+  });
+
+  it('demotes noisy variants within the same AI result group', () => {
+    const ranked = filterAiFindGroupVariants(
+      { type: 'tv' },
+      '鬼灭之刃',
+      [
+        makeResult({
+          id: 'mandarin',
+          title: '鬼灭之刃 国语版',
+          episodes: Array.from({ length: 26 }, () => 'a.m3u8'),
+        }),
+        makeResult({
+          id: 'main',
+          title: '鬼灭之刃',
+          episodes: Array.from({ length: 26 }, () => 'b.m3u8'),
+        }),
+      ]
+    );
+
+    expect(ranked[0].title).toBe('鬼灭之刃');
+    expect(ranked[1].title).toContain('国语版');
   });
 });

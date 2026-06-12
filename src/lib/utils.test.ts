@@ -2,6 +2,7 @@ import {
   buildHlsProxyUrl,
   createPlayableSourceStatus,
   getRememberedSourceStatus,
+  getSourceRecommendationHint,
   getSourceStatusDescription,
   getSourceStatusLabel,
   isSourceStatusClickable,
@@ -105,6 +106,20 @@ describe('source status behavior', () => {
         reason: '服务端探测失败: 403',
       })
     ).toBe('该线路当前不可用');
+  });
+
+  it('explains recommendation hints for ranked source statuses', () => {
+    expect(
+      getSourceRecommendationHint({
+        kind: 'direct',
+      })
+    ).toContain('系统推荐');
+    expect(
+      getSourceRecommendationHint(
+        { kind: 'proxy' },
+        '响应更快，适合当前网络'
+      )
+    ).toBe('响应更快，适合当前网络');
   });
 
   it('falls back to the local probe endpoint when the external probe fails', async () => {

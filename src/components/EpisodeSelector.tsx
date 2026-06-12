@@ -16,6 +16,7 @@ import {
   createSourceStatus,
   getRememberedSourceStatus,
   getSourceIdentityKey,
+  getSourceRecommendationHint,
   getSourceStatusDescription,
   getSourceStatusLabel,
   getVideoResolutionFromM3u8,
@@ -761,7 +762,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             role='tab'
             aria-selected={activeTab === 'episodes'}
             onClick={() => setActiveTab('episodes')}
-            className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-all duration-200
+            className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-all duration-200 min-h-11
                 ${
                   activeTab === 'episodes'
                     ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
@@ -777,7 +778,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           role='tab'
           aria-selected={activeTab === 'sources'}
           onClick={handleSourceTabClick}
-          className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-all duration-200
+          className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-all duration-200 min-h-11
                 ${
                   activeTab === 'sources'
                     ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
@@ -830,7 +831,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                         }}
                         onClick={() => handleCategoryClick(idx)}
                         aria-current={isActive ? 'true' : undefined}
-                        className={`${buttonWidth} relative flex-shrink-0 whitespace-nowrap rounded-ui-sm border px-2.5 py-2 text-center text-xs font-semibold transition-all duration-200
+                        className={`${buttonWidth} relative flex min-h-11 flex-shrink-0 items-center justify-center whitespace-nowrap rounded-ui-sm border px-2.5 py-2 text-center text-xs font-semibold transition-all duration-200
                           ${isActive ? stateActiveClass : stateIdleClass}
                         `.trim()}
                         title={`第 ${idx * episodesPerPage + 1}-${Math.min(
@@ -898,7 +899,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     e.stopPropagation();
                     handleEpisodeClick(episodeNumber);
                   }}
-                  className={`flex h-10 w-full cursor-pointer items-center justify-center rounded-ui-sm border text-sm font-medium transition-all duration-200
+                  className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-ui-sm border text-sm font-medium transition-all duration-200
                     ${
                       isActive
                         ? 'border border-[rgb(var(--ui-accent))] bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
@@ -918,6 +919,13 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       {/* 换源 Tab 内容 */}
       {activeTab === 'sources' && (
         <div className='mt-1 flex min-h-0 flex-1 flex-col'>
+          {!sourceSearchLoading &&
+            !sourceSearchError &&
+            availableSources.length > 0 && (
+              <div className='mb-2 rounded-ui-sm border border-[rgba(var(--ui-accent),0.22)] bg-[rgba(var(--ui-accent),0.08)] px-3 py-2 text-[11px] leading-relaxed text-[rgb(var(--ui-text-muted))]'>
+                线路已按推荐度排序：优先「推荐·直连」，其次「备用·需代理」，不可用线路会自动靠后。
+              </div>
+            )}
           {sourceSearchLoading && (
             <div className='flex items-center justify-center rounded-ui-md border border-white/10 bg-white/[0.035] py-8'>
               <div className='h-7 w-7 animate-spin rounded-full border-2 border-white/15 border-b-[rgb(var(--ui-accent))]'></div>
@@ -1009,6 +1017,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                       sourceStatus,
                       videoInfo
                     );
+                    const selectionScore = sourceSelectionScores?.get(sourceKey);
+                    const recommendationHint = getSourceRecommendationHint(
+                      sourceStatus,
+                      selectionScore?.reason
+                    );
 
                     return (
                       <button
@@ -1019,9 +1032,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                         aria-label={`${
                           isCurrentSource ? '当前线路' : '切换线路'
                         } ${source.source_name}`}
-                        title={`${source.title} · ${sourceStatusText}`}
+                        title={`${source.title} · ${recommendationHint}`}
                         onClick={() => isClickable && handleSourceClick(source)}
-                        className={`group relative min-w-0 rounded-ui-md border px-3 py-3 text-left transition-all duration-200
+                        className={`group relative min-h-11 min-w-0 rounded-ui-md border px-3 py-3 text-left transition-all duration-200
                           ${
                             isCurrentSource
                               ? `${stateActiveClass} cursor-default disabled:opacity-100`
@@ -1069,6 +1082,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
                         <p className='mt-2 truncate text-[11px] font-medium text-[rgb(var(--ui-text-muted))]'>
                           {sourceStatusText}
+                        </p>
+                        <p className='mt-1 truncate text-[10px] text-[rgb(var(--ui-text-muted))] opacity-90'>
+                          {recommendationHint}
                         </p>
                       </button>
                     );

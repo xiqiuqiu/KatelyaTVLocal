@@ -66,6 +66,14 @@ import {
   shouldSavePlayRecord,
 } from '@/lib/play-record-save-policy';
 import {
+  getPlaybackFailureViewModel,
+  normalizePlaybackFailureReason,
+  shouldAutoSwitchOnLoadingStall,
+  shouldEscalatePlaybackLoadingStall,
+  shouldShowPlaybackStallActions,
+  shouldSuppressPlaybackStallEscalation,
+} from '@/lib/playback-failure-ui';
+import {
   clampSourceSwitchResumeTime,
   getAutoRecoveryResumeTime,
   getNextRecoverySourceCandidate,
@@ -112,6 +120,7 @@ const SOURCE_SELECTION_TOTAL_BUDGET_MS = 2500;
 const SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS = 1800;
 const NATIVE_RECENT_BUFFER_ISSUE_WINDOW_MS = 30000;
 const SOURCE_SELECTION_DEEP_PROBE_LIMIT = 3;
+const PLAYBACK_LOADING_ACTION_DELAY_MS = 10000;
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
@@ -122,6 +131,7 @@ declare global {
     recoveryErrorListener?: EventListener;
     recoveryTimeupdateListener?: EventListener;
     recoverySeekingListener?: EventListener;
+    recoverySeekedListener?: EventListener;
   }
 }
 
@@ -373,6 +383,13 @@ function PlayPageClient() {
   }, [playbackMode]);
 
   const isVideoLoadingRef = useRef(true);
+  const loadingStallAutoSwitchAttemptedRef = useRef(false);
+  const loadingStallEscalatedRef = useRef(false);
+  const loadingStallExcludedMsRef = useRef(0);
+  const loadingStallExcludeStartedAtRef = useRef<number | null>(null);
+  const userSeekingRef = useRef(false);
+  const lastUserSeekAtRef = useRef(0);
+  const programmaticSeekRef = useRef(false);
 
   useEffect(() => {
     playbackDebugEnabledRef.current = playbackDebugEnabled;
@@ -504,11 +521,26 @@ function PlayPageClient() {
   const [isEpisodeSelectorCollapsed, setIsEpisodeSelectorCollapsed] =
     useState(false);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (window.matchMedia('(max-width: 1023px)').matches) {
+      setIsEpisodeSelectorCollapsed(true);
+    }
+  }, []);
+
   // 换源加载状态
   const [isVideoLoading, setIsVideoLoading] = useState(true);
   const [videoLoadingStage, setVideoLoadingStage] = useState<
     'initing' | 'sourceChanging'
   >('initing');
+  const [, setVideoLoadingStartedAt] = useState<
+    number | null
+  >(Date.now());
+  const [showPlaybackStallActions, setShowPlaybackStallActions] =
+    useState(false);
 
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -1600,6 +1632,11 @@ function PlayPageClient() {
       video.removeEventListener('seeking', video.recoverySeekingListener);
       video.recoverySeekingListener = undefined;
     }
+
+    if (video.recoverySeekedListener) {
+      video.removeEventListener('seeked', video.recoverySeekedListener);
+      video.recoverySeekedListener = undefined;
+    }
   };
 
   const disposeCurrentPlayer = () => {
@@ -1620,6 +1657,221 @@ function PlayPageClient() {
       artPlayerRef.current = null;
     }
   };
+
+  const enterPlaybackFailure = (rawReason: string) => {
+    const reasonCode = normalizePlaybackFailureReason(rawReason);
+    clearWaitingRecoveryTimer();
+    clearNativeWatchdogTimer();
+    clearNativeFalsePlayingTimer();
+    disposeCurrentPlayer();
+    setIsVideoLoading(false);
+    setShowPlaybackStallActions(false);
+    setError(reasonCode);
+  };
+
+  const retryCurrentPlayback = () => {
+    const detailData = detailRef.current;
+    const episodeIndex = currentEpisodeIndexRef.current;
+
+    setError(null);
+    resetLoadingStallTracking();
+    resetHlsRecoveryCounters();
+    startupFeedbackSentRef.current = false;
+    playbackStartupStartedAtRef.current = Date.now();
+    setVideoLoadingStage('initing');
+    setIsVideoLoading(true);
+
+    if (
+      !detailData ||
+      episodeIndex === null ||
+      !detailData.episodes ||
+      episodeIndex >= detailData.episodes.length
+    ) {
+      window.location.reload();
+      return;
+    }
+
+    disposeCurrentPlayer();
+    updateVideoUrl(detailData, episodeIndex);
+  };
+
+  const switchSourceFromPlaybackUi = () => {
+    setError(null);
+    setVideoLoadingStage('sourceChanging');
+    setIsVideoLoading(true);
+
+    const switched = trySwitchToNextAvailableSource('用户请求切换到其他播放源');
+    if (!switched) {
+      enterPlaybackFailure('no-alternative-source');
+    }
+  };
+
+  const resetLoadingStallTracking = () => {
+    loadingStallAutoSwitchAttemptedRef.current = false;
+    loadingStallEscalatedRef.current = false;
+    loadingStallExcludedMsRef.current = 0;
+    loadingStallExcludeStartedAtRef.current = null;
+  };
+
+  const beginLoadingStallExclude = () => {
+    if (loadingStallExcludeStartedAtRef.current === null) {
+      loadingStallExcludeStartedAtRef.current = Date.now();
+    }
+  };
+
+  const endLoadingStallExclude = () => {
+    if (loadingStallExcludeStartedAtRef.current === null) {
+      return;
+    }
+
+    loadingStallExcludedMsRef.current +=
+      Date.now() - loadingStallExcludeStartedAtRef.current;
+    loadingStallExcludeStartedAtRef.current = null;
+  };
+
+  const getLoadingStallExcludedMs = () => {
+    let excludedMs = loadingStallExcludedMsRef.current;
+    if (loadingStallExcludeStartedAtRef.current !== null) {
+      excludedMs += Date.now() - loadingStallExcludeStartedAtRef.current;
+    }
+    return excludedMs;
+  };
+
+  const getPlaybackInteractionState = () => {
+    const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+    const state = nativeRecoveryStateRef.current;
+    const isUserPaused =
+      Boolean(video?.paused) &&
+      state.playIntent === 'paused' &&
+      state.pauseReason === 'user';
+
+    return {
+      isUserPaused,
+      isUserSeeking: userSeekingRef.current,
+      lastUserSeekAt: lastUserSeekAtRef.current || null,
+    };
+  };
+
+  const isUserControlledPlaybackDelay = () => {
+    const now = Date.now();
+    return shouldSuppressPlaybackStallEscalation({
+      ...getPlaybackInteractionState(),
+      now,
+    });
+  };
+
+  const syncLoadingStallExcludeState = () => {
+    if (!isVideoLoadingRef.current) {
+      endLoadingStallExclude();
+      return;
+    }
+
+    if (isUserControlledPlaybackDelay()) {
+      beginLoadingStallExclude();
+      return;
+    }
+
+    endLoadingStallExclude();
+  };
+
+  const markUserSeeking = () => {
+    if (programmaticSeekRef.current) {
+      return;
+    }
+
+    userSeekingRef.current = true;
+    lastUserSeekAtRef.current = Date.now();
+    syncLoadingStallExcludeState();
+  };
+
+  const markUserSeekCompleted = () => {
+    userSeekingRef.current = false;
+    if (!programmaticSeekRef.current) {
+      lastUserSeekAtRef.current = Date.now();
+    }
+    programmaticSeekRef.current = false;
+    syncLoadingStallExcludeState();
+  };
+
+  useEffect(() => {
+    if (!isVideoLoading) {
+      endLoadingStallExclude();
+      resetLoadingStallTracking();
+      setVideoLoadingStartedAt(null);
+      setShowPlaybackStallActions(false);
+      return;
+    }
+
+    const startedAt = Date.now();
+    resetLoadingStallTracking();
+    setVideoLoadingStartedAt(startedAt);
+    setShowPlaybackStallActions(false);
+
+    const interval = window.setInterval(() => {
+      if (!isVideoLoadingRef.current) {
+        return;
+      }
+
+      syncLoadingStallExcludeState();
+
+      const interaction = getPlaybackInteractionState();
+      const now = Date.now();
+
+      if (
+        !shouldEscalatePlaybackLoadingStall({
+          loadingStartedAt: startedAt,
+          now,
+          thresholdMs: PLAYBACK_LOADING_ACTION_DELAY_MS,
+          excludedMs: getLoadingStallExcludedMs(),
+          ...interaction,
+        })
+      ) {
+        setShowPlaybackStallActions(false);
+        return;
+      }
+
+      if (loadingStallEscalatedRef.current) {
+        return;
+      }
+
+      const hasAlternativeSource = Boolean(getNextRecoverySource());
+      if (
+        shouldAutoSwitchOnLoadingStall({
+          hasAlternativeSource,
+          autoSwitchAttempted: loadingStallAutoSwitchAttemptedRef.current,
+        })
+      ) {
+        loadingStallAutoSwitchAttemptedRef.current = true;
+        loadingStallEscalatedRef.current = true;
+        const switched = trySwitchToNextAvailableSource('加载超时，自动切换线路');
+        if (!switched) {
+          enterPlaybackFailure('playback-unavailable');
+        }
+        return;
+      }
+
+      if (!hasAlternativeSource) {
+        loadingStallEscalatedRef.current = true;
+        enterPlaybackFailure('playback-unavailable');
+        return;
+      }
+
+      loadingStallEscalatedRef.current = true;
+      setShowPlaybackStallActions(
+        shouldShowPlaybackStallActions({
+          isVideoLoading: true,
+          loadingStartedAt: startedAt,
+          now,
+          thresholdMs: PLAYBACK_LOADING_ACTION_DELAY_MS,
+        })
+      );
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+      endLoadingStallExclude();
+    };
+  }, [isVideoLoading, videoLoadingStage, videoUrl]);
 
   const requestNativeRecoveryAutoplay = (
     video: HTMLVideoElement | null | undefined,
@@ -2034,16 +2286,22 @@ function PlayPageClient() {
     };
     const handleSeeking = () => {
       nativeAdSkipLastUserSeekAtRef.current = Date.now();
+      markUserSeeking();
+    };
+    const handleSeeked = () => {
+      markUserSeekCompleted();
     };
 
     video.recoveryPlayingListener = handlePlaying;
     video.recoveryErrorListener = handleError;
     video.recoveryTimeupdateListener = handleTimeupdate;
     video.recoverySeekingListener = handleSeeking;
+    video.recoverySeekedListener = handleSeeked;
     video.addEventListener('playing', handlePlaying);
     video.addEventListener('error', handleError);
     video.addEventListener('timeupdate', handleTimeupdate);
     video.addEventListener('seeking', handleSeeking);
+    video.addEventListener('seeked', handleSeeked);
 
     if (typeof window !== 'undefined') {
       nativeWatchdogTimerRef.current = window.setInterval(() => {
@@ -2254,8 +2512,8 @@ function PlayPageClient() {
 
     const initAll = async () => {
       if (!currentSource && !currentId && !videoTitle && !searchTitle) {
-        setError('缺少必要参数');
         setLoading(false);
+        enterPlaybackFailure('missing-params');
         return;
       }
       setSourceSearchLoading(true);
@@ -2279,8 +2537,8 @@ function PlayPageClient() {
         sourcesInfo = await fetchSourceDetail(currentSource, currentId);
       }
       if (sourcesInfo.length === 0) {
-        setError('未找到匹配结果');
         setLoading(false);
+        enterPlaybackFailure('no-results');
         return;
       }
 
@@ -2293,8 +2551,8 @@ function PlayPageClient() {
         if (target) {
           detailData = target;
         } else {
-          setError('未找到匹配结果');
           setLoading(false);
+          enterPlaybackFailure('no-results');
           return;
         }
       }
@@ -2411,15 +2669,13 @@ function PlayPageClient() {
         (source) => source.source === newSource && source.id === newId
       );
       if (!newDetail) {
-        setIsVideoLoading(false);
-        setError('未找到匹配结果');
+        enterPlaybackFailure('no-results');
         return;
       }
 
       const rememberedStatus = getRememberedSourceStatus(newDetail.episodes);
       if (rememberedStatus?.kind === 'unavailable') {
-        setIsVideoLoading(false);
-        setError(rememberedStatus.reason || '该播放源当前不可用');
+        enterPlaybackFailure(rememberedStatus.reason || 'source-unavailable');
         return;
       }
 
@@ -2492,9 +2748,9 @@ function PlayPageClient() {
       setDetail(newDetail);
       setCurrentEpisodeIndex(targetIndex);
     } catch (err) {
-      // 隐藏换源加载状态
-      setIsVideoLoading(false);
-      setError(err instanceof Error ? err.message : '换源失败');
+      enterPlaybackFailure(
+        err instanceof Error ? err.message : 'switch-failed'
+      );
     }
   };
 
@@ -2827,12 +3083,12 @@ function PlayPageClient() {
       currentEpisodeIndex >= detail.episodes.length ||
       currentEpisodeIndex < 0
     ) {
-      setError(`选集索引无效，当前共 ${totalEpisodes} 集`);
+      enterPlaybackFailure(`invalid-episode:${totalEpisodes}`);
       return;
     }
 
     if (!videoUrl) {
-      setError('视频地址无效');
+      enterPlaybackFailure('invalid-video-url');
       return;
     }
     console.log(videoUrl);
@@ -2986,7 +3242,7 @@ function PlayPageClient() {
                   case 'destroy':
                     console.error(reason);
                     hls.destroy();
-                    setError('当前播放源不可恢复，请稍后重试或手动换源');
+                    enterPlaybackFailure('source-unrecoverable');
                     return true;
                   default:
                     return false;
@@ -3302,11 +3558,25 @@ function PlayPageClient() {
 
         artPlayerRef.current.on('video:play', () => {
           setNativePlaybackIntent('playing');
+          syncLoadingStallExcludeState();
           emitNativeVideoStateDebugLog(
             'native-video-play',
             '原生播放器收到播放请求'
           );
           scheduleNativeFalsePlayingCheck();
+        });
+
+        artPlayerRef.current.on('pause', () => {
+          setNativePlaybackIntent('paused');
+          syncLoadingStallExcludeState();
+        });
+
+        artPlayerRef.current.on('video:seeking', () => {
+          markUserSeeking();
+        });
+
+        artPlayerRef.current.on('video:seeked', () => {
+          markUserSeekCompleted();
         });
 
         artPlayerRef.current.on('video:pause', () => {
@@ -3389,6 +3659,7 @@ function PlayPageClient() {
                 resumeTime: resumeTimeRef.current,
                 duration,
               });
+              programmaticSeekRef.current = true;
               artPlayerRef.current.currentTime = target;
               appliedResumeTime = target;
               console.log('成功恢复播放进度到:', resumeTimeRef.current);
@@ -3494,6 +3765,28 @@ function PlayPageClient() {
 
         artPlayerRef.current.on('error', (err: any) => {
           console.error('播放器错误:', err);
+
+          if (isUserControlledPlaybackDelay()) {
+            emitPlaybackDebugLog(
+              'player-error-suppressed',
+              '用户暂停或拖动进度期间忽略播放器错误升级',
+              {
+                error:
+                  err instanceof Error
+                    ? err.message
+                    : typeof err === 'string'
+                    ? err
+                    : String(err || 'unknown'),
+                ...getPlaybackInteractionState(),
+              },
+              {
+                playbackUrl:
+                  artPlayerRef.current?.video?.currentSrc || videoUrlRef.current,
+              }
+            );
+            return;
+          }
+
           emitPlaybackDebugLog(
             'player-error',
             '播放器报告错误',
@@ -3554,6 +3847,14 @@ function PlayPageClient() {
                   : '播放器启动失败',
             });
           }
+
+          enterPlaybackFailure(
+            err instanceof Error
+              ? err.message
+              : typeof err === 'string'
+              ? err
+              : 'playback-unavailable'
+          );
         });
 
         // 监听视频播放结束事件，自动播放下一集
@@ -3609,7 +3910,7 @@ function PlayPageClient() {
         }
       } catch (err) {
         console.error('创建播放器失败:', err);
-        setError('播放器初始化失败');
+        enterPlaybackFailure('player-init-failed');
       }
     };
 
@@ -3643,6 +3944,32 @@ function PlayPageClient() {
   }
 
   if (error) {
+    const hasAlternativeSource = Boolean(getNextRecoverySource());
+    const failureReason = normalizePlaybackFailureReason(error);
+    const failureView = getPlaybackFailureViewModel({
+      error,
+      hasSearchTitle: Boolean(videoTitle),
+      hasAlternativeSource,
+      reason: failureReason,
+    });
+    const runFailureAction = (action: typeof failureView.primaryAction) => {
+      if (action === 'switch-source') {
+        switchSourceFromPlaybackUi();
+        return;
+      }
+
+      if (action === 'retry') {
+        retryCurrentPlayback();
+        return;
+      }
+
+      if (videoTitle) {
+        router.push(`/search?q=${encodeURIComponent(videoTitle)}`);
+      } else {
+        router.back();
+      }
+    };
+
     return (
       <PageLayout activePath='/play'>
         <div className='flex min-h-[70vh] items-center justify-center'>
@@ -3650,59 +3977,43 @@ function PlayPageClient() {
             variant='frosted'
             className='mx-auto w-full max-w-lg px-6 py-8 text-center'
           >
-            {/* 错误图标 */}
             <div className='relative mb-8'>
-              <div className='relative mx-auto flex h-24 w-24 items-center justify-center rounded-ui-lg bg-red-500 shadow-2xl transition-transform duration-300 hover:scale-105'>
-                <div className='text-white text-4xl'>😵</div>
-                {/* 脉冲效果 */}
-                <div className='absolute -inset-2 animate-pulse rounded-ui-lg bg-red-500 opacity-20'></div>
-              </div>
-
-              {/* 浮动错误粒子 */}
-              <div className='absolute top-0 left-0 w-full h-full pointer-events-none'>
-                <div className='absolute top-2 left-2 w-2 h-2 bg-red-400 rounded-full animate-bounce'></div>
-                <div
-                  className='absolute top-4 right-4 w-1.5 h-1.5 bg-orange-400 rounded-full animate-bounce'
-                  style={{ animationDelay: '0.5s' }}
-                ></div>
-                <div
-                  className='absolute bottom-3 left-6 w-1 h-1 bg-yellow-400 rounded-full animate-bounce'
-                  style={{ animationDelay: '1s' }}
-                ></div>
+              <div className='relative mx-auto flex h-20 w-20 items-center justify-center rounded-ui-lg border border-red-400/25 bg-red-500/18 text-red-100 shadow-ui-soft'>
+                <span className='text-3xl font-bold'>!</span>
               </div>
             </div>
 
-            {/* 错误信息 */}
             <div className='mb-8 space-y-4'>
               <h2 className='text-2xl font-bold text-[rgb(var(--ui-text))]'>
-                哎呀，出现了一些问题
+                {failureView.title}
               </h2>
               <div className='rounded-ui-md border border-red-500/25 bg-red-500/10 p-4'>
-                <p className='font-medium text-red-200'>{error}</p>
+                <p className='font-medium text-red-100'>{failureView.message}</p>
               </div>
               <p className='text-sm text-[rgb(var(--ui-text-muted))]'>
-                请检查网络连接或尝试刷新页面
+                系统已隐藏原始错误信息，避免暴露线路状态码或播放器内部原因。
               </p>
             </div>
 
-            {/* 操作按钮 */}
             <div className='space-y-3'>
               <button
-                onClick={() =>
-                  videoTitle
-                    ? router.push(`/search?q=${encodeURIComponent(videoTitle)}`)
-                    : router.back()
-                }
+                onClick={() => runFailureAction(failureView.primaryAction)}
                 className='w-full rounded-ui-md bg-[rgb(var(--ui-accent))] px-6 py-3 font-medium text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-200 hover:scale-[1.02] hover:brightness-110'
               >
-                {videoTitle ? '🔍 返回搜索' : '← 返回上页'}
+                {failureView.primaryAction === 'switch-source'
+                  ? '换个线路'
+                  : '重新尝试'}
               </button>
 
               <button
-                onClick={() => window.location.reload()}
+                onClick={() => runFailureAction(failureView.secondaryAction)}
                 className='w-full rounded-ui-md border border-white/10 bg-white/5 px-6 py-3 font-medium text-[rgb(var(--ui-text))] transition-colors duration-200 hover:bg-white/10'
               >
-                🔄 重新尝试
+                {failureView.secondaryAction === 'retry'
+                  ? '重新尝试'
+                  : videoTitle
+                  ? '返回搜索'
+                  : '返回上页'}
               </button>
             </div>
           </Surface>
@@ -3739,7 +4050,7 @@ function PlayPageClient() {
           }
         />
 
-        <div className='grid gap-6 2xl:grid-cols-[minmax(0,1fr)_380px]'>
+        <div className='grid gap-6 lg:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_380px]'>
           <Surface variant='raised' className='min-w-0 overflow-hidden p-3'>
             <div className='relative aspect-video min-h-[260px] w-full overflow-hidden md:min-h-[360px] lg:min-h-[460px] 2xl:min-h-[620px]'>
               <div
@@ -3764,7 +4075,13 @@ function PlayPageClient() {
 
               {/* 换源加载蒙层 */}
               {isVideoLoading && (
-                <PlayerLoadingOverlay stage={videoLoadingStage} />
+                <PlayerLoadingOverlay
+                  stage={videoLoadingStage}
+                  showActions={showPlaybackStallActions}
+                  canSwitchSource={Boolean(getNextRecoverySource())}
+                  onRetry={retryCurrentPlayback}
+                  onSwitchSource={switchSourceFromPlaybackUi}
+                />
               )}
 
               {playbackDebugEnabled && (
@@ -3889,11 +4206,11 @@ function PlayPageClient() {
             {isEpisodeSelectorCollapsed && (
               <button
                 onClick={() => setIsEpisodeSelectorCollapsed(false)}
-                className='w-full rounded-ui-md border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-[rgb(var(--ui-text))] transition hover:bg-white/10'
+                className='min-h-11 w-full rounded-ui-md border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-[rgb(var(--ui-text))] transition hover:bg-white/10'
                 title='显示选集面板'
                 type='button'
               >
-                显示选集
+                显示选集与线路
               </button>
             )}
           </PlayerSidebar>
