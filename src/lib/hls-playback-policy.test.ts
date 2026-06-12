@@ -48,7 +48,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.reason).toBe('direct-preferred');
   });
 
-  it('respects remembered proxy playback before terminal-specific filtering', () => {
+  it('ignores remembered proxy playback on Android and desktop because proxy playback is not a default recovery path', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
@@ -57,17 +57,17 @@ describe('resolveHlsPlaybackPolicy', () => {
       isAppleNativeHlsEnvironment: false,
     });
 
-    expect(result.mode).toBe('proxy');
-    expect(result.url).toBe(proxyUrl);
+    expect(result.mode).toBe('direct');
+    expect(result.url).toBe(directUrl);
     expect(result.runtime).toBe('hlsjs');
-    expect(result.playlistFilter).toBe('proxy-filter');
-    expect(result.segmentMode).toBe('proxy');
+    expect(result.playlistFilter).toBe('client-filter');
+    expect(result.segmentMode).toBe('direct');
     expect(result.recoveryProfile).toBe('hlsjs');
     expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('remembered-proxy');
+    expect(result.reason).toBe('direct-preferred');
   });
 
-  it('uses full proxy mode on iOS when the source is remembered as proxy-only', () => {
+  it('ignores remembered proxy playback on iOS and keeps native direct playback', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
@@ -76,14 +76,14 @@ describe('resolveHlsPlaybackPolicy', () => {
       isAppleNativeHlsEnvironment: true,
     });
 
-    expect(result.mode).toBe('proxy');
-    expect(result.url).toBe(proxyUrl);
+    expect(result.mode).toBe('direct');
+    expect(result.url).toBe(directUrl);
     expect(result.runtime).toBe('native-hls');
-    expect(result.playlistFilter).toBe('proxy-filter');
-    expect(result.segmentMode).toBe('proxy');
+    expect(result.playlistFilter).toBe('ios-skip');
+    expect(result.segmentMode).toBe('direct');
     expect(result.recoveryProfile).toBe('native-video');
     expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('remembered-proxy');
+    expect(result.reason).toBe('apple-native-hls-ios-skip');
   });
 
   it('falls back to direct playback when proxy filtering is unavailable', () => {
@@ -212,10 +212,10 @@ describe('detectAppleNativeHlsEnvironment', () => {
   });
 });
 
-describe('resolveHlsPlaybackPolicy — remembered-proxy with no proxy available', () => {
+describe('resolveHlsPlaybackPolicy — legacy proxy preference', () => {
   const directUrl = 'https://media.example.com/show/index.m3u8';
 
-  it('falls back to direct when remembered mode is proxy but proxyUrl is null', () => {
+  it('keeps direct when remembered mode is proxy and proxyUrl is null', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl: null,
@@ -226,6 +226,6 @@ describe('resolveHlsPlaybackPolicy — remembered-proxy with no proxy available'
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
     expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('proxy-unavailable');
+    expect(result.reason).toBe('direct-preferred');
   });
 });
