@@ -15,7 +15,6 @@ import type {
 
 const AI_FIND_SOURCE_SEARCH_CONCURRENCY = 4;
 const AI_FIND_GROUP_RANKING_CONCURRENCY = 3;
-const AI_FIND_CANDIDATE_GROUP_SEARCH_LIMIT = 120;
 type SearchSite = Parameters<typeof searchFromApi>[0];
 
 function normalizeTitle(title: string): string {
@@ -172,14 +171,18 @@ export async function searchKatelyaSources({
   debugContext,
 }: {
   query: string;
-  limit?: number;
+  limit?: number | null;
   cacheTtlSeconds?: number;
   debugContext?: AiFindDebugContext;
 }): Promise<SearchResult[]> {
   const normalizedQuery = query.trim();
   if (!normalizedQuery) return [];
 
-  const cacheKey = `ai-find:search:${normalizedQuery}:${limit}`;
+  const normalizedLimit =
+    typeof limit === 'number' ? Math.max(1, Math.floor(limit)) : null;
+  const cacheKey = `ai-find:search:${normalizedQuery}:${
+    normalizedLimit ?? 'all'
+  }`;
   const cached = getAiFindCache<SearchResult[]>(cacheKey);
   if (cached) {
     logAiFindDebug({
@@ -187,7 +190,7 @@ export async function searchKatelyaSources({
       event: 'source search cache hit',
       details: {
         query: sanitizeAiFindDebugText(normalizedQuery),
-        limit,
+        limit: normalizedLimit,
         cachedCount: cached.length,
       },
     });
@@ -200,7 +203,7 @@ export async function searchKatelyaSources({
     event: 'source search cache miss',
     details: {
       query: sanitizeAiFindDebugText(normalizedQuery),
-      limit,
+      limit: normalizedLimit,
       cacheTtlSeconds,
     },
   });
@@ -223,7 +226,10 @@ export async function searchKatelyaSources({
       async (site) => searchSiteResults(site, normalizedQuery, debugContext)
     )
   ).flat();
-  const sorted = sortSearchResults(normalizedQuery, results).slice(0, limit);
+  const sortedResults = sortSearchResults(normalizedQuery, results);
+  const sorted = normalizedLimit
+    ? sortedResults.slice(0, normalizedLimit)
+    : sortedResults;
 
   logAiFindDebug({
     context: debugContext,
@@ -349,7 +355,7 @@ export async function buildAiFindResultGroup({
 
   const rawResults = await searchKatelyaSources({
     query: candidate.query,
-    limit: AI_FIND_CANDIDATE_GROUP_SEARCH_LIMIT,
+    limit: null,
     cacheTtlSeconds,
     debugContext,
   });

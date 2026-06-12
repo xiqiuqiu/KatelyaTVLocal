@@ -66,7 +66,7 @@ describe('AI find Katelya source aggregation', () => {
 
   it('keeps the requested TV season even when newer movie variants fill the first result page', async () => {
     mockedSearchFromApi.mockResolvedValue([
-      ...Array.from({ length: 35 }, (_, index) =>
+      ...Array.from({ length: 150 }, (_, index) =>
         makeResult({
           id: `movie-${index}`,
           title:
