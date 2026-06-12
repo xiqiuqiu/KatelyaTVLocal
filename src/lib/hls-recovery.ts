@@ -53,6 +53,35 @@ export interface HlsRecoveryProgressUpdate {
   healthyWindowStartedTime: number;
 }
 
+export type HlsWaitingRecoveryIgnoreReason =
+  | 'stale-session'
+  | 'stale-url'
+  | 'stale-video'
+  | 'ended'
+  | 'user-paused'
+  | 'user-seeking'
+  | 'manual-interaction-grace'
+  | 'seek-buffer-grace';
+
+export interface HlsWaitingRecoveryGuardInput {
+  timerSessionId: number;
+  currentSessionId: number;
+  timerPlaybackUrl: string | null;
+  currentPlaybackUrl: string | null;
+  isSameVideoElement: boolean;
+  isEnded: boolean;
+  isUserPaused: boolean;
+  isSeeking: boolean;
+  nowMs: number;
+  manualInteractionUntilMs: number;
+  seekBufferGraceUntilMs: number;
+}
+
+export interface HlsWaitingRecoveryGuardResult {
+  shouldTrigger: boolean;
+  reason?: HlsWaitingRecoveryIgnoreReason;
+}
+
 export function getHlsRecoveryProgressUpdate({
   currentTime,
   now,
@@ -96,6 +125,54 @@ export function getHlsRecoveryProgressUpdate({
     healthyWindowStartedAt: healthy ? now : windowStartedAt,
     healthyWindowStartedTime: healthy ? safeCurrentTime : windowStartedTime,
   };
+}
+
+export function shouldTriggerHlsWaitingRecovery({
+  timerSessionId,
+  currentSessionId,
+  timerPlaybackUrl,
+  currentPlaybackUrl,
+  isSameVideoElement,
+  isEnded,
+  isUserPaused,
+  isSeeking,
+  nowMs,
+  manualInteractionUntilMs,
+  seekBufferGraceUntilMs,
+}: HlsWaitingRecoveryGuardInput): HlsWaitingRecoveryGuardResult {
+  if (timerSessionId !== currentSessionId) {
+    return { shouldTrigger: false, reason: 'stale-session' };
+  }
+
+  if (timerPlaybackUrl !== currentPlaybackUrl) {
+    return { shouldTrigger: false, reason: 'stale-url' };
+  }
+
+  if (!isSameVideoElement) {
+    return { shouldTrigger: false, reason: 'stale-video' };
+  }
+
+  if (isEnded) {
+    return { shouldTrigger: false, reason: 'ended' };
+  }
+
+  if (isUserPaused) {
+    return { shouldTrigger: false, reason: 'user-paused' };
+  }
+
+  if (isSeeking) {
+    return { shouldTrigger: false, reason: 'user-seeking' };
+  }
+
+  if (seekBufferGraceUntilMs > nowMs) {
+    return { shouldTrigger: false, reason: 'seek-buffer-grace' };
+  }
+
+  if (manualInteractionUntilMs > nowMs) {
+    return { shouldTrigger: false, reason: 'manual-interaction-grace' };
+  }
+
+  return { shouldTrigger: true };
 }
 
 export function getHlsRecoveryPlan({

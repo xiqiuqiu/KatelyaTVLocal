@@ -1,6 +1,7 @@
 import {
   getHlsRecoveryPlan,
   getHlsRecoveryProgressUpdate,
+  shouldTriggerHlsWaitingRecovery,
 } from '@/lib/hls-recovery';
 
 describe('getHlsRecoveryPlan', () => {
@@ -152,5 +153,99 @@ describe('getHlsRecoveryProgressUpdate', () => {
         hasActiveStallWindow: true,
       }).healthy
     ).toBe(true);
+  });
+});
+
+describe('shouldTriggerHlsWaitingRecovery', () => {
+  const baseInput = {
+    timerSessionId: 3,
+    currentSessionId: 3,
+    timerPlaybackUrl: 'https://media.example.com/show/index.m3u8',
+    currentPlaybackUrl: 'https://media.example.com/show/index.m3u8',
+    isSameVideoElement: true,
+    isEnded: false,
+    isUserPaused: false,
+    isSeeking: false,
+    nowMs: 20_000,
+    manualInteractionUntilMs: 0,
+    seekBufferGraceUntilMs: 0,
+  };
+
+  it('allows recovery for a current stalled session without user interaction guards', () => {
+    expect(shouldTriggerHlsWaitingRecovery(baseInput)).toEqual({
+      shouldTrigger: true,
+    });
+  });
+
+  it('ignores waiting timers from an expired playback session', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        timerSessionId: 2,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'stale-session',
+    });
+  });
+
+  it('ignores waiting timers after the playback url has changed', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        currentPlaybackUrl: 'https://media.example.com/show/next.m3u8',
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'stale-url',
+    });
+  });
+
+  it('ignores waiting recovery while the user has paused playback', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        isUserPaused: true,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'user-paused',
+    });
+  });
+
+  it('ignores waiting recovery while the user is seeking', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        isSeeking: true,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'user-seeking',
+    });
+  });
+
+  it('ignores waiting recovery during the manual interaction grace window', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        manualInteractionUntilMs: 25_000,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'manual-interaction-grace',
+    });
+  });
+
+  it('ignores waiting recovery during the post-seek buffering grace window', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        seekBufferGraceUntilMs: 25_000,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'seek-buffer-grace',
+    });
   });
 });

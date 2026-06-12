@@ -43,6 +43,7 @@ import {
   type HlsRecoveryAction,
   getHlsRecoveryPlan,
   getHlsRecoveryProgressUpdate,
+  shouldTriggerHlsWaitingRecovery,
 } from '@/lib/hls-recovery';
 import { stopVideoElementLoading } from '@/lib/media-cleanup';
 import {
@@ -111,6 +112,8 @@ const SOURCE_PREFERENCE_FAST_BUDGET_MS = 500;
 const SOURCE_SELECTION_TOTAL_BUDGET_MS = 2500;
 const SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS = 1800;
 const NATIVE_RECENT_BUFFER_ISSUE_WINDOW_MS = 30000;
+const HLS_MANUAL_INTERACTION_GRACE_MS = 4000;
+const HLS_SEEK_BUFFER_GRACE_MS = 10000;
 const SOURCE_SELECTION_DEEP_PROBE_LIMIT = 3;
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
@@ -119,9 +122,11 @@ declare global {
     hls?: any;
     recoveryWaitingListener?: EventListener;
     recoveryPlayingListener?: EventListener;
+    recoveryCanplayListener?: EventListener;
     recoveryErrorListener?: EventListener;
     recoveryTimeupdateListener?: EventListener;
     recoverySeekingListener?: EventListener;
+    recoverySeekedListener?: EventListener;
   }
 }
 
@@ -468,6 +473,7 @@ function PlayPageClient() {
   const nativeWatchdogTimerRef = useRef<number | null>(null);
   const nativeFalsePlayingTimerRef = useRef<number | null>(null);
   const autoRecoveredSourceKeysRef = useRef<Set<string>>(new Set());
+  const hlsAutoSourceSwitchSessionRef = useRef<number | null>(null);
   const hlsRecoveryStateRef = useRef({
     stallCount: 0,
     stallWindowStartedAt: 0,
@@ -482,6 +488,12 @@ function PlayPageClient() {
     lastHealthyProgressAt: 0,
     lastRecoveryAction: 'ignore' as HlsRecoveryAction,
     lastRecoveryActionAt: 0,
+    playbackSessionId: 0,
+    userPausedAt: 0,
+    userSeekingAt: 0,
+    seekBufferGraceUntil: 0,
+    manualInteractionUntil: 0,
+    isSeeking: false,
   });
   const nativeRecoveryStateRef = useRef({
     stallCount: 0,
@@ -655,6 +667,11 @@ function PlayPageClient() {
     hlsRecoveryStateRef.current.lastHealthyProgressAt = 0;
     hlsRecoveryStateRef.current.lastRecoveryAction = 'ignore';
     hlsRecoveryStateRef.current.lastRecoveryActionAt = 0;
+    hlsRecoveryStateRef.current.userPausedAt = 0;
+    hlsRecoveryStateRef.current.userSeekingAt = 0;
+    hlsRecoveryStateRef.current.seekBufferGraceUntil = 0;
+    hlsRecoveryStateRef.current.manualInteractionUntil = 0;
+    hlsRecoveryStateRef.current.isSeeking = false;
     nativeRecoveryStateRef.current.stallCount = 0;
     nativeRecoveryStateRef.current.sourceRecoveryAttempts = 0;
     nativeRecoveryStateRef.current.playIntent = 'paused';
@@ -669,6 +686,58 @@ function PlayPageClient() {
     nativeRecoveryStateRef.current.lastJitterWindowAt = 0;
     nativeRecoveryStateRef.current.jitterWindowCount = 0;
     nativeRecoveryStateRef.current.jitterEvents = [];
+  };
+
+  const startHlsPlaybackSession = () => {
+    clearWaitingRecoveryTimer();
+    const state = hlsRecoveryStateRef.current;
+    state.playbackSessionId += 1;
+    state.userPausedAt = 0;
+    state.userSeekingAt = 0;
+    state.seekBufferGraceUntil = 0;
+    state.manualInteractionUntil = 0;
+    state.isSeeking = false;
+    hlsAutoSourceSwitchSessionRef.current = null;
+  };
+
+  const markHlsUserPause = (currentTime?: number) => {
+    const now = Date.now();
+    const state = hlsRecoveryStateRef.current;
+    clearWaitingRecoveryTimer();
+    state.userPausedAt = now;
+    state.manualInteractionUntil = now + HLS_MANUAL_INTERACTION_GRACE_MS;
+    state.isSeeking = false;
+    state.seekBufferGraceUntil = 0;
+    resetHlsStallWindow('user-pause', currentTime);
+  };
+
+  const markHlsUserPlay = () => {
+    const now = Date.now();
+    const state = hlsRecoveryStateRef.current;
+    clearWaitingRecoveryTimer();
+    state.userPausedAt = 0;
+    state.manualInteractionUntil = now + HLS_MANUAL_INTERACTION_GRACE_MS;
+  };
+
+  const markHlsUserSeeking = (currentTime?: number) => {
+    const now = Date.now();
+    const state = hlsRecoveryStateRef.current;
+    clearWaitingRecoveryTimer();
+    state.userSeekingAt = now;
+    state.isSeeking = true;
+    state.manualInteractionUntil = now + HLS_MANUAL_INTERACTION_GRACE_MS;
+    state.seekBufferGraceUntil = now + HLS_SEEK_BUFFER_GRACE_MS;
+    resetHlsStallWindow('user-seeking', currentTime);
+  };
+
+  const markHlsUserSeeked = (currentTime?: number) => {
+    const now = Date.now();
+    const state = hlsRecoveryStateRef.current;
+    clearWaitingRecoveryTimer();
+    state.isSeeking = false;
+    state.manualInteractionUntil = now + HLS_MANUAL_INTERACTION_GRACE_MS;
+    state.seekBufferGraceUntil = now + HLS_SEEK_BUFFER_GRACE_MS;
+    resetHlsStallWindow('user-seeked', currentTime);
   };
 
   const markPlaybackHealthy = (currentTime?: number) => {
@@ -1265,6 +1334,7 @@ function PlayPageClient() {
     if (nextUrl !== videoUrlRef.current) {
       startupFeedbackSentRef.current = false;
       playbackStartupStartedAtRef.current = Date.now();
+      startHlsPlaybackSession();
       resetHlsRecoveryCounters();
       videoUrlRef.current = nextUrl;
       setVideoUrl(nextUrl);
@@ -1272,6 +1342,21 @@ function PlayPageClient() {
   };
 
   const trySwitchToNextAvailableSource = (reason: string) => {
+    const currentSessionId = hlsRecoveryStateRef.current.playbackSessionId;
+    if (hlsAutoSourceSwitchSessionRef.current === currentSessionId) {
+      emitPlaybackDebugLog(
+        'switch-source-ignored',
+        '当前 HLS.js 播放会话已触发过自动切源',
+        {
+          reason,
+          playbackSessionId: currentSessionId,
+          sourceKey: getCurrentSourceKey(),
+          currentEpisodeIndex: currentEpisodeIndexRef.current,
+        }
+      );
+      return false;
+    }
+
     const nextSource = getNextRecoverySource();
     if (!nextSource) {
       emitPlaybackDebugLog('switch-source-unavailable', '无可用候选播放源', {
@@ -1310,6 +1395,7 @@ function PlayPageClient() {
       currentEpisodeIndex: currentEpisodeIndexRef.current,
       resumeTime: recoveryResumeTime,
     });
+    hlsAutoSourceSwitchSessionRef.current = currentSessionId;
     resetHlsRecoveryCounters();
     void handleSourceChange(nextSource.source, nextSource.id, nextSource.title, {
       autoRecovery: true,
@@ -1586,6 +1672,11 @@ function PlayPageClient() {
       video.recoveryPlayingListener = undefined;
     }
 
+    if (video.recoveryCanplayListener) {
+      video.removeEventListener('canplay', video.recoveryCanplayListener);
+      video.recoveryCanplayListener = undefined;
+    }
+
     if (video.recoveryErrorListener) {
       video.removeEventListener('error', video.recoveryErrorListener);
       video.recoveryErrorListener = undefined;
@@ -1600,9 +1691,15 @@ function PlayPageClient() {
       video.removeEventListener('seeking', video.recoverySeekingListener);
       video.recoverySeekingListener = undefined;
     }
+
+    if (video.recoverySeekedListener) {
+      video.removeEventListener('seeked', video.recoverySeekedListener);
+      video.recoverySeekedListener = undefined;
+    }
   };
 
   const disposeCurrentPlayer = () => {
+    startHlsPlaybackSession();
     const player = artPlayerRef.current;
     const video = player?.video as HTMLVideoElement | undefined;
 
@@ -2394,6 +2491,8 @@ function PlayPageClient() {
       setIsVideoLoading(true);
       sourceSwitchSavePendingRef.current = false;
       sourceSwitchAutoPlayPendingRef.current = false;
+      startHlsPlaybackSession();
+      resetHlsRecoveryCounters();
 
       // 记录当前播放进度（仅在同一集数切换时恢复）
       const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
@@ -2838,6 +2937,8 @@ function PlayPageClient() {
     console.log(videoUrl);
 
     let cancelled = false;
+    const setupSessionId = hlsRecoveryStateRef.current.playbackSessionId;
+    const setupVideoUrl = videoUrl;
 
     const setupPlayer = async () => {
       try {
@@ -2848,7 +2949,13 @@ function PlayPageClient() {
         const Artplayer = artplayerModule.default as any;
         const Hls = hlsModule.default as any;
 
-        if (cancelled) return;
+        if (
+          cancelled ||
+          hlsRecoveryStateRef.current.playbackSessionId !== setupSessionId ||
+          videoUrlRef.current !== setupVideoUrl
+        ) {
+          return;
+        }
 
         const playbackPolicy = playbackPolicyRef.current;
         const isNativeHlsRuntime = playbackPolicy?.runtime === 'native-hls';
@@ -2952,6 +3059,9 @@ function PlayPageClient() {
               hls.loadSource(url);
               hls.attachMedia(video);
               video.hls = hls;
+              const hlsSessionId = hlsRecoveryStateRef.current.playbackSessionId;
+              const hlsPlaybackUrl = url;
+              const hlsVideo = video;
 
               ensureVideoSource(video, url);
 
@@ -3006,18 +3116,35 @@ function PlayPageClient() {
                   nativeState.playIntent === 'paused' &&
                   nativeState.pauseReason === 'user' &&
                   video.paused;
-                if (isUserPaused) {
+                const guard = shouldTriggerHlsWaitingRecovery({
+                  timerSessionId: hlsSessionId,
+                  currentSessionId: state.playbackSessionId,
+                  timerPlaybackUrl: hlsPlaybackUrl,
+                  currentPlaybackUrl: video.currentSrc || videoUrlRef.current || url,
+                  isSameVideoElement: artPlayerRef.current?.video === hlsVideo,
+                  isEnded: video.ended,
+                  isUserPaused,
+                  isSeeking: state.isSeeking || video.seeking,
+                  nowMs: now,
+                  manualInteractionUntilMs: state.manualInteractionUntil,
+                  seekBufferGraceUntilMs: state.seekBufferGraceUntil,
+                });
+                if (!guard.shouldTrigger) {
                   emitPlaybackDebugLog(
-                    'hls-recovery',
-                    '用户暂停期间忽略 HLS.js 恢复',
+                    'hls-recovery-ignored',
+                    '已忽略 HLS.js 自动恢复',
                     {
                       action: 'ignore',
-                      planReason: '用户主动暂停，不执行自动恢复',
+                      planReason: guard.reason,
                       errorType,
                       errorDetails,
                       fatal,
                       currentTime: Number((video.currentTime || 0).toFixed(2)),
                       paused: video.paused,
+                      seeking: video.seeking,
+                      playbackSessionId: state.playbackSessionId,
+                      manualInteractionUntil: state.manualInteractionUntil,
+                      seekBufferGraceUntil: state.seekBufferGraceUntil,
                     },
                     {
                       playbackUrl: video.currentSrc || videoUrlRef.current,
@@ -3125,19 +3252,7 @@ function PlayPageClient() {
                 executeRecoveryPlan(reason || plan.reason, plan.action);
               };
 
-              if (video.recoveryWaitingListener) {
-                video.removeEventListener(
-                  'waiting',
-                  video.recoveryWaitingListener
-                );
-              }
-
-              if (video.recoveryPlayingListener) {
-                video.removeEventListener(
-                  'playing',
-                  video.recoveryPlayingListener
-                );
-              }
+              removeNativeVideoRecoveryListeners(video);
 
               const handleVideoWaiting = () => {
                 clearWaitingRecoveryTimer();
@@ -3145,8 +3260,58 @@ function PlayPageClient() {
                   return;
                 }
 
+                const timerSessionId =
+                  hlsRecoveryStateRef.current.playbackSessionId;
+                const timerPlaybackUrl =
+                  video.currentSrc || videoUrlRef.current || url;
+                const timerVideo = video;
+                const startedAt = Date.now();
                 waitingRecoveryTimerRef.current = window.setTimeout(() => {
                   waitingRecoveryTimerRef.current = null;
+                  const state = hlsRecoveryStateRef.current;
+                  const now = Date.now();
+                  const nativeState = nativeRecoveryStateRef.current;
+                  const guard = shouldTriggerHlsWaitingRecovery({
+                    timerSessionId,
+                    currentSessionId: state.playbackSessionId,
+                    timerPlaybackUrl,
+                    currentPlaybackUrl:
+                      video.currentSrc || videoUrlRef.current || url,
+                    isSameVideoElement: artPlayerRef.current?.video === timerVideo,
+                    isEnded: video.ended,
+                    isUserPaused:
+                      nativeState.playIntent === 'paused' &&
+                      nativeState.pauseReason === 'user' &&
+                      video.paused,
+                    isSeeking: state.isSeeking || video.seeking,
+                    nowMs: now,
+                    manualInteractionUntilMs: state.manualInteractionUntil,
+                    seekBufferGraceUntilMs: state.seekBufferGraceUntil,
+                  });
+                  if (!guard.shouldTrigger) {
+                    emitPlaybackDebugLog(
+                      'hls-recovery-ignored',
+                      '已忽略 HLS.js waiting 恢复',
+                      {
+                        reason: guard.reason,
+                        timerSessionId,
+                        currentSessionId: state.playbackSessionId,
+                        startedAt,
+                        waitedMs: now - startedAt,
+                        currentTime: Number((video.currentTime || 0).toFixed(2)),
+                        readyState: video.readyState,
+                        networkState: video.networkState,
+                        paused: video.paused,
+                        seeking: video.seeking,
+                        ended: video.ended,
+                      },
+                      {
+                        playbackUrl:
+                          video.currentSrc || videoUrlRef.current || url,
+                      }
+                    );
+                    return;
+                  }
                   triggerRecovery(
                     '播放器等待缓冲超时',
                     'mediaError',
@@ -3157,13 +3322,39 @@ function PlayPageClient() {
               };
 
               const handleVideoPlaying = () => {
-                markPlaybackHealthy(video.currentTime || 0);
+                clearWaitingRecoveryTimer();
+                markHlsPlaybackProgress(video.currentTime || 0);
+              };
+
+              const handleVideoCanplay = () => {
+                clearWaitingRecoveryTimer();
+              };
+
+              const handleVideoTimeupdate = () => {
+                clearWaitingRecoveryTimer();
+                markHlsPlaybackProgress(video.currentTime || 0);
+              };
+
+              const handleVideoSeeking = () => {
+                markHlsUserSeeking(video.currentTime || 0);
+              };
+
+              const handleVideoSeeked = () => {
+                markHlsUserSeeked(video.currentTime || 0);
               };
 
               video.recoveryWaitingListener = handleVideoWaiting;
               video.recoveryPlayingListener = handleVideoPlaying;
+              video.recoveryCanplayListener = handleVideoCanplay;
+              video.recoveryTimeupdateListener = handleVideoTimeupdate;
+              video.recoverySeekingListener = handleVideoSeeking;
+              video.recoverySeekedListener = handleVideoSeeked;
               video.addEventListener('waiting', handleVideoWaiting);
               video.addEventListener('playing', handleVideoPlaying);
+              video.addEventListener('canplay', handleVideoCanplay);
+              video.addEventListener('timeupdate', handleVideoTimeupdate);
+              video.addEventListener('seeking', handleVideoSeeking);
+              video.addEventListener('seeked', handleVideoSeeked);
 
               hls.on(Hls.Events.ERROR, function (event: any, data: any) {
                 console.error('HLS Error:', event, data);
@@ -3302,6 +3493,9 @@ function PlayPageClient() {
 
         artPlayerRef.current.on('video:play', () => {
           setNativePlaybackIntent('playing');
+          if (playbackPolicyRef.current?.runtime !== 'native-hls') {
+            markHlsUserPlay();
+          }
           emitNativeVideoStateDebugLog(
             'native-video-play',
             '原生播放器收到播放请求'
@@ -3333,7 +3527,7 @@ function PlayPageClient() {
             state.sourceRecoveryAttempts = 0;
             state.lastProgressAt = now;
             if (playbackPolicyRef.current?.runtime !== 'native-hls') {
-              resetHlsStallWindow('user-pause', video?.currentTime || 0);
+              markHlsUserPause(video?.currentTime || 0);
             }
           } else {
             state.pauseReason = 'buffering';
@@ -3353,6 +3547,7 @@ function PlayPageClient() {
           if (playbackPolicyRef.current?.runtime === 'native-hls') {
             markPlaybackHealthy(currentTime);
           } else {
+            clearWaitingRecoveryTimer();
             markHlsPlaybackProgress(currentTime);
           }
 
@@ -3365,6 +3560,7 @@ function PlayPageClient() {
 
         // 监听视频可播放事件，这时恢复播放进度更可靠
         artPlayerRef.current.on('video:canplay', () => {
+          clearWaitingRecoveryTimer();
           if (playbackPolicyRef.current?.runtime === 'native-hls') {
             markPlaybackHealthy(artPlayerRef.current.currentTime || 0);
           }
@@ -3482,8 +3678,11 @@ function PlayPageClient() {
         });
 
         artPlayerRef.current.on('video:playing', () => {
+          clearWaitingRecoveryTimer();
           if (playbackPolicyRef.current?.runtime === 'native-hls') {
             markPlaybackHealthy(artPlayerRef.current.currentTime || 0);
+          } else {
+            markHlsPlaybackProgress(artPlayerRef.current.currentTime || 0);
           }
           emitNativeVideoStateDebugLog(
             'native-video-playing',
