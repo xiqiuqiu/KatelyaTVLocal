@@ -42,6 +42,8 @@ import {
 import { getHlsRecoveryPlan } from '@/lib/hls-recovery';
 import { stopVideoElementLoading } from '@/lib/media-cleanup';
 import {
+  type NativeJitterEvent,
+  type NativeJitterEventType,
   getNativeJitterDecision,
   getNativePlaybackNudgeTime,
   getNativeRecoveryAction,
@@ -50,10 +52,8 @@ import {
   NATIVE_JITTER_WINDOW_MS,
   NATIVE_PLAY_RESUME_GRACE_MS,
   NATIVE_WATCHDOG_INTERVAL_MS,
-  type NativeJitterEvent,
-  type NativeJitterEventType,
-  shouldResetNativeRecoveryOnPause,
   shouldIgnoreNativeStall,
+  shouldResetNativeRecoveryOnPause,
 } from '@/lib/native-video-recovery';
 import {
   type PlayRecordSaveReason,
@@ -1422,20 +1422,67 @@ function PlayPageClient() {
     }
 
     if (policy.reason === 'proxy-unavailable') {
+      const adStrategy =
+        policy.playlistFilter === 'ios-skip'
+          ? '使用广告时间窗跳过'
+          : policy.playlistFilter === 'client-filter'
+            ? '使用客户端广告过滤'
+            : '继续直连播放';
       console.warn(
-        '[去广告][播放策略] 代理地址不可用，暂时使用直连播放并仅观测广告信号',
+        `[去广告][播放策略] 代理地址不可用，暂时使用直连播放（${adStrategy}）`,
         {
           directUrl,
           playbackMode: policy.mode,
+          playlistFilter: policy.playlistFilter,
         }
       );
     }
   };
 
+  const trySkipNativeAdWindow = (
+    video: HTMLVideoElement,
+    playbackUrl: string
+  ) => {
+    if (playbackPolicyRef.current?.playlistFilter !== 'ios-skip') {
+      return false;
+    }
+
+    const decision = getHlsAdSkipDecision({
+      currentTimeSeconds: video.currentTime || 0,
+      windows: nativeAdSkipWindowsRef.current,
+      lastSkippedWindowKey: nativeAdSkipLastWindowKeyRef.current,
+      lastUserSeekAtMs: nativeAdSkipLastUserSeekAtRef.current,
+      nowMs: Date.now(),
+    });
+
+    if (!decision.shouldSkip || decision.targetTimeSeconds == null) {
+      return false;
+    }
+
+    const fromTime = video.currentTime || 0;
+    nativeAdSkipLastWindowKeyRef.current = decision.windowKey;
+    video.currentTime = decision.targetTimeSeconds;
+    emitPlaybackDebugLog(
+      'ios-ad-skip',
+      'iOS 原生 HLS 已跳过高置信广告时间窗',
+      {
+        fromTime: Number(fromTime.toFixed(2)),
+        targetTime: Number(decision.targetTimeSeconds.toFixed(2)),
+        window: decision.window || null,
+        windowKey: decision.windowKey,
+      },
+      {
+        playbackUrl,
+      }
+    );
+    return true;
+  };
+
   const observeIosAdSignals = (
     directUrl: string,
     proxyUrl: string | null,
-    policy: HlsPlaybackPolicyResult
+    policy: HlsPlaybackPolicyResult,
+    retryAttempt = 0
   ) => {
     if (
       policy.runtime !== 'native-hls' ||
@@ -1479,12 +1526,18 @@ function PlayPageClient() {
             targetUrl: payload.targetUrl || directUrl,
             removedLineCount: payload.removedLineCount ?? 0,
             summary: payload.summary || null,
+            retryAttempt,
           },
           {
             playbackUrl: directUrl,
             policy,
           }
         );
+
+        const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+        if (video) {
+          trySkipNativeAdWindow(video, directUrl);
+        }
       })
       .catch((error) => {
         emitPlaybackDebugLog(
@@ -1495,6 +1548,7 @@ function PlayPageClient() {
             observationUrl,
             sourceKey,
             episodeIndex,
+            retryAttempt,
             error:
               error instanceof Error
                 ? error.message
@@ -1507,6 +1561,12 @@ function PlayPageClient() {
             policy,
           }
         );
+
+        if (retryAttempt === 0 && typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            observeIosAdSignals(directUrl, proxyUrl, policy, 1);
+          }, 3000);
+        }
       });
   };
 
@@ -1891,7 +1951,7 @@ function PlayPageClient() {
 
     if (decision.action === 'resume-playback') {
       state.sourceRecoveryAttempts += 1;
-      state.lastProgressAt = Date.now();
+      state.ignoreStallUntil = Date.now() + NATIVE_PLAY_RESUME_GRACE_MS;
       void video.play().catch((error) => {
         state.playIntent = 'paused';
         state.browserAutoplayLocked = true;
@@ -1919,45 +1979,6 @@ function PlayPageClient() {
     }
 
     return false;
-  };
-
-  const trySkipNativeAdWindow = (
-    video: HTMLVideoElement,
-    playbackUrl: string
-  ) => {
-    if (playbackPolicyRef.current?.playlistFilter !== 'ios-skip') {
-      return false;
-    }
-
-    const decision = getHlsAdSkipDecision({
-      currentTimeSeconds: video.currentTime || 0,
-      windows: nativeAdSkipWindowsRef.current,
-      lastSkippedWindowKey: nativeAdSkipLastWindowKeyRef.current,
-      lastUserSeekAtMs: nativeAdSkipLastUserSeekAtRef.current,
-      nowMs: Date.now(),
-    });
-
-    if (!decision.shouldSkip || decision.targetTimeSeconds == null) {
-      return false;
-    }
-
-    const fromTime = video.currentTime || 0;
-    nativeAdSkipLastWindowKeyRef.current = decision.windowKey;
-    video.currentTime = decision.targetTimeSeconds;
-    emitPlaybackDebugLog(
-      'ios-ad-skip',
-      'iOS 原生 HLS 已跳过高置信广告时间窗',
-      {
-        fromTime: Number(fromTime.toFixed(2)),
-        targetTime: Number(decision.targetTimeSeconds.toFixed(2)),
-        window: decision.window || null,
-        windowKey: decision.windowKey,
-      },
-      {
-        playbackUrl,
-      }
-    );
-    return true;
   };
 
   const attachNativeVideoRecovery = (

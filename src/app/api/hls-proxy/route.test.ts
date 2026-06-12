@@ -165,4 +165,28 @@ describe('hls proxy route', () => {
     expect(payload.summary.candidateAdBlocks).toBeGreaterThan(0);
     expect(payload.summary.removedBlocks.length).toBeGreaterThan(0);
   });
+
+  it('logs actual ad filtering results when high-confidence segments are removed', async () => {
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await GET(
+      new MockRequest(
+        'https://app.example.com/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Fepisode-2%2Findex.m3u8'
+      ) as unknown as Request
+    );
+
+    const filterLog = consoleSpy.mock.calls.find(([message]) =>
+      String(message).includes('[去广告][代理过滤]')
+    );
+    expect(filterLog).toBeDefined();
+    expect(String(filterLog?.[0])).toContain('已移除');
+    expect(filterLog?.[1]).toEqual(
+      expect.objectContaining({
+        removed: true,
+        removedLineCount: expect.any(Number),
+      })
+    );
+
+    consoleSpy.mockRestore();
+  });
 });

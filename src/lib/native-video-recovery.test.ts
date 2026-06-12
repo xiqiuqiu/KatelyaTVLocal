@@ -3,122 +3,13 @@ import {
   getNativePlaybackNudgeTime,
   getNativeRecoveryAction,
   getNativeStallSeverity,
-  getNativeVideoRecoveryPlan,
-  NATIVE_JITTER_WINDOW_MS,
   NATIVE_FALSE_PLAYING_CHECK_DELAY_MS,
   NATIVE_HARD_STALL_THRESHOLD_MS,
+  NATIVE_JITTER_WINDOW_MS,
   NATIVE_PLAY_RESUME_GRACE_MS,
-  NATIVE_STALL_RECOVERY_THRESHOLD_MS,
   shouldIgnoreNativeStall,
   shouldResetNativeRecoveryOnPause,
-  shouldRecoverNativePausedStall,
-  shouldRecoverNativeWatchdogStall,
-  shouldSwitchSourceForRepeatedNativeFailure,
 } from './native-video-recovery';
-
-describe('getNativeVideoRecoveryPlan', () => {
-  it('tries to resume native playback before changing the source', () => {
-    expect(
-      getNativeVideoRecoveryPlan({
-        stallCount: 1,
-        sourceReloadAttempts: 0,
-        fullProxyAttempted: false,
-        hasAlternativeSource: true,
-      })
-    ).toEqual({
-      action: 'resume-playback',
-      reason: '原生播放器停滞，尝试继续播放',
-    });
-  });
-
-  it('nudges playback before reloading the native source', () => {
-    expect(
-      getNativeVideoRecoveryPlan({
-        stallCount: 2,
-        sourceReloadAttempts: 0,
-        fullProxyAttempted: false,
-        hasAlternativeSource: true,
-      })
-    ).toEqual({
-      action: 'nudge-playback',
-      reason: '原生播放器持续停滞，尝试微调播放位置',
-    });
-  });
-
-  it('reloads the current native source before escalating to full proxy', () => {
-    expect(
-      getNativeVideoRecoveryPlan({
-        stallCount: 3,
-        sourceReloadAttempts: 0,
-        fullProxyAttempted: false,
-        hasAlternativeSource: true,
-      })
-    ).toEqual({
-      action: 'reload-source',
-      reason: '原生播放器仍未恢复，重新设置当前播放地址',
-    });
-  });
-
-  it('switches to full proxy before trying another source', () => {
-    expect(
-      getNativeVideoRecoveryPlan({
-        stallCount: 4,
-        sourceReloadAttempts: 1,
-        fullProxyAttempted: false,
-        hasAlternativeSource: true,
-      })
-    ).toEqual({
-      action: 'switch-full-proxy',
-      reason: '原生播放器持续卡死，升级到完整代理线路',
-    });
-  });
-
-  it('switches source after full proxy has already been attempted', () => {
-    expect(
-      getNativeVideoRecoveryPlan({
-        stallCount: 5,
-        sourceReloadAttempts: 1,
-        fullProxyAttempted: true,
-        hasAlternativeSource: true,
-      })
-    ).toEqual({
-      action: 'switch-source',
-      reason: '完整代理仍无法恢复，切换到其他播放源',
-    });
-  });
-
-  it('escalates media source unavailable errors directly to full proxy', () => {
-    expect(
-      getNativeVideoRecoveryPlan({
-        stallCount: 1,
-        sourceReloadAttempts: 0,
-        fullProxyAttempted: false,
-        hasAlternativeSource: true,
-        mediaSourceUnavailable: true,
-        repeatedFailureAtSamePosition: false,
-      })
-    ).toEqual({
-      action: 'switch-full-proxy',
-      reason: '原生播放器判定当前媒体源不可用，升级到完整代理线路',
-    });
-  });
-
-  it('switches source when full proxy still fails at the same position', () => {
-    expect(
-      getNativeVideoRecoveryPlan({
-        stallCount: 2,
-        sourceReloadAttempts: 0,
-        fullProxyAttempted: true,
-        hasAlternativeSource: true,
-        mediaSourceUnavailable: true,
-        repeatedFailureAtSamePosition: true,
-      })
-    ).toEqual({
-      action: 'switch-source',
-      reason: '同一播放位置重复失败，切换到其他播放源',
-    });
-  });
-});
 
 describe('getNativePlaybackNudgeTime', () => {
   it('nudges forward inside the current buffered range', () => {
@@ -149,41 +40,6 @@ describe('getNativePlaybackNudgeTime', () => {
   });
 });
 
-describe('shouldSwitchSourceForRepeatedNativeFailure', () => {
-  it('does not switch source after only two same-position failures', () => {
-    expect(
-      shouldSwitchSourceForRepeatedNativeFailure({
-        failureCount: 2,
-        mediaSourceUnavailable: true,
-        fullProxyAttempted: false,
-        segmentMode: 'direct',
-      })
-    ).toBe(false);
-  });
-
-  it('switches source after three same-position failures with a strong failure signal', () => {
-    expect(
-      shouldSwitchSourceForRepeatedNativeFailure({
-        failureCount: 3,
-        mediaSourceUnavailable: true,
-        fullProxyAttempted: false,
-        segmentMode: 'direct',
-      })
-    ).toBe(true);
-  });
-
-  it('does not switch source without a media-source or proxy failure signal', () => {
-    expect(
-      shouldSwitchSourceForRepeatedNativeFailure({
-        failureCount: 3,
-        mediaSourceUnavailable: false,
-        fullProxyAttempted: false,
-        segmentMode: 'direct',
-      })
-    ).toBe(false);
-  });
-});
-
 describe('native recovery timing guards', () => {
   it('keeps false-playing detection above short iOS startup jitter', () => {
     expect(NATIVE_FALSE_PLAYING_CHECK_DELAY_MS).toBeGreaterThanOrEqual(9000);
@@ -193,136 +49,6 @@ describe('native recovery timing guards', () => {
     expect(NATIVE_PLAY_RESUME_GRACE_MS).toBeGreaterThanOrEqual(
       NATIVE_FALSE_PLAYING_CHECK_DELAY_MS
     );
-  });
-
-  it('does not treat seven seconds without progress as a watchdog stall', () => {
-    expect(
-      shouldRecoverNativeWatchdogStall({
-        ended: false,
-        paused: false,
-        mediaSourceUnavailable: false,
-        readyState: 3,
-        stalledForMs: 7000,
-      })
-    ).toBe(false);
-  });
-
-  it('recovers active native playback only after the conservative stall threshold', () => {
-    expect(
-      shouldRecoverNativeWatchdogStall({
-        ended: false,
-        paused: false,
-        mediaSourceUnavailable: false,
-        readyState: 3,
-        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
-      })
-    ).toBe(true);
-  });
-
-  it('does not recover a normal user pause outside loading state', () => {
-    expect(
-      shouldRecoverNativePausedStall({
-        paused: true,
-        ended: false,
-        mediaSourceUnavailable: false,
-        readyState: 3,
-        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
-        isVideoLoading: false,
-        recentlyHadBufferIssue: false,
-      })
-    ).toBe(false);
-  });
-
-  it('does not recover a user pause just because the loading indicator is still visible', () => {
-    expect(
-      shouldRecoverNativePausedStall({
-        paused: true,
-        ended: false,
-        mediaSourceUnavailable: false,
-        readyState: 3,
-        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
-        isVideoLoading: true,
-        recentlyHadBufferIssue: false,
-      })
-    ).toBe(false);
-  });
-
-  it('does not auto-resume paused native playback after a recent buffer issue', () => {
-    expect(
-      shouldRecoverNativePausedStall({
-        paused: true,
-        ended: false,
-        mediaSourceUnavailable: false,
-        readyState: 2,
-        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
-        isVideoLoading: false,
-        recentlyHadBufferIssue: true,
-      })
-    ).toBe(false);
-  });
-
-  it('does not recover a recent paused buffer issue before the stall threshold', () => {
-    expect(
-      shouldRecoverNativePausedStall({
-        paused: true,
-        ended: false,
-        mediaSourceUnavailable: false,
-        readyState: 2,
-        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS - 1,
-        isVideoLoading: false,
-        recentlyHadBufferIssue: true,
-      })
-    ).toBe(false);
-  });
-
-  it('recovers paused media-source-unavailable failures after the threshold', () => {
-    expect(
-      shouldRecoverNativePausedStall({
-        paused: true,
-        ended: false,
-        mediaSourceUnavailable: true,
-        readyState: 0,
-        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
-        isVideoLoading: false,
-        recentlyHadBufferIssue: false,
-      })
-    ).toBe(true);
-  });
-
-  it('does not recover ended videos even when no progress is observed', () => {
-    expect(
-      shouldRecoverNativeWatchdogStall({
-        ended: true,
-        paused: false,
-        mediaSourceUnavailable: false,
-        readyState: 3,
-        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
-      })
-    ).toBe(false);
-  });
-
-  it('keeps readyState zero without a media-source error from triggering recovery', () => {
-    expect(
-      shouldRecoverNativeWatchdogStall({
-        ended: false,
-        paused: false,
-        mediaSourceUnavailable: false,
-        readyState: 0,
-        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
-      })
-    ).toBe(false);
-  });
-
-  it('allows media-source-unavailable failures to recover after the threshold', () => {
-    expect(
-      shouldRecoverNativeWatchdogStall({
-        ended: false,
-        paused: true,
-        mediaSourceUnavailable: true,
-        readyState: 0,
-        stalledForMs: NATIVE_STALL_RECOVERY_THRESHOLD_MS,
-      })
-    ).toBe(true);
   });
 });
 
@@ -421,7 +147,6 @@ describe('getNativeJitterDecision', () => {
       })
     ).toMatchObject({
       isJitter: false,
-      shouldSwitchSource: false,
       eventCount: 1,
       rollbackCount: 0,
     });
@@ -441,7 +166,6 @@ describe('getNativeJitterDecision', () => {
       })
     ).toMatchObject({
       isJitter: true,
-      shouldSwitchSource: false,
       eventCount: 4,
       rollbackCount: 0,
     });
@@ -466,7 +190,7 @@ describe('getNativeJitterDecision', () => {
     });
   });
 
-  it('switches source after two consecutive jitter windows', () => {
+  it('tracks consecutive jitter windows without switching source', () => {
     expect(
       getNativeJitterDecision({
         events: [
@@ -480,7 +204,7 @@ describe('getNativeJitterDecision', () => {
       })
     ).toMatchObject({
       isJitter: true,
-      shouldSwitchSource: false,
+      jitterWindowCount: 2,
     });
   });
 
@@ -657,5 +381,66 @@ describe('getNativeRecoveryAction', () => {
       action: 'switch-source',
       reason: '原生播放器判定当前媒体源不可用，切换到其他播放源',
     });
+  });
+});
+
+describe('hard-stall recovery decision sequence', () => {
+  it('escalates from resume-playback to switch-source after one failed attempt', () => {
+    expect(
+      getNativeRecoveryAction({
+        severity: 'hard-stall',
+        playIntent: 'playing',
+        browserAutoplayLocked: false,
+        hasAlternativeSource: true,
+        sourceRecoveryAttempts: 0,
+      }).action
+    ).toBe('resume-playback');
+
+    expect(
+      getNativeRecoveryAction({
+        severity: 'hard-stall',
+        playIntent: 'playing',
+        browserAutoplayLocked: false,
+        hasAlternativeSource: true,
+        sourceRecoveryAttempts: 1,
+      }).action
+    ).toBe('switch-source');
+  });
+
+  it('keeps stall detection suppressed during post-resume grace window', () => {
+    const resumeAt = 10_000;
+    const graceUntil = resumeAt + NATIVE_PLAY_RESUME_GRACE_MS;
+
+    expect(
+      shouldIgnoreNativeStall({
+        playIntent: 'playing',
+        mediaSourceUnavailable: false,
+        nowMs: graceUntil - 1,
+        ignoreStallUntilMs: graceUntil,
+      })
+    ).toBe(true);
+
+    expect(
+      shouldIgnoreNativeStall({
+        playIntent: 'playing',
+        mediaSourceUnavailable: false,
+        nowMs: graceUntil + 1,
+        ignoreStallUntilMs: graceUntil,
+      })
+    ).toBe(false);
+  });
+
+  it('still classifies accumulated stalls as hard-stall after grace expires', () => {
+    expect(
+      getNativeStallSeverity({
+        ended: false,
+        paused: false,
+        mediaSourceUnavailable: false,
+        readyState: 3,
+        networkState: 2,
+        stalledForMs: NATIVE_HARD_STALL_THRESHOLD_MS,
+        hasRecentProgress: false,
+      })
+    ).toBe('hard-stall');
   });
 });
