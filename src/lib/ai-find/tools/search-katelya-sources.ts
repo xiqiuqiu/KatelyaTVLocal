@@ -15,6 +15,7 @@ import type {
 
 const AI_FIND_SOURCE_SEARCH_CONCURRENCY = 4;
 const AI_FIND_GROUP_RANKING_CONCURRENCY = 3;
+const AI_FIND_CANDIDATE_GROUP_SEARCH_LIMIT = 120;
 type SearchSite = Parameters<typeof searchFromApi>[0];
 
 function normalizeTitle(title: string): string {
@@ -348,13 +349,23 @@ export async function buildAiFindResultGroup({
 
   const rawResults = await searchKatelyaSources({
     query: candidate.query,
-    limit: 30,
+    limit: AI_FIND_CANDIDATE_GROUP_SEARCH_LIMIT,
     cacheTtlSeconds,
     debugContext,
   });
+  const constrainedResults = filterSearchResults(rawResults, {
+    type: candidate.type,
+    year: candidate.year,
+  });
+  const resultsForAggregation =
+    candidate.type && candidate.type !== 'unknown'
+      ? constrainedResults
+      : candidate.year
+      ? constrainedResults
+      : rawResults;
   const aggregatedGroups = aggregateSearchResults(
     candidate.query,
-    rawResults
+    resultsForAggregation
   ).slice(0, maxGroups);
   const groups = requestOrigin
     ? await mapWithConcurrency(
@@ -411,6 +422,7 @@ export async function buildAiFindResultGroup({
     details: {
       query: candidate.query,
       rawCount: rawResults.length,
+      constrainedCount: resultsForAggregation.length,
       aggregatedCount: aggregatedGroups.length,
       groupedCount: groups.length,
       requestOriginEnabled: Boolean(requestOrigin),
