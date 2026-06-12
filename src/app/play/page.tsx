@@ -41,6 +41,7 @@ import {
 } from '@/lib/hls-playback-policy';
 import {
   type HlsRecoveryAction,
+  getHlsRecoveryGuardPlaybackUrl,
   getHlsRecoveryPlan,
   getHlsRecoveryProgressUpdate,
   shouldTriggerHlsWaitingRecovery,
@@ -697,7 +698,6 @@ function PlayPageClient() {
     state.seekBufferGraceUntil = 0;
     state.manualInteractionUntil = 0;
     state.isSeeking = false;
-    hlsAutoSourceSwitchSessionRef.current = null;
   };
 
   const markHlsUserPause = (currentTime?: number) => {
@@ -3120,7 +3120,11 @@ function PlayPageClient() {
                   timerSessionId: hlsSessionId,
                   currentSessionId: state.playbackSessionId,
                   timerPlaybackUrl: hlsPlaybackUrl,
-                  currentPlaybackUrl: video.currentSrc || videoUrlRef.current || url,
+                  currentPlaybackUrl: getHlsRecoveryGuardPlaybackUrl({
+                    videoCurrentSrc: video.currentSrc,
+                    playbackUrl: videoUrlRef.current,
+                    fallbackUrl: url,
+                  }),
                   isSameVideoElement: artPlayerRef.current?.video === hlsVideo,
                   isEnded: video.ended,
                   isUserPaused,
@@ -3262,8 +3266,11 @@ function PlayPageClient() {
 
                 const timerSessionId =
                   hlsRecoveryStateRef.current.playbackSessionId;
-                const timerPlaybackUrl =
-                  video.currentSrc || videoUrlRef.current || url;
+                const timerPlaybackUrl = getHlsRecoveryGuardPlaybackUrl({
+                  videoCurrentSrc: video.currentSrc,
+                  playbackUrl: videoUrlRef.current,
+                  fallbackUrl: url,
+                });
                 const timerVideo = video;
                 const startedAt = Date.now();
                 waitingRecoveryTimerRef.current = window.setTimeout(() => {
@@ -3275,8 +3282,11 @@ function PlayPageClient() {
                     timerSessionId,
                     currentSessionId: state.playbackSessionId,
                     timerPlaybackUrl,
-                    currentPlaybackUrl:
-                      video.currentSrc || videoUrlRef.current || url,
+                    currentPlaybackUrl: getHlsRecoveryGuardPlaybackUrl({
+                      videoCurrentSrc: video.currentSrc,
+                      playbackUrl: videoUrlRef.current,
+                      fallbackUrl: url,
+                    }),
                     isSameVideoElement: artPlayerRef.current?.video === timerVideo,
                     isEnded: video.ended,
                     isUserPaused:

@@ -1,4 +1,5 @@
 import {
+  getHlsRecoveryGuardPlaybackUrl,
   getHlsRecoveryPlan,
   getHlsRecoveryProgressUpdate,
   shouldTriggerHlsWaitingRecovery,
@@ -247,5 +248,37 @@ describe('shouldTriggerHlsWaitingRecovery', () => {
       shouldTrigger: false,
       reason: 'seek-buffer-grace',
     });
+  });
+});
+
+describe('getHlsRecoveryGuardPlaybackUrl', () => {
+  it('prefers the logical HLS playback url over a MediaSource blob url', () => {
+    expect(
+      getHlsRecoveryGuardPlaybackUrl({
+        videoCurrentSrc: 'blob:https://app.example.com/session-id',
+        playbackUrl: 'https://media.example.com/show/index.m3u8',
+        fallbackUrl: 'https://media.example.com/show/fallback.m3u8',
+      })
+    ).toBe('https://media.example.com/show/index.m3u8');
+  });
+
+  it('uses fallback url before the video currentSrc', () => {
+    expect(
+      getHlsRecoveryGuardPlaybackUrl({
+        videoCurrentSrc: 'blob:https://app.example.com/session-id',
+        playbackUrl: '',
+        fallbackUrl: 'https://media.example.com/show/index.m3u8',
+      })
+    ).toBe('https://media.example.com/show/index.m3u8');
+  });
+
+  it('falls back to currentSrc when no logical playback url is available', () => {
+    expect(
+      getHlsRecoveryGuardPlaybackUrl({
+        videoCurrentSrc: 'https://media.example.com/video.mp4',
+        playbackUrl: '',
+        fallbackUrl: '',
+      })
+    ).toBe('https://media.example.com/video.mp4');
   });
 });

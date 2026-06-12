@@ -82,6 +82,12 @@ export interface HlsWaitingRecoveryGuardResult {
   reason?: HlsWaitingRecoveryIgnoreReason;
 }
 
+export interface HlsRecoveryGuardPlaybackUrlInput {
+  videoCurrentSrc?: string | null;
+  playbackUrl?: string | null;
+  fallbackUrl?: string | null;
+}
+
 export function getHlsRecoveryProgressUpdate({
   currentTime,
   now,
@@ -173,6 +179,14 @@ export function shouldTriggerHlsWaitingRecovery({
   }
 
   return { shouldTrigger: true };
+}
+
+export function getHlsRecoveryGuardPlaybackUrl({
+  videoCurrentSrc,
+  playbackUrl,
+  fallbackUrl,
+}: HlsRecoveryGuardPlaybackUrlInput): string | null {
+  return playbackUrl || fallbackUrl || videoCurrentSrc || null;
 }
 
 export function getHlsRecoveryPlan({
