@@ -1,4 +1,5 @@
 import {
+  createProgressiveSourceProbeFailureStatus,
   selectProgressiveSourceProbeCandidates,
   shouldStartProgressiveSourceProbe,
 } from '@/lib/progressive-source-probe';
@@ -107,5 +108,18 @@ describe('progressive source probe scheduling', () => {
         getSourceKey: (source) => `${source.source}-${source.id}`,
       }).map((source) => `${source.source}-${source.id}`)
     ).toEqual(['fast-2']);
+  });
+
+  it('keeps browser-only background probe failures playable', () => {
+    const status = createProgressiveSourceProbeFailureStatus({
+      domain: 'media.example.com',
+      reason: 'metadata probe failed',
+    });
+
+    expect(status.kind).toBe('playable');
+    expect(status.playbackMode).toBe('direct');
+    expect(status.domain).toBe('media.example.com');
+    expect(status.reason).toBe('后台测速失败，可尝试播放');
+    expect(status.localConfidence).toBe('low');
   });
 });

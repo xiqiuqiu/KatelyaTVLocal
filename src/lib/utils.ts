@@ -391,7 +391,10 @@ export function getRememberedSourceStatusForSource(
   }
 
   if (preference.mode === 'unavailable') {
-    if (isTransientBrowserProbeError(preference.lastError)) {
+    if (
+      preference.confidence === 'low' ||
+      isTransientBrowserProbeError(preference.lastError)
+    ) {
       clearSourcePlaybackQualityPreference(sourceKey, domain);
       return getRememberedSourceStatus(episodes);
     }

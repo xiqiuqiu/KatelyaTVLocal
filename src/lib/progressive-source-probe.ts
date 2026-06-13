@@ -23,6 +23,11 @@ export interface ProgressiveSourceProbeCandidateInput {
   getSourceKey?: (source: SearchResult) => string;
 }
 
+export interface ProgressiveSourceProbeFailureStatusInput {
+  domain?: string | null;
+  reason?: string;
+}
+
 export function shouldStartProgressiveSourceProbe(
   input: ProgressiveSourceProbeStartInput
 ): boolean {
@@ -108,4 +113,18 @@ export function selectProgressiveSourceProbeCandidates({
       return sources.indexOf(left) - sources.indexOf(right);
     })
     .slice(0, limit);
+}
+
+export function createProgressiveSourceProbeFailureStatus({
+  domain,
+}: ProgressiveSourceProbeFailureStatusInput): SourceStatus {
+  return {
+    kind: 'playable',
+    reason: '后台测速失败，可尝试播放',
+    playbackMode: 'direct',
+    domain,
+    updatedAt: Date.now(),
+    fromMemory: true,
+    localConfidence: 'low',
+  };
 }

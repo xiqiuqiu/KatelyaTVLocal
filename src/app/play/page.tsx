@@ -75,6 +75,7 @@ import {
   getSourceSwitchTargetEpisodeIndex,
 } from '@/lib/playback-source-switch';
 import {
+  createProgressiveSourceProbeFailureStatus,
   selectProgressiveSourceProbeCandidates,
   shouldStartProgressiveSourceProbe,
 } from '@/lib/progressive-source-probe';
@@ -1242,11 +1243,9 @@ function PlayPageClient() {
         const nextStatuses = new Map(precomputedSourceStatusesRef.current);
         nextStatuses.set(
           sourceKey,
-          createSourceStatus('unavailable', {
+          createProgressiveSourceProbeFailureStatus({
             domain,
             reason,
-            fromMemory: true,
-            localConfidence: 'low',
           })
         );
         const nextVideoInfo = new Map(precomputedVideoInfoRef.current);

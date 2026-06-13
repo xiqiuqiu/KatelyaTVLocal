@@ -117,6 +117,23 @@ describe('source status behavior', () => {
     ).toBe('{}');
   });
 
+  it('does not restore low-confidence browser speed-test failures as unavailable', () => {
+    rememberSourcePlaybackQuality('slow-1', 'media.example.com', {
+      mode: 'unavailable',
+      lastError: 'metadata probe failed',
+      confidence: 'low',
+    });
+
+    expect(
+      getRememberedSourceStatusForSource('slow-1', [
+        'https://media.example.com/20250508/demo/index.m3u8',
+      ])
+    ).toBeNull();
+    expect(
+      window.localStorage.getItem('sourcePlaybackQualityPreferences')
+    ).toBe('{}');
+  });
+
   it('marks browser speed-test failures as playable instead of unavailable', () => {
     const status = createPlayableSourceStatus({
       reason: '测速失败，可尝试播放',
