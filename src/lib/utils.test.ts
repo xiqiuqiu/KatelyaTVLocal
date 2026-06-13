@@ -2,11 +2,13 @@ import {
   buildHlsProxyUrl,
   createPlayableSourceStatus,
   getRememberedSourceStatus,
+  getRememberedSourceStatusForSource,
   getSourceStatusDescription,
   getSourceStatusLabel,
   isSourceStatusClickable,
   probeSourcePlayback,
   processImageUrl,
+  rememberSourcePlaybackQuality,
 } from '@/lib/utils';
 
 describe('source status behavior', () => {
@@ -61,6 +63,75 @@ describe('source status behavior', () => {
 
     expect(status?.kind).toBe('unavailable');
     expect(status?.reason).toBe('上游响应失败: 503');
+  });
+
+  it('keeps source-specific playback failures from affecting another source on the same domain', () => {
+    rememberSourcePlaybackQuality('slow-1', 'media.example.com', {
+      mode: 'unavailable',
+      lastError: 'manifestLoadError',
+    });
+
+    expect(
+      getRememberedSourceStatusForSource('slow-1', [
+        'https://media.example.com/20250508/demo/index.m3u8',
+      ])?.kind
+    ).toBe('unavailable');
+    expect(
+      getRememberedSourceStatusForSource('fast-2', [
+        'https://media.example.com/20250508/demo/index.m3u8',
+      ])
+    ).toBeNull();
+  });
+
+  it('restores source-specific successful playback memory with measured speed', () => {
+    rememberSourcePlaybackQuality('fast-2', 'media.example.com', {
+      mode: 'direct',
+      startupTimeMs: 1200,
+      browserSpeedLabel: '2.5 MB/s',
+      confidence: 'high',
+    });
+
+    const status = getRememberedSourceStatusForSource('fast-2', [
+      'https://media.example.com/20250508/demo/index.m3u8',
+    ]);
+
+    expect(status?.kind).toBe('direct');
+    expect(status?.fromMemory).toBe(true);
+    expect(status?.measured?.loadSpeed).toBe('2.5 MB/s');
+    expect(status?.reason).toBe('本机近期播放流畅');
+  });
+
+  it('clears source-specific unavailable memory for transient browser probe errors', () => {
+    rememberSourcePlaybackQuality('slow-1', 'media.example.com', {
+      mode: 'unavailable',
+      lastError: 'Timeout loading video metadata',
+    });
+
+    expect(
+      getRememberedSourceStatusForSource('slow-1', [
+        'https://media.example.com/20250508/demo/index.m3u8',
+      ])
+    ).toBeNull();
+    expect(
+      window.localStorage.getItem('sourcePlaybackQualityPreferences')
+    ).toBe('{}');
+  });
+
+  it('does not restore low-confidence browser speed-test failures as unavailable', () => {
+    rememberSourcePlaybackQuality('slow-1', 'media.example.com', {
+      mode: 'unavailable',
+      lastError: 'metadata probe failed',
+      confidence: 'low',
+    });
+
+    expect(
+      getRememberedSourceStatusForSource('slow-1', [
+        'https://media.example.com/20250508/demo/index.m3u8',
+      ])
+    ).toBeNull();
+    expect(
+      window.localStorage.getItem('sourcePlaybackQualityPreferences')
+    ).toBe('{}');
   });
 
   it('marks browser speed-test failures as playable instead of unavailable', () => {

@@ -5,6 +5,7 @@ import Hls from 'hls.js';
 import {
   SourceDomainPreference,
   SourcePlaybackMode,
+  SourcePlaybackQualityPreference,
   SourceProbeResult,
   SourceStatus,
   SourceStatusKind,
@@ -12,8 +13,11 @@ import {
 } from './types';
 
 const SOURCE_DOMAIN_MEMORY_KEY = 'sourceDomainPreferences';
+const SOURCE_PLAYBACK_QUALITY_MEMORY_KEY = 'sourcePlaybackQualityPreferences';
 const SOURCE_DOMAIN_MEMORY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SOURCE_DOMAIN_MEMORY_NEGATIVE_TTL_MS = 15 * 60 * 1000; // 15 minutes for unavailable
+const SOURCE_PLAYBACK_QUALITY_SUCCESS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const SOURCE_PLAYBACK_QUALITY_FAILURE_TTL_MS = 20 * 60 * 1000;
 const BROWSER_PROBE_ERROR_PATTERNS = [
   'Timeout loading video metadata',
   'Failed to load video metadata',
@@ -49,6 +53,37 @@ function writeSourceDomainPreferenceMap(
   localStorage.setItem(SOURCE_DOMAIN_MEMORY_KEY, JSON.stringify(value));
 }
 
+function readSourcePlaybackQualityPreferenceMap(): Record<
+  string,
+  SourcePlaybackQualityPreference
+> {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    const rawValue = localStorage.getItem(SOURCE_PLAYBACK_QUALITY_MEMORY_KEY);
+    if (!rawValue) return {};
+
+    const parsed = JSON.parse(rawValue) as Record<
+      string,
+      SourcePlaybackQualityPreference
+    >;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSourcePlaybackQualityPreferenceMap(
+  value: Record<string, SourcePlaybackQualityPreference>
+): void {
+  if (typeof window === 'undefined') return;
+
+  localStorage.setItem(
+    SOURCE_PLAYBACK_QUALITY_MEMORY_KEY,
+    JSON.stringify(value)
+  );
+}
+
 export function getSourceIdentityKey(source: string, id: string): string {
   return `${source}-${id}`;
 }
@@ -75,6 +110,27 @@ export function extractSourceDomain(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+function getSourcePlaybackQualityKey(
+  sourceKey: string,
+  domain: string | null
+): string | null {
+  if (!sourceKey || !domain) return null;
+
+  return `${sourceKey}@@${domain}`;
+}
+
+function parseSpeedKbpsFromLabel(label?: string): number | undefined {
+  if (!label) return undefined;
+
+  const match = label.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
+  if (!match) return undefined;
+
+  const value = parseFloat(match[1]);
+  if (!Number.isFinite(value)) return undefined;
+
+  return match[2] === 'MB/s' ? value * 1024 : value;
 }
 
 export function getSourceDomainFromEpisodes(episodes: string[]): string | null {
@@ -141,6 +197,91 @@ export function rememberSourceDomainPreference(
   writeSourceDomainPreferenceMap(allPreferences);
 }
 
+export function rememberSourcePlaybackQuality(
+  sourceKey: string,
+  domain: string | null,
+  update: {
+    mode: SourcePlaybackMode | 'unavailable';
+    startupTimeMs?: number;
+    observedSpeedKbps?: number;
+    browserSpeedLabel?: string;
+    stallCount?: number;
+    confidence?: 'low' | 'medium' | 'high';
+    lastError?: string;
+  }
+): void {
+  const key = getSourcePlaybackQualityKey(sourceKey, domain);
+  if (!key || typeof window === 'undefined') return;
+
+  const allPreferences = readSourcePlaybackQualityPreferenceMap();
+  const previous = allPreferences[key];
+  const now = Date.now();
+  const observedSpeedKbps =
+    update.observedSpeedKbps ??
+    parseSpeedKbpsFromLabel(update.browserSpeedLabel) ??
+    previous?.observedSpeedKbps;
+
+  allPreferences[key] = {
+    mode: update.mode,
+    lastPlayableAt:
+      update.mode === 'direct' || update.mode === 'proxy'
+        ? now
+        : previous?.lastPlayableAt,
+    lastFailedAt:
+      update.mode === 'unavailable' ? now : previous?.lastFailedAt,
+    startupTimeMs: update.startupTimeMs ?? previous?.startupTimeMs,
+    observedSpeedKbps,
+    browserSpeedLabel: update.browserSpeedLabel ?? previous?.browserSpeedLabel,
+    stallCount: update.stallCount ?? previous?.stallCount,
+    confidence:
+      update.confidence ??
+      (update.mode === 'unavailable' ? 'medium' : 'high'),
+    lastError: update.lastError,
+    updatedAt: now,
+  };
+
+  writeSourcePlaybackQualityPreferenceMap(allPreferences);
+}
+
+export function getSourcePlaybackQualityPreference(
+  sourceKey: string,
+  domain: string | null
+): SourcePlaybackQualityPreference | null {
+  const key = getSourcePlaybackQualityKey(sourceKey, domain);
+  if (!key || typeof window === 'undefined') return null;
+
+  const allPreferences = readSourcePlaybackQualityPreferenceMap();
+  const preference = allPreferences[key];
+  if (!preference) return null;
+
+  const ttl =
+    preference.mode === 'unavailable'
+      ? SOURCE_PLAYBACK_QUALITY_FAILURE_TTL_MS
+      : SOURCE_PLAYBACK_QUALITY_SUCCESS_TTL_MS;
+
+  if (Date.now() - preference.updatedAt > ttl) {
+    delete allPreferences[key];
+    writeSourcePlaybackQualityPreferenceMap(allPreferences);
+    return null;
+  }
+
+  return preference;
+}
+
+function clearSourcePlaybackQualityPreference(
+  sourceKey: string,
+  domain: string | null
+): void {
+  const key = getSourcePlaybackQualityKey(sourceKey, domain);
+  if (!key || typeof window === 'undefined') return;
+
+  const allPreferences = readSourcePlaybackQualityPreferenceMap();
+  if (!(key in allPreferences)) return;
+
+  delete allPreferences[key];
+  writeSourcePlaybackQualityPreferenceMap(allPreferences);
+}
+
 export function clearSourceDomainPreference(domain: string | null): void {
   if (!domain || typeof window === 'undefined') return;
 
@@ -162,6 +303,7 @@ export function createSourceStatus(
     fromMemory?: boolean;
     rankingSource?: 'd1' | 'live';
     rankScore?: number;
+    localConfidence?: 'low' | 'medium' | 'high';
   } = {}
 ): SourceStatus {
   return {
@@ -174,6 +316,7 @@ export function createSourceStatus(
     fromMemory: options.fromMemory,
     rankingSource: options.rankingSource,
     rankScore: options.rankScore,
+    localConfidence: options.localConfidence,
   };
 }
 
@@ -187,6 +330,7 @@ export function createPlayableSourceStatus(
     fromMemory?: boolean;
     rankingSource?: 'd1' | 'live';
     rankScore?: number;
+    localConfidence?: 'low' | 'medium' | 'high';
   } = {}
 ): SourceStatus {
   return createSourceStatus('playable', {
@@ -198,6 +342,7 @@ export function createPlayableSourceStatus(
     fromMemory: options.fromMemory,
     rankingSource: options.rankingSource,
     rankScore: options.rankScore,
+    localConfidence: options.localConfidence,
   });
 }
 
@@ -231,6 +376,56 @@ export function getRememberedSourceStatus(
         : '该源近期可直接播放',
     fromMemory: true,
     updatedAt: preference.updatedAt,
+  });
+}
+
+export function getRememberedSourceStatusForSource(
+  sourceKey: string,
+  episodes: string[]
+): SourceStatus | null {
+  const domain = getSourceDomainFromEpisodes(episodes);
+  const preference = getSourcePlaybackQualityPreference(sourceKey, domain);
+
+  if (!preference) {
+    return getRememberedSourceStatus(episodes);
+  }
+
+  if (preference.mode === 'unavailable') {
+    if (
+      preference.confidence === 'low' ||
+      isTransientBrowserProbeError(preference.lastError)
+    ) {
+      clearSourcePlaybackQualityPreference(sourceKey, domain);
+      return getRememberedSourceStatus(episodes);
+    }
+
+    return createSourceStatus('unavailable', {
+      domain,
+      reason: preference.lastError || '该源近期在本机不可用',
+      fromMemory: true,
+      updatedAt: preference.updatedAt,
+      localConfidence: preference.confidence,
+    });
+  }
+
+  const speedLabel = preference.browserSpeedLabel || (
+    typeof preference.observedSpeedKbps === 'number'
+      ? `${Math.max(1, preference.observedSpeedKbps).toFixed(0)} KB/s`
+      : '未知'
+  );
+
+  return createSourceStatus(preference.mode, {
+    domain,
+    playbackMode: preference.mode,
+    reason: '本机近期播放流畅',
+    fromMemory: true,
+    measured: {
+      quality: '未知',
+      loadSpeed: speedLabel,
+      pingTime: preference.startupTimeMs || 0,
+    },
+    updatedAt: preference.updatedAt,
+    localConfidence: preference.confidence,
   });
 }
 

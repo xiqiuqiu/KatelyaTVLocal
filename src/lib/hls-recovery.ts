@@ -18,6 +18,9 @@ export interface HlsRecoveryPlanInput {
   networkRecoveryAttempts: number;
   mediaRecoveryAttempts: number;
   hasAlternativeSource: boolean;
+  hasStartedPlayback?: boolean;
+  currentTimeSeconds?: number;
+  readyState?: number;
 }
 
 export interface HlsRecoveryPlan {
@@ -29,6 +32,13 @@ const STALL_DETAIL_SET = new Set([
   'bufferStalledError',
   'bufferNudgeOnStall',
   'waitingTimeout',
+]);
+
+const STARTUP_PLAYLIST_ERROR_SET = new Set([
+  'manifestLoadError',
+  'manifestLoadTimeOut',
+  'levelLoadError',
+  'levelLoadTimeOut',
 ]);
 
 const HEALTHY_PROGRESS_WINDOW_MS = 8000;
@@ -51,6 +61,41 @@ export interface HlsRecoveryProgressUpdate {
   lastProgressAt: number;
   healthyWindowStartedAt: number;
   healthyWindowStartedTime: number;
+}
+
+export type HlsWaitingRecoveryIgnoreReason =
+  | 'stale-session'
+  | 'stale-url'
+  | 'stale-video'
+  | 'ended'
+  | 'user-paused'
+  | 'user-seeking'
+  | 'manual-interaction-grace'
+  | 'seek-buffer-grace';
+
+export interface HlsWaitingRecoveryGuardInput {
+  timerSessionId: number;
+  currentSessionId: number;
+  timerPlaybackUrl: string | null;
+  currentPlaybackUrl: string | null;
+  isSameVideoElement: boolean;
+  isEnded: boolean;
+  isUserPaused: boolean;
+  isSeeking: boolean;
+  nowMs: number;
+  manualInteractionUntilMs: number;
+  seekBufferGraceUntilMs: number;
+}
+
+export interface HlsWaitingRecoveryGuardResult {
+  shouldTrigger: boolean;
+  reason?: HlsWaitingRecoveryIgnoreReason;
+}
+
+export interface HlsRecoveryGuardPlaybackUrlInput {
+  videoCurrentSrc?: string | null;
+  playbackUrl?: string | null;
+  fallbackUrl?: string | null;
 }
 
 export function getHlsRecoveryProgressUpdate({
@@ -98,6 +143,62 @@ export function getHlsRecoveryProgressUpdate({
   };
 }
 
+export function shouldTriggerHlsWaitingRecovery({
+  timerSessionId,
+  currentSessionId,
+  timerPlaybackUrl,
+  currentPlaybackUrl,
+  isSameVideoElement,
+  isEnded,
+  isUserPaused,
+  isSeeking,
+  nowMs,
+  manualInteractionUntilMs,
+  seekBufferGraceUntilMs,
+}: HlsWaitingRecoveryGuardInput): HlsWaitingRecoveryGuardResult {
+  if (timerSessionId !== currentSessionId) {
+    return { shouldTrigger: false, reason: 'stale-session' };
+  }
+
+  if (timerPlaybackUrl !== currentPlaybackUrl) {
+    return { shouldTrigger: false, reason: 'stale-url' };
+  }
+
+  if (!isSameVideoElement) {
+    return { shouldTrigger: false, reason: 'stale-video' };
+  }
+
+  if (isEnded) {
+    return { shouldTrigger: false, reason: 'ended' };
+  }
+
+  if (isUserPaused) {
+    return { shouldTrigger: false, reason: 'user-paused' };
+  }
+
+  if (isSeeking) {
+    return { shouldTrigger: false, reason: 'user-seeking' };
+  }
+
+  if (seekBufferGraceUntilMs > nowMs) {
+    return { shouldTrigger: false, reason: 'seek-buffer-grace' };
+  }
+
+  if (manualInteractionUntilMs > nowMs) {
+    return { shouldTrigger: false, reason: 'manual-interaction-grace' };
+  }
+
+  return { shouldTrigger: true };
+}
+
+export function getHlsRecoveryGuardPlaybackUrl({
+  videoCurrentSrc,
+  playbackUrl,
+  fallbackUrl,
+}: HlsRecoveryGuardPlaybackUrlInput): string | null {
+  return playbackUrl || fallbackUrl || videoCurrentSrc || null;
+}
+
 export function getHlsRecoveryPlan({
   fatal,
   errorType,
@@ -108,13 +209,32 @@ export function getHlsRecoveryPlan({
   networkRecoveryAttempts,
   mediaRecoveryAttempts,
   hasAlternativeSource,
+  hasStartedPlayback,
+  currentTimeSeconds,
+  readyState,
 }: HlsRecoveryPlanInput): HlsRecoveryPlan {
   const normalizedType = errorType || '';
   const normalizedDetails = errorDetails || '';
   const isStall = STALL_DETAIL_SET.has(normalizedDetails);
+  const isStartupPlaylistFailure =
+    STARTUP_PLAYLIST_ERROR_SET.has(normalizedDetails) &&
+    hasStartedPlayback === false &&
+    (currentTimeSeconds ?? 0) <= 1 &&
+    (readyState ?? 0) < 2;
   const effectiveStallCount = Math.max(stallCount, stallWindowCount || 0);
 
   if (fatal) {
+    if (
+      normalizedType === 'networkError' &&
+      isStartupPlaylistFailure &&
+      hasAlternativeSource
+    ) {
+      return {
+        action: 'switch-source',
+        reason: '当前线路起播失败，切换到其他播放源',
+      };
+    }
+
     if (normalizedType === 'networkError' && networkRecoveryAttempts < 2) {
       return {
         action: 'restart-load',

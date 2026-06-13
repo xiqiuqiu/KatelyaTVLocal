@@ -171,7 +171,7 @@ export function buildSourceSelectionScores({
       score += Math.max(-50, Math.min(100, status.rankScore)) * 0.35;
     }
     if (status?.fromMemory) {
-      score += 5;
+      score += status.localConfidence === 'low' ? 25 : 55;
     }
     if (!hasCurrentEpisode) {
       score -= 220;

@@ -83,6 +83,39 @@ describe('buildSourceSelectionScores', () => {
     expect(sortSourcesBySelectionScore(sources, scores)[0]).toBe(sources[1]);
   });
 
+  it('prioritizes local successful playback memory over global D1 rank for first-play selection', () => {
+    const sources = [createSource('global', '1'), createSource('local', '2')];
+    const statuses = new Map<string, SourceStatus>([
+      [
+        'global-1',
+        {
+          kind: 'direct',
+          reason: 'global rank only',
+          rankScore: 95,
+        },
+      ],
+      [
+        'local-2',
+        {
+          kind: 'direct',
+          reason: 'local success',
+          fromMemory: true,
+        },
+      ],
+    ]);
+
+    const scores = buildSourceSelectionScores({
+      sources,
+      statuses,
+      currentEpisodeIndex: 0,
+    });
+
+    expect(scores.get('local-2')?.score).toBeGreaterThan(
+      scores.get('global-1')?.score || 0
+    );
+    expect(sortSourcesBySelectionScore(sources, scores)[0]).toBe(sources[1]);
+  });
+
   it('keeps missing-score sources in original order after scored sources', () => {
     const sources = [
       createSource('a', '1'),

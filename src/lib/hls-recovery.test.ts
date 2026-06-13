@@ -1,6 +1,8 @@
 import {
+  getHlsRecoveryGuardPlaybackUrl,
   getHlsRecoveryPlan,
   getHlsRecoveryProgressUpdate,
+  shouldTriggerHlsWaitingRecovery,
 } from '@/lib/hls-recovery';
 
 describe('getHlsRecoveryPlan', () => {
@@ -72,6 +74,72 @@ describe('getHlsRecoveryPlan', () => {
         networkRecoveryAttempts: 0,
         mediaRecoveryAttempts: 0,
         hasAlternativeSource: false,
+      })
+    ).toEqual({
+      action: 'restart-load',
+      reason: '致命网络错误，重新拉取分片',
+    });
+  });
+
+  it('switches source immediately when a manifest fails before playback starts', () => {
+    expect(
+      getHlsRecoveryPlan({
+        fatal: true,
+        errorType: 'networkError',
+        errorDetails: 'manifestLoadError',
+        playbackMode: 'direct',
+        stallCount: 0,
+        stallWindowCount: 0,
+        networkRecoveryAttempts: 0,
+        mediaRecoveryAttempts: 0,
+        hasAlternativeSource: true,
+        hasStartedPlayback: false,
+        currentTimeSeconds: 0,
+        readyState: 0,
+      })
+    ).toEqual({
+      action: 'switch-source',
+      reason: '当前线路起播失败，切换到其他播放源',
+    });
+  });
+
+  it('does not switch source for startup manifest failure when no alternative source exists', () => {
+    expect(
+      getHlsRecoveryPlan({
+        fatal: true,
+        errorType: 'networkError',
+        errorDetails: 'manifestLoadError',
+        playbackMode: 'direct',
+        stallCount: 0,
+        stallWindowCount: 0,
+        networkRecoveryAttempts: 0,
+        mediaRecoveryAttempts: 0,
+        hasAlternativeSource: false,
+        hasStartedPlayback: false,
+        currentTimeSeconds: 0,
+        readyState: 0,
+      })
+    ).toEqual({
+      action: 'restart-load',
+      reason: '致命网络错误，重新拉取分片',
+    });
+  });
+
+  it('restarts load for fatal manifest errors after playback has started', () => {
+    expect(
+      getHlsRecoveryPlan({
+        fatal: true,
+        errorType: 'networkError',
+        errorDetails: 'manifestLoadError',
+        playbackMode: 'direct',
+        stallCount: 0,
+        stallWindowCount: 0,
+        networkRecoveryAttempts: 0,
+        mediaRecoveryAttempts: 0,
+        hasAlternativeSource: true,
+        hasStartedPlayback: true,
+        currentTimeSeconds: 120,
+        readyState: 4,
       })
     ).toEqual({
       action: 'restart-load',
@@ -152,5 +220,155 @@ describe('getHlsRecoveryProgressUpdate', () => {
         hasActiveStallWindow: true,
       }).healthy
     ).toBe(true);
+  });
+});
+
+describe('shouldTriggerHlsWaitingRecovery', () => {
+  const baseInput = {
+    timerSessionId: 3,
+    currentSessionId: 3,
+    timerPlaybackUrl: 'https://media.example.com/show/index.m3u8',
+    currentPlaybackUrl: 'https://media.example.com/show/index.m3u8',
+    isSameVideoElement: true,
+    isEnded: false,
+    isUserPaused: false,
+    isSeeking: false,
+    nowMs: 20_000,
+    manualInteractionUntilMs: 0,
+    seekBufferGraceUntilMs: 0,
+  };
+
+  it('allows recovery for a current stalled session without user interaction guards', () => {
+    expect(shouldTriggerHlsWaitingRecovery(baseInput)).toEqual({
+      shouldTrigger: true,
+    });
+  });
+
+  it('ignores waiting timers from an expired playback session', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        timerSessionId: 2,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'stale-session',
+    });
+  });
+
+  it('ignores waiting timers after the playback url has changed', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        currentPlaybackUrl: 'https://media.example.com/show/next.m3u8',
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'stale-url',
+    });
+  });
+
+  it('ignores waiting recovery while the user has paused playback', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        isUserPaused: true,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'user-paused',
+    });
+  });
+
+  it('ignores waiting recovery while the user is seeking', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        isSeeking: true,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'user-seeking',
+    });
+  });
+
+  it('ignores waiting recovery during the manual interaction grace window', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        manualInteractionUntilMs: 25_000,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'manual-interaction-grace',
+    });
+  });
+
+  it('ignores waiting recovery during the post-seek buffering grace window', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        seekBufferGraceUntilMs: 25_000,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'seek-buffer-grace',
+    });
+  });
+
+  it('ignores waiting recovery when the video element has been replaced', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        isSameVideoElement: false,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'stale-video',
+    });
+  });
+
+  it('ignores waiting recovery after playback has ended', () => {
+    expect(
+      shouldTriggerHlsWaitingRecovery({
+        ...baseInput,
+        isEnded: true,
+      })
+    ).toEqual({
+      shouldTrigger: false,
+      reason: 'ended',
+    });
+  });
+});
+
+describe('getHlsRecoveryGuardPlaybackUrl', () => {
+  it('prefers the logical HLS playback url over a MediaSource blob url', () => {
+    expect(
+      getHlsRecoveryGuardPlaybackUrl({
+        videoCurrentSrc: 'blob:https://app.example.com/session-id',
+        playbackUrl: 'https://media.example.com/show/index.m3u8',
+        fallbackUrl: 'https://media.example.com/show/fallback.m3u8',
+      })
+    ).toBe('https://media.example.com/show/index.m3u8');
+  });
+
+  it('uses fallback url before the video currentSrc', () => {
+    expect(
+      getHlsRecoveryGuardPlaybackUrl({
+        videoCurrentSrc: 'blob:https://app.example.com/session-id',
+        playbackUrl: '',
+        fallbackUrl: 'https://media.example.com/show/index.m3u8',
+      })
+    ).toBe('https://media.example.com/show/index.m3u8');
+  });
+
+  it('falls back to currentSrc when no logical playback url is available', () => {
+    expect(
+      getHlsRecoveryGuardPlaybackUrl({
+        videoCurrentSrc: 'https://media.example.com/video.mp4',
+        playbackUrl: '',
+        fallbackUrl: '',
+      })
+    ).toBe('https://media.example.com/video.mp4');
   });
 });
