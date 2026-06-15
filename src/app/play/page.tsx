@@ -34,6 +34,7 @@ import { getHlsAdSkipDecision, toHlsAdSkipWindows } from '@/lib/hls-ad-skip';
 import type { HlsPlaybackPolicyResult } from '@/lib/hls-playback-policy';
 import {
   detectAppleNativeHlsEnvironment,
+  detectPlaybackProbePlatform,
   resolveHlsPlaybackPolicy,
 } from '@/lib/hls-playback-policy';
 import {
@@ -80,6 +81,7 @@ import {
   shouldStartProgressiveSourceProbe,
 } from '@/lib/progressive-source-probe';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
+import { buildVideoInfoFromPreferenceResult } from '@/lib/source-preference-video-info';
 import {
   buildSourceSelectionScores,
   sortSourcesBySelectionScore,
@@ -89,7 +91,6 @@ import {
   PlaybackFeedbackInput,
   SearchResult,
   SourcePlaybackMode,
-  SourcePreferenceResult,
   SourceStatus,
   SourceVideoInfo,
 } from '@/lib/types';
@@ -586,27 +587,6 @@ function PlayPageClient() {
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
   // -----------------------------------------------------------------------------
-
-  const buildVideoInfoFromPreferenceResult = (
-    result: Pick<
-      SourcePreferenceResult,
-      'qualityLabel' | 'speedLabel' | 'pingTimeMs'
-    >
-  ): SourceVideoInfo | null => {
-    const quality = result.qualityLabel || '未知';
-    const loadSpeed = result.speedLabel || '未知';
-    const pingTime = result.pingTimeMs ?? 0;
-
-    if (quality === '未知' && loadSpeed === '未知' && pingTime <= 0) {
-      return null;
-    }
-
-    return {
-      quality,
-      loadSpeed,
-      pingTime,
-    };
-  };
 
   const getCurrentSourceKey = () =>
     getSourceIdentityKey(currentSourceRef.current, currentIdRef.current);
@@ -1193,6 +1173,13 @@ function PlayPageClient() {
   };
 
   const runProgressiveSourceProbe = async () => {
+    const probePlatform = getPlaybackProbePlatform();
+    if (probePlatform === 'apple-native') {
+      clearProgressiveSourceProbeTimer();
+      progressiveSourceProbeStableStartedAtRef.current = 0;
+      return;
+    }
+
     const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
     const now = Date.now();
     const hlsState = hlsRecoveryStateRef.current;
@@ -1721,6 +1708,27 @@ function PlayPageClient() {
 
   const isAppleNativeHlsPlaybackEnvironment = () =>
     detectAppleNativeHlsEnvironment({
+      userAgent:
+        typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+      platform:
+        typeof navigator !== 'undefined' ? navigator.platform : undefined,
+      userAgentDataPlatform:
+        typeof navigator !== 'undefined'
+          ? (
+              navigator as Navigator & {
+                userAgentData?: { platform?: string };
+              }
+            ).userAgentData?.platform
+          : undefined,
+      maxTouchPoints:
+        typeof navigator !== 'undefined' ? navigator.maxTouchPoints : undefined,
+      hasWebKitPointConversion:
+        typeof window !== 'undefined' &&
+        typeof (window as any).webkitConvertPointFromNodeToPage === 'function',
+    });
+
+  const getPlaybackProbePlatform = () =>
+    detectPlaybackProbePlatform({
       userAgent:
         typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
       platform:

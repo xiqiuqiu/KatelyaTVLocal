@@ -10,6 +10,10 @@ export type HlsPlaylistFilterMode =
   | 'none';
 export type HlsSegmentMode = 'direct' | 'proxy';
 export type HlsRecoveryProfile = 'hlsjs' | 'native-video';
+export type PlaybackProbePlatform =
+  | 'apple-native'
+  | 'android-hlsjs'
+  | 'desktop-hlsjs';
 
 export type HlsPlaybackPolicyReason =
   | 'apple-native-hls-ios-skip'
@@ -65,6 +69,20 @@ export function detectAppleNativeHlsEnvironment({
     typeof maxTouchPoints === 'number' &&
     maxTouchPoints > 1
   );
+}
+
+export function detectPlaybackProbePlatform(
+  input: AppleNativeHlsDetectionInput
+): PlaybackProbePlatform {
+  if (detectAppleNativeHlsEnvironment(input)) {
+    return 'apple-native';
+  }
+
+  if (/\bAndroid\b/i.test(input.userAgent || '')) {
+    return 'android-hlsjs';
+  }
+
+  return 'desktop-hlsjs';
 }
 
 export function resolveHlsPlaybackPolicy({

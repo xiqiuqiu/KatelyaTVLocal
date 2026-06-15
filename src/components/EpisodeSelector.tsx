@@ -5,7 +5,9 @@
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
+import { detectPlaybackProbePlatform } from '@/lib/hls-playback-policy';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
+import { buildVideoInfoFromPreferenceResult } from '@/lib/source-preference-video-info';
 import {
   sortSourcesBySelectionScore,
   SourceSelectionScore,
@@ -144,6 +146,32 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     [precomputedSourceStatuses]
   );
 
+  const getPlaybackProbePlatform = useCallback(
+    () =>
+      detectPlaybackProbePlatform({
+        userAgent:
+          typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+        platform:
+          typeof navigator !== 'undefined' ? navigator.platform : undefined,
+        userAgentDataPlatform:
+          typeof navigator !== 'undefined'
+            ? (
+                navigator as Navigator & {
+                  userAgentData?: { platform?: string };
+                }
+              ).userAgentData?.platform
+            : undefined,
+        maxTouchPoints:
+          typeof navigator !== 'undefined'
+            ? navigator.maxTouchPoints
+            : undefined,
+        hasWebKitPointConversion:
+          typeof window !== 'undefined' &&
+          typeof (window as any).webkitConvertPointFromNodeToPage === 'function',
+      }),
+    []
+  );
+
   const probeSourceDirectPlayback = useCallback(
     async (source: SearchResult) => {
       const sourceKey = getSourceIdentityKey(source.source, source.id);
@@ -251,6 +279,17 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         return unavailableStatus;
       }
 
+      if (getPlaybackProbePlatform() === 'apple-native') {
+        const directStatus = createSourceStatus('direct', {
+          reason: '后端检测通过，可尝试播放',
+          playbackMode: 'direct',
+          domain: serverProbeResult.domain || rememberedStatus?.domain || null,
+        });
+        setSourceStatusMap((prev) => new Map(prev).set(sourceKey, directStatus));
+        rememberSourceDomainPreference(directStatus.domain || null, 'direct');
+        return directStatus;
+      }
+
       // 标记为已尝试
       setAttemptedSources((prev) => new Set(prev).add(sourceKey));
       setSourceStatusMap((prev) => {
@@ -321,7 +360,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         return playableStatus;
       }
     },
-    [value]
+    [getPlaybackProbePlatform, value]
   );
 
   const getAutoProbeCandidates = useCallback(() => {
@@ -608,11 +647,26 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       );
     };
 
-    void fetchSourcePreferencesInBatches(requestSources)
+    void fetchSourcePreferencesInBatches(requestSources, {
+      allowLiveProbeFallback: true,
+    })
       .then((preferenceData) => {
         if (cancelled) {
           return;
         }
+
+        setVideoInfoMap((prev) => {
+          const next = new Map(prev);
+
+          preferenceData.results.forEach((result) => {
+            const measured = buildVideoInfoFromPreferenceResult(result);
+            if (measured) {
+              next.set(result.sourceKey, measured);
+            }
+          });
+
+          return next;
+        });
 
         setSourceStatusMap((prev) => {
           const next = new Map(prev);
@@ -630,6 +684,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                 playbackMode:
                   result.kind === 'unavailable' ? undefined : result.kind,
                 domain: result.domain || previousStatus?.domain || null,
+                measured:
+                  buildVideoInfoFromPreferenceResult(result) || undefined,
                 updatedAt: result.updatedAt,
                 rankingSource: result.rankingSource,
                 rankScore: result.rankScore,

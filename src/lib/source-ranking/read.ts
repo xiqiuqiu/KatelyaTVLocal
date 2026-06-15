@@ -1,3 +1,4 @@
+import { formatSourceSpeedKbps } from '@/lib/source-preference-video-info';
 import { SourcePreferenceResult } from '@/lib/types';
 
 interface D1QueryResult<T> {
@@ -304,8 +305,15 @@ export async function readLatestSourceRanks(
         probeTimeMs: probe?.probeTimeMs ?? undefined,
         qualityLabel:
           feedback?.browserQuality || probe?.resolutionLabel || null,
-        speedLabel: feedback?.browserSpeedLabel || null,
-        pingTimeMs: feedback?.browserPingMs ?? null,
+        speedLabel:
+          feedback?.browserSpeedLabel ||
+          formatSourceSpeedKbps(probe?.firstSegmentSpeedKbps) ||
+          null,
+        pingTimeMs:
+          feedback?.browserPingMs ??
+          probe?.firstSegmentLatencyMs ??
+          probe?.probeTimeMs ??
+          null,
         latencyMs: probe?.firstSegmentLatencyMs ?? null,
         speedKbps: probe?.firstSegmentSpeedKbps ?? null,
         updatedAt: Math.max(

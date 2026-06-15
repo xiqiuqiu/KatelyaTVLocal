@@ -229,4 +229,74 @@ describe('source ranking read', () => {
       badRankScore ?? Number.POSITIVE_INFINITY
     );
   });
+
+  it('falls back to backend probe speed and latency when browser feedback has no speed metrics', async () => {
+    const all = jest
+      .fn()
+      .mockResolvedValueOnce({
+        results: [
+          {
+            sourceKey: 'probe-only',
+            playbackDomain: 'rank.example',
+            finalScore: 84,
+            successRate: 92,
+            directRate: 92,
+            proxyRate: 0,
+            unavailableRate: 0,
+            updatedAt: 1710000000000,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            sourceKey: 'probe-only',
+            domain: 'probe.example',
+            kind: 'direct',
+            reason: '后端首段探测通过',
+            probeTimeMs: 510,
+            resolutionLabel: '1080p',
+            firstSegmentLatencyMs: 360,
+            firstSegmentSpeedKbps: 1536,
+            measuredAt: 1710000200000,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            sourceKey: 'probe-only',
+            playbackDomain: 'feedback.example',
+            startupSuccess: 1,
+            startupTimeMs: 3200,
+            switchedToProxy: 0,
+            browserQuality: null,
+            browserPingMs: null,
+            browserSpeedLabel: null,
+            sessionError: null,
+            recordedAt: 1710000300000,
+          },
+        ],
+      });
+    const bind = jest.fn().mockReturnValue({ all });
+    const prepare = jest.fn().mockReturnValue({ bind });
+
+    const results = await readLatestSourceRanks(
+      { DB: { prepare } },
+      ['probe-only'],
+      '24h',
+      1710000400000
+    );
+
+    expect(results).toEqual([
+      expect.objectContaining({
+        sourceKey: 'probe-only',
+        qualityLabel: '1080p',
+        speedLabel: '1.5 MB/s',
+        pingTimeMs: 360,
+        latencyMs: 360,
+        speedKbps: 1536,
+      }),
+    ]);
+  });
 });

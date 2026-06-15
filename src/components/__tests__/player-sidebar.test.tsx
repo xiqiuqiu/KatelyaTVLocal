@@ -141,7 +141,8 @@ describe('EpisodeSelector playback sidebar controls', () => {
           sourceKey: 'source-44-id-44',
           episodeUrl: 'https://example.com/44.m3u8',
         },
-      ])
+      ]),
+      { allowLiveProbeFallback: true }
     );
     expect(mockedFetchSourcePreferencesInBatches.mock.calls[0][0]).toHaveLength(
       45
@@ -353,5 +354,121 @@ describe('EpisodeSelector playback sidebar controls', () => {
     });
     expect(buttons[0]).toHaveAccessibleName('当前线路 当前源');
     expect(buttons[1]).toHaveAccessibleName('切换线路 推荐源');
+  });
+
+  it('shows backend probe speed from source preference results', async () => {
+    mockedFetchSourcePreferencesInBatches.mockResolvedValueOnce({
+      orderedSourceKeys: ['source-b-b'],
+      results: [
+        {
+          sourceKey: 'source-b-b',
+          kind: 'direct',
+          reason: '后端首段探测通过',
+          rankingSource: 'd1',
+          qualityLabel: null,
+          speedLabel: null,
+          pingTimeMs: null,
+          latencyMs: 280,
+          speedKbps: 2450,
+        },
+      ],
+      generatedAt: 1710000000000,
+      rankingSource: 'd1',
+      confidence: 'medium',
+    });
+    const availableSources: SearchResult[] = [
+      {
+        id: 'a',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'b',
+        source: 'source-b',
+        title: 'backend ranked source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/b.m3u8'],
+        source_name: '后端测速源',
+      },
+    ];
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('2.4 MB/s · 280ms')).toBeInTheDocument();
+    });
+  });
+
+  it('allows probing source rows to be clicked for manual rescue switching', async () => {
+    const availableSources: SearchResult[] = [
+      {
+        id: 'a',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'b',
+        source: 'source-b',
+        title: 'probing source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/b.m3u8'],
+        source_name: '检测中源',
+      },
+    ];
+    const sourceStatuses = new Map<string, SourceStatus>([
+      [
+        'source-b-b',
+        createSourceStatus('probing', {
+          reason: '后台测速中',
+        }),
+      ],
+    ]);
+    const handleSourceChange = jest.fn();
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+        precomputedSourceStatuses={sourceStatuses}
+        onSourceChange={handleSourceChange}
+      />
+    );
+
+    const probingButton = await screen.findByRole('button', {
+      name: '切换线路 检测中源',
+    });
+
+    expect(probingButton).not.toBeDisabled();
+    expect(screen.getByText('检测中')).toBeInTheDocument();
+    expect(screen.getByText('可切换')).toBeInTheDocument();
+
+    fireEvent.click(probingButton);
+
+    expect(handleSourceChange).toHaveBeenCalledWith(
+      'source-b',
+      'b',
+      'probing source'
+    );
   });
 });
