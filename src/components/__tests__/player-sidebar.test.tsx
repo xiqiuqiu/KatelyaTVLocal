@@ -293,7 +293,7 @@ describe('EpisodeSelector playback sidebar controls', () => {
     });
   });
 
-  it('orders source rows by precomputed selection score instead of forcing current first', async () => {
+  it('keeps the current source first while preserving ranked alternatives', async () => {
     const availableSources: SearchResult[] = [
       {
         id: 'current',
@@ -351,7 +351,7 @@ describe('EpisodeSelector playback sidebar controls', () => {
     const buttons = await screen.findAllByRole('button', {
       name: /线路/,
     });
-    expect(buttons[0]).toHaveAccessibleName('切换线路 推荐源');
-    expect(buttons[1]).toHaveAccessibleName('当前线路 当前源');
+    expect(buttons[0]).toHaveAccessibleName('当前线路 当前源');
+    expect(buttons[1]).toHaveAccessibleName('切换线路 推荐源');
   });
 });

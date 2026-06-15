@@ -54,10 +54,9 @@ interface PlaybackFeedbackRow {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SNAPSHOT_LOOKBACK_MS = 7 * DAY_MS;
+const FEEDBACK_ONLY_BASE_RANK_SCORE = 50;
 
-function getSourceRankingDatabase(
-  env?: RuntimeSource
-): D1DatabaseLike | null {
+function getSourceRankingDatabase(env?: RuntimeSource): D1DatabaseLike | null {
   const source = env || (process.env as unknown as RuntimeSource);
   const db = source.DB;
 
@@ -155,6 +154,26 @@ function getDefaultReason(
   }
 }
 
+function inferKindFromFeedback(
+  feedback: PlaybackFeedbackRow
+): SourcePreferenceResult['kind'] {
+  if (!feedback.startupSuccess) {
+    return 'unavailable';
+  }
+
+  return feedback.switchedToProxy ? 'proxy' : 'direct';
+}
+
+function getFeedbackOnlyReason(feedback: PlaybackFeedbackRow): string {
+  if (!feedback.startupSuccess) {
+    return feedback.sessionError || '近期本机播放失败';
+  }
+
+  return feedback.switchedToProxy
+    ? '近期本机播放成功，更适合代理'
+    : '近期本机播放成功，优先直连';
+}
+
 export async function readLatestSourceRanks(
   env: RuntimeSource | undefined,
   sourceKeys: string[],
@@ -194,10 +213,6 @@ export async function readLatestSourceRanks(
         .bind(windowKey, cutoffTime, ...sourceKeys)
         .all<SourceRankSnapshotRow>()
     ).results || [];
-
-  if (snapshotRows.length === 0) {
-    return [];
-  }
 
   const probeRows =
     (
@@ -247,6 +262,7 @@ export async function readLatestSourceRanks(
     ).results || [];
 
   const latestProbeByKey = dedupeLatestByKey(probeRows);
+  const latestAnyFeedbackByKey = dedupeLatestByKey(feedbackRows);
   const latestFeedbackByKey = dedupeLatestByKey(
     feedbackRows.filter((row) => Boolean(row.startupSuccess))
   );
@@ -258,7 +274,7 @@ export async function readLatestSourceRanks(
   });
   const seenKeys = new Set<string>();
 
-  return snapshotRows
+  const snapshotResults = snapshotRows
     .filter((row) => {
       if (seenKeys.has(row.sourceKey)) {
         return false;
@@ -307,4 +323,61 @@ export async function readLatestSourceRanks(
         ),
       } satisfies SourcePreferenceResult;
     });
+
+  const feedbackOnlyResults = sourceKeys
+    .filter((sourceKey) => !seenKeys.has(sourceKey))
+    .map((sourceKey): SourcePreferenceResult | null => {
+      const latestFeedback = latestAnyFeedbackByKey.get(sourceKey);
+      if (!latestFeedback) {
+        return null;
+      }
+
+      const successfulFeedback = latestFeedback.startupSuccess
+        ? latestFeedback
+        : latestFeedbackByKey.get(sourceKey);
+      const rows = feedbackRowsByKey.get(sourceKey) || [];
+      const kind = inferKindFromFeedback(latestFeedback);
+      const feedbackAdjustment = getFeedbackRankAdjustment(rows);
+      const freshnessAdjustment = getFreshnessRankAdjustment(
+        latestFeedback.recordedAt,
+        now
+      );
+
+      return {
+        sourceKey,
+        kind,
+        reason: getFeedbackOnlyReason(latestFeedback),
+        domain:
+          latestFeedback.playbackDomain ||
+          successfulFeedback?.playbackDomain ||
+          null,
+        probeTimeMs: undefined,
+        qualityLabel:
+          latestFeedback.startupSuccess && successfulFeedback
+            ? successfulFeedback.browserQuality || null
+            : null,
+        speedLabel:
+          latestFeedback.startupSuccess && successfulFeedback
+            ? successfulFeedback.browserSpeedLabel || null
+            : null,
+        pingTimeMs:
+          latestFeedback.startupSuccess && successfulFeedback
+            ? successfulFeedback.browserPingMs ?? null
+            : null,
+        latencyMs: null,
+        speedKbps: null,
+        updatedAt: latestFeedback.recordedAt,
+        rankingSource: 'd1',
+        rankScore: Number(
+          (
+            FEEDBACK_ONLY_BASE_RANK_SCORE +
+            feedbackAdjustment +
+            freshnessAdjustment
+          ).toFixed(2)
+        ),
+      } satisfies SourcePreferenceResult;
+    })
+    .filter((result): result is SourcePreferenceResult => result !== null);
+
+  return [...snapshotResults, ...feedbackOnlyResults];
 }

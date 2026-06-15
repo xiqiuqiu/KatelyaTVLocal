@@ -146,6 +146,10 @@ describe('source status behavior', () => {
     expect(isSourceStatusClickable(status)).toBe(true);
   });
 
+  it('allows users to switch away from a source while probing is still running', () => {
+    expect(isSourceStatusClickable({ kind: 'probing' })).toBe(true);
+  });
+
   it('prefers probing status over stale video measurements', () => {
     expect(
       getSourceStatusDescription(

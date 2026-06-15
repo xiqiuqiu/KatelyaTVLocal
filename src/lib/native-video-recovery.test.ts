@@ -8,6 +8,7 @@ import {
   NATIVE_JITTER_WINDOW_MS,
   NATIVE_PLAY_RESUME_GRACE_MS,
   shouldIgnoreNativeStall,
+  shouldReportNativePlaybackFailureFeedback,
   shouldResetNativeRecoveryOnPause,
 } from './native-video-recovery';
 
@@ -381,6 +382,38 @@ describe('getNativeRecoveryAction', () => {
       action: 'switch-source',
       reason: '原生播放器判定当前媒体源不可用，切换到其他播放源',
     });
+  });
+});
+
+describe('shouldReportNativePlaybackFailureFeedback', () => {
+  it('reports native source failures immediately', () => {
+    expect(
+      shouldReportNativePlaybackFailureFeedback({
+        severity: 'source-failed',
+        action: 'switch-source',
+        sourceRecoveryAttempts: 0,
+      })
+    ).toBe(true);
+  });
+
+  it('reports hard stalls after the first resume attempt fails', () => {
+    expect(
+      shouldReportNativePlaybackFailureFeedback({
+        severity: 'hard-stall',
+        action: 'switch-source',
+        sourceRecoveryAttempts: 1,
+      })
+    ).toBe(true);
+  });
+
+  it('does not report a soft stall observation as source failure', () => {
+    expect(
+      shouldReportNativePlaybackFailureFeedback({
+        severity: 'soft-stall',
+        action: 'observe',
+        sourceRecoveryAttempts: 0,
+      })
+    ).toBe(false);
   });
 });
 

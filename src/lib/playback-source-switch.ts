@@ -44,7 +44,7 @@ interface RecoverySourceCandidateInput<T extends RecoverySourceCandidate> {
 
 interface AutoRecoveryResumeInput {
   currentPlayTime: number;
-  offsetSeconds?: number;
+  rewindSeconds?: number;
 }
 
 interface ClampSourceSwitchResumeTimeInput {
@@ -54,13 +54,23 @@ interface ClampSourceSwitchResumeTimeInput {
   endFallbackSeconds?: number;
 }
 
-function getRecoverySourcePriority(statusKind?: RecoverySourceStatusKind | null) {
+export const PLAYBACK_RESUME_REWIND_SECONDS = 5;
+
+function getRecoverySourcePriority(
+  statusKind?: RecoverySourceStatusKind | null
+) {
   if (statusKind === 'direct') return 0;
-  if (!statusKind || statusKind === 'idle' || statusKind === 'probing') {
+  if (statusKind === 'playable') {
     return 1;
   }
   if (statusKind === 'proxy') return 2;
-  return 3;
+  if (!statusKind || statusKind === 'idle') {
+    return 3;
+  }
+  if (statusKind === 'probing') {
+    return 4;
+  }
+  return 9;
 }
 
 export function getSourceSwitchTargetEpisodeIndex({
@@ -86,14 +96,23 @@ export function getAutoRecoveryResumeTime(
 ): number | null {
   const currentPlayTime =
     typeof input === 'number' ? input : input.currentPlayTime;
-  const offsetSeconds =
-    typeof input === 'number' ? 3 : input.offsetSeconds ?? 3;
+  const rewindSeconds =
+    typeof input === 'number'
+      ? PLAYBACK_RESUME_REWIND_SECONDS
+      : input.rewindSeconds ?? PLAYBACK_RESUME_REWIND_SECONDS;
 
-  if (currentPlayTime <= 1) {
+  return getRewoundPlaybackResumeTime(currentPlayTime, rewindSeconds);
+}
+
+export function getRewoundPlaybackResumeTime(
+  currentPlayTime: number,
+  rewindSeconds = PLAYBACK_RESUME_REWIND_SECONDS
+): number | null {
+  if (!Number.isFinite(currentPlayTime) || currentPlayTime <= 1) {
     return null;
   }
 
-  return Number((currentPlayTime + offsetSeconds).toFixed(2));
+  return Number(Math.max(0, currentPlayTime - rewindSeconds).toFixed(2));
 }
 
 export function clampSourceSwitchResumeTime({
@@ -109,7 +128,9 @@ export function clampSourceSwitchResumeTime({
   return resumeTime;
 }
 
-export function getNextRecoverySourceCandidate<T extends RecoverySourceCandidate>({
+export function getNextRecoverySourceCandidate<
+  T extends RecoverySourceCandidate
+>({
   candidates,
   currentSourceKey,
   recoveredSourceKeys,
@@ -173,14 +194,14 @@ export function getSourceSwitchResumePlan({
 
   if (existingResumeTime && existingResumeTime > 0) {
     return {
-      resumeTime: existingResumeTime,
+      resumeTime: getRewoundPlaybackResumeTime(existingResumeTime),
       saveAfterCanPlay: true,
     };
   }
 
   if (currentPlayTime > 1) {
     return {
-      resumeTime: currentPlayTime,
+      resumeTime: getRewoundPlaybackResumeTime(currentPlayTime),
       saveAfterCanPlay: true,
     };
   }

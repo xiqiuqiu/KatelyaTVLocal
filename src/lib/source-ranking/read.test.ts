@@ -140,4 +140,93 @@ describe('source ranking read', () => {
       },
     ]);
   });
+
+  it('returns recent playback feedback even when no snapshot exists for a source', async () => {
+    const all = jest
+      .fn()
+      .mockResolvedValueOnce({
+        results: [
+          {
+            sourceKey: 'snap',
+            playbackDomain: 'rank.snap.example',
+            finalScore: 70,
+            successRate: 90,
+            directRate: 90,
+            proxyRate: 0,
+            unavailableRate: 0,
+            updatedAt: 1710000000000,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            sourceKey: 'feedback-fast',
+            playbackDomain: 'fast.example',
+            startupSuccess: 1,
+            startupTimeMs: 1800,
+            switchedToProxy: 0,
+            browserQuality: null,
+            browserPingMs: null,
+            browserSpeedLabel: null,
+            sessionError: null,
+            recordedAt: 1710000300000,
+          },
+          {
+            sourceKey: 'feedback-bad',
+            playbackDomain: 'bad.example',
+            startupSuccess: 0,
+            startupTimeMs: 9000,
+            switchedToProxy: 0,
+            browserQuality: null,
+            browserPingMs: null,
+            browserSpeedLabel: null,
+            sessionError: 'ios-native-stall',
+            recordedAt: 1710000200000,
+          },
+        ],
+      });
+    const bind = jest.fn().mockReturnValue({ all });
+    const prepare = jest.fn().mockReturnValue({ bind });
+
+    const results = await readLatestSourceRanks(
+      { DB: { prepare } },
+      ['snap', 'feedback-fast', 'feedback-bad'],
+      '24h',
+      1710000400000
+    );
+
+    expect(results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceKey: 'feedback-fast',
+          kind: 'direct',
+          reason: '近期本机播放成功，优先直连',
+          domain: 'fast.example',
+          pingTimeMs: null,
+          speedLabel: null,
+          rankingSource: 'd1',
+        }),
+        expect.objectContaining({
+          sourceKey: 'feedback-bad',
+          kind: 'unavailable',
+          reason: 'ios-native-stall',
+          domain: 'bad.example',
+          rankingSource: 'd1',
+        }),
+      ])
+    );
+    const fastRankScore = results.find(
+      (result) => result.sourceKey === 'feedback-fast'
+    )?.rankScore;
+    const badRankScore = results.find(
+      (result) => result.sourceKey === 'feedback-bad'
+    )?.rankScore;
+    expect(fastRankScore).toBeGreaterThan(
+      badRankScore ?? Number.POSITIVE_INFINITY
+    );
+  });
 });

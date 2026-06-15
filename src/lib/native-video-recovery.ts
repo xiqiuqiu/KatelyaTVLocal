@@ -86,6 +86,12 @@ interface NativeRecoveryActionInput {
   sourceRecoveryAttempts: number;
 }
 
+interface NativePlaybackFailureFeedbackInput {
+  severity: NativeStallSeverity;
+  action: NativeLowFrequencyRecoveryAction;
+  sourceRecoveryAttempts: number;
+}
+
 const NATIVE_JITTER_EVENT_THRESHOLD = 4;
 const NATIVE_JITTER_ROLLBACK_THRESHOLD_SECONDS = 2;
 const NATIVE_JITTER_ROLLBACK_THRESHOLD_COUNT = 2;
@@ -254,6 +260,22 @@ export function getNativeRecoveryAction({
     action: 'observe',
     reason: '原生播放器状态正常，继续观察',
   };
+}
+
+export function shouldReportNativePlaybackFailureFeedback({
+  severity,
+  action,
+  sourceRecoveryAttempts,
+}: NativePlaybackFailureFeedbackInput): boolean {
+  if (severity === 'source-failed') {
+    return true;
+  }
+
+  if (severity !== 'hard-stall') {
+    return false;
+  }
+
+  return action === 'switch-source' || sourceRecoveryAttempts > 0;
 }
 
 export function getNativePlaybackNudgeTime({

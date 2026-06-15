@@ -227,15 +227,13 @@ export function rememberSourcePlaybackQuality(
       update.mode === 'direct' || update.mode === 'proxy'
         ? now
         : previous?.lastPlayableAt,
-    lastFailedAt:
-      update.mode === 'unavailable' ? now : previous?.lastFailedAt,
+    lastFailedAt: update.mode === 'unavailable' ? now : previous?.lastFailedAt,
     startupTimeMs: update.startupTimeMs ?? previous?.startupTimeMs,
     observedSpeedKbps,
     browserSpeedLabel: update.browserSpeedLabel ?? previous?.browserSpeedLabel,
     stallCount: update.stallCount ?? previous?.stallCount,
     confidence:
-      update.confidence ??
-      (update.mode === 'unavailable' ? 'medium' : 'high'),
+      update.confidence ?? (update.mode === 'unavailable' ? 'medium' : 'high'),
     lastError: update.lastError,
     updatedAt: now,
   };
@@ -408,11 +406,11 @@ export function getRememberedSourceStatusForSource(
     });
   }
 
-  const speedLabel = preference.browserSpeedLabel || (
-    typeof preference.observedSpeedKbps === 'number'
+  const speedLabel =
+    preference.browserSpeedLabel ||
+    (typeof preference.observedSpeedKbps === 'number'
       ? `${Math.max(1, preference.observedSpeedKbps).toFixed(0)} KB/s`
-      : '未知'
-  );
+      : '未知');
 
   return createSourceStatus(preference.mode, {
     domain,
@@ -477,7 +475,7 @@ export function isSourceStatusClickable(
 ): boolean {
   if (!status) return true;
 
-  return status.kind !== 'unavailable' && status.kind !== 'probing';
+  return status.kind !== 'unavailable';
 }
 
 export function getSourceProbeUrl(): string | null {

@@ -16,7 +16,7 @@ describe('getSourceSwitchResumePlan', () => {
         existingResumeTime: null,
       })
     ).toEqual({
-      resumeTime: 438.6,
+      resumeTime: 433.6,
       saveAfterCanPlay: true,
     });
   });
@@ -44,7 +44,7 @@ describe('getSourceSwitchResumePlan', () => {
         existingResumeTime: 120,
       })
     ).toEqual({
-      resumeTime: 120,
+      resumeTime: 115,
       saveAfterCanPlay: true,
     });
   });
@@ -128,8 +128,8 @@ describe('getSourceSwitchTargetEpisodeIndex', () => {
 });
 
 describe('getAutoRecoveryResumeTime', () => {
-  it('adds a small offset so automatic recovery avoids the same bad segment boundary', () => {
-    expect(getAutoRecoveryResumeTime(438.123)).toBe(441.12);
+  it('moves automatic recovery before the same bad segment boundary', () => {
+    expect(getAutoRecoveryResumeTime(438.123)).toBe(433.12);
   });
 
   it('does not queue a recovery resume point before playback has meaningfully started', () => {
@@ -234,7 +234,7 @@ describe('getNextRecoverySourceCandidate', () => {
     ).toEqual(candidates[3]);
   });
 
-  it('treats unknown and probing sources as usable fallback before proxy sources', () => {
+  it('keeps probing sources behind known playable recovery candidates', () => {
     const unknownCandidates = [
       {
         source: 'proxy',
@@ -262,7 +262,7 @@ describe('getNextRecoverySourceCandidate', () => {
         recoveredSourceKeys: new Set<string>(),
         currentEpisodeIndex: 1,
       })
-    ).toEqual(unknownCandidates[1]);
+    ).toEqual(unknownCandidates[0]);
   });
 
   it('prefers the highest scored usable recovery source', () => {
