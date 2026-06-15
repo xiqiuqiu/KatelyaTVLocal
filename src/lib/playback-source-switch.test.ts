@@ -4,6 +4,7 @@ import {
   getNextRecoverySourceCandidate,
   getSourceSwitchResumePlan,
   getSourceSwitchTargetEpisodeIndex,
+  shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
 
 describe('getSourceSwitchResumePlan', () => {
@@ -63,6 +64,20 @@ describe('getSourceSwitchResumePlan', () => {
     });
   });
 
+  it('falls back to zero instead of saving null when a queued resume target rewinds below the start', () => {
+    expect(
+      getSourceSwitchResumePlan({
+        currentEpisodeIndex: 1,
+        targetEpisodeIndex: 1,
+        currentPlayTime: 12,
+        existingResumeTime: 0.8,
+      })
+    ).toEqual({
+      resumeTime: 0,
+      saveAfterCanPlay: true,
+    });
+  });
+
   it('drops a queued resume target when the user manually changes to a different episode', () => {
     expect(
       getSourceSwitchResumePlan({
@@ -74,6 +89,20 @@ describe('getSourceSwitchResumePlan', () => {
     ).toEqual({
       resumeTime: 0,
       saveAfterCanPlay: false,
+    });
+  });
+
+  it('normalizes a sub-second queued resume target to zero when rewind would return null', () => {
+    expect(
+      getSourceSwitchResumePlan({
+        currentEpisodeIndex: 1,
+        targetEpisodeIndex: 1,
+        currentPlayTime: 12,
+        existingResumeTime: 0.5,
+      })
+    ).toEqual({
+      resumeTime: 0,
+      saveAfterCanPlay: true,
     });
   });
 });
@@ -135,6 +164,32 @@ describe('getAutoRecoveryResumeTime', () => {
   it('does not queue a recovery resume point before playback has meaningfully started', () => {
     expect(getAutoRecoveryResumeTime(0)).toBeNull();
     expect(getAutoRecoveryResumeTime(0.5)).toBeNull();
+  });
+});
+
+describe('shouldIgnoreSourceChangeTimeout', () => {
+  it('ignores stale timeout callbacks from an older source change attempt', () => {
+    expect(
+      shouldIgnoreSourceChangeTimeout({
+        attemptId: 1,
+        currentAttemptId: 2,
+        isVideoLoading: true,
+        timeoutSourceKey: 'same-source',
+        currentSourceKey: 'same-source',
+      })
+    ).toBe(true);
+  });
+
+  it('allows the current still-loading source change attempt to time out', () => {
+    expect(
+      shouldIgnoreSourceChangeTimeout({
+        attemptId: 2,
+        currentAttemptId: 2,
+        isVideoLoading: true,
+        timeoutSourceKey: 'same-source',
+        currentSourceKey: 'same-source',
+      })
+    ).toBe(false);
   });
 });
 

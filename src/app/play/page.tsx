@@ -72,6 +72,7 @@ import {
   getRewoundPlaybackResumeTime,
   getSourceSwitchResumePlan,
   getSourceSwitchTargetEpisodeIndex,
+  shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
 import {
   createProgressiveSourceProbeFailureStatus,
@@ -480,6 +481,7 @@ function PlayPageClient() {
   const nativeWatchdogTimerRef = useRef<number | null>(null);
   const nativeFalsePlayingTimerRef = useRef<number | null>(null);
   const sourceChangeTimeoutTimerRef = useRef<number | null>(null);
+  const sourceChangeAttemptIdRef = useRef(0);
   const lastPlaybackFailureFeedbackRef = useRef<{
     sourceKey: string;
     sessionError: string;
@@ -2886,6 +2888,8 @@ function PlayPageClient() {
         typeof window !== 'undefined' &&
         playbackPolicyRef.current?.recoveryProfile === 'native-video'
       ) {
+        const timeoutAttemptId = sourceChangeAttemptIdRef.current + 1;
+        sourceChangeAttemptIdRef.current = timeoutAttemptId;
         const timeoutSourceKey = getSourceIdentityKey(
           newDetail.source,
           newDetail.id
@@ -2893,8 +2897,13 @@ function PlayPageClient() {
         sourceChangeTimeoutTimerRef.current = window.setTimeout(() => {
           sourceChangeTimeoutTimerRef.current = null;
           if (
-            !isVideoLoadingRef.current ||
-            getCurrentSourceKey() !== timeoutSourceKey
+            shouldIgnoreSourceChangeTimeout({
+              attemptId: timeoutAttemptId,
+              currentAttemptId: sourceChangeAttemptIdRef.current,
+              isVideoLoading: isVideoLoadingRef.current,
+              timeoutSourceKey,
+              currentSourceKey: getCurrentSourceKey(),
+            })
           ) {
             return;
           }

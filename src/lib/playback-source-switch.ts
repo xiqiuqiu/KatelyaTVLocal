@@ -54,6 +54,14 @@ interface ClampSourceSwitchResumeTimeInput {
   endFallbackSeconds?: number;
 }
 
+interface SourceChangeTimeoutInput {
+  attemptId: number;
+  currentAttemptId: number;
+  isVideoLoading: boolean;
+  timeoutSourceKey: string;
+  currentSourceKey: string | null | undefined;
+}
+
 export const PLAYBACK_RESUME_REWIND_SECONDS = 5;
 
 function getRecoverySourcePriority(
@@ -128,6 +136,20 @@ export function clampSourceSwitchResumeTime({
   return resumeTime;
 }
 
+export function shouldIgnoreSourceChangeTimeout({
+  attemptId,
+  currentAttemptId,
+  isVideoLoading,
+  timeoutSourceKey,
+  currentSourceKey,
+}: SourceChangeTimeoutInput): boolean {
+  return (
+    attemptId !== currentAttemptId ||
+    !isVideoLoading ||
+    currentSourceKey !== timeoutSourceKey
+  );
+}
+
 export function getNextRecoverySourceCandidate<
   T extends RecoverySourceCandidate
 >({
@@ -194,14 +216,14 @@ export function getSourceSwitchResumePlan({
 
   if (existingResumeTime && existingResumeTime > 0) {
     return {
-      resumeTime: getRewoundPlaybackResumeTime(existingResumeTime),
+      resumeTime: getRewoundPlaybackResumeTime(existingResumeTime) ?? 0,
       saveAfterCanPlay: true,
     };
   }
 
   if (currentPlayTime > 1) {
     return {
-      resumeTime: getRewoundPlaybackResumeTime(currentPlayTime),
+      resumeTime: getRewoundPlaybackResumeTime(currentPlayTime) ?? 0,
       saveAfterCanPlay: true,
     };
   }
