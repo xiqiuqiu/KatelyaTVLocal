@@ -4,10 +4,14 @@ type SourcePreferenceVideoInfoInput = Pick<
   SourcePreferenceResult,
   | 'qualityLabel'
   | 'speedLabel'
+  | 'speedSource'
+  | 'speedUpdatedAt'
+  | 'speedPending'
   | 'pingTimeMs'
   | 'latencyMs'
   | 'speedKbps'
   | 'probeTimeMs'
+  | 'updatedAt'
 >;
 
 export function formatSourceSpeedKbps(speedKbps?: number | null): string | null {
@@ -27,13 +31,23 @@ export function buildVideoInfoFromPreferenceResult(
   result: SourcePreferenceVideoInfoInput
 ): SourceVideoInfo | null {
   const quality = result.qualityLabel || '未知';
+  const formattedBackendSpeed = formatSourceSpeedKbps(result.speedKbps);
   const loadSpeed =
-    result.speedLabel || formatSourceSpeedKbps(result.speedKbps) || '未知';
+    result.speedLabel || formattedBackendSpeed || '待检测，可尝试';
   const pingTime = Math.round(
     result.pingTimeMs ?? result.latencyMs ?? result.probeTimeMs ?? 0
   );
+  const speedSource =
+    result.speedSource ||
+    (result.speedLabel
+      ? 'feedback'
+      : formattedBackendSpeed
+      ? 'backend'
+      : 'none');
+  const speedPending =
+    result.speedPending ?? (speedSource === 'none' && !result.speedLabel);
 
-  if (quality === '未知' && loadSpeed === '未知' && pingTime <= 0) {
+  if (quality === '未知' && speedSource === 'none' && pingTime <= 0) {
     return null;
   }
 
@@ -41,5 +55,8 @@ export function buildVideoInfoFromPreferenceResult(
     quality,
     loadSpeed,
     pingTime,
+    speedSource,
+    speedUpdatedAt: result.speedUpdatedAt ?? result.updatedAt,
+    speedPending,
   };
 }

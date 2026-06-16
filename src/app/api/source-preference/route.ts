@@ -5,6 +5,11 @@ import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
 import {
   probeSourcePlaybackWithCache,
 } from '@/lib/source-preference';
+import { formatSourceSpeedKbps } from '@/lib/source-preference-video-info';
+import {
+  persistOfflineProbeResult,
+  probePlaybackForRanking,
+} from '@/lib/source-ranking/probe';
 import { readLatestSourceRanks } from '@/lib/source-ranking/read';
 import { getSourceRankingRuntime } from '@/lib/source-ranking/runtime';
 import {
@@ -17,7 +22,19 @@ export const runtime = 'edge';
 
 const MAX_SOURCE_PREFERENCE_ITEMS = 40;
 const SOURCE_PREFERENCE_CONCURRENCY = 6;
+const FRESH_PROBE_METRICS_LIMIT = 8;
+const FRESH_PROBE_METRICS_CONCURRENCY = 2;
+const FRESH_PROBE_SPEED_TTL_MS = 6 * 60 * 60 * 1000;
 type RuntimeSource = Record<string, unknown>;
+interface FreshProbeEnv {
+  DB: {
+    prepare: (query: string) => {
+      bind: (...values: unknown[]) => {
+        run: () => Promise<unknown>;
+      };
+    };
+  };
+}
 
 function getStatusPriority(kind: SourcePreferenceResult['kind']): number {
   switch (kind) {
@@ -133,6 +150,129 @@ async function probeSourcesLive(
   );
 }
 
+function getFreshProbeEnv(env?: RuntimeSource): FreshProbeEnv | null {
+  const db = env?.DB;
+  if (
+    db &&
+    typeof db === 'object' &&
+    typeof (db as FreshProbeEnv['DB']).prepare === 'function'
+  ) {
+    return { DB: db as FreshProbeEnv['DB'] };
+  }
+
+  return null;
+}
+
+function hasFreshSpeedMetric(
+  result: SourcePreferenceResult | undefined,
+  now: number
+): boolean {
+  if (!result) return false;
+
+  const hasSpeed =
+    Boolean(result.speedLabel) || typeof result.speedKbps === 'number';
+  if (!hasSpeed) return false;
+
+  const updatedAt = result.speedUpdatedAt ?? result.updatedAt;
+  if (typeof updatedAt !== 'number') {
+    return true;
+  }
+
+  return now - updatedAt <= FRESH_PROBE_SPEED_TTL_MS;
+}
+
+async function probeFreshMetricsForVisibleSources({
+  sources,
+  existingResults,
+  env,
+  origin,
+  now,
+}: {
+  sources: SourcePreferenceRequest['sources'];
+  existingResults: Map<string, SourcePreferenceResult>;
+  env: RuntimeSource | undefined;
+  origin: string;
+  now: number;
+}): Promise<SourcePreferenceResult[]> {
+  const freshProbeEnv = getFreshProbeEnv(env);
+  if (!freshProbeEnv) {
+    return [];
+  }
+
+  const candidates = sources
+    .filter(
+      (source) =>
+        Boolean(source.sourceKey) &&
+        Boolean(source.episodeUrl) &&
+        !hasFreshSpeedMetric(existingResults.get(source.sourceKey), now)
+    )
+    .slice(0, FRESH_PROBE_METRICS_LIMIT);
+
+  return mapWithConcurrency(
+    candidates,
+    FRESH_PROBE_METRICS_CONCURRENCY,
+    async (source): Promise<SourcePreferenceResult | null> => {
+      try {
+        const result = await probePlaybackForRanking(
+          source.episodeUrl as string,
+          origin
+        );
+        const measuredAt = Date.now();
+
+        await persistOfflineProbeResult(
+          freshProbeEnv,
+          `panel-${measuredAt}`,
+          {
+            sourceKey: source.sourceKey,
+            sourceName: source.sourceName || source.sourceKey,
+            titleSample: source.titleSample || '',
+            episodeUrl: source.episodeUrl as string,
+          },
+          result,
+          measuredAt
+        );
+
+        const existing = existingResults.get(source.sourceKey);
+        const speedLabel = formatSourceSpeedKbps(
+          result.firstSegmentSpeedKbps
+        );
+
+        return {
+          ...(existing || {}),
+          sourceKey: source.sourceKey,
+          kind: result.kind,
+          reason: result.reason || existing?.reason,
+          domain: result.domain || existing?.domain || null,
+          upstreamStatus: result.upstreamStatus,
+          probeTimeMs: result.probeTimeMs ?? existing?.probeTimeMs,
+          qualityLabel:
+            result.resolutionLabel ?? existing?.qualityLabel ?? null,
+          speedLabel: speedLabel || existing?.speedLabel || null,
+          speedSource: speedLabel ? 'backend' : existing?.speedSource || 'none',
+          speedUpdatedAt: speedLabel ? measuredAt : existing?.speedUpdatedAt,
+          speedPending: !speedLabel,
+          pingTimeMs:
+            result.firstSegmentLatencyMs ??
+            existing?.pingTimeMs ??
+            result.probeTimeMs ??
+            null,
+          latencyMs:
+            result.firstSegmentLatencyMs ?? existing?.latencyMs ?? null,
+          speedKbps:
+            result.firstSegmentSpeedKbps ?? existing?.speedKbps ?? null,
+          updatedAt: Math.max(existing?.updatedAt || 0, measuredAt),
+          rankingSource: existing?.rankingSource || 'd1',
+          rankScore: existing?.rankScore,
+        };
+      } catch {
+        return null;
+      }
+    }
+  ).then((results) =>
+    results.filter((result): result is SourcePreferenceResult => result !== null)
+  );
+}
+
 export async function POST(request: Request) {
   let payload: SourcePreferenceRequest | null = null;
 
@@ -206,6 +346,22 @@ export async function POST(request: Request) {
       resultMap.set(result.sourceKey, result);
     }
   });
+
+  if (payload.includeFreshProbeMetrics && runtime.enabled && runtime.hasD1) {
+    const freshMetricResults = await probeFreshMetricsForVisibleSources({
+      sources: payload.sources,
+      existingResults: resultMap,
+      env: rankingEnv,
+      origin,
+      now: Date.now(),
+    });
+
+    freshMetricResults.forEach((result) => {
+      if (result.sourceKey) {
+        resultMap.set(result.sourceKey, result);
+      }
+    });
+  }
 
   const orderedResults = sortMergedSourcePreferenceResults(
     Array.from(resultMap.values())

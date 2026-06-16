@@ -421,6 +421,9 @@ export function getRememberedSourceStatusForSource(
       quality: '未知',
       loadSpeed: speedLabel,
       pingTime: preference.startupTimeMs || 0,
+      speedSource: preference.browserSpeedLabel ? 'browser' : 'feedback',
+      speedUpdatedAt: preference.updatedAt,
+      speedPending: speedLabel === '未知',
     },
     updatedAt: preference.updatedAt,
     localConfidence: preference.confidence,
@@ -449,11 +452,13 @@ export function getSourceStatusDescription(
   videoInfo?: SourceVideoInfo
 ): string {
   if (status?.kind === 'probing') {
-    return '正在检测当前线路';
+    return videoInfo && !videoInfo.hasError
+      ? `${formatSourceVideoInfoSpeed(videoInfo)} · ${videoInfo.pingTime}ms`
+      : '检测中，可切换';
   }
 
   if (videoInfo && !videoInfo.hasError) {
-    return `${videoInfo.loadSpeed} · ${videoInfo.pingTime}ms`;
+    return `${formatSourceVideoInfoSpeed(videoInfo)} · ${videoInfo.pingTime}ms`;
   }
 
   switch (status?.kind) {
@@ -467,6 +472,23 @@ export function getSourceStatusDescription(
       return '该线路当前不可用';
     default:
       return '等待检测线路状态';
+  }
+}
+
+function formatSourceVideoInfoSpeed(videoInfo: SourceVideoInfo): string {
+  switch (videoInfo.speedSource) {
+    case 'backend':
+      return `后端 ${videoInfo.loadSpeed}`;
+    case 'browser':
+      return `本机 ${videoInfo.loadSpeed}`;
+    case 'feedback':
+      return videoInfo.loadSpeed === '待检测，可尝试'
+        ? '近期可播'
+        : `近期 ${videoInfo.loadSpeed}`;
+    case 'none':
+      return videoInfo.speedPending ? '待检测，可尝试' : videoInfo.loadSpeed;
+    default:
+      return videoInfo.loadSpeed;
   }
 }
 

@@ -135,15 +135,18 @@ describe('EpisodeSelector playback sidebar controls', () => {
       expect(mockedFetchSourcePreferencesInBatches).toHaveBeenCalledTimes(1);
     });
 
-    expect(mockedFetchSourcePreferencesInBatches).toHaveBeenCalledWith(
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[0][0]).toEqual(
       expect.arrayContaining([
-        {
+        expect.objectContaining({
           sourceKey: 'source-44-id-44',
           episodeUrl: 'https://example.com/44.m3u8',
-        },
+          sourceName: 'S44',
+        }),
       ]),
-      { allowLiveProbeFallback: true }
     );
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[0][1]).toEqual({
+      allowLiveProbeFallback: true,
+    });
     expect(mockedFetchSourcePreferencesInBatches.mock.calls[0][0]).toHaveLength(
       45
     );
@@ -408,8 +411,117 @@ describe('EpisodeSelector playback sidebar controls', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('2.4 MB/s · 280ms')).toBeInTheDocument();
+      expect(screen.getByText('后端 2.4 MB/s · 280ms')).toBeInTheDocument();
     });
+  });
+
+  it('requests a second visible-first backend metric refresh without blocking clicks', async () => {
+    mockedFetchSourcePreferencesInBatches
+      .mockResolvedValueOnce({
+        orderedSourceKeys: ['source-b-b'],
+        results: [
+          {
+            sourceKey: 'source-b-b',
+            kind: 'direct',
+            reason: '后端可播放',
+            rankingSource: 'd1',
+            speedKbps: null,
+            speedLabel: null,
+            probeTimeMs: 420,
+          },
+        ],
+        generatedAt: 1710000000000,
+        rankingSource: 'd1',
+        confidence: 'medium',
+      })
+      .mockResolvedValueOnce({
+        orderedSourceKeys: ['source-b-b'],
+        results: [
+          {
+            sourceKey: 'source-b-b',
+            kind: 'direct',
+            reason: '首片测速完成',
+            rankingSource: 'd1',
+            speedKbps: 3072,
+            speedLabel: '3.0 MB/s',
+            speedSource: 'backend',
+            latencyMs: 180,
+            pingTimeMs: 180,
+          },
+        ],
+        generatedAt: 1710000001000,
+        rankingSource: 'd1',
+        confidence: 'medium',
+      });
+    const handleSourceChange = jest.fn();
+    const availableSources: SearchResult[] = [
+      {
+        id: 'a',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'b',
+        source: 'source-b',
+        title: 'visible source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/b.m3u8'],
+        source_name: '可见源',
+      },
+    ];
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+        onSourceChange={handleSourceChange}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockedFetchSourcePreferencesInBatches).toHaveBeenCalledTimes(2);
+    });
+
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[1][0]).toEqual(
+      expect.arrayContaining([
+        {
+          sourceKey: 'source-a-a',
+          episodeUrl: 'https://example.com/a.m3u8',
+          sourceName: '当前源',
+          titleSample: 'current source',
+        },
+        {
+          sourceKey: 'source-b-b',
+          episodeUrl: 'https://example.com/b.m3u8',
+          sourceName: '可见源',
+          titleSample: 'visible source',
+        },
+      ])
+    );
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[1][0]).toHaveLength(
+      2
+    );
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[1][1]).toEqual({
+      allowLiveProbeFallback: false,
+      includeFreshProbeMetrics: true,
+    });
+    expect(screen.getByText('后端 3.0 MB/s · 180ms')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '切换线路 可见源' }));
+
+    expect(handleSourceChange).toHaveBeenCalledWith(
+      'source-b',
+      'b',
+      'visible source'
+    );
   });
 
   it('allows probing source rows to be clicked for manual rescue switching', async () => {

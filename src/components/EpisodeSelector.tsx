@@ -12,7 +12,12 @@ import {
   sortSourcesBySelectionScore,
   SourceSelectionScore,
 } from '@/lib/source-selection';
-import { SearchResult, SourceStatus, SourceVideoInfo } from '@/lib/types';
+import {
+  SearchResult,
+  SourcePreferenceRequest,
+  SourceStatus,
+  SourceVideoInfo,
+} from '@/lib/types';
 import {
   createPlayableSourceStatus,
   createSourceStatus,
@@ -92,6 +97,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   const videoInfoMapRef = useRef<Map<string, SourceVideoInfo>>(new Map());
   const sourceStatusMapRef = useRef<Map<string, SourceStatus>>(new Map());
   const sourcePreferenceProbeKeyRef = useRef<string>('');
+  const sourcePreferenceFreshProbeKeyRef = useRef<string>('');
 
   // 同步状态到 ref
   useEffect(() => {
@@ -307,12 +313,18 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
       try {
         const info = await getVideoResolutionFromM3u8(episodeUrl);
-        setVideoInfoMap((prev) => new Map(prev).set(sourceKey, info));
+        const browserInfo: SourceVideoInfo = {
+          ...info,
+          speedSource: 'browser',
+          speedUpdatedAt: Date.now(),
+          speedPending: false,
+        };
+        setVideoInfoMap((prev) => new Map(prev).set(sourceKey, browserInfo));
 
         const directStatus = createSourceStatus('direct', {
           reason: '浏览器可直接播放',
           playbackMode: 'direct',
-          measured: info,
+          measured: browserInfo,
           domain: serverProbeResult.domain || rememberedStatus?.domain || null,
         });
         setSourceStatusMap((prev) =>
@@ -321,7 +333,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         rememberSourceDomainPreference(directStatus.domain || null, 'direct');
         rememberSourcePlaybackQuality(sourceKey, directStatus.domain || null, {
           mode: 'direct',
-          browserSpeedLabel: info.loadSpeed,
+          browserSpeedLabel: browserInfo.loadSpeed,
           confidence: 'high',
         });
         return directStatus;
@@ -549,7 +561,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       return;
     }
 
-    const requestSources = availableSources.map((source) => {
+    const toPreferenceRequestSource = (
+      source: SearchResult
+    ): SourcePreferenceRequest['sources'][number] => {
       const probeEpisodeIndex = Math.max(
         0,
         Math.min(value - 1, Math.max(0, source.episodes.length - 1))
@@ -558,8 +572,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       return {
         sourceKey: getSourceIdentityKey(source.source, source.id),
         episodeUrl: source.episodes?.[probeEpisodeIndex] || null,
+        sourceName: source.source_name,
+        titleSample: source.title,
       };
-    });
+    };
+    const requestSources = availableSources.map(toPreferenceRequestSource);
     const requestKey = requestSources
       .map((source) => `${source.sourceKey}:${source.episodeUrl || ''}`)
       .join('|');
@@ -647,6 +664,159 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       );
     };
 
+    const mergePreferenceResults = (
+      results: Awaited<
+        ReturnType<typeof fetchSourcePreferencesInBatches>
+      >['results']
+    ) => {
+      setVideoInfoMap((prev) => {
+        const next = new Map(prev);
+
+        results.forEach((result) => {
+          const measured = buildVideoInfoFromPreferenceResult(result);
+          if (!measured) {
+            return;
+          }
+
+          const previous = next.get(result.sourceKey);
+          if (
+            previous?.speedSource === 'browser' &&
+            measured.speedSource === 'backend'
+          ) {
+            return;
+          }
+
+          next.set(result.sourceKey, measured);
+        });
+
+        return next;
+      });
+
+      setSourceStatusMap((prev) => {
+        const next = new Map(prev);
+
+        results.forEach((result) => {
+          const previousStatus = next.get(result.sourceKey);
+          if (
+            !canReplaceSourceStatus(previousStatus) &&
+            result.kind !== 'unavailable'
+          ) {
+            return;
+          }
+
+          next.set(
+            result.sourceKey,
+            createSourceStatus(result.kind, {
+              reason: result.reason,
+              playbackMode:
+                result.kind === 'unavailable' ? undefined : result.kind,
+              domain: result.domain || previousStatus?.domain || null,
+              measured: buildVideoInfoFromPreferenceResult(result) || undefined,
+              updatedAt: result.updatedAt,
+              rankingSource: result.rankingSource,
+              rankScore: result.rankScore,
+            })
+          );
+        });
+
+        return next;
+      });
+    };
+
+    const requestFreshMetricsForVisibleSources = async (
+      knownResults: Awaited<
+        ReturnType<typeof fetchSourcePreferencesInBatches>
+      >['results']
+    ) => {
+      const knownResultByKey = new Map(
+        knownResults.map((result) => [result.sourceKey, result])
+      );
+      const visibleSources = sortSourcesBySelectionScore(
+        availableSources,
+        sourceSelectionScores || new Map(),
+        (source) => getSourceIdentityKey(source.source, source.id),
+        currentSourceKey
+      )
+        .slice(0, 8)
+        .map(toPreferenceRequestSource)
+        .filter((source) => {
+          if (!source.episodeUrl) {
+            return false;
+          }
+
+          const existingInfo = videoInfoMapRef.current.get(source.sourceKey);
+          const knownResult = knownResultByKey.get(source.sourceKey);
+          const knownMeasured = knownResult
+            ? buildVideoInfoFromPreferenceResult(knownResult)
+            : null;
+          if (
+            knownMeasured &&
+            !knownMeasured.speedPending &&
+            knownMeasured.speedSource !== 'none'
+          ) {
+            return false;
+          }
+
+          return (
+            !existingInfo ||
+            existingInfo.speedPending ||
+            existingInfo.speedSource === 'none'
+          );
+        });
+
+      if (visibleSources.length === 0) {
+        return;
+      }
+
+      const freshRequestKey = visibleSources
+        .map((source) => `${source.sourceKey}:${source.episodeUrl || ''}`)
+        .join('|');
+      if (sourcePreferenceFreshProbeKeyRef.current === freshRequestKey) {
+        return;
+      }
+      sourcePreferenceFreshProbeKeyRef.current = freshRequestKey;
+
+      setSourceStatusMap((prev) => {
+        const next = new Map(prev);
+
+        visibleSources.forEach((source) => {
+          const previousStatus = next.get(source.sourceKey);
+          if (previousStatus?.kind === 'unavailable') {
+            return;
+          }
+
+          next.set(
+            source.sourceKey,
+            createSourceStatus('probing', {
+              reason: '后端测速中，可切换',
+              playbackMode: previousStatus?.playbackMode || 'direct',
+              domain: previousStatus?.domain || null,
+              measured: previousStatus?.measured,
+              rankingSource: previousStatus?.rankingSource,
+              rankScore: previousStatus?.rankScore,
+            })
+          );
+        });
+
+        return next;
+      });
+
+      try {
+        const preferenceData = await fetchSourcePreferencesInBatches(
+          visibleSources,
+          {
+            allowLiveProbeFallback: false,
+            includeFreshProbeMetrics: true,
+          }
+        );
+        if (!cancelled) {
+          mergePreferenceResults(preferenceData.results);
+        }
+      } catch {
+        sourcePreferenceFreshProbeKeyRef.current = '';
+      }
+    };
+
     void fetchSourcePreferencesInBatches(requestSources, {
       allowLiveProbeFallback: true,
     })
@@ -655,46 +825,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           return;
         }
 
-        setVideoInfoMap((prev) => {
-          const next = new Map(prev);
-
-          preferenceData.results.forEach((result) => {
-            const measured = buildVideoInfoFromPreferenceResult(result);
-            if (measured) {
-              next.set(result.sourceKey, measured);
-            }
-          });
-
-          return next;
-        });
-
-        setSourceStatusMap((prev) => {
-          const next = new Map(prev);
-
-          preferenceData.results.forEach((result) => {
-            const previousStatus = next.get(result.sourceKey);
-            if (!canReplaceSourceStatus(previousStatus)) {
-              return;
-            }
-
-            next.set(
-              result.sourceKey,
-              createSourceStatus(result.kind, {
-                reason: result.reason,
-                playbackMode:
-                  result.kind === 'unavailable' ? undefined : result.kind,
-                domain: result.domain || previousStatus?.domain || null,
-                measured:
-                  buildVideoInfoFromPreferenceResult(result) || undefined,
-                updatedAt: result.updatedAt,
-                rankingSource: result.rankingSource,
-                rankScore: result.rankScore,
-              })
-            );
-          });
-
-          return next;
-        });
+        mergePreferenceResults(preferenceData.results);
 
         const returnedSourceKeys = new Set(
           preferenceData.results.map((result) => result.sourceKey)
@@ -706,6 +837,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         if (missingSourceKeys.length > 0) {
           void probeFallbackSources(new Set(missingSourceKeys));
         }
+
+        void requestFreshMetricsForVisibleSources(preferenceData.results);
       })
       .catch(() => {
         sourcePreferenceProbeKeyRef.current = '';
@@ -719,7 +852,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     activeTab,
     availableSources,
     canReplaceSourceStatus,
+    currentSourceKey,
     getKnownSourceStatus,
+    sourceSelectionScores,
     value,
   ]);
 

@@ -10,6 +10,7 @@ type Fetcher = typeof fetch;
 
 interface FetchSourcePreferencesOptions {
   allowLiveProbeFallback?: boolean;
+  includeFreshProbeMetrics?: boolean;
   fetcher?: Fetcher;
   batchSize?: number;
   endpoint?: string;
@@ -96,6 +97,9 @@ export async function fetchSourcePreferencesInBatches(
         ...(options.allowLiveProbeFallback === undefined
           ? {}
           : { allowLiveProbeFallback: options.allowLiveProbeFallback }),
+        ...(options.includeFreshProbeMetrics === undefined
+          ? {}
+          : { includeFreshProbeMetrics: options.includeFreshProbeMetrics }),
       }),
     });
 
