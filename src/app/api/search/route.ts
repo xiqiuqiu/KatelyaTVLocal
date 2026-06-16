@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 
-import { getAvailableApiSites, getCacheTime } from '@/lib/config';
+import {
+  getAvailableApiSitesFromConfig,
+  getCacheTimeFromConfig,
+  getConfig,
+  getSearchDownstreamMaxPageFromConfig,
+} from '@/lib/config';
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
 import { searchFromApi } from '@/lib/downstream';
 
@@ -14,9 +19,10 @@ export async function OPTIONS() {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q');
+  const config = await getConfig();
+  const cacheTime = getCacheTimeFromConfig(config);
 
   if (!query) {
-    const cacheTime = await getCacheTime();
     const response = NextResponse.json(
       { results: [] },
       {
@@ -30,13 +36,15 @@ export async function GET(request: Request) {
     return addCorsHeaders(response);
   }
 
-  const apiSites = await getAvailableApiSites();
-  const searchPromises = apiSites.map((site) => searchFromApi(site, query));
+  const apiSites = getAvailableApiSitesFromConfig(config);
+  const maxSearchPages = getSearchDownstreamMaxPageFromConfig(config);
+  const searchPromises = apiSites.map((site) =>
+    searchFromApi(site, query, { maxSearchPages })
+  );
 
   try {
     const results = await Promise.all(searchPromises);
     const flattenedResults = results.flat();
-    const cacheTime = await getCacheTime();
 
     const response = NextResponse.json(
       { results: flattenedResults },

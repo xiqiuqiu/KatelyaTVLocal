@@ -1,4 +1,4 @@
-import { getConfig } from '@/lib/config';
+import { getConfig, invalidateAdminConfigCache } from '@/lib/config';
 import { db } from '@/lib/db';
 import {
   consumeRegistrationInvite,
@@ -76,6 +76,7 @@ jest.mock('@/lib/auth', () => ({
 
 jest.mock('@/lib/config', () => ({
   getConfig: jest.fn(),
+  invalidateAdminConfigCache: jest.fn(),
 }));
 
 jest.mock('@/lib/db', () => ({
@@ -100,6 +101,10 @@ jest.mock('@/lib/registration/security', () => ({
 
 describe('register route security', () => {
   const mockedGetConfig = getConfig as jest.MockedFunction<typeof getConfig>;
+  const mockedInvalidateAdminConfigCache =
+    invalidateAdminConfigCache as jest.MockedFunction<
+      typeof invalidateAdminConfigCache
+    >;
   const mockedDb = db as jest.Mocked<typeof db>;
   const mockedValidateRegistrationSecurity =
     validateRegistrationSecurity as jest.MockedFunction<
@@ -141,6 +146,29 @@ describe('register route security', () => {
       ok: true,
       status: 200,
     });
+  });
+
+  it('invalidates admin config cache after successful registration writes config', async () => {
+    mockedValidateRegistrationSecurity.mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+
+    const response = await POST(
+      new Request('https://app.example.com/api/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: 'alice',
+          password: 'Galaxy123',
+          inviteCode: 'invite',
+          turnstileToken: 'token',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedDb.saveAdminConfig).toHaveBeenCalled();
+    expect(mockedInvalidateAdminConfigCache).toHaveBeenCalledTimes(1);
   });
 
   afterEach(() => {

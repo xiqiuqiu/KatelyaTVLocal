@@ -1,4 +1,8 @@
-import { getAvailableApiSites } from '@/lib/config';
+import {
+  getAvailableApiSitesFromConfig,
+  getConfig,
+  getSearchDownstreamMaxPageFromConfig,
+} from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
 import type { SearchResult } from '@/lib/types';
 
@@ -114,6 +118,7 @@ export function aggregateSearchResults(
 async function searchSiteResults(
   site: SearchSite,
   query: string,
+  maxSearchPages: number,
   debugContext?: AiFindDebugContext
 ): Promise<SearchResult[]> {
   const startedAt = Date.now();
@@ -129,7 +134,10 @@ async function searchSiteResults(
   });
 
   try {
-    const results = await searchFromApi(site, query, debugContext);
+    const results = await searchFromApi(site, query, {
+      debugContext,
+      maxSearchPages,
+    });
 
     logAiFindDebug({
       context: debugContext,
@@ -208,7 +216,9 @@ export async function searchKatelyaSources({
     },
   });
 
-  const apiSites = await getAvailableApiSites();
+  const config = await getConfig();
+  const apiSites = getAvailableApiSitesFromConfig(config);
+  const maxSearchPages = getSearchDownstreamMaxPageFromConfig(config);
   logAiFindDebug({
     context: debugContext,
     event: 'source site list loaded',
@@ -223,7 +233,8 @@ export async function searchKatelyaSources({
     await mapWithConcurrency(
       apiSites,
       AI_FIND_SOURCE_SEARCH_CONCURRENCY,
-      async (site) => searchSiteResults(site, normalizedQuery, debugContext)
+      async (site) =>
+        searchSiteResults(site, normalizedQuery, maxSearchPages, debugContext)
     )
   ).flat();
   const sortedResults = sortSearchResults(normalizedQuery, results);

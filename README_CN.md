@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/logo.png" alt="KatelyaTV Logo" width="128" />
 
-  <h1>KatelyaTV</h1>
+  <h1>ReelFind</h1>
   <p><strong>自托管的流媒体聚合平台 &mdash; 跨平台、多源搜索、即开即播</strong></p>
   <p>基于 <code>Next.js 14</code> &middot; <code>TypeScript 4.9</code> &middot; <code>Tailwind CSS 3</code> &middot; ArtPlayer + HLS.js 构建</p>
   <p>MoonTV 社区延续项目 &middot; 持续维护中</p>

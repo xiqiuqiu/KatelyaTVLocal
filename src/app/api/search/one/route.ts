@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 
-import { getAvailableApiSites, getCacheTime } from '@/lib/config';
+import {
+  getAvailableApiSitesFromConfig,
+  getCacheTimeFromConfig,
+  getConfig,
+  getSearchDownstreamMaxPageFromConfig,
+} from '@/lib/config';
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
 import { searchFromApi } from '@/lib/downstream';
 
@@ -16,9 +21,10 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q');
   const resourceId = searchParams.get('resourceId');
+  const config = await getConfig();
+  const cacheTime = getCacheTimeFromConfig(config);
 
   if (!query || !resourceId) {
-    const cacheTime = await getCacheTime();
     const response = NextResponse.json(
       { result: null, error: '缺少必要参数: q 或 resourceId' },
       {
@@ -32,7 +38,8 @@ export async function GET(request: Request) {
     return addCorsHeaders(response);
   }
 
-  const apiSites = await getAvailableApiSites();
+  const apiSites = getAvailableApiSitesFromConfig(config);
+  const maxSearchPages = getSearchDownstreamMaxPageFromConfig(config);
 
   try {
     // 根据 resourceId 查找对应的 API 站点
@@ -48,9 +55,8 @@ export async function GET(request: Request) {
       return addCorsHeaders(response);
     }
 
-    const results = await searchFromApi(targetSite, query);
+    const results = await searchFromApi(targetSite, query, { maxSearchPages });
     const result = results.filter((r) => r.title === query);
-    const cacheTime = await getCacheTime();
 
     if (result.length === 0) {
       const response = NextResponse.json(

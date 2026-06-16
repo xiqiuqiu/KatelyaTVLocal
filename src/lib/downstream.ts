@@ -17,12 +17,35 @@ interface ApiSearchItem {
   type_name?: string;
 }
 
+interface SearchFromApiOptions {
+  debugContext?: AiFindDebugContext;
+  maxSearchPages?: number;
+}
+
+function normalizeSearchFromApiOptions(
+  options?: AiFindDebugContext | SearchFromApiOptions
+): SearchFromApiOptions {
+  if (!options) {
+    return {};
+  }
+
+  if ('maxSearchPages' in options || 'debugContext' in options) {
+    return options as SearchFromApiOptions;
+  }
+
+  return {
+    debugContext: options as AiFindDebugContext,
+  };
+}
+
 export async function searchFromApi(
   apiSite: ApiSite,
   query: string,
-  debugContext?: AiFindDebugContext
+  options?: AiFindDebugContext | SearchFromApiOptions
 ): Promise<SearchResult[]> {
   const startedAt = Date.now();
+  const { debugContext, maxSearchPages } =
+    normalizeSearchFromApiOptions(options);
 
   logAiFindDebug({
     context: debugContext,
@@ -128,8 +151,8 @@ export async function searchFromApi(
       };
     });
 
-    const config = await getConfig();
-    const MAX_SEARCH_PAGES: number = config.SiteConfig.SearchDownstreamMaxPage;
+    const MAX_SEARCH_PAGES: number =
+      maxSearchPages ?? (await getConfig()).SiteConfig.SearchDownstreamMaxPage;
 
     // 获取总页数
     const pageCount = data.pagecount || 1;

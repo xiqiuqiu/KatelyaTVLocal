@@ -1,4 +1,4 @@
-import { getAvailableApiSites } from '@/lib/config';
+import { getConfig } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
 import type { SearchResult } from '@/lib/types';
 
@@ -8,7 +8,13 @@ import {
 } from './search-katelya-sources';
 
 jest.mock('@/lib/config', () => ({
-  getAvailableApiSites: jest.fn(),
+  getAvailableApiSitesFromConfig: jest.fn((config) =>
+    config.SourceConfig.filter((site: { disabled?: boolean }) => !site.disabled)
+  ),
+  getConfig: jest.fn(),
+  getSearchDownstreamMaxPageFromConfig: jest.fn(
+    (config) => config.SiteConfig.SearchDownstreamMaxPage
+  ),
 }));
 
 jest.mock('@/lib/downstream', () => ({
@@ -29,20 +35,24 @@ function makeResult(override: Partial<SearchResult> = {}): SearchResult {
 }
 
 describe('AI find Katelya source aggregation', () => {
-  const mockedGetAvailableApiSites =
-    getAvailableApiSites as jest.MockedFunction<typeof getAvailableApiSites>;
+  const mockedGetConfig = getConfig as jest.MockedFunction<typeof getConfig>;
   const mockedSearchFromApi = searchFromApi as jest.MockedFunction<
     typeof searchFromApi
   >;
 
   beforeEach(() => {
-    mockedGetAvailableApiSites.mockResolvedValue([
-      {
-        key: 'test',
-        name: '测试源',
-        api: 'https://example.com/api.php/provide/vod/',
+    mockedGetConfig.mockResolvedValue({
+      SiteConfig: {
+        SearchDownstreamMaxPage: 2,
       },
-    ]);
+      SourceConfig: [
+        {
+          key: 'test',
+          name: '测试源',
+          api: 'https://example.com/api.php/provide/vod/',
+        },
+      ],
+    } as Awaited<ReturnType<typeof getConfig>>);
     mockedSearchFromApi.mockReset();
   });
 

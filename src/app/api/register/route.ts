@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getSessionSigningSecret } from '@/lib/auth';
-import { getConfig } from '@/lib/config';
+import { getConfig, invalidateAdminConfigCache } from '@/lib/config';
 import { db } from '@/lib/db';
 import {
   consumeRegistrationInvite,
@@ -131,6 +131,7 @@ export async function POST(req: NextRequest) {
         role: 'user',
       });
       await db.saveAdminConfig(config);
+      invalidateAdminConfigCache();
 
       const response = NextResponse.json({ ok: true });
       const cookieValue = await createSessionCookieValue(

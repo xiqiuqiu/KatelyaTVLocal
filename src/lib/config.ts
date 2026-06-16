@@ -42,6 +42,17 @@ export const API_CONFIG = {
 // 在模块加载时根据环境决定配置来源
 let fileConfig: ConfigFileStruct;
 let cachedConfig: AdminConfig;
+let cachedConfigExpiresAt = 0;
+const ADMIN_CONFIG_CACHE_TTL_MS = 60_000;
+
+function cloneAdminConfig(adminConfig: AdminConfig): AdminConfig {
+  return JSON.parse(JSON.stringify(adminConfig)) as AdminConfig;
+}
+
+export function invalidateAdminConfigCache(): void {
+  cachedConfig = undefined as unknown as AdminConfig;
+  cachedConfigExpiresAt = 0;
+}
 
 function getDefaultPlaybackDebugEnabled(): boolean {
   return process.env.NEXT_PUBLIC_PLAYBACK_DEBUG === 'true';
@@ -237,6 +248,9 @@ export async function getConfig(): Promise<AdminConfig> {
     await initConfig();
     return cachedConfig;
   }
+  if (cachedConfig && Date.now() < cachedConfigExpiresAt) {
+    return cloneAdminConfig(cachedConfig);
+  }
   // 非 docker 环境且 DB 存储，直接读 db 配置
   const storage = getStorage();
   let adminConfig: AdminConfig | null = null;
@@ -303,12 +317,14 @@ export async function getConfig(): Promise<AdminConfig> {
         role: 'owner',
       });
     }
-    cachedConfig = adminConfig;
+    cachedConfig = cloneAdminConfig(adminConfig);
+    cachedConfigExpiresAt = Date.now() + ADMIN_CONFIG_CACHE_TTL_MS;
   } else {
     // DB 无配置，执行一次初始化
     await initConfig();
+    cachedConfigExpiresAt = Date.now() + ADMIN_CONFIG_CACHE_TTL_MS;
   }
-  return cachedConfig;
+  return cloneAdminConfig(cachedConfig);
 }
 
 export async function resetConfig() {
@@ -382,22 +398,30 @@ export async function resetConfig() {
   if (storage && typeof (storage as any).setAdminConfig === 'function') {
     await (storage as any).setAdminConfig(adminConfig);
   }
-  if (cachedConfig == null) {
-    // serverless 环境，直接使用 adminConfig
-    cachedConfig = adminConfig;
-  }
-  cachedConfig.SiteConfig = adminConfig.SiteConfig;
-  cachedConfig.UserConfig = adminConfig.UserConfig;
-  cachedConfig.SourceConfig = adminConfig.SourceConfig;
+  invalidateAdminConfigCache();
 }
 
 export async function getCacheTime(): Promise<number> {
   const config = await getConfig();
-  return config.SiteConfig.SiteInterfaceCacheTime || 7200;
+  return getCacheTimeFromConfig(config);
 }
 
 export async function getAvailableApiSites(): Promise<ApiSite[]> {
   const config = await getConfig();
+  return getAvailableApiSitesFromConfig(config);
+}
+
+export function getCacheTimeFromConfig(config: AdminConfig): number {
+  return config.SiteConfig.SiteInterfaceCacheTime || 7200;
+}
+
+export function getSearchDownstreamMaxPageFromConfig(
+  config: AdminConfig
+): number {
+  return config.SiteConfig.SearchDownstreamMaxPage || 1;
+}
+
+export function getAvailableApiSitesFromConfig(config: AdminConfig): ApiSite[] {
   return config.SourceConfig.filter((s) => !s.disabled).map((s) => ({
     key: s.key,
     name: s.name,

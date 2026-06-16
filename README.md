@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/logo.png" alt="KatelyaTV Logo" width="128" />
 
-  <h1>KatelyaTV</h1>
+  <h1>ReelFind</h1>
   <p><strong>Self-hosted streaming aggregator &mdash; cross-platform, multi-source search, play-and-go</strong></p>
   <p>Built with <code>Next.js 14</code> &middot; <code>TypeScript</code> &middot; <code>Tailwind CSS</code> &middot; ArtPlayer + HLS.js</p>
   <p>Continuation of MoonTV &middot; actively maintained</p>
