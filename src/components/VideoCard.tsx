@@ -1,4 +1,10 @@
-import { CheckCircle, Heart, Link, Loader2, PlayCircleIcon } from 'lucide-react';
+import {
+  CheckCircle,
+  Heart,
+  Link,
+  Loader2,
+  PlayCircleIcon,
+} from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, {
@@ -236,7 +242,9 @@ export default function VideoCard({
         isAggregate ? '&prefer=true' : ''
       }${
         actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''
-      }${actualSearchType ? `&stype=${actualSearchType}` : ''}`;
+      }${actualSearchType ? `&stype=${actualSearchType}` : ''}${
+        from === 'playrecord' ? '&from=playrecord' : ''
+      }`;
     }
 
     if (!href) return;
@@ -302,7 +310,9 @@ export default function VideoCard({
   }, [actualDoubanId, from, isAggregate, rate]);
 
   const isSmall = size === 'small';
-  const badgeSizeClass = isSmall ? 'text-[10px] px-2 py-1' : 'text-xs px-2.5 py-1';
+  const badgeSizeClass = isSmall
+    ? 'text-[10px] px-2 py-1'
+    : 'text-xs px-2.5 py-1';
   const iconButtonClass =
     'inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.46)] bg-[rgb(var(--ui-bg)/0.45)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition duration-200 hover:scale-[1.06] hover:border-[rgb(var(--ui-accent)/0.32)] hover:bg-[rgb(var(--ui-surface-strong)/0.62)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
   const doubanLinkClass =

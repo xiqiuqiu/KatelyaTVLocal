@@ -97,6 +97,27 @@ describe('VideoCard', () => {
     );
   });
 
+  it('marks play record routes so playback can recover expired source ids', () => {
+    render(
+      <VideoCard
+        id='1'
+        source='test'
+        title='示例影片'
+        poster='https://example.com/poster.jpg'
+        episodes={12}
+        source_name='测试源'
+        year='2026'
+        from='playrecord'
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开 示例影片' }));
+
+    expect(push).toHaveBeenCalledWith(
+      expect.stringContaining('from=playrecord')
+    );
+  });
+
   it('shows immediate opening feedback and blocks repeated card opens', async () => {
     render(
       <VideoCard
@@ -263,6 +284,9 @@ describe('VideoCard', () => {
     );
     expect(poster).toHaveAttribute('data-priority', 'true');
     expect(poster).not.toHaveAttribute('loading');
-    expect(poster).toHaveAttribute('data-sizes', expect.stringContaining('33vw'));
+    expect(poster).toHaveAttribute(
+      'data-sizes',
+      expect.stringContaining('33vw')
+    );
   });
 });
