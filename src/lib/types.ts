@@ -172,6 +172,9 @@ export interface SourceVideoInfo {
   quality: string;
   loadSpeed: string;
   pingTime: number;
+  speedSource?: 'backend' | 'browser' | 'feedback' | 'none';
+  speedUpdatedAt?: number;
+  speedPending?: boolean;
   hasError?: boolean;
   errorReason?: string;
 }
@@ -222,6 +225,9 @@ export interface SourcePreferenceResult extends SourceProbeResult {
   cacheState?: 'hit' | 'miss';
   qualityLabel?: string | null;
   speedLabel?: string | null;
+  speedSource?: 'backend' | 'browser' | 'feedback' | 'none';
+  speedUpdatedAt?: number;
+  speedPending?: boolean;
   pingTimeMs?: number | null;
   latencyMs?: number | null;
   speedKbps?: number | null;
@@ -232,9 +238,12 @@ export interface SourcePreferenceResult extends SourceProbeResult {
 
 export interface SourcePreferenceRequest {
   allowLiveProbeFallback?: boolean;
+  includeFreshProbeMetrics?: boolean;
   sources: Array<{
     sourceKey: string;
     episodeUrl: string | null;
+    sourceName?: string;
+    titleSample?: string;
   }>;
 }
 

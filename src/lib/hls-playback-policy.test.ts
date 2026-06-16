@@ -1,5 +1,6 @@
 import {
   detectAppleNativeHlsEnvironment,
+  detectPlaybackProbePlatform,
   resolveHlsPlaybackPolicy,
 } from './hls-playback-policy';
 
@@ -209,6 +210,41 @@ describe('detectAppleNativeHlsEnvironment', () => {
         hasWebKitPointConversion: false,
       })
     ).toBe(false);
+  });
+});
+
+describe('detectPlaybackProbePlatform', () => {
+  it('classifies iPad Chrome as apple native probing', () => {
+    expect(
+      detectPlaybackProbePlatform({
+        userAgent:
+          'Mozilla/5.0 (iPad; CPU OS 26_5_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/149.0.7827.137 Mobile/15E148 Safari/604.1',
+        platform: 'iPad',
+        maxTouchPoints: 5,
+      })
+    ).toBe('apple-native');
+  });
+
+  it('classifies Android Chrome separately from desktop hls.js browsers', () => {
+    expect(
+      detectPlaybackProbePlatform({
+        userAgent:
+          'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
+        platform: 'Linux armv8l',
+        maxTouchPoints: 5,
+      })
+    ).toBe('android-hlsjs');
+  });
+
+  it('classifies desktop browsers as desktop hls.js browsers', () => {
+    expect(
+      detectPlaybackProbePlatform({
+        userAgent:
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        platform: 'Win32',
+        maxTouchPoints: 0,
+      })
+    ).toBe('desktop-hlsjs');
   });
 });
 

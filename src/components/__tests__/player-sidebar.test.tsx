@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import type { SearchResult, SourceStatus } from '@/lib/types';
@@ -135,14 +141,18 @@ describe('EpisodeSelector playback sidebar controls', () => {
       expect(mockedFetchSourcePreferencesInBatches).toHaveBeenCalledTimes(1);
     });
 
-    expect(mockedFetchSourcePreferencesInBatches).toHaveBeenCalledWith(
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[0][0]).toEqual(
       expect.arrayContaining([
-        {
+        expect.objectContaining({
           sourceKey: 'source-44-id-44',
           episodeUrl: 'https://example.com/44.m3u8',
-        },
+          sourceName: 'S44',
+        }),
       ])
     );
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[0][1]).toEqual({
+      allowLiveProbeFallback: true,
+    });
     expect(mockedFetchSourcePreferencesInBatches.mock.calls[0][0]).toHaveLength(
       45
     );
@@ -353,5 +363,441 @@ describe('EpisodeSelector playback sidebar controls', () => {
     });
     expect(buttons[0]).toHaveAccessibleName('当前线路 当前源');
     expect(buttons[1]).toHaveAccessibleName('切换线路 推荐源');
+  });
+
+  it('shows backend probe speed from source preference results', async () => {
+    mockedFetchSourcePreferencesInBatches.mockResolvedValueOnce({
+      orderedSourceKeys: ['source-b-b'],
+      results: [
+        {
+          sourceKey: 'source-b-b',
+          kind: 'direct',
+          reason: '后端首段探测通过',
+          rankingSource: 'd1',
+          qualityLabel: null,
+          speedLabel: null,
+          pingTimeMs: null,
+          latencyMs: 280,
+          speedKbps: 2450,
+        },
+      ],
+      generatedAt: 1710000000000,
+      rankingSource: 'd1',
+      confidence: 'medium',
+    });
+    const availableSources: SearchResult[] = [
+      {
+        id: 'a',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'b',
+        source: 'source-b',
+        title: 'backend ranked source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/b.m3u8'],
+        source_name: '后端测速源',
+      },
+    ];
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('后端 2.4 MB/s · 280ms')).toBeInTheDocument();
+    });
+  });
+
+  it('requests a second visible-first backend metric refresh without blocking clicks', async () => {
+    mockedFetchSourcePreferencesInBatches
+      .mockResolvedValueOnce({
+        orderedSourceKeys: ['source-b-b'],
+        results: [
+          {
+            sourceKey: 'source-b-b',
+            kind: 'direct',
+            reason: '后端可播放',
+            rankingSource: 'd1',
+            speedKbps: null,
+            speedLabel: null,
+            probeTimeMs: 420,
+          },
+        ],
+        generatedAt: 1710000000000,
+        rankingSource: 'd1',
+        confidence: 'medium',
+      })
+      .mockResolvedValueOnce({
+        orderedSourceKeys: ['source-b-b'],
+        results: [
+          {
+            sourceKey: 'source-b-b',
+            kind: 'direct',
+            reason: '首片测速完成',
+            rankingSource: 'd1',
+            speedKbps: 3072,
+            speedLabel: '3.0 MB/s',
+            speedSource: 'backend',
+            latencyMs: 180,
+            pingTimeMs: 180,
+          },
+        ],
+        generatedAt: 1710000001000,
+        rankingSource: 'd1',
+        confidence: 'medium',
+      });
+    const handleSourceChange = jest.fn();
+    const availableSources: SearchResult[] = [
+      {
+        id: 'a',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'b',
+        source: 'source-b',
+        title: 'visible source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/b.m3u8'],
+        source_name: '可见源',
+      },
+    ];
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+        onSourceChange={handleSourceChange}
+      />
+    );
+
+    await waitFor(() => {
+      expect(
+        mockedFetchSourcePreferencesInBatches.mock.calls.length
+      ).toBeGreaterThanOrEqual(2);
+    });
+
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[1][0]).toEqual(
+      expect.arrayContaining([
+        {
+          sourceKey: 'source-a-a',
+          episodeUrl: 'https://example.com/a.m3u8',
+          sourceName: '当前源',
+          titleSample: 'current source',
+        },
+        {
+          sourceKey: 'source-b-b',
+          episodeUrl: 'https://example.com/b.m3u8',
+          sourceName: '可见源',
+          titleSample: 'visible source',
+        },
+      ])
+    );
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[1][0]).toHaveLength(
+      2
+    );
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[1][1]).toEqual({
+      allowLiveProbeFallback: false,
+      includeFreshProbeMetrics: true,
+    });
+    expect(screen.getByText('后端 3.0 MB/s · 180ms')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '切换线路 可见源' }));
+
+    expect(handleSourceChange).toHaveBeenCalledWith(
+      'source-b',
+      'b',
+      'visible source'
+    );
+  });
+
+  it('restores source status when a fresh backend metric refresh omits a visible source', async () => {
+    mockedFetchSourcePreferencesInBatches
+      .mockResolvedValueOnce({
+        orderedSourceKeys: ['source-a-a', 'source-b-b'],
+        results: [
+          {
+            sourceKey: 'source-a-a',
+            kind: 'direct',
+            reason: '首轮可播放',
+            rankingSource: 'd1',
+            speedKbps: null,
+            speedLabel: null,
+            speedSource: 'none',
+          },
+          {
+            sourceKey: 'source-b-b',
+            kind: 'direct',
+            reason: '首轮可播放',
+            rankingSource: 'd1',
+            speedKbps: null,
+            speedLabel: null,
+            speedSource: 'none',
+          },
+        ],
+        generatedAt: 1710000000000,
+        rankingSource: 'd1',
+        confidence: 'medium',
+      })
+      .mockResolvedValueOnce({
+        orderedSourceKeys: ['source-a-a'],
+        results: [
+          {
+            sourceKey: 'source-a-a',
+            kind: 'direct',
+            reason: '当前源测速完成',
+            rankingSource: 'd1',
+            speedKbps: 2048,
+            speedLabel: '2.0 MB/s',
+            speedSource: 'backend',
+            latencyMs: 120,
+            pingTimeMs: 120,
+          },
+        ],
+        generatedAt: 1710000001000,
+        rankingSource: 'd1',
+        confidence: 'medium',
+      });
+    const availableSources: SearchResult[] = [
+      {
+        id: 'a',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'b',
+        source: 'source-b',
+        title: 'visible source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/b.m3u8'],
+        source_name: '缺失测速源',
+      },
+    ];
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+      />
+    );
+
+    await waitFor(() => {
+      expect(
+        mockedFetchSourcePreferencesInBatches.mock.calls.length
+      ).toBeGreaterThanOrEqual(2);
+    });
+
+    const missingSourceButton = screen.getByRole('button', {
+      name: '切换线路 缺失测速源',
+    });
+
+    await waitFor(() => {
+      expect(missingSourceButton).not.toHaveAttribute(
+        'title',
+        expect.stringContaining('后端测速中')
+      );
+    });
+    expect(
+      within(missingSourceButton).queryByText('检测中')
+    ).not.toBeInTheDocument();
+  });
+
+  it('allows the same fresh backend metric request to retry after a partial response', async () => {
+    mockedFetchSourcePreferencesInBatches
+      .mockResolvedValueOnce({
+        orderedSourceKeys: ['source-a-a', 'source-b-b'],
+        results: [
+          {
+            sourceKey: 'source-a-a',
+            kind: 'direct',
+            reason: '首轮可播放',
+            rankingSource: 'd1',
+            speedKbps: null,
+            speedLabel: null,
+            speedSource: 'none',
+          },
+          {
+            sourceKey: 'source-b-b',
+            kind: 'direct',
+            reason: '首轮可播放',
+            rankingSource: 'd1',
+            speedKbps: null,
+            speedLabel: null,
+            speedSource: 'none',
+          },
+        ],
+        generatedAt: 1710000000000,
+        rankingSource: 'd1',
+        confidence: 'medium',
+      })
+      .mockResolvedValueOnce({
+        orderedSourceKeys: ['source-a-a'],
+        results: [
+          {
+            sourceKey: 'source-a-a',
+            kind: 'direct',
+            reason: '当前源测速完成',
+            rankingSource: 'd1',
+            speedKbps: 2048,
+            speedLabel: '2.0 MB/s',
+            speedSource: 'backend',
+            latencyMs: 120,
+            pingTimeMs: 120,
+          },
+        ],
+        generatedAt: 1710000001000,
+        rankingSource: 'd1',
+        confidence: 'medium',
+      })
+      .mockResolvedValueOnce({
+        orderedSourceKeys: ['source-b-b'],
+        results: [
+          {
+            sourceKey: 'source-b-b',
+            kind: 'direct',
+            reason: '缺失源重试完成',
+            rankingSource: 'd1',
+            speedKbps: 1024,
+            speedLabel: '1.0 MB/s',
+            speedSource: 'backend',
+            latencyMs: 260,
+            pingTimeMs: 260,
+          },
+        ],
+        generatedAt: 1710000002000,
+        rankingSource: 'd1',
+        confidence: 'medium',
+      });
+    const availableSources: SearchResult[] = [
+      {
+        id: 'a',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'b',
+        source: 'source-b',
+        title: 'visible source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/b.m3u8'],
+        source_name: '重试测速源',
+      },
+    ];
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockedFetchSourcePreferencesInBatches).toHaveBeenCalledTimes(3);
+    });
+    expect(mockedFetchSourcePreferencesInBatches.mock.calls[2][0]).toEqual([
+      {
+        sourceKey: 'source-b-b',
+        episodeUrl: 'https://example.com/b.m3u8',
+        sourceName: '重试测速源',
+        titleSample: 'visible source',
+      },
+    ]);
+  });
+
+  it('allows probing source rows to be clicked for manual rescue switching', async () => {
+    const availableSources: SearchResult[] = [
+      {
+        id: 'a',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'b',
+        source: 'source-b',
+        title: 'probing source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/b.m3u8'],
+        source_name: '检测中源',
+      },
+    ];
+    const sourceStatuses = new Map<string, SourceStatus>([
+      [
+        'source-b-b',
+        createSourceStatus('probing', {
+          reason: '后台测速中',
+        }),
+      ],
+    ]);
+    const handleSourceChange = jest.fn();
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+        precomputedSourceStatuses={sourceStatuses}
+        onSourceChange={handleSourceChange}
+      />
+    );
+
+    const probingButton = await screen.findByRole('button', {
+      name: '切换线路 检测中源',
+    });
+
+    expect(probingButton).not.toBeDisabled();
+    expect(within(probingButton).getByText('检测中')).toBeInTheDocument();
+    expect(within(probingButton).getByText('可切换')).toBeInTheDocument();
+
+    fireEvent.click(probingButton);
+
+    expect(handleSourceChange).toHaveBeenCalledWith(
+      'source-b',
+      'b',
+      'probing source'
+    );
   });
 });

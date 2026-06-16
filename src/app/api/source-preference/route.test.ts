@@ -1,6 +1,10 @@
 import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 
 import { probeSourcePlaybackWithCache } from '@/lib/source-preference';
+import {
+  persistOfflineProbeResult,
+  probePlaybackForRanking,
+} from '@/lib/source-ranking/probe';
 import { readLatestSourceRanks } from '@/lib/source-ranking/read';
 import { getSourceRankingRuntime } from '@/lib/source-ranking/runtime';
 
@@ -94,6 +98,11 @@ jest.mock('@/lib/source-ranking/read', () => ({
   readLatestSourceRanks: jest.fn(),
 }));
 
+jest.mock('@/lib/source-ranking/probe', () => ({
+  persistOfflineProbeResult: jest.fn(),
+  probePlaybackForRanking: jest.fn(),
+}));
+
 jest.mock('@/lib/source-ranking/runtime', () => ({
   getSourceRankingRuntime: jest.fn(),
 }));
@@ -114,6 +123,14 @@ describe('source preference route', () => {
     >;
   const mockedReadLatestSourceRanks =
     readLatestSourceRanks as jest.MockedFunction<typeof readLatestSourceRanks>;
+  const mockedProbePlaybackForRanking =
+    probePlaybackForRanking as jest.MockedFunction<
+      typeof probePlaybackForRanking
+    >;
+  const mockedPersistOfflineProbeResult =
+    persistOfflineProbeResult as jest.MockedFunction<
+      typeof persistOfflineProbeResult
+    >;
   const mockedGetSourceRankingRuntime =
     getSourceRankingRuntime as jest.MockedFunction<
       typeof getSourceRankingRuntime
@@ -333,5 +350,149 @@ describe('source preference route', () => {
         rankScore: 88,
       }),
     ]);
+  });
+
+  it('fresh-probes missing backend speed for a visible bounded subset and persists metrics', async () => {
+    mockedReadLatestSourceRanks.mockResolvedValue([
+      {
+        sourceKey: 'alpha',
+        kind: 'direct',
+        reason: 'ranked without speed',
+        domain: 'alpha.example',
+        rankScore: 90,
+        updatedAt: 1710000000000,
+        rankingSource: 'd1',
+        speedLabel: null,
+        speedKbps: null,
+      },
+      {
+        sourceKey: 'beta',
+        kind: 'direct',
+        reason: 'ranked with speed',
+        domain: 'beta.example',
+        rankScore: 88,
+        updatedAt: Date.now(),
+        rankingSource: 'd1',
+        speedLabel: '1.7 MB/s',
+        speedUpdatedAt: Date.now(),
+        speedKbps: 1700,
+      },
+    ]);
+    mockedProbePlaybackForRanking.mockResolvedValue({
+      kind: 'direct',
+      reason: '后端首段探测通过',
+      domain: 'alpha.example',
+      probeTimeMs: 510,
+      resolutionLabel: '1080p',
+      firstSegmentLatencyMs: 230,
+      firstSegmentSpeedKbps: 3600,
+    });
+
+    const response = await POST(
+      new Request('https://app.example.com/api/source-preference', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://app.example.com',
+        },
+        body: JSON.stringify({
+          allowLiveProbeFallback: false,
+          includeFreshProbeMetrics: true,
+          sources: [
+            {
+              sourceKey: 'alpha',
+              episodeUrl: 'https://alpha.example/1.m3u8',
+              sourceName: 'Alpha 源',
+              titleSample: '仙逆',
+            },
+            {
+              sourceKey: 'beta',
+              episodeUrl: 'https://beta.example/1.m3u8',
+              sourceName: 'Beta 源',
+              titleSample: '仙逆',
+            },
+          ],
+        }),
+      })
+    );
+
+    expect(mockedProbePlaybackForRanking).toHaveBeenCalledTimes(1);
+    expect(mockedProbePlaybackForRanking).toHaveBeenCalledWith(
+      'https://alpha.example/1.m3u8',
+      'https://app.example.com'
+    );
+    expect(mockedPersistOfflineProbeResult).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.stringMatching(/^panel-/),
+      {
+        sourceKey: 'alpha',
+        episodeUrl: 'https://alpha.example/1.m3u8',
+        sourceName: 'Alpha 源',
+        titleSample: '仙逆',
+      },
+      expect.objectContaining({
+        kind: 'direct',
+        firstSegmentSpeedKbps: 3600,
+      }),
+      expect.any(Number)
+    );
+
+    const payload = (await response.json()) as {
+      results: Array<Record<string, unknown>>;
+    };
+    expect(payload.results).toEqual([
+      expect.objectContaining({
+        sourceKey: 'alpha',
+        speedLabel: '3.5 MB/s',
+        speedKbps: 3600,
+        speedSource: 'backend',
+        latencyMs: 230,
+        pingTimeMs: 230,
+      }),
+      expect.objectContaining({
+        sourceKey: 'beta',
+        speedLabel: '1.7 MB/s',
+        speedKbps: 1700,
+      }),
+    ]);
+  });
+
+  it('does not fresh-probe more than eight visible sources', async () => {
+    const rankedSources = Array.from({ length: 10 }, (_, index) => ({
+      sourceKey: `source-${index}`,
+      kind: 'direct' as const,
+      reason: 'ranked without speed',
+      rankingSource: 'd1' as const,
+      updatedAt: 1710000000000,
+      speedKbps: null,
+      speedLabel: null,
+    }));
+    mockedReadLatestSourceRanks.mockResolvedValue(rankedSources);
+    mockedProbePlaybackForRanking.mockResolvedValue({
+      kind: 'direct',
+      probeTimeMs: 100,
+      firstSegmentLatencyMs: 50,
+      firstSegmentSpeedKbps: 1024,
+    });
+
+    await POST(
+      new Request('https://app.example.com/api/source-preference', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://app.example.com',
+        },
+        body: JSON.stringify({
+          allowLiveProbeFallback: false,
+          includeFreshProbeMetrics: true,
+          sources: rankedSources.map((source, index) => ({
+            sourceKey: source.sourceKey,
+            episodeUrl: `https://example.com/${index}.m3u8`,
+          })),
+        }),
+      })
+    );
+
+    expect(mockedProbePlaybackForRanking).toHaveBeenCalledTimes(8);
   });
 });

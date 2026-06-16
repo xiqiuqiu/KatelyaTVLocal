@@ -2,3 +2,4 @@
 - [SSRF in Proxy/Probe Endpoints](ssrf_proxy_endpoints.md) — Accepting arbitrary URLs via `?url=` param with no validation before server-side fetch
 - [localStorage Race Condition](localstorage_race_condition.md) — `rememberSourceDomainPreference` read-modify-write not atomic under concurrent probe calls
 - [Global Type for RUNTIME_CONFIG Not Used](global_type_issue.md) — Uses `(window as any).RUNTIME_CONFIG` despite declared global augmentation in types.ts
+- [Review Output in Docs Markdown](feedback_review_output_docs.md) — For code reviews, save deliverables as docs/*.md reports.

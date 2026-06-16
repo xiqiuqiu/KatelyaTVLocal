@@ -1,3 +1,4 @@
+import { formatSourceSpeedKbps } from '@/lib/source-preference-video-info';
 import { SourcePreferenceResult } from '@/lib/types';
 
 interface D1QueryResult<T> {
@@ -287,6 +288,8 @@ export async function readLatestSourceRanks(
       const probe = latestProbeByKey.get(snapshot.sourceKey);
       const feedback = latestFeedbackByKey.get(snapshot.sourceKey);
       const kind = probe?.kind || inferKindFromSnapshot(snapshot);
+      const hasFeedbackSpeed = Boolean(feedback?.browserSpeedLabel);
+      const hasBackendSpeed = typeof probe?.firstSegmentSpeedKbps === 'number';
       const feedbackAdjustment = getFeedbackRankAdjustment(
         feedbackRowsByKey.get(snapshot.sourceKey) || []
       );
@@ -304,8 +307,26 @@ export async function readLatestSourceRanks(
         probeTimeMs: probe?.probeTimeMs ?? undefined,
         qualityLabel:
           feedback?.browserQuality || probe?.resolutionLabel || null,
-        speedLabel: feedback?.browserSpeedLabel || null,
-        pingTimeMs: feedback?.browserPingMs ?? null,
+        speedLabel:
+          feedback?.browserSpeedLabel ||
+          formatSourceSpeedKbps(probe?.firstSegmentSpeedKbps) ||
+          null,
+        speedSource: hasFeedbackSpeed
+          ? 'browser'
+          : hasBackendSpeed
+          ? 'backend'
+          : 'none',
+        speedUpdatedAt: hasFeedbackSpeed
+          ? feedback?.recordedAt
+          : hasBackendSpeed
+          ? probe?.measuredAt
+          : undefined,
+        speedPending: !hasFeedbackSpeed && !hasBackendSpeed,
+        pingTimeMs:
+          feedback?.browserPingMs ??
+          probe?.firstSegmentLatencyMs ??
+          probe?.probeTimeMs ??
+          null,
         latencyMs: probe?.firstSegmentLatencyMs ?? null,
         speedKbps: probe?.firstSegmentSpeedKbps ?? null,
         updatedAt: Math.max(
@@ -337,6 +358,9 @@ export async function readLatestSourceRanks(
         : latestFeedbackByKey.get(sourceKey);
       const rows = feedbackRowsByKey.get(sourceKey) || [];
       const kind = inferKindFromFeedback(latestFeedback);
+      const hasFeedbackSpeed = Boolean(
+        latestFeedback.startupSuccess && successfulFeedback?.browserSpeedLabel
+      );
       const feedbackAdjustment = getFeedbackRankAdjustment(rows);
       const freshnessAdjustment = getFreshnessRankAdjustment(
         latestFeedback.recordedAt,
@@ -360,6 +384,11 @@ export async function readLatestSourceRanks(
           latestFeedback.startupSuccess && successfulFeedback
             ? successfulFeedback.browserSpeedLabel || null
             : null,
+        speedSource: hasFeedbackSpeed ? 'browser' : 'none',
+        speedUpdatedAt: hasFeedbackSpeed
+          ? successfulFeedback?.recordedAt
+          : undefined,
+        speedPending: !hasFeedbackSpeed,
         pingTimeMs:
           latestFeedback.startupSuccess && successfulFeedback
             ? successfulFeedback.browserPingMs ?? null

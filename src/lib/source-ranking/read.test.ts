@@ -117,6 +117,9 @@ describe('source ranking read', () => {
         probeTimeMs: 340,
         qualityLabel: '4K',
         speedLabel: '2.4 MB/s',
+        speedSource: 'browser',
+        speedUpdatedAt: 1710000300000,
+        speedPending: false,
         pingTimeMs: 88,
         latencyMs: 280,
         speedKbps: 2450,
@@ -129,8 +132,12 @@ describe('source ranking read', () => {
         kind: 'proxy',
         reason: '近期成功率 72%，更适合代理',
         domain: 'rank.beta.example',
+        probeTimeMs: undefined,
         qualityLabel: null,
         speedLabel: null,
+        speedSource: 'none',
+        speedUpdatedAt: undefined,
+        speedPending: true,
         pingTimeMs: null,
         latencyMs: null,
         speedKbps: null,
@@ -228,5 +235,75 @@ describe('source ranking read', () => {
     expect(fastRankScore).toBeGreaterThan(
       badRankScore ?? Number.POSITIVE_INFINITY
     );
+  });
+
+  it('falls back to backend probe speed and latency when browser feedback has no speed metrics', async () => {
+    const all = jest
+      .fn()
+      .mockResolvedValueOnce({
+        results: [
+          {
+            sourceKey: 'probe-only',
+            playbackDomain: 'rank.example',
+            finalScore: 84,
+            successRate: 92,
+            directRate: 92,
+            proxyRate: 0,
+            unavailableRate: 0,
+            updatedAt: 1710000000000,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            sourceKey: 'probe-only',
+            domain: 'probe.example',
+            kind: 'direct',
+            reason: '后端首段探测通过',
+            probeTimeMs: 510,
+            resolutionLabel: '1080p',
+            firstSegmentLatencyMs: 360,
+            firstSegmentSpeedKbps: 1536,
+            measuredAt: 1710000200000,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            sourceKey: 'probe-only',
+            playbackDomain: 'feedback.example',
+            startupSuccess: 1,
+            startupTimeMs: 3200,
+            switchedToProxy: 0,
+            browserQuality: null,
+            browserPingMs: null,
+            browserSpeedLabel: null,
+            sessionError: null,
+            recordedAt: 1710000300000,
+          },
+        ],
+      });
+    const bind = jest.fn().mockReturnValue({ all });
+    const prepare = jest.fn().mockReturnValue({ bind });
+
+    const results = await readLatestSourceRanks(
+      { DB: { prepare } },
+      ['probe-only'],
+      '24h',
+      1710000400000
+    );
+
+    expect(results).toEqual([
+      expect.objectContaining({
+        sourceKey: 'probe-only',
+        qualityLabel: '1080p',
+        speedLabel: '1.5 MB/s',
+        pingTimeMs: 360,
+        latencyMs: 360,
+        speedKbps: 1536,
+      }),
+    ]);
   });
 });
