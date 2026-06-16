@@ -2810,6 +2810,7 @@ function PlayPageClient() {
         );
       }
 
+      setAvailableSources(sourcesInfo);
       console.log(detailData.source, detailData.id);
 
       setNeedPrefer(false);

@@ -173,7 +173,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             : undefined,
         hasWebKitPointConversion:
           typeof window !== 'undefined' &&
-          typeof (window as any).webkitConvertPointFromNodeToPage === 'function',
+          typeof (window as any).webkitConvertPointFromNodeToPage ===
+            'function',
       }),
     []
   );
@@ -277,11 +278,15 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           'unavailable',
           serverProbeResult.reason
         );
-        rememberSourcePlaybackQuality(sourceKey, unavailableStatus.domain || null, {
-          mode: 'unavailable',
-          lastError: serverProbeResult.reason || '服务端探测失败',
-          confidence: 'medium',
-        });
+        rememberSourcePlaybackQuality(
+          sourceKey,
+          unavailableStatus.domain || null,
+          {
+            mode: 'unavailable',
+            lastError: serverProbeResult.reason || '服务端探测失败',
+            confidence: 'medium',
+          }
+        );
         return unavailableStatus;
       }
 
@@ -291,7 +296,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           playbackMode: 'direct',
           domain: serverProbeResult.domain || rememberedStatus?.domain || null,
         });
-        setSourceStatusMap((prev) => new Map(prev).set(sourceKey, directStatus));
+        setSourceStatusMap((prev) =>
+          new Map(prev).set(sourceKey, directStatus)
+        );
         rememberSourceDomainPreference(directStatus.domain || null, 'direct');
         return directStatus;
       }
@@ -364,11 +371,15 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         setSourceStatusMap((prev) =>
           new Map(prev).set(sourceKey, playableStatus)
         );
-        rememberSourcePlaybackQuality(sourceKey, playableStatus.domain || null, {
-          mode: 'unavailable',
-          lastError: failureReason,
-          confidence: 'low',
-        });
+        rememberSourcePlaybackQuality(
+          sourceKey,
+          playableStatus.domain || null,
+          {
+            mode: 'unavailable',
+            lastError: failureReason,
+            confidence: 'low',
+          }
+        );
         return playableStatus;
       }
     },
@@ -776,11 +787,14 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       }
       sourcePreferenceFreshProbeKeyRef.current = freshRequestKey;
 
+      const previousStatusByKey = new Map<string, SourceStatus | undefined>();
+
       setSourceStatusMap((prev) => {
         const next = new Map(prev);
 
         visibleSources.forEach((source) => {
           const previousStatus = next.get(source.sourceKey);
+          previousStatusByKey.set(source.sourceKey, previousStatus);
           if (previousStatus?.kind === 'unavailable') {
             return;
           }
@@ -811,6 +825,48 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         );
         if (!cancelled) {
           mergePreferenceResults(preferenceData.results);
+
+          const returnedSourceKeys = new Set(
+            preferenceData.results.map((result) => result.sourceKey)
+          );
+          const missingSourceKeys = visibleSources
+            .filter((source) => !returnedSourceKeys.has(source.sourceKey))
+            .map((source) => source.sourceKey);
+
+          if (missingSourceKeys.length > 0) {
+            const missingVisibleSources = visibleSources.filter((source) =>
+              missingSourceKeys.includes(source.sourceKey)
+            );
+
+            setSourceStatusMap((prev) => {
+              const next = new Map(prev);
+
+              missingSourceKeys.forEach((sourceKey) => {
+                const previousStatus = previousStatusByKey.get(sourceKey);
+                if (previousStatus) {
+                  next.set(sourceKey, previousStatus);
+                } else {
+                  next.delete(sourceKey);
+                }
+              });
+
+              return next;
+            });
+            sourcePreferenceFreshProbeKeyRef.current = '';
+
+            void fetchSourcePreferencesInBatches(missingVisibleSources, {
+              allowLiveProbeFallback: false,
+              includeFreshProbeMetrics: true,
+            })
+              .then((retryPreferenceData) => {
+                if (!cancelled) {
+                  mergePreferenceResults(retryPreferenceData.results);
+                }
+              })
+              .catch(() => {
+                sourcePreferenceFreshProbeKeyRef.current = '';
+              });
+          }
         }
       } catch {
         sourcePreferenceFreshProbeKeyRef.current = '';

@@ -67,6 +67,25 @@ describe('resolvePlaybackHistoryRecovery', () => {
     expect(result.resumeTime).toBeGreaterThan(0);
   });
 
+  it('uses detail fallback as the final source list when search results miss', () => {
+    const detail = createSource({ source: 'detail-source', id: 'detail-id' });
+
+    const result = resolvePlaybackHistoryRecovery({
+      currentSource: 'detail-source',
+      currentId: 'detail-id',
+      searchResults: [],
+      detailResults: [detail],
+      isFromPlayRecord: true,
+      historyRecord: createRecord(),
+    });
+
+    expect(result.detail).toBe(detail);
+    expect(result.sources).toEqual([detail]);
+    expect(result.fellBackFromHistory).toBe(false);
+    expect(result.resumeEpisodeIndex).toBe(1);
+    expect(result.resumeTime).toBeGreaterThan(0);
+  });
+
   it('does not fall back to a different source for non-history entry points', () => {
     const replacement = createSource({ source: 'new-source', id: 'new-id' });
 
