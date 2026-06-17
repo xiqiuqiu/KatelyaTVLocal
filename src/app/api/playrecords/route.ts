@@ -4,6 +4,10 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { db } from '@/lib/db';
+import {
+  normalizePlayRecordLimit,
+  parsePlayRecordKey,
+} from '@/lib/play-record-key';
 import { PlayRecord } from '@/lib/types';
 
 export const runtime = 'edge';
@@ -16,7 +20,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const records = await db.getAllPlayRecords(authInfo.username);
+    const { searchParams } = new URL(request.url);
+    const limit = normalizePlayRecordLimit(searchParams.get('limit'));
+    const records =
+      limit === undefined
+        ? await db.getAllPlayRecords(authInfo.username)
+        : await db.getRecentPlayRecords(authInfo.username, limit);
     return NextResponse.json(records, { status: 200 });
   } catch (err) {
     console.error('获取播放记录失败', err);
@@ -54,8 +63,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 从key中解析source和id
-    const [source, id] = key.split('+');
-    if (!source || !id) {
+    const parsedKey = parsePlayRecordKey(key);
+    if (!parsedKey) {
       return NextResponse.json(
         { error: 'Invalid key format' },
         { status: 400 }
@@ -67,7 +76,12 @@ export async function POST(request: NextRequest) {
       save_time: record.save_time ?? Date.now(),
     } as PlayRecord;
 
-    await db.savePlayRecord(authInfo.username, source, id, finalRecord);
+    await db.savePlayRecord(
+      authInfo.username,
+      parsedKey.source,
+      parsedKey.id,
+      finalRecord
+    );
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (err) {
@@ -93,15 +107,15 @@ export async function DELETE(request: NextRequest) {
 
     if (key) {
       // 如果提供了 key，删除单条播放记录
-      const [source, id] = key.split('+');
-      if (!source || !id) {
+      const parsedKey = parsePlayRecordKey(key);
+      if (!parsedKey) {
         return NextResponse.json(
           { error: 'Invalid key format' },
           { status: 400 }
         );
       }
 
-      await db.deletePlayRecord(username, source, id);
+      await db.deletePlayRecord(username, parsedKey.source, parsedKey.id);
     } else {
       await db.clearAllPlayRecords(username);
     }

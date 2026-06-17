@@ -80,6 +80,10 @@ export interface IStorage {
     record: PlayRecord
   ): Promise<void>;
   getAllPlayRecords(userName: string): Promise<{ [key: string]: PlayRecord }>;
+  getRecentPlayRecords?(
+    userName: string,
+    limit: number
+  ): Promise<{ [key: string]: PlayRecord }>;
   deletePlayRecord(userName: string, key: string): Promise<void>;
   clearAllPlayRecords?(userName: string): Promise<void>;
 

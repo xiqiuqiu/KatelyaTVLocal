@@ -5,11 +5,15 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
+import { parsePlayRecordKey } from '@/lib/play-record-key';
 import { isAuthorizedCronRequest } from '@/lib/source-ranking/cron-auth';
 import {
   runLowFrequencySourceRankingCheck,
   SourceRankingSchedulerEnvLike,
 } from '@/lib/source-ranking/scheduler';
+
+const CRON_RECENT_PLAY_RECORD_LIMIT = 50;
+const CRON_RECENT_FAVORITE_LIMIT = 50;
 import { SearchResult } from '@/lib/types';
 
 export const runtime = 'edge';
@@ -35,7 +39,8 @@ function hasDbBinding(source: RuntimeSource) {
   return (
     value &&
     typeof value === 'object' &&
-    typeof (value as SourceRankingSchedulerEnvLike['DB'])?.prepare === 'function'
+    typeof (value as SourceRankingSchedulerEnvLike['DB'])?.prepare ===
+      'function'
   );
 }
 
@@ -50,8 +55,7 @@ function resolveSourceRankingEnv(): RuntimeSource | undefined {
 
 export async function GET(request: NextRequest) {
   const rankingEnv =
-    resolveSourceRankingEnv() ||
-    (process.env as unknown as RuntimeSource);
+    resolveSourceRankingEnv() || (process.env as unknown as RuntimeSource);
 
   if (!isAuthorizedCronRequest(request, rankingEnv)) {
     return NextResponse.json(
@@ -188,17 +192,21 @@ async function refreshRecordAndFavorites() {
 
       // 播放记录
       try {
-        const playRecords = await db.getAllPlayRecords(user);
+        const playRecords = await db.getRecentPlayRecords(
+          user,
+          CRON_RECENT_PLAY_RECORD_LIMIT
+        );
         const totalRecords = Object.keys(playRecords).length;
         let processedRecords = 0;
 
         for (const [key, record] of Object.entries(playRecords)) {
           try {
-            const [source, id] = key.split('+');
-            if (!source || !id) {
+            const parsedKey = parsePlayRecordKey(key);
+            if (!parsedKey) {
               console.warn(`跳过无效的播放记录键: ${key}`);
               continue;
             }
+            const { source, id } = parsedKey;
 
             const detail = await getDetail(source, id, record.title);
             if (!detail) {
@@ -239,17 +247,23 @@ async function refreshRecordAndFavorites() {
 
       // 收藏
       try {
-        const favorites = await db.getAllFavorites(user);
+        const allFavorites = await db.getAllFavorites(user);
+        const favorites = Object.fromEntries(
+          Object.entries(allFavorites)
+            .sort(([, left], [, right]) => right.save_time - left.save_time)
+            .slice(0, CRON_RECENT_FAVORITE_LIMIT)
+        );
         const totalFavorites = Object.keys(favorites).length;
         let processedFavorites = 0;
 
         for (const [key, fav] of Object.entries(favorites)) {
           try {
-            const [source, id] = key.split('+');
-            if (!source || !id) {
+            const parsedKey = parsePlayRecordKey(key);
+            if (!parsedKey) {
               console.warn(`跳过无效的收藏键: ${key}`);
               continue;
             }
+            const { source, id } = parsedKey;
 
             const favDetail = await getDetail(source, id, fav.title);
             if (!favDetail) {

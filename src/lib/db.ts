@@ -4,6 +4,7 @@ import { AdminConfig } from './admin.types';
 import { D1Storage } from './d1.db';
 import { KvrocksStorage } from './kvrocks.db';
 import { LocalStorage } from './localstorage.db';
+import { getRecentPlayRecordsFromAll } from './play-record-key';
 import { RedisStorage } from './redis.db';
 import {
   AiFindSavedRecord,
@@ -89,6 +90,18 @@ export class DbManager {
     [key: string]: PlayRecord;
   }> {
     return this.storage.getAllPlayRecords(userName);
+  }
+
+  async getRecentPlayRecords(
+    userName: string,
+    limit: number
+  ): Promise<{ [key: string]: PlayRecord }> {
+    if (this.storage.getRecentPlayRecords) {
+      return this.storage.getRecentPlayRecords(userName, limit);
+    }
+
+    const records = await this.storage.getAllPlayRecords(userName);
+    return getRecentPlayRecordsFromAll(records, limit);
   }
 
   async deletePlayRecord(

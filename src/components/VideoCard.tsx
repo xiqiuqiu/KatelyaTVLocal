@@ -232,19 +232,22 @@ export default function VideoCard({
     let href = '';
 
     if (from === 'douban') {
-      href = `/play?title=${encodeURIComponent(actualTitle.trim())}${
-        actualYear ? `&year=${actualYear}` : ''
-      }${actualSearchType ? `&stype=${actualSearchType}` : ''}`;
+      const params = new URLSearchParams();
+      params.set('title', actualTitle.trim());
+      if (actualYear) params.set('year', actualYear);
+      if (actualSearchType) params.set('stype', actualSearchType);
+      href = `/play?${params.toString()}`;
     } else if (actualSource && actualId) {
-      href = `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(
-        actualTitle
-      )}${actualYear ? `&year=${actualYear}` : ''}${
-        isAggregate ? '&prefer=true' : ''
-      }${
-        actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''
-      }${actualSearchType ? `&stype=${actualSearchType}` : ''}${
-        from === 'playrecord' ? '&from=playrecord' : ''
-      }`;
+      const params = new URLSearchParams();
+      params.set('source', actualSource);
+      params.set('id', actualId);
+      params.set('title', actualTitle);
+      if (actualYear) params.set('year', actualYear);
+      if (isAggregate) params.set('prefer', 'true');
+      if (actualQuery) params.set('stitle', actualQuery.trim());
+      if (actualSearchType) params.set('stype', actualSearchType);
+      if (from === 'playrecord') params.set('from', 'playrecord');
+      href = `/play?${params.toString()}`;
     }
 
     if (!href) return;

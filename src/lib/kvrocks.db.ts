@@ -8,6 +8,7 @@ import {
   listAiFindSavedRecordSummaries,
   pruneAiFindSavedRecords,
 } from './ai-find/saved-records';
+import { getRecentPlayRecordsFromAll } from './play-record-key';
 import {
   hashPassword,
   isLegacyPlaintextPassword,
@@ -128,6 +129,16 @@ export class KvrocksStorage implements IStorage {
     }
 
     return result;
+  }
+
+  async getRecentPlayRecords(
+    userName: string,
+    limit: number
+  ): Promise<Record<string, PlayRecord>> {
+    return getRecentPlayRecordsFromAll(
+      await this.getAllPlayRecords(userName),
+      limit
+    );
   }
 
   async deletePlayRecord(userName: string, key: string): Promise<void> {
