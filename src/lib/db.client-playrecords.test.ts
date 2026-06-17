@@ -8,6 +8,8 @@ function mockPlayRecordsResponse(records: Record<string, unknown>) {
 function loadPlayRecordsClient(): {
   getAllPlayRecords: () => Promise<Record<string, unknown>>;
   getRecentPlayRecords: (limit: number) => Promise<Record<string, unknown>>;
+  deletePlayRecord: (source: string, id: string) => Promise<void>;
+  clearAllPlayRecords: () => Promise<void>;
   savePlayRecord: (
     source: string,
     id: string,
@@ -132,5 +134,95 @@ describe('db.client play records cache', () => {
         play_time: 120,
       },
     });
+  });
+
+  it('keeps recent-only cache populated before deleting one play record', async () => {
+    const recentRecords = {
+      'source-a+1': {
+        title: '第一条',
+        source_name: '测试源',
+        year: '2026',
+        cover: '',
+        index: 1,
+        total_episodes: 12,
+        play_time: 60,
+        total_time: 1800,
+        save_time: 2,
+      },
+      'source-b+2': {
+        title: '第二条',
+        source_name: '测试源',
+        year: '2026',
+        cover: '',
+        index: 2,
+        total_episodes: 12,
+        play_time: 120,
+        total_time: 1800,
+        save_time: 1,
+      },
+    };
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(await mockPlayRecordsResponse(recentRecords))
+      .mockResolvedValueOnce(await mockPlayRecordsResponse(recentRecords))
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) });
+    global.fetch = fetchMock;
+    const updates: Array<Record<string, unknown>> = [];
+    window.addEventListener('playRecordsUpdated', ((event: CustomEvent) => {
+      updates.push(event.detail);
+    }) as EventListener);
+
+    const { deletePlayRecord, getRecentPlayRecords } = loadPlayRecordsClient();
+
+    await getRecentPlayRecords(50);
+    await deletePlayRecord('source-a', '1');
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/playrecords?limit=50');
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/playrecords');
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/playrecords?key=source-a%2B1',
+      { method: 'DELETE' }
+    );
+    expect(updates).not.toContainEqual({});
+    expect(updates.at(-1)).toEqual({
+      'source-b+2': recentRecords['source-b+2'],
+    });
+  });
+
+  it('does not let a pending recent-only request repopulate cache after clearing play records', async () => {
+    let resolveRecent: (value: unknown) => void = () => undefined;
+    const recentRequest = new Promise((resolve) => {
+      resolveRecent = resolve;
+    });
+    const staleRecentRecords = {
+      'source-a+1': {
+        title: '旧记录',
+        source_name: '测试源',
+        year: '2026',
+        cover: '',
+        index: 1,
+        total_episodes: 12,
+        play_time: 60,
+        total_time: 1800,
+        save_time: 1,
+      },
+    };
+    const fetchMock = jest
+      .fn()
+      .mockReturnValueOnce(recentRequest)
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) })
+      .mockResolvedValueOnce(await mockPlayRecordsResponse({}));
+    global.fetch = fetchMock;
+
+    const { clearAllPlayRecords, getAllPlayRecords, getRecentPlayRecords } =
+      loadPlayRecordsClient();
+
+    const recentRead = getRecentPlayRecords(50);
+    await clearAllPlayRecords();
+    resolveRecent(await mockPlayRecordsResponse(staleRecentRecords));
+    await recentRead;
+
+    expect(await getAllPlayRecords()).toEqual({});
   });
 });

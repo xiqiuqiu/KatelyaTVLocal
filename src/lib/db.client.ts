@@ -483,6 +483,22 @@ async function fetchAndCachePlayRecords(): Promise<Record<string, PlayRecord>> {
   return freshData;
 }
 
+async function getPlayRecordsMutationBase(): Promise<
+  Record<string, PlayRecord>
+> {
+  const cachedData = cacheManager.getCachedPlayRecords();
+  if (cachedData) {
+    return { ...cachedData };
+  }
+
+  try {
+    return { ...(await fetchAndCachePlayRecords()) };
+  } catch (err) {
+    console.warn('获取播放记录缓存基线失败:', err);
+    return {};
+  }
+}
+
 function syncPlayRecordsInBackground(
   cachedData: Record<string, PlayRecord>
 ): void {
@@ -675,7 +691,7 @@ export async function savePlayRecord(
   if (STORAGE_TYPE !== 'localstorage') {
     markPlayRecordsMutated();
     // 立即更新缓存
-    const cachedRecords = cacheManager.getCachedPlayRecords() || {};
+    const cachedRecords = await getPlayRecordsMutationBase();
     cachedRecords[key] = record;
     cacheManager.cachePlayRecords(cachedRecords);
 
@@ -734,7 +750,7 @@ export async function deletePlayRecord(
   if (STORAGE_TYPE !== 'localstorage') {
     markPlayRecordsMutated();
     // 立即更新缓存
-    const cachedRecords = cacheManager.getCachedPlayRecords() || {};
+    const cachedRecords = await getPlayRecordsMutationBase();
     delete cachedRecords[key];
     cacheManager.cachePlayRecords(cachedRecords);
 
