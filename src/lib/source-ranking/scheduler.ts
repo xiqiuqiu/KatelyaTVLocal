@@ -2,6 +2,7 @@
 
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
+import { parsePlayRecordKey } from '@/lib/play-record-key';
 import { PlayRecord, SearchResult } from '@/lib/types';
 
 import {
@@ -87,6 +88,10 @@ export interface LowFrequencySourceRankingOptions {
   idFactory?: () => string;
   getUsers?: () => Promise<string[]>;
   getPlayRecords?: (userName: string) => Promise<Record<string, PlayRecord>>;
+  getRecentPlayRecords?: (
+    userName: string,
+    limit: number
+  ) => Promise<Record<string, PlayRecord>>;
   fetchDetail?: (options: {
     source: string;
     id: string;
@@ -107,6 +112,7 @@ export interface LowFrequencySourceRankingOptions {
 
 const MAX_SAMPLE_CANDIDATES = 48;
 const MAX_SAMPLES_PER_USER = 2;
+const RECENT_PLAY_RECORDS_PER_USER = 50;
 const MAX_TASKS_TOTAL = 48;
 const MAX_TASKS_PER_SOURCE = 3;
 const MAX_EPISODES_PER_DETAIL = 3;
@@ -154,20 +160,9 @@ function buildSnapshotId(sourceKey: string, windowKey: string): string {
 function getDatabaseFromEnv(
   env?: SourceRankingSchedulerEnvLike
 ): D1DatabaseLike | null {
-  const database = env?.DB ?? ((process.env as unknown as { DB?: D1DatabaseLike }).DB || null);
+  const database =
+    env?.DB ?? ((process.env as unknown as { DB?: D1DatabaseLike }).DB || null);
   return database ?? null;
-}
-
-function parseRecordKey(key: string): { source: string; id: string } | null {
-  const separatorIndex = key.indexOf('+');
-  if (separatorIndex <= 0 || separatorIndex >= key.length - 1) {
-    return null;
-  }
-
-  return {
-    source: key.slice(0, separatorIndex),
-    id: key.slice(separatorIndex + 1),
-  };
 }
 
 function parseSourceIdentityKey(
@@ -233,7 +228,11 @@ function buildEpisodeCandidates(
 
 async function loadRecentPlaySamples(
   getUsers: () => Promise<string[]>,
-  getPlayRecords: (userName: string) => Promise<Record<string, PlayRecord>>
+  getPlayRecords: (userName: string) => Promise<Record<string, PlayRecord>>,
+  getRecentPlayRecords?: (
+    userName: string,
+    limit: number
+  ) => Promise<Record<string, PlayRecord>>
 ): Promise<RecentPlaySample[]> {
   const userSet = new Set((await getUsers()).filter(Boolean));
   const fallbackUserName = (process.env.USERNAME || '').trim();
@@ -245,10 +244,12 @@ async function loadRecentPlaySamples(
 
   for (const userName of Array.from(userSet)) {
     try {
-      const playRecords = await getPlayRecords(userName);
+      const playRecords = getRecentPlayRecords
+        ? await getRecentPlayRecords(userName, RECENT_PLAY_RECORDS_PER_USER)
+        : await getPlayRecords(userName);
       const userSamples = Object.entries(playRecords)
         .map(([key, record]) => {
-          const parsedKey = parseRecordKey(key);
+          const parsedKey = parsePlayRecordKey(key);
           if (!parsedKey) {
             return null;
           }
@@ -266,7 +267,10 @@ async function loadRecentPlaySamples(
 
       samples.push(...userSamples);
     } catch (error) {
-      console.error(`source ranking: load play records failed for ${userName}`, error);
+      console.error(
+        `source ranking: load play records failed for ${userName}`,
+        error
+      );
     }
   }
 
@@ -510,7 +514,13 @@ async function insertProbeRun(
        (id, trigger_type, started_at, status, notes)
        VALUES (?, ?, ?, ?, ?)`
     )
-    .bind(runId, triggerType, startedAt, 'running', 'bounded multi-user source check')
+    .bind(
+      runId,
+      triggerType,
+      startedAt,
+      'running',
+      'bounded multi-user source check'
+    )
     .run();
 }
 
@@ -616,10 +626,17 @@ export async function runLowFrequencySourceRankingCheck(
     idFactory = () => createId('source-probe-run'),
     getUsers = () => db.getAllUsers(),
     getPlayRecords = (userName: string) => db.getAllPlayRecords(userName),
+    getRecentPlayRecords,
     fetchDetail = fetchVideoDetail,
     probePlayback = probePlaybackForRanking,
     persistProbeResult = persistOfflineProbeResult,
   } = options;
+  const loadRecentRecords =
+    getRecentPlayRecords ||
+    (options.getPlayRecords
+      ? undefined
+      : (userName: string, limit: number) =>
+          db.getRecentPlayRecords(userName, limit));
   const database = getDatabaseFromEnv(options.env);
 
   if (!database) {
@@ -648,8 +665,15 @@ export async function runLowFrequencySourceRankingCheck(
   try {
     await cleanupOldSourceRankingData(database, startedAt);
 
-    const playSamples = await loadRecentPlaySamples(getUsers, getPlayRecords);
-    const feedbackSamples = await loadFeedbackDerivedSamples(database, startedAt);
+    const playSamples = await loadRecentPlaySamples(
+      getUsers,
+      getPlayRecords,
+      loadRecentRecords
+    );
+    const feedbackSamples = await loadFeedbackDerivedSamples(
+      database,
+      startedAt
+    );
     const samples = mergeProbeSamples([...playSamples, ...feedbackSamples]);
     sampledRecordCount = samples.length;
 
@@ -719,7 +743,13 @@ export async function runLowFrequencySourceRankingCheck(
 
     for (const [sourceKey, bucket] of Array.from(buckets.entries())) {
       try {
-        await upsertSnapshot(database, sourceKey, bucket, sampleWindowKey, now());
+        await upsertSnapshot(
+          database,
+          sourceKey,
+          bucket,
+          sampleWindowKey,
+          now()
+        );
         snapshotCount += 1;
       } catch (error) {
         errors.push(
@@ -759,7 +789,9 @@ export async function runLowFrequencySourceRankingCheck(
     };
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : 'source ranking scheduler failed';
+      error instanceof Error
+        ? error.message
+        : 'source ranking scheduler failed';
     const notes = JSON.stringify({
       sampledRecordCount,
       taskCount,

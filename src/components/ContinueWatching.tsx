@@ -1,15 +1,15 @@
 /* eslint-disable no-console */
 'use client';
 
+import { ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import type { PlayRecord } from '@/lib/db.client';
 import {
-  clearAllPlayRecords,
   deletePlayRecord,
-  getAllPlayRecords,
+  getRecentPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import type { PlayRecord } from '@/lib/db.client';
 import { buildContinueWatchingRecords } from '@/lib/play-records';
 
 import ScrollableRow from '@/components/ScrollableRow';
@@ -17,6 +17,8 @@ import ActionLink from '@/components/ui/ActionLink';
 import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
 import SectionHeader from '@/components/ui/SectionHeader';
 import VideoCard from '@/components/VideoCard';
+
+const CONTINUE_WATCHING_RECORD_LIMIT = 50;
 
 interface ContinueWatchingProps {
   className?: string;
@@ -41,7 +43,9 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
         setLoading(true);
 
         // 从缓存或API获取所有播放记录
-        const allRecords = await getAllPlayRecords();
+        const allRecords = await getRecentPlayRecords(
+          CONTINUE_WATCHING_RECORD_LIMIT
+        );
         updatePlayRecords(allRecords);
       } catch (error) {
         console.error('获取播放记录失败:', error);
@@ -88,13 +92,9 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
       <SectionHeader
         action={
           !loading && playRecords.length > 0 ? (
-            <ActionLink
-              onClick={async () => {
-                await clearAllPlayRecords();
-                setPlayRecords([]);
-              }}
-            >
-              清空
+            <ActionLink href='/history'>
+              更多
+              <ChevronRight className='h-4 w-4' />
             </ActionLink>
           ) : null
         }
@@ -106,7 +106,10 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
           ? // 加载状态显示灰色占位数据
             Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className={cardWidthClass}>
-                <SkeletonPosterCard delayIndex={index} widths={['84%', '62%']} />
+                <SkeletonPosterCard
+                  delayIndex={index}
+                  widths={['84%', '62%']}
+                />
               </div>
             ))
           : // 显示真实数据

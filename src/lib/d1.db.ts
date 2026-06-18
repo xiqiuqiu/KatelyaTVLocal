@@ -68,6 +68,21 @@ export class D1Storage implements IStorage {
     return this.db;
   }
 
+  private mapPlayRecordRow(row: any): PlayRecord {
+    return {
+      title: row.title,
+      source_name: row.source_name,
+      cover: row.cover,
+      year: row.year,
+      index: row.index_episode,
+      total_episodes: row.total_episodes,
+      play_time: row.play_time,
+      total_time: row.total_time,
+      save_time: row.save_time,
+      search_title: row.search_title || undefined,
+    };
+  }
+
   // 播放记录相关
   async getPlayRecord(
     userName: string,
@@ -82,18 +97,7 @@ export class D1Storage implements IStorage {
 
       if (!result) return null;
 
-      return {
-        title: result.title,
-        source_name: result.source_name,
-        cover: result.cover,
-        year: result.year,
-        index: result.index_episode,
-        total_episodes: result.total_episodes,
-        play_time: result.play_time,
-        total_time: result.total_time,
-        save_time: result.save_time,
-        search_title: result.search_title || undefined,
-      };
+      return this.mapPlayRecordRow(result);
     } catch (err) {
       console.error('Failed to get play record:', err);
       throw err;
@@ -162,23 +166,37 @@ export class D1Storage implements IStorage {
       const records: Record<string, PlayRecord> = {};
 
       result.results.forEach((row: any) => {
-        records[row.key] = {
-          title: row.title,
-          source_name: row.source_name,
-          cover: row.cover,
-          year: row.year,
-          index: row.index_episode,
-          total_episodes: row.total_episodes,
-          play_time: row.play_time,
-          total_time: row.total_time,
-          save_time: row.save_time,
-          search_title: row.search_title || undefined,
-        };
+        records[row.key] = this.mapPlayRecordRow(row);
       });
 
       return records;
     } catch (err) {
       console.error('Failed to get all play records:', err);
+      throw err;
+    }
+  }
+
+  async getRecentPlayRecords(
+    userName: string,
+    limit: number
+  ): Promise<Record<string, PlayRecord>> {
+    try {
+      const db = await this.getDatabase();
+      const result = await db
+        .prepare(
+          'SELECT * FROM play_records WHERE username = ? ORDER BY save_time DESC LIMIT ?'
+        )
+        .bind(userName, limit)
+        .all<any>();
+
+      const records: Record<string, PlayRecord> = {};
+      result.results.forEach((row: any) => {
+        records[row.key] = this.mapPlayRecordRow(row);
+      });
+
+      return records;
+    } catch (err) {
+      console.error('Failed to get recent play records:', err);
       throw err;
     }
   }

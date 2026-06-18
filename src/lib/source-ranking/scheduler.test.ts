@@ -31,9 +31,7 @@ function createFakeDatabase(
   };
 }
 
-function createPlayRecord(
-  overrides: Partial<PlayRecord> = {}
-): PlayRecord {
+function createPlayRecord(overrides: Partial<PlayRecord> = {}): PlayRecord {
   return {
     title: '示例标题',
     source_name: '示例源',
@@ -293,6 +291,60 @@ describe('source ranking scheduler', () => {
     } finally {
       process.env.USERNAME = originalUsername;
     }
+  });
+
+  it('uses the recent play record loader and preserves plus signs in ids', async () => {
+    const statements: StatementRecord[] = [];
+    const fetchDetail = jest.fn(async () => ({
+      id: 'video+part+1',
+      title: 'Plus Show',
+      poster: '',
+      episodes: ['https://plus.example.com/ep1.m3u8'],
+      source: 'alpha',
+      source_name: 'Alpha Source',
+      year: '2025',
+    }));
+    const getPlayRecords = jest.fn(async () => ({}));
+    const getRecentPlayRecords = jest.fn(async () => ({
+      'alpha+video+part+1': createPlayRecord({
+        title: 'Plus Show',
+        source_name: 'Alpha Source',
+        index: 1,
+        save_time: 200,
+        search_title: 'Plus Show',
+      }),
+    }));
+
+    await runLowFrequencySourceRankingCheck({
+      env: { DB: createFakeDatabase(statements) },
+      origin: 'https://app.example.com',
+      triggerType: 'cron',
+      idFactory: () => 'run-plus',
+      now: () => 1710000000000,
+      getUsers: async () => ['alice'],
+      getPlayRecords,
+      getRecentPlayRecords,
+      fetchDetail,
+      probePlayback: async () => ({
+        kind: 'direct',
+        domain: 'plus.example.com',
+        reason: '可直连',
+        upstreamStatus: 200,
+        probeTimeMs: 100,
+        resolutionLabel: null,
+        firstSegmentLatencyMs: null,
+        firstSegmentSpeedKbps: null,
+      }),
+      persistProbeResult: async () => undefined,
+    });
+
+    expect(getRecentPlayRecords).toHaveBeenCalledWith('alice', 50);
+    expect(getPlayRecords).not.toHaveBeenCalled();
+    expect(fetchDetail).toHaveBeenCalledWith({
+      source: 'alpha',
+      id: 'video+part+1',
+      fallbackTitle: 'Plus Show',
+    });
   });
 
   it('falls back to recent playback feedback when play records are unavailable', async () => {

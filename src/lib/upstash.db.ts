@@ -8,6 +8,7 @@ import {
   listAiFindSavedRecordSummaries,
   pruneAiFindSavedRecords,
 } from './ai-find/saved-records';
+import { getRecentPlayRecordsFromAll } from './play-record-key';
 import {
   hashPassword,
   isLegacyPlaintextPassword,
@@ -82,6 +83,29 @@ export class UpstashRedisStorage implements IStorage {
     return `u:${user}:pr:${key}`; // u:username:pr:source+id
   }
 
+  private prRecentIndexKey(user: string) {
+    return `u:${user}:pr_recent_index`;
+  }
+
+  private prRecentIndexBackfilledKey(user: string) {
+    return `u:${user}:pr_recent_index_backfilled`;
+  }
+
+  private async backfillPlayRecordRecentIndex(
+    userName: string,
+    records: Record<string, PlayRecord>
+  ): Promise<void> {
+    const indexKey = this.prRecentIndexKey(userName);
+    for (const [key, record] of Object.entries(records)) {
+      await withRetry(() =>
+        this.client.zadd(indexKey, { score: record.save_time, member: key })
+      );
+    }
+    await withRetry(() =>
+      this.client.set(this.prRecentIndexBackfilledKey(userName), '1')
+    );
+  }
+
   async getPlayRecord(
     userName: string,
     key: string
@@ -97,7 +121,13 @@ export class UpstashRedisStorage implements IStorage {
     key: string,
     record: PlayRecord
   ): Promise<void> {
-    await withRetry(() => this.client.set(this.prKey(userName, key), record));
+    await withRetry(async () => {
+      await this.client.set(this.prKey(userName, key), record);
+      await this.client.zadd(this.prRecentIndexKey(userName), {
+        score: record.save_time,
+        member: key,
+      });
+    });
   }
 
   async getAllPlayRecords(
@@ -119,8 +149,70 @@ export class UpstashRedisStorage implements IStorage {
     return result;
   }
 
+  async getRecentPlayRecords(
+    userName: string,
+    limit: number
+  ): Promise<Record<string, PlayRecord>> {
+    const indexKey = this.prRecentIndexKey(userName);
+    const recentKeys = ensureStringArray(
+      (await withRetry(() =>
+        this.client.zrange<string[]>(indexKey, 0, limit - 1, { rev: true })
+      )) as any[]
+    );
+    const indexBackfilled = await withRetry(() =>
+      this.client.get(this.prRecentIndexBackfilledKey(userName))
+    );
+
+    if (recentKeys.length === 0 && indexBackfilled) {
+      return {};
+    }
+
+    if (
+      recentKeys.length === 0 ||
+      (!indexBackfilled && recentKeys.length < limit)
+    ) {
+      const records = await this.getAllPlayRecords(userName);
+      await this.backfillPlayRecordRecentIndex(userName, records);
+      return getRecentPlayRecordsFromAll(records, limit);
+    }
+
+    const result: Record<string, PlayRecord> = {};
+    const staleKeys: string[] = [];
+
+    for (const key of recentKeys) {
+      const value = await withRetry(() =>
+        this.client.get(this.prKey(userName, key))
+      );
+      if (value) {
+        result[key] = value as PlayRecord;
+      } else {
+        staleKeys.push(key);
+      }
+    }
+
+    if (staleKeys.length > 0) {
+      await withRetry(() => this.client.zrem(indexKey, ...staleKeys));
+    }
+
+    return result;
+  }
+
   async deletePlayRecord(userName: string, key: string): Promise<void> {
-    await withRetry(() => this.client.del(this.prKey(userName, key)));
+    await withRetry(async () => {
+      await this.client.del(this.prKey(userName, key));
+      await this.client.zrem(this.prRecentIndexKey(userName), key);
+    });
+  }
+
+  async clearAllPlayRecords(userName: string): Promise<void> {
+    const keys = await withRetry(() => this.client.keys(`u:${userName}:pr:*`));
+    if (keys.length > 0) {
+      await withRetry(() => this.client.del(...keys));
+    }
+    await withRetry(() => this.client.del(this.prRecentIndexKey(userName)));
+    await withRetry(() =>
+      this.client.del(this.prRecentIndexBackfilledKey(userName))
+    );
   }
 
   // ---------- 收藏 ----------
@@ -245,6 +337,10 @@ export class UpstashRedisStorage implements IStorage {
     if (playRecordKeys.length > 0) {
       await withRetry(() => this.client.del(...playRecordKeys));
     }
+    await withRetry(() => this.client.del(this.prRecentIndexKey(userName)));
+    await withRetry(() =>
+      this.client.del(this.prRecentIndexBackfilledKey(userName))
+    );
 
     // 删除收藏夹
     const favoritePattern = `u:${userName}:fav:*`;

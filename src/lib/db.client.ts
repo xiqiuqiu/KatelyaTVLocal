@@ -15,6 +15,7 @@
  */
 
 import { getRuntimeCurrentUser } from './auth';
+import { getRecentPlayRecordsFromAll } from './play-record-key';
 
 // ---- 类型 ----
 export interface PlayRecord {
@@ -421,6 +422,122 @@ async function fetchFromApi<T>(path: string): Promise<T> {
 
 let favoritesFetchPromise: Promise<Record<string, Favorite>> | null = null;
 let favoritesMutationVersion = 0;
+let playRecordsFetchPromise: Promise<Record<string, PlayRecord>> | null = null;
+const recentPlayRecordsFetchPromises = new Map<
+  number,
+  Promise<Record<string, PlayRecord>>
+>();
+let playRecordsMutationVersion = 0;
+
+function emitPlayRecordsUpdated(records: Record<string, PlayRecord>): void {
+  window.dispatchEvent(
+    new CustomEvent('playRecordsUpdated', {
+      detail: records,
+    })
+  );
+}
+
+function markPlayRecordsMutated(): void {
+  playRecordsMutationVersion += 1;
+  playRecordsFetchPromise = null;
+  recentPlayRecordsFetchPromises.clear();
+}
+
+function requestPlayRecordsFromApi(): Promise<Record<string, PlayRecord>> {
+  if (!playRecordsFetchPromise) {
+    playRecordsFetchPromise = fetchFromApi<Record<string, PlayRecord>>(
+      `/api/playrecords`
+    ).finally(() => {
+      playRecordsFetchPromise = null;
+    });
+  }
+
+  return playRecordsFetchPromise;
+}
+
+function requestRecentPlayRecordsFromApi(
+  limit: number
+): Promise<Record<string, PlayRecord>> {
+  const existing = recentPlayRecordsFetchPromises.get(limit);
+  if (existing) {
+    return existing;
+  }
+
+  const request = fetchFromApi<Record<string, PlayRecord>>(
+    `/api/playrecords?limit=${encodeURIComponent(String(limit))}`
+  ).finally(() => {
+    recentPlayRecordsFetchPromises.delete(limit);
+  });
+  recentPlayRecordsFetchPromises.set(limit, request);
+  return request;
+}
+
+async function fetchAndCachePlayRecords(): Promise<Record<string, PlayRecord>> {
+  const requestVersion = playRecordsMutationVersion;
+  const freshData = await requestPlayRecordsFromApi();
+
+  if (requestVersion === playRecordsMutationVersion) {
+    cacheManager.cachePlayRecords(freshData);
+  }
+
+  return freshData;
+}
+
+async function getPlayRecordsMutationBase(): Promise<
+  Record<string, PlayRecord>
+> {
+  const cachedData = cacheManager.getCachedPlayRecords();
+  if (cachedData) {
+    return { ...cachedData };
+  }
+
+  try {
+    return { ...(await fetchAndCachePlayRecords()) };
+  } catch (err) {
+    console.warn('获取播放记录缓存基线失败:', err);
+    return {};
+  }
+}
+
+function syncPlayRecordsInBackground(
+  cachedData: Record<string, PlayRecord>
+): void {
+  const requestVersion = playRecordsMutationVersion;
+
+  requestPlayRecordsFromApi()
+    .then((freshData) => {
+      if (
+        requestVersion === playRecordsMutationVersion &&
+        JSON.stringify(cachedData) !== JSON.stringify(freshData)
+      ) {
+        cacheManager.cachePlayRecords(freshData);
+        emitPlayRecordsUpdated(freshData);
+      }
+    })
+    .catch((err) => {
+      console.warn('后台同步播放记录失败:', err);
+    });
+}
+
+function syncRecentPlayRecordsInBackground(
+  limit: number,
+  cachedData: Record<string, PlayRecord>
+): void {
+  const requestVersion = playRecordsMutationVersion;
+
+  requestRecentPlayRecordsFromApi(limit)
+    .then((freshData) => {
+      if (
+        requestVersion === playRecordsMutationVersion &&
+        JSON.stringify(cachedData) !== JSON.stringify(freshData)
+      ) {
+        emitPlayRecordsUpdated(freshData);
+      }
+    })
+    .catch((err) => {
+      console.warn('后台同步最近播放记录失败:', err);
+    });
+}
 
 function emitFavoritesUpdated(favorites: Record<string, Favorite>): void {
   window.dispatchEvent(
@@ -458,9 +575,7 @@ async function fetchAndCacheFavorites(): Promise<Record<string, Favorite>> {
   return freshData;
 }
 
-function syncFavoritesInBackground(
-  cachedData: Record<string, Favorite>
-): void {
+function syncFavoritesInBackground(cachedData: Record<string, Favorite>): void {
   const requestVersion = favoritesMutationVersion;
 
   requestFavoritesFromApi()
@@ -504,32 +619,13 @@ export async function getAllPlayRecords(): Promise<Record<string, PlayRecord>> {
 
     if (cachedData) {
       // 返回缓存数据，同时后台异步更新
-      fetchFromApi<Record<string, PlayRecord>>(`/api/playrecords`)
-        .then((freshData) => {
-          // 只有数据真正不同时才更新缓存
-          if (JSON.stringify(cachedData) !== JSON.stringify(freshData)) {
-            cacheManager.cachePlayRecords(freshData);
-            // 触发数据更新事件，供组件监听
-            window.dispatchEvent(
-              new CustomEvent('playRecordsUpdated', {
-                detail: freshData,
-              })
-            );
-          }
-        })
-        .catch((err) => {
-          console.warn('后台同步播放记录失败:', err);
-        });
+      syncPlayRecordsInBackground(cachedData);
 
       return cachedData;
     } else {
       // 缓存为空，直接从 API 获取并缓存
       try {
-        const freshData = await fetchFromApi<Record<string, PlayRecord>>(
-          `/api/playrecords`
-        );
-        cacheManager.cachePlayRecords(freshData);
-        return freshData;
+        return await fetchAndCachePlayRecords();
       } catch (err) {
         console.error('获取播放记录失败:', err);
         return {};
@@ -550,6 +646,33 @@ export async function getAllPlayRecords(): Promise<Record<string, PlayRecord>> {
   }
 }
 
+export async function getRecentPlayRecords(
+  limit: number
+): Promise<Record<string, PlayRecord>> {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  if (STORAGE_TYPE !== 'localstorage') {
+    const cachedData = cacheManager.getCachedPlayRecords();
+
+    if (cachedData) {
+      const recentData = getRecentPlayRecordsFromAll(cachedData, limit);
+      syncRecentPlayRecordsInBackground(limit, recentData);
+      return recentData;
+    }
+
+    try {
+      return await requestRecentPlayRecordsFromApi(limit);
+    } catch (err) {
+      console.error('获取最近播放记录失败:', err);
+      return {};
+    }
+  }
+
+  return getRecentPlayRecordsFromAll(await getAllPlayRecords(), limit);
+}
+
 /**
  * 保存播放记录。
  * 数据库存储模式下使用乐观更新：先更新缓存（立即生效），再异步同步到数据库。
@@ -566,17 +689,14 @@ export async function savePlayRecord(
 
   // 数据库存储模式：乐观更新策略（包括 redis、d1、upstash）
   if (STORAGE_TYPE !== 'localstorage') {
+    markPlayRecordsMutated();
     // 立即更新缓存
-    const cachedRecords = cacheManager.getCachedPlayRecords() || {};
+    const cachedRecords = await getPlayRecordsMutationBase();
     cachedRecords[key] = record;
     cacheManager.cachePlayRecords(cachedRecords);
 
     // 触发立即更新事件
-    window.dispatchEvent(
-      new CustomEvent('playRecordsUpdated', {
-        detail: cachedRecords,
-      })
-    );
+    emitPlayRecordsUpdated(cachedRecords);
 
     // 异步同步到数据库
     try {
@@ -609,11 +729,7 @@ export async function savePlayRecord(
     const allRecords = await getAllPlayRecords();
     allRecords[key] = record;
     localStorage.setItem(PLAY_RECORDS_KEY, JSON.stringify(allRecords));
-    window.dispatchEvent(
-      new CustomEvent('playRecordsUpdated', {
-        detail: allRecords,
-      })
-    );
+    emitPlayRecordsUpdated(allRecords);
   } catch (err) {
     console.error('保存播放记录失败:', err);
     throw err;
@@ -632,17 +748,14 @@ export async function deletePlayRecord(
 
   // 数据库存储模式：乐观更新策略（包括 redis、d1、upstash）
   if (STORAGE_TYPE !== 'localstorage') {
+    markPlayRecordsMutated();
     // 立即更新缓存
-    const cachedRecords = cacheManager.getCachedPlayRecords() || {};
+    const cachedRecords = await getPlayRecordsMutationBase();
     delete cachedRecords[key];
     cacheManager.cachePlayRecords(cachedRecords);
 
     // 触发立即更新事件
-    window.dispatchEvent(
-      new CustomEvent('playRecordsUpdated', {
-        detail: cachedRecords,
-      })
-    );
+    emitPlayRecordsUpdated(cachedRecords);
 
     // 异步同步到数据库
     try {
@@ -670,11 +783,7 @@ export async function deletePlayRecord(
     const allRecords = await getAllPlayRecords();
     delete allRecords[key];
     localStorage.setItem(PLAY_RECORDS_KEY, JSON.stringify(allRecords));
-    window.dispatchEvent(
-      new CustomEvent('playRecordsUpdated', {
-        detail: allRecords,
-      })
-    );
+    emitPlayRecordsUpdated(allRecords);
   } catch (err) {
     console.error('删除播放记录失败:', err);
     throw err;
@@ -1109,15 +1218,12 @@ export async function isFavorited(
 export async function clearAllPlayRecords(): Promise<void> {
   // 数据库存储模式：乐观更新策略（包括 redis、d1、upstash）
   if (STORAGE_TYPE !== 'localstorage') {
+    markPlayRecordsMutated();
     // 立即更新缓存
     cacheManager.cachePlayRecords({});
 
     // 触发立即更新事件
-    window.dispatchEvent(
-      new CustomEvent('playRecordsUpdated', {
-        detail: {},
-      })
-    );
+    emitPlayRecordsUpdated({});
 
     // 异步同步到数据库
     try {
@@ -1137,11 +1243,7 @@ export async function clearAllPlayRecords(): Promise<void> {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(PLAY_RECORDS_KEY);
   localStorage.removeItem(LEGACY_PLAY_RECORDS_KEY);
-  window.dispatchEvent(
-    new CustomEvent('playRecordsUpdated', {
-      detail: {},
-    })
-  );
+  emitPlayRecordsUpdated({});
 }
 
 /**

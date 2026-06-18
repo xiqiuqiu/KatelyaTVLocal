@@ -118,6 +118,31 @@ describe('VideoCard', () => {
     );
   });
 
+  it('encodes playback route query params so special source ids round-trip', () => {
+    render(
+      <VideoCard
+        id='video+part&episode#1=final'
+        source='source+special'
+        title='示例 & 影片'
+        poster='https://example.com/poster.jpg'
+        episodes={12}
+        source_name='测试源'
+        year='2026&special'
+        from='playrecord'
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开 示例 & 影片' }));
+
+    const href = push.mock.calls[0][0] as string;
+    const url = new URL(href, 'https://app.example.com');
+    expect(url.searchParams.get('source')).toBe('source+special');
+    expect(url.searchParams.get('id')).toBe('video+part&episode#1=final');
+    expect(url.searchParams.get('title')).toBe('示例 & 影片');
+    expect(url.searchParams.get('year')).toBe('2026&special');
+    expect(url.searchParams.get('from')).toBe('playrecord');
+  });
+
   it('shows immediate opening feedback and blocks repeated card opens', async () => {
     render(
       <VideoCard
