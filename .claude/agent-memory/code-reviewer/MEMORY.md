@@ -3,3 +3,4 @@
 - [localStorage Race Condition](localstorage_race_condition.md) — `rememberSourceDomainPreference` read-modify-write not atomic under concurrent probe calls
 - [Global Type for RUNTIME_CONFIG Not Used](global_type_issue.md) — Uses `(window as any).RUNTIME_CONFIG` despite declared global augmentation in types.ts
 - [Review Output in Docs Markdown](feedback_review_output_docs.md) — For code reviews, save deliverables as docs/*.md reports.
+- [Recent Playrecords Partial Cache Regression](recent_playrecords_partial_cache_regression.md) — Recent-only load can break optimistic playrecord mutations.

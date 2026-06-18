@@ -1,11 +1,11 @@
 /* eslint-disable no-console */
 'use client';
 
+import { ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import type { PlayRecord } from '@/lib/db.client';
 import {
-  clearAllPlayRecords,
   deletePlayRecord,
   getRecentPlayRecords,
   subscribeToDataUpdates,
@@ -92,13 +92,9 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
       <SectionHeader
         action={
           !loading && playRecords.length > 0 ? (
-            <ActionLink
-              onClick={async () => {
-                await clearAllPlayRecords();
-                setPlayRecords([]);
-              }}
-            >
-              清空
+            <ActionLink href='/history'>
+              更多
+              <ChevronRight className='h-4 w-4' />
             </ActionLink>
           ) : null
         }
