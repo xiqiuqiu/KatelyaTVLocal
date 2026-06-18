@@ -3595,6 +3595,12 @@ function PlayPageClient() {
                 debug: false, // 关闭日志
                 enableWorker: true, // WebWorker 解码，降低主线程压力
                 lowLatencyMode: false, // 点播场景优先稳定性，避免低缓冲导致频繁卡顿
+                manifestLoadingTimeOut: 8000,
+                manifestLoadingMaxRetry: 0,
+                levelLoadingTimeOut: 8000,
+                levelLoadingMaxRetry: 0,
+                fragLoadingTimeOut: 12000,
+                fragLoadingMaxRetry: 1,
 
                 /* 缓冲/内存相关 */
                 maxBufferLength: 60, // 增大前向缓冲，提升波动网络下的连续播放稳定性

@@ -103,6 +103,28 @@ describe('getHlsRecoveryPlan', () => {
     });
   });
 
+  it('switches source immediately when a manifest times out before playback starts', () => {
+    expect(
+      getHlsRecoveryPlan({
+        fatal: true,
+        errorType: 'networkError',
+        errorDetails: 'manifestLoadTimeOut',
+        playbackMode: 'direct',
+        stallCount: 0,
+        stallWindowCount: 0,
+        networkRecoveryAttempts: 0,
+        mediaRecoveryAttempts: 0,
+        hasAlternativeSource: true,
+        hasStartedPlayback: false,
+        currentTimeSeconds: 0,
+        readyState: 0,
+      })
+    ).toEqual({
+      action: 'switch-source',
+      reason: '当前线路起播失败，切换到其他播放源',
+    });
+  });
+
   it('does not switch source for startup manifest failure when no alternative source exists', () => {
     expect(
       getHlsRecoveryPlan({
