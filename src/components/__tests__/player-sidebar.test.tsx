@@ -421,6 +421,215 @@ describe('EpisodeSelector playback sidebar controls', () => {
     });
   });
 
+  it('unlocks an unavailable source when backend preference reports playable metrics', async () => {
+    mockedFetchSourcePreferencesInBatches.mockResolvedValueOnce({
+      orderedSourceKeys: ['source-b-b'],
+      results: [
+        {
+          sourceKey: 'source-b-b',
+          kind: 'direct',
+          reason: '后端首段探测通过',
+          rankingSource: 'd1',
+          qualityLabel: '1080p',
+          speedKbps: 2450,
+          latencyMs: 280,
+        },
+      ],
+      generatedAt: 1710000000000,
+      rankingSource: 'd1',
+      confidence: 'medium',
+    });
+    const handleSourceChange = jest.fn();
+    const availableSources: SearchResult[] = [
+      {
+        id: 'a',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'b',
+        source: 'source-b',
+        title: 'backend rescued source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/b.m3u8'],
+        source_name: '后端救援源',
+      },
+    ];
+    const sourceStatuses = new Map<string, SourceStatus>([
+      [
+        'source-b-b',
+        createSourceStatus('unavailable', {
+          reason: '该源近期在本机不可用',
+          fromMemory: true,
+        }),
+      ],
+    ]);
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+        precomputedSourceStatuses={sourceStatuses}
+        onSourceChange={handleSourceChange}
+      />
+    );
+
+    const rescuedButton = await screen.findByRole('button', {
+      name: '切换线路 后端救援源',
+    });
+
+    await waitFor(() => {
+      expect(rescuedButton).not.toBeDisabled();
+    });
+    expect(within(rescuedButton).getByText('1080p')).toBeInTheDocument();
+    expect(within(rescuedButton).getByText('可切换')).toBeInTheDocument();
+
+    fireEvent.click(rescuedButton);
+
+    expect(handleSourceChange).toHaveBeenCalledWith(
+      'source-b',
+      'b',
+      'backend rescued source'
+    );
+  });
+
+  it('keeps an unavailable source disabled when backend confirms it is unavailable', async () => {
+    mockedFetchSourcePreferencesInBatches.mockResolvedValueOnce({
+      orderedSourceKeys: ['source-b-b'],
+      results: [
+        {
+          sourceKey: 'source-b-b',
+          kind: 'unavailable',
+          reason: '上游响应失败: 403',
+          rankingSource: 'd1',
+        },
+      ],
+      generatedAt: 1710000000000,
+      rankingSource: 'd1',
+      confidence: 'medium',
+    });
+    const handleSourceChange = jest.fn();
+    const availableSources: SearchResult[] = [
+      {
+        id: 'a',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'b',
+        source: 'source-b',
+        title: 'backend unavailable source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/b.m3u8'],
+        source_name: '后端不可用源',
+      },
+    ];
+    const sourceStatuses = new Map<string, SourceStatus>([
+      [
+        'source-b-b',
+        createSourceStatus('unavailable', {
+          reason: '该源近期在本机不可用',
+          fromMemory: true,
+        }),
+      ],
+    ]);
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+        precomputedSourceStatuses={sourceStatuses}
+        onSourceChange={handleSourceChange}
+      />
+    );
+
+    const unavailableButton = await screen.findByRole('button', {
+      name: '切换线路 后端不可用源',
+    });
+
+    await waitFor(() => {
+      expect(unavailableButton).toBeDisabled();
+    });
+
+    fireEvent.click(unavailableButton);
+
+    expect(handleSourceChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps a source without an episode URL disabled even when memory says it was playable', async () => {
+    const handleSourceChange = jest.fn();
+    const availableSources: SearchResult[] = [
+      {
+        id: 'a',
+        source: 'source-a',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://example.com/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'b',
+        source: 'source-b',
+        title: 'missing episode source',
+        year: '2026',
+        poster: '',
+        episodes: [],
+        source_name: '空剧集源',
+      },
+    ];
+    const sourceStatuses = new Map<string, SourceStatus>([
+      [
+        'source-b-b',
+        createSourceStatus('direct', {
+          reason: '本机近期播放流畅',
+          playbackMode: 'direct',
+          fromMemory: true,
+        }),
+      ],
+    ]);
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+        precomputedSourceStatuses={sourceStatuses}
+        onSourceChange={handleSourceChange}
+      />
+    );
+
+    const missingEpisodeButton = await screen.findByRole('button', {
+      name: '切换线路 空剧集源',
+    });
+
+    await waitFor(() => {
+      expect(missingEpisodeButton).toBeDisabled();
+    });
+
+    fireEvent.click(missingEpisodeButton);
+
+    expect(handleSourceChange).not.toHaveBeenCalled();
+  });
+
   it('requests a second visible-first backend metric refresh without blocking clicks', async () => {
     mockedFetchSourcePreferencesInBatches
       .mockResolvedValueOnce({

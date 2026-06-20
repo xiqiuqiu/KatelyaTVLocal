@@ -179,6 +179,69 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     []
   );
 
+  const hasBackendRescueMetrics = useCallback(
+    (
+      videoInfo: SourceVideoInfo | null | undefined
+    ): videoInfo is SourceVideoInfo =>
+      Boolean(
+        videoInfo &&
+          !videoInfo.hasError &&
+          videoInfo.speedSource === 'backend' &&
+          !videoInfo.speedPending
+      ),
+    []
+  );
+
+  const createBackendRescuedStatus = useCallback(
+    (
+      previousStatus: SourceStatus | null | undefined,
+      videoInfo: SourceVideoInfo
+    ) =>
+      createPlayableSourceStatus({
+        reason: '后端测速可用，可尝试播放',
+        playbackMode: previousStatus?.playbackMode || 'direct',
+        domain: previousStatus?.domain || null,
+        measured: videoInfo,
+        updatedAt: Math.max(
+          previousStatus?.updatedAt || 0,
+          videoInfo.speedUpdatedAt || Date.now()
+        ),
+        rankingSource: previousStatus?.rankingSource,
+        rankScore: previousStatus?.rankScore,
+      }),
+    []
+  );
+
+  const getBackendRescuedStatus = useCallback(
+    (sourceKey: string, status: SourceStatus | null | undefined) => {
+      if (status?.kind !== 'unavailable') {
+        return null;
+      }
+
+      const videoInfo = videoInfoMapRef.current.get(sourceKey);
+      if (!hasBackendRescueMetrics(videoInfo)) {
+        return null;
+      }
+
+      return createBackendRescuedStatus(status, videoInfo);
+    },
+    [createBackendRescuedStatus, hasBackendRescueMetrics]
+  );
+
+  const canBackendPreferenceRescueUnavailable = useCallback(
+    (
+      previousStatus: SourceStatus | null | undefined,
+      result: Awaited<
+        ReturnType<typeof fetchSourcePreferencesInBatches>
+      >['results'][number],
+      measured: SourceVideoInfo | null
+    ) =>
+      previousStatus?.kind === 'unavailable' &&
+      result.kind !== 'unavailable' &&
+      hasBackendRescueMetrics(measured),
+    [hasBackendRescueMetrics]
+  );
+
   const probeSourceDirectPlayback = useCallback(
     async (source: SearchResult) => {
       const sourceKey = getSourceIdentityKey(source.source, source.id);
@@ -226,7 +289,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         knownStatus?.kind === 'proxy' ||
         knownStatus?.kind === 'unavailable'
       ) {
-        return knownStatus;
+        return getBackendRescuedStatus(sourceKey, knownStatus) || knownStatus;
       }
 
       const serverProbeResult =
@@ -383,7 +446,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         return playableStatus;
       }
     },
-    [getPlaybackProbePlatform, value]
+    [getBackendRescuedStatus, getPlaybackProbePlatform, value]
   );
 
   const getAutoProbeCandidates = useCallback(() => {
@@ -435,7 +498,12 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         return;
       }
 
+      if (!source.episodes || source.episodes.length === 0) {
+        return;
+      }
+
       let status = sourceStatusMapRef.current.get(sourceKey);
+      status = getBackendRescuedStatus(sourceKey, status) || status;
       if (!status || status.kind === 'idle') {
         status = await probeSourceDirectPlayback(source);
       }
@@ -446,7 +514,13 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
       onSourceChange?.(source.source, source.id, source.title);
     },
-    [currentId, currentSource, onSourceChange, probeSourceDirectPlayback]
+    [
+      currentId,
+      currentSource,
+      getBackendRescuedStatus,
+      onSourceChange,
+      probeSourceDirectPlayback,
+    ]
   );
 
   useEffect(() => {
@@ -708,8 +782,14 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
         results.forEach((result) => {
           const previousStatus = next.get(result.sourceKey);
+          const measured = buildVideoInfoFromPreferenceResult(result);
           if (
             !canReplaceSourceStatus(previousStatus) &&
+            !canBackendPreferenceRescueUnavailable(
+              previousStatus,
+              result,
+              measured
+            ) &&
             result.kind !== 'unavailable'
           ) {
             return;
@@ -722,7 +802,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
               playbackMode:
                 result.kind === 'unavailable' ? undefined : result.kind,
               domain: result.domain || previousStatus?.domain || null,
-              measured: buildVideoInfoFromPreferenceResult(result) || undefined,
+              measured: measured || undefined,
               updatedAt: result.updatedAt,
               rankingSource: result.rankingSource,
               rankScore: result.rankScore,
@@ -795,7 +875,14 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         visibleSources.forEach((source) => {
           const previousStatus = next.get(source.sourceKey);
           previousStatusByKey.set(source.sourceKey, previousStatus);
-          if (previousStatus?.kind === 'unavailable') {
+          const backendRescuedStatus = getBackendRescuedStatus(
+            source.sourceKey,
+            previousStatus
+          );
+          if (
+            previousStatus?.kind === 'unavailable' &&
+            !backendRescuedStatus
+          ) {
             return;
           }
 
@@ -803,11 +890,18 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             source.sourceKey,
             createSourceStatus('probing', {
               reason: '后端测速中，可切换',
-              playbackMode: previousStatus?.playbackMode || 'direct',
-              domain: previousStatus?.domain || null,
-              measured: previousStatus?.measured,
-              rankingSource: previousStatus?.rankingSource,
-              rankScore: previousStatus?.rankScore,
+              playbackMode:
+                backendRescuedStatus?.playbackMode ||
+                previousStatus?.playbackMode ||
+                'direct',
+              domain:
+                backendRescuedStatus?.domain || previousStatus?.domain || null,
+              measured: backendRescuedStatus?.measured || previousStatus?.measured,
+              rankingSource:
+                backendRescuedStatus?.rankingSource ||
+                previousStatus?.rankingSource,
+              rankScore:
+                backendRescuedStatus?.rankScore ?? previousStatus?.rankScore,
             })
           );
         });
@@ -908,8 +1002,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     activeTab,
     availableSources,
     canReplaceSourceStatus,
+    canBackendPreferenceRescueUnavailable,
     currentSourceKey,
     getKnownSourceStatus,
+    getBackendRescuedStatus,
     sourceSelectionScores,
     value,
   ]);
@@ -1239,12 +1335,21 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                       source.id
                     );
                     const sourceStatus = getSourceStatus(source);
-                    const isClickable =
-                      !isCurrentSource && isSourceStatusClickable(sourceStatus);
-                    const statusLabel = sourceStatus
-                      ? getSourceStatusLabel(sourceStatus)
-                      : '待检测';
                     const videoInfo = videoInfoMap.get(sourceKey);
+                    const sourceHasEpisodeUrl = source.episodes.length > 0;
+                    const effectiveSourceStatus =
+                      sourceHasEpisodeUrl &&
+                      sourceStatus?.kind === 'unavailable' &&
+                      hasBackendRescueMetrics(videoInfo)
+                        ? createBackendRescuedStatus(sourceStatus, videoInfo)
+                        : sourceStatus;
+                    const isClickable =
+                      !isCurrentSource &&
+                      sourceHasEpisodeUrl &&
+                      isSourceStatusClickable(effectiveSourceStatus);
+                    const statusLabel = effectiveSourceStatus
+                      ? getSourceStatusLabel(effectiveSourceStatus)
+                      : '待检测';
                     const qualityLabel =
                       videoInfo &&
                       !videoInfo.hasError &&
@@ -1254,11 +1359,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                         : null;
 
                     const statusClassName = (() => {
-                      if (!sourceStatus) {
+                      if (!effectiveSourceStatus) {
                         return 'bg-[rgb(var(--ui-border))] text-[rgb(var(--ui-text-muted))]';
                       }
 
-                      switch (sourceStatus.kind) {
+                      switch (effectiveSourceStatus.kind) {
                         case 'direct':
                           return 'bg-[rgba(var(--ui-success),0.16)] text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]';
                         case 'proxy':
@@ -1275,7 +1380,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     })();
 
                     const sourceStatusText = getSourceStatusDescription(
-                      sourceStatus,
+                      effectiveSourceStatus,
                       videoInfo
                     );
 
