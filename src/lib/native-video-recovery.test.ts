@@ -369,6 +369,70 @@ describe('getNativeRecoveryAction', () => {
     });
   });
 
+  it('switches source early for high-confidence jitter stalls', () => {
+    expect(
+      getNativeRecoveryAction({
+        severity: 'soft-stall',
+        playIntent: 'playing',
+        browserAutoplayLocked: false,
+        hasAlternativeSource: true,
+        sourceRecoveryAttempts: 0,
+        jitterWindowCount: 2,
+      })
+    ).toEqual({
+      action: 'switch-source',
+      reason: '原生播放器连续缓冲抖动且长时间未推进，切换到其他播放源',
+    });
+  });
+
+  it('does not let high-confidence jitter override a user pause', () => {
+    expect(
+      getNativeRecoveryAction({
+        severity: 'soft-stall',
+        playIntent: 'paused',
+        browserAutoplayLocked: false,
+        hasAlternativeSource: true,
+        sourceRecoveryAttempts: 0,
+        jitterWindowCount: 2,
+      })
+    ).toEqual({
+      action: 'observe',
+      reason: '用户暂停播放，停止自动恢复',
+    });
+  });
+
+  it('does not let high-confidence jitter override browser autoplay lock', () => {
+    expect(
+      getNativeRecoveryAction({
+        severity: 'soft-stall',
+        playIntent: 'playing',
+        browserAutoplayLocked: true,
+        hasAlternativeSource: true,
+        sourceRecoveryAttempts: 0,
+        jitterWindowCount: 2,
+      })
+    ).toEqual({
+      action: 'observe',
+      reason: '浏览器阻止自动播放，等待用户手动继续',
+    });
+  });
+
+  it('keeps observing high-confidence jitter when there is no alternative source', () => {
+    expect(
+      getNativeRecoveryAction({
+        severity: 'soft-stall',
+        playIntent: 'playing',
+        browserAutoplayLocked: false,
+        hasAlternativeSource: false,
+        sourceRecoveryAttempts: 0,
+        jitterWindowCount: 2,
+      })
+    ).toEqual({
+      action: 'observe',
+      reason: '原生播放器短暂缓冲，继续观察',
+    });
+  });
+
   it('switches source immediately for source failed state', () => {
     expect(
       getNativeRecoveryAction({
@@ -411,6 +475,16 @@ describe('shouldReportNativePlaybackFailureFeedback', () => {
       shouldReportNativePlaybackFailureFeedback({
         severity: 'soft-stall',
         action: 'observe',
+        sourceRecoveryAttempts: 0,
+      })
+    ).toBe(false);
+  });
+
+  it('does not report an early jitter source switch as source failure feedback', () => {
+    expect(
+      shouldReportNativePlaybackFailureFeedback({
+        severity: 'soft-stall',
+        action: 'switch-source',
         sourceRecoveryAttempts: 0,
       })
     ).toBe(false);

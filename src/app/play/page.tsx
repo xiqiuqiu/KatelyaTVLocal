@@ -2381,6 +2381,7 @@ function PlayPageClient() {
       browserAutoplayLocked: state.browserAutoplayLocked,
       hasAlternativeSource: Boolean(getNextRecoverySource()),
       sourceRecoveryAttempts: state.sourceRecoveryAttempts,
+      jitterWindowCount: state.jitterWindowCount,
     });
     const details = {
       reason,
@@ -2396,6 +2397,7 @@ function PlayPageClient() {
       browserAutoplayLocked: state.browserAutoplayLocked,
       stallObservedForMs: stalledForMs,
       sourceRecoveryAttempts: state.sourceRecoveryAttempts,
+      jitterWindowCount: state.jitterWindowCount,
     };
     const failureSessionError =
       severity === 'source-failed' ? 'ios-source-failed' : 'ios-native-stall';

@@ -3,6 +3,7 @@ export const NATIVE_PLAY_RESUME_GRACE_MS = 10000;
 export const NATIVE_HARD_STALL_THRESHOLD_MS = 30000;
 export const NATIVE_WATCHDOG_INTERVAL_MS = 3000;
 export const NATIVE_JITTER_WINDOW_MS = 30000;
+export const NATIVE_CRITICAL_JITTER_WINDOW_COUNT = 2;
 
 export type NativePlaybackIntent = 'playing' | 'paused';
 export type NativeJitterEventType = 'waiting' | 'stalled' | 'suspend';
@@ -84,6 +85,7 @@ interface NativeRecoveryActionInput {
   browserAutoplayLocked: boolean;
   hasAlternativeSource: boolean;
   sourceRecoveryAttempts: number;
+  jitterWindowCount?: number;
 }
 
 interface NativePlaybackFailureFeedbackInput {
@@ -203,6 +205,7 @@ export function getNativeRecoveryAction({
   browserAutoplayLocked,
   hasAlternativeSource,
   sourceRecoveryAttempts,
+  jitterWindowCount = 0,
 }: NativeRecoveryActionInput): NativeRecoveryActionDecision {
   if (browserAutoplayLocked) {
     return {
@@ -228,6 +231,18 @@ export function getNativeRecoveryAction({
           action: 'observe',
           reason: '原生播放器判定当前媒体源不可用，但没有其他播放源',
         };
+  }
+
+  if (
+    (severity === 'soft-stall' || severity === 'hard-stall') &&
+    hasAlternativeSource &&
+    sourceRecoveryAttempts <= 0 &&
+    jitterWindowCount >= NATIVE_CRITICAL_JITTER_WINDOW_COUNT
+  ) {
+    return {
+      action: 'switch-source',
+      reason: '原生播放器连续缓冲抖动且长时间未推进，切换到其他播放源',
+    };
   }
 
   if (severity === 'hard-stall') {
