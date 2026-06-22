@@ -9,3 +9,6 @@ A user's active attempt to watch one selected title through one playable source 
 
 **Ad Skip Window**:
 A time range in an HLS playback timeline that the system has identified as safe to skip automatically during a Playback Session. An Ad Skip Window is distinct from ordinary seeking because it represents a system decision to bypass detected advertising content, not a user navigation action or progress recovery.
+
+**Source Availability**:
+The system's current judgement of whether a candidate source can be shown, tried manually, or selected automatically during a Playback Session. Source Availability is derived from source status, playback evidence, remembered preferences, measured speed, and the current episode position. Source Availability is a decision model, not the probing or storage mechanism that gathers evidence.

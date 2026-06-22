@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { detectPlaybackProbePlatform } from '@/lib/hls-playback-policy';
+import { buildSourceAvailabilityList } from '@/lib/source-availability/index';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import { buildVideoInfoFromPreferenceResult } from '@/lib/source-preference-video-info';
 import {
@@ -26,7 +27,6 @@ import {
   getSourceStatusDescription,
   getSourceStatusLabel,
   getVideoResolutionFromM3u8,
-  isSourceStatusClickable,
   probeSourcePlayback,
   rememberSourceDomainPreference,
   rememberSourcePlaybackQuality,
@@ -128,13 +128,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     currentSource && currentId
       ? getSourceIdentityKey(currentSource, currentId)
       : null;
-
-  // 获取视频信息的函数
-  const getSourceStatus = useCallback((source: SearchResult) => {
-    return sourceStatusMapRef.current.get(
-      getSourceIdentityKey(source.source, source.id)
-    );
-  }, []);
 
   const canReplaceSourceStatus = useCallback(
     (status: SourceStatus | null | undefined) =>
@@ -490,37 +483,34 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   const handleSourceCardClick = useCallback(
     async (source: SearchResult) => {
       const sourceKey = getSourceIdentityKey(source.source, source.id);
-      const isCurrentSource =
-        source.source?.toString() === currentSource?.toString() &&
-        source.id?.toString() === currentId?.toString();
-
-      if (isCurrentSource) {
-        return;
-      }
-
-      if (!source.episodes || source.episodes.length === 0) {
-        return;
-      }
-
+      const currentEpisodeIndex = Math.max(0, value - 1);
       let status = sourceStatusMapRef.current.get(sourceKey);
-      status = getBackendRescuedStatus(sourceKey, status) || status;
-      if (!status || status.kind === 'idle') {
+      let availability = buildSourceAvailabilityList({
+        sources: [source],
+        currentSourceKey,
+        currentEpisodeIndex,
+        statuses: sourceStatusMapRef.current,
+        measured: videoInfoMapRef.current,
+      })[0];
+
+      if (availability.manualSwitch.mode === 'probe-first') {
         status = await probeSourceDirectPlayback(source);
+        availability = buildSourceAvailabilityList({
+          sources: [source],
+          currentSourceKey,
+          currentEpisodeIndex,
+          statuses: new Map(sourceStatusMapRef.current).set(sourceKey, status),
+          measured: videoInfoMapRef.current,
+        })[0];
       }
 
-      if (!isSourceStatusClickable(status)) {
+      if (availability.manualSwitch.mode !== 'switch-now') {
         return;
       }
 
       onSourceChange?.(source.source, source.id, source.title);
     },
-    [
-      currentId,
-      currentSource,
-      getBackendRescuedStatus,
-      onSourceChange,
-      probeSourceDirectPlayback,
-    ]
+    [currentSourceKey, onSourceChange, probeSourceDirectPlayback, value]
   );
 
   useEffect(() => {
@@ -879,10 +869,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             source.sourceKey,
             previousStatus
           );
-          if (
-            previousStatus?.kind === 'unavailable' &&
-            !backendRescuedStatus
-          ) {
+          if (previousStatus?.kind === 'unavailable' && !backendRescuedStatus) {
             return;
           }
 
@@ -896,7 +883,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                 'direct',
               domain:
                 backendRescuedStatus?.domain || previousStatus?.domain || null,
-              measured: backendRescuedStatus?.measured || previousStatus?.measured,
+              measured:
+                backendRescuedStatus?.measured || previousStatus?.measured,
               rankingSource:
                 backendRescuedStatus?.rankingSource ||
                 previousStatus?.rankingSource,
@@ -1109,6 +1097,15 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     'rounded-full bg-[rgb(var(--ui-border))] px-1.5 py-0.5 text-[9px] font-bold leading-none text-[rgb(var(--ui-text))] ring-1 ring-[rgba(var(--ui-text),0.1)]';
   const metaChipClass =
     'rounded-full bg-[rgb(var(--ui-border))] px-2 py-0.5 text-[11px] font-medium text-[rgb(var(--ui-text-muted))]';
+  const currentEpisodeIndex = Math.max(0, value - 1);
+  const sourceAvailabilityList = buildSourceAvailabilityList({
+    sources: availableSources,
+    currentSourceKey,
+    currentEpisodeIndex,
+    statuses: sourceStatusMap,
+    measured: videoInfoMap,
+    sourceSelectionScores,
+  });
 
   return (
     <div className='flex max-h-[640px] min-h-[260px] flex-col overflow-hidden rounded-ui-lg border border-white/10 bg-[linear-gradient(180deg,rgba(var(--ui-surface-strong),0.64),rgba(var(--ui-surface),0.42))] p-3 text-[rgb(var(--ui-text))] shadow-[0_18px_48px_rgba(0,0,0,0.18)] sm:p-4'>
@@ -1321,32 +1318,13 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             availableSources.length > 0 && (
               <div className='flex min-h-0 flex-1 flex-col'>
                 <div className='grid flex-1 grid-cols-1 gap-2 overflow-y-auto pb-3 pr-0.5 sm:grid-cols-2 2xl:grid-cols-1'>
-                  {sortSourcesBySelectionScore(
-                    availableSources,
-                    sourceSelectionScores || new Map(),
-                    (source) => getSourceIdentityKey(source.source, source.id),
-                    currentSourceKey
-                  ).map((source) => {
-                    const isCurrentSource =
-                      source.source?.toString() === currentSource?.toString() &&
-                      source.id?.toString() === currentId?.toString();
-                    const sourceKey = getSourceIdentityKey(
-                      source.source,
-                      source.id
-                    );
-                    const sourceStatus = getSourceStatus(source);
-                    const videoInfo = videoInfoMap.get(sourceKey);
-                    const sourceHasEpisodeUrl = source.episodes.length > 0;
-                    const effectiveSourceStatus =
-                      sourceHasEpisodeUrl &&
-                      sourceStatus?.kind === 'unavailable' &&
-                      hasBackendRescueMetrics(videoInfo)
-                        ? createBackendRescuedStatus(sourceStatus, videoInfo)
-                        : sourceStatus;
+                  {sourceAvailabilityList.map((availability) => {
+                    const { source, sourceKey } = availability;
+                    const isCurrentSource = availability.isCurrent;
+                    const videoInfo = availability.measured;
+                    const effectiveSourceStatus = availability.effectiveStatus;
                     const isClickable =
-                      !isCurrentSource &&
-                      sourceHasEpisodeUrl &&
-                      isSourceStatusClickable(effectiveSourceStatus);
+                      availability.manualSwitch.mode === 'switch-now';
                     const statusLabel = effectiveSourceStatus
                       ? getSourceStatusLabel(effectiveSourceStatus)
                       : '待检测';
@@ -1379,10 +1357,12 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                       }
                     })();
 
-                    const sourceStatusText = getSourceStatusDescription(
-                      effectiveSourceStatus,
-                      videoInfo
-                    );
+                    const sourceStatusText = availability.episode.exists
+                      ? getSourceStatusDescription(
+                          effectiveSourceStatus,
+                          videoInfo
+                        )
+                      : availability.manualSwitch.reason;
 
                     return (
                       <button
