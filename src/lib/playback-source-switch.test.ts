@@ -286,10 +286,10 @@ describe('getNextRecoverySourceCandidate', () => {
         recoveredSourceKeys: new Set<string>(['direct-5']),
         currentEpisodeIndex: 2,
       })
-    ).toEqual(candidates[3]);
+    ).toBeUndefined();
   });
 
-  it('keeps probing sources behind known playable recovery candidates', () => {
+  it('does not use proxy, unknown, or probing sources for automatic recovery', () => {
     const unknownCandidates = [
       {
         source: 'proxy',
@@ -317,7 +317,7 @@ describe('getNextRecoverySourceCandidate', () => {
         recoveredSourceKeys: new Set<string>(),
         currentEpisodeIndex: 1,
       })
-    ).toEqual(unknownCandidates[0]);
+    ).toBeUndefined();
   });
 
   it('prefers the highest scored usable recovery source', () => {
@@ -333,6 +333,6 @@ describe('getNextRecoverySourceCandidate', () => {
           return 0;
         },
       })
-    ).toEqual(candidates[3]);
+    ).toEqual(candidates[4]);
   });
 });

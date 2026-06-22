@@ -81,6 +81,12 @@ function getRecoverySourcePriority(
   return 9;
 }
 
+function isAutoRecoveryStatusUsable(
+  statusKind?: RecoverySourceStatusKind | null
+) {
+  return statusKind === 'direct' || statusKind === 'playable';
+}
+
 export function getSourceSwitchTargetEpisodeIndex({
   currentEpisodeIndex,
   episodeCount,
@@ -179,7 +185,7 @@ export function getNextRecoverySourceCandidate<
         return false;
       }
 
-      return getStatusKind(candidate) !== 'unavailable';
+      return isAutoRecoveryStatusUsable(getStatusKind(candidate));
     })
     .sort((a, b) => {
       const scoreA = getCandidateScore?.(a);

@@ -581,6 +581,18 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         precomputedVideoInfo.forEach((info, key) => {
           const previousStatus = next.get(key);
           if (info.hasError) {
+            if (previousStatus?.kind === 'unavailable') {
+              next.set(key, {
+                ...previousStatus,
+                measured: info,
+                updatedAt: Math.max(
+                  previousStatus.updatedAt || 0,
+                  info.speedUpdatedAt || 0
+                ),
+              });
+              return;
+            }
+
             next.set(
               key,
               createPlayableSourceStatus({
