@@ -8,7 +8,11 @@ import {
 
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import type { SearchResult, SourceStatus } from '@/lib/types';
-import { createSourceStatus, probeSourcePlayback } from '@/lib/utils';
+import {
+  createSourceStatus,
+  getVideoResolutionFromM3u8,
+  probeSourcePlayback,
+} from '@/lib/utils';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 
@@ -42,8 +46,19 @@ describe('EpisodeSelector playback sidebar controls', () => {
   const mockedProbeSourcePlayback = probeSourcePlayback as jest.MockedFunction<
     typeof probeSourcePlayback
   >;
+  const mockedGetVideoResolutionFromM3u8 =
+    getVideoResolutionFromM3u8 as jest.MockedFunction<
+      typeof getVideoResolutionFromM3u8
+    >;
 
   beforeEach(() => {
+    mockedProbeSourcePlayback.mockReset();
+    mockedProbeSourcePlayback.mockResolvedValue({
+      kind: 'unavailable',
+      reason: '测试中不探测真实播放源',
+      domain: null,
+    });
+    mockedGetVideoResolutionFromM3u8.mockReset();
     mockedFetchSourcePreferencesInBatches.mockResolvedValue({
       orderedSourceKeys: [],
       results: [],
@@ -1007,6 +1022,87 @@ describe('EpisodeSelector playback sidebar controls', () => {
       'source-b',
       'b',
       'probing source'
+    );
+  });
+
+  it('lets unknown source rows run manual browser probing before switching', async () => {
+    mockedProbeSourcePlayback.mockImplementation(async (url) => {
+      if (url === 'https://manual-probe.test.invalid/b.m3u8') {
+        return {
+          kind: 'direct',
+          reason: '服务端检测通过',
+          domain: 'manual-probe.test.invalid',
+        };
+      }
+
+      return {
+        kind: 'unavailable',
+        reason: '测试中不探测真实播放源',
+        domain: null,
+      };
+    });
+    mockedGetVideoResolutionFromM3u8.mockResolvedValueOnce({
+      quality: '1080p',
+      loadSpeed: '2.0 MB/s',
+      pingTime: 120,
+    });
+    const availableSources: SearchResult[] = [
+      {
+        id: 'current-a',
+        source: 'manual-current',
+        title: 'current source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://manual-current.test.invalid/a.m3u8'],
+        source_name: '当前源',
+      },
+      {
+        id: 'probe-b',
+        source: 'manual-probe',
+        title: 'unknown source',
+        year: '2026',
+        poster: '',
+        episodes: ['https://manual-probe.test.invalid/b.m3u8'],
+        source_name: '待检测源',
+      },
+    ];
+    const handleSourceChange = jest.fn();
+
+    render(
+      <EpisodeSelector
+        totalEpisodes={2}
+        value={1}
+        currentSource='manual-current'
+        currentId='current-a'
+        availableSources={availableSources}
+        onSourceChange={handleSourceChange}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: '线路' }));
+    const unknownButton = screen.getByRole('button', {
+      name: '切换线路 待检测源',
+    });
+
+    expect(unknownButton).not.toBeDisabled();
+    expect(within(unknownButton).getByText('待检测')).toBeInTheDocument();
+
+    mockedProbeSourcePlayback.mockClear();
+    mockedGetVideoResolutionFromM3u8.mockClear();
+    fireEvent.click(unknownButton);
+
+    await waitFor(() => {
+      expect(mockedProbeSourcePlayback).toHaveBeenCalledWith(
+        'https://manual-probe.test.invalid/b.m3u8'
+      );
+      expect(mockedGetVideoResolutionFromM3u8).toHaveBeenCalledWith(
+        'https://manual-probe.test.invalid/b.m3u8'
+      );
+    });
+    expect(handleSourceChange).toHaveBeenCalledWith(
+      'manual-probe',
+      'probe-b',
+      'unknown source'
     );
   });
 });

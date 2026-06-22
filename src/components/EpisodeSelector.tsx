@@ -1336,7 +1336,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                     const videoInfo = availability.measured;
                     const effectiveSourceStatus = availability.effectiveStatus;
                     const isClickable =
-                      availability.manualSwitch.mode === 'switch-now';
+                      availability.manualSwitch.mode !== 'blocked';
                     const statusLabel = effectiveSourceStatus
                       ? getSourceStatusLabel(effectiveSourceStatus)
                       : '待检测';
