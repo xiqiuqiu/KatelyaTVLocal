@@ -70,7 +70,13 @@ export type PlaybackSessionEvent =
       nowMs: number;
       errorCode?: number;
     }
-  | { type: 'timer.sourceChangeTimeout'; attemptId: number; sourceKey: string };
+  | {
+      type: 'timer.sourceChangeTimeout';
+      attemptId: number;
+      sourceKey: string;
+      snapshot: VideoSnapshot;
+      nowMs: number;
+    };
 
 export type PlaybackSessionEffect =
   | {

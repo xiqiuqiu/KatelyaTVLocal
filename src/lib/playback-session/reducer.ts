@@ -271,6 +271,15 @@ export function reducePlaybackSession(
         return { state, effects: [] };
       }
 
-      return { state, effects: [] };
+      return maybeRecoverFromSnapshot(
+        {
+          ...state,
+          sourceChangeInFlight: false,
+          sourceChangeSourceKey: null,
+        },
+        event.snapshot,
+        event.nowMs,
+        'source-timeout'
+      );
   }
 }

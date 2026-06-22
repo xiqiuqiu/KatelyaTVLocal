@@ -72,6 +72,7 @@ import {
 import {
   type PlaybackSessionEffect,
   type PlaybackSessionState,
+  type VideoSnapshot,
   createInitialPlaybackSessionState,
   reducePlaybackSession,
 } from '@/lib/playback-session';
@@ -127,7 +128,7 @@ export const runtime = 'edge';
 
 const SOURCE_PREFERENCE_FAST_BUDGET_MS = 500;
 const SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS = 1800;
-const IOS_NATIVE_SOURCE_CHANGE_TIMEOUT_MS = 25000;
+const SOURCE_CHANGE_TIMEOUT_MS = 25000;
 const PROGRESSIVE_SOURCE_PROBE_STABLE_DELAY_MS = 10000;
 const PROGRESSIVE_SOURCE_PROBE_INTERVAL_MS = 20000;
 const NATIVE_RECENT_BUFFER_ISSUE_WINDOW_MS = 30000;
@@ -622,6 +623,25 @@ function PlayPageClient() {
   const getCurrentSourceKey = () =>
     getSourceIdentityKey(currentSourceRef.current, currentIdRef.current);
 
+  const getCurrentVideoSnapshot = (): VideoSnapshot => {
+    const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+    return {
+      currentTime:
+        typeof video?.currentTime === 'number'
+          ? video.currentTime
+          : artPlayerRef.current?.currentTime || 0,
+      duration: typeof video?.duration === 'number' ? video.duration : null,
+      readyState:
+        typeof video?.readyState === 'number' ? video.readyState : null,
+      networkState:
+        typeof video?.networkState === 'number' ? video.networkState : null,
+      paused: typeof video?.paused === 'boolean' ? video.paused : null,
+      ended: typeof video?.ended === 'boolean' ? video.ended : null,
+      playbackUrl:
+        video?.currentSrc || video?.src || videoUrlRef.current || null,
+    };
+  };
+
   const buildPlaybackSessionSourceStatuses = (sources: SearchResult[]) => {
     const statuses = new Map(precomputedSourceStatusesRef.current);
     sources.forEach((source) => {
@@ -686,6 +706,115 @@ function PlayPageClient() {
     setSourceSelectionScores(new Map(nextScores));
     return nextScores;
   };
+
+  function scheduleSourceChangeTimeout({
+    source,
+    targetIndex,
+    resumeTime,
+    reason,
+  }: {
+    source: SearchResult;
+    targetIndex: number;
+    resumeTime: number | null;
+    reason?: string;
+  }) {
+    clearSourceChangeTimeoutTimer();
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const timeoutAttemptId = sourceChangeAttemptIdRef.current + 1;
+    sourceChangeAttemptIdRef.current = timeoutAttemptId;
+    const timeoutSourceKey = getSourceIdentityKey(source.source, source.id);
+    dispatchPlaybackSessionEvent({
+      type: 'sourceChange.started',
+      attemptId: timeoutAttemptId,
+      sourceKey: timeoutSourceKey,
+    });
+
+    sourceChangeTimeoutTimerRef.current = window.setTimeout(() => {
+      sourceChangeTimeoutTimerRef.current = null;
+      const timeoutResult = dispatchPlaybackSessionEvent({
+        type: 'timer.sourceChangeTimeout',
+        attemptId: timeoutAttemptId,
+        sourceKey: timeoutSourceKey,
+        nowMs: Date.now(),
+        snapshot: getCurrentVideoSnapshot(),
+      });
+
+      if (
+        shouldIgnoreSourceChangeTimeout({
+          attemptId: timeoutAttemptId,
+          currentAttemptId: sourceChangeAttemptIdRef.current,
+          isVideoLoading: isVideoLoadingRef.current,
+          timeoutSourceKey,
+          currentSourceKey: getCurrentSourceKey(),
+        })
+      ) {
+        return;
+      }
+
+      const isNativeVideo =
+        playbackPolicyRef.current?.recoveryProfile === 'native-video';
+      reportCurrentPlaybackFailureFeedback(
+        isNativeVideo ? 'ios-source-change-timeout' : 'source-change-timeout',
+        {
+          force: true,
+        }
+      );
+      setIsVideoLoading(false);
+      emitPlaybackDebugLog(
+        'switch-source-timeout',
+        isNativeVideo
+          ? '原生播放器换源后长时间未进入可播放状态'
+          : '播放源换源后长时间未进入可播放状态',
+        {
+          reason,
+          sourceKey: timeoutSourceKey,
+          source: source.source,
+          id: source.id,
+          currentEpisodeIndex: targetIndex,
+          resumeTime,
+          runtime: playbackPolicyRef.current?.runtime,
+          recoveryProfile: playbackPolicyRef.current?.recoveryProfile,
+        }
+      );
+
+      const switchEffect = timeoutResult.effects.find(
+        (
+          effect
+        ): effect is Extract<PlaybackSessionEffect, { type: 'switchSource' }> =>
+          effect.type === 'switchSource'
+      );
+      if (switchEffect) {
+        void handleSourceChange(
+          switchEffect.source.source,
+          switchEffect.source.id,
+          switchEffect.source.title,
+          {
+            autoRecovery: true,
+            resumeTime: switchEffect.resumeTime,
+            reason: '播放源加载超时，自动切换到其他播放源',
+            autoPlayAfterReady: true,
+          }
+        ).then((switched) => {
+          if (!switched) {
+            dispatchPlaybackSessionEvent({
+              type: 'recovery.switchFailed',
+              sourceKey: switchEffect.sourceKey,
+            });
+          }
+        });
+        return;
+      }
+
+      void trySwitchToNextAvailableSource(
+        isNativeVideo
+          ? 'iOS 原生播放源加载超时，自动切换到其他播放源'
+          : '播放源加载超时，自动切换到其他播放源'
+      );
+    }, SOURCE_CHANGE_TIMEOUT_MS);
+  }
 
   const getCurrentPlaybackDomain = () => {
     const directUrl = originalVideoUrlRef.current;
@@ -1677,6 +1806,14 @@ function PlayPageClient() {
       playbackStartupStartedAtRef.current = Date.now();
       startHlsPlaybackSession();
       resetHlsRecoveryCounters();
+      setVideoLoadingStage('initing');
+      setIsVideoLoading(true);
+      scheduleSourceChangeTimeout({
+        source: detailData,
+        targetIndex: episodeIndex,
+        resumeTime: resumeTimeRef.current,
+        reason: '播放源起播超时',
+      });
       videoUrlRef.current = nextUrl;
       setVideoUrl(nextUrl);
     }
@@ -3021,65 +3158,12 @@ function PlayPageClient() {
       sourceSwitchAutoPlayPendingRef.current = Boolean(
         options.autoPlayAfterReady
       );
-      clearSourceChangeTimeoutTimer();
-      if (
-        typeof window !== 'undefined' &&
-        playbackPolicyRef.current?.recoveryProfile === 'native-video'
-      ) {
-        const timeoutAttemptId = sourceChangeAttemptIdRef.current + 1;
-        sourceChangeAttemptIdRef.current = timeoutAttemptId;
-        const timeoutSourceKey = getSourceIdentityKey(
-          newDetail.source,
-          newDetail.id
-        );
-        dispatchPlaybackSessionEvent({
-          type: 'sourceChange.started',
-          attemptId: timeoutAttemptId,
-          sourceKey: timeoutSourceKey,
-        });
-        sourceChangeTimeoutTimerRef.current = window.setTimeout(() => {
-          sourceChangeTimeoutTimerRef.current = null;
-          dispatchPlaybackSessionEvent({
-            type: 'timer.sourceChangeTimeout',
-            attemptId: timeoutAttemptId,
-            sourceKey: timeoutSourceKey,
-          });
-          if (
-            shouldIgnoreSourceChangeTimeout({
-              attemptId: timeoutAttemptId,
-              currentAttemptId: sourceChangeAttemptIdRef.current,
-              isVideoLoading: isVideoLoadingRef.current,
-              timeoutSourceKey,
-              currentSourceKey: getCurrentSourceKey(),
-            })
-          ) {
-            return;
-          }
-
-          reportCurrentPlaybackFailureFeedback('ios-source-change-timeout', {
-            force: true,
-          });
-          setIsVideoLoading(false);
-          emitPlaybackDebugLog(
-            'switch-source-timeout',
-            '原生播放器换源后长时间未进入可播放状态',
-            {
-              reason: options.reason,
-              sourceKey: timeoutSourceKey,
-              source: newDetail.source,
-              id: newDetail.id,
-              currentEpisodeIndex: targetIndex,
-              resumeTime: resumePlan.resumeTime,
-            }
-          );
-
-          if (options.autoRecovery) {
-            void trySwitchToNextAvailableSource(
-              'iOS 原生播放源加载超时，自动切换到其他播放源'
-            );
-          }
-        }, IOS_NATIVE_SOURCE_CHANGE_TIMEOUT_MS);
-      }
+      scheduleSourceChangeTimeout({
+        source: newDetail,
+        targetIndex,
+        resumeTime: resumePlan.resumeTime,
+        reason: options.reason,
+      });
 
       if (options.autoRecovery) {
         emitPlaybackDebugLog(
@@ -4459,6 +4543,7 @@ function PlayPageClient() {
       clearWaitingRecoveryTimer();
       clearNativeWatchdogTimer();
       clearNativeFalsePlayingTimer();
+      clearSourceChangeTimeoutTimer();
       clearProgressiveSourceProbeTimer();
       disposeCurrentPlayer();
     };

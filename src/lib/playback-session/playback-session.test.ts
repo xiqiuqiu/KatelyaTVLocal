@@ -72,15 +72,15 @@ describe('Playback Session automatic recovery', () => {
     expect(result.effects).toEqual([
       {
         type: 'switchSource',
-        sourceKey: 'proxy-4',
-        source: state.sources[3],
+        sourceKey: 'direct-5',
+        source: state.sources[4],
         episodeIndex: 2,
         resumeTime: 433.12,
         reason: 'auto-recovery',
       },
     ]);
     expect(result.state.recoveredSourceKeys.has('current-1')).toBe(true);
-    expect(result.state.recoveredSourceKeys.has('proxy-4')).toBe(true);
+    expect(result.state.recoveredSourceKeys.has('direct-5')).toBe(true);
   });
 
   it('does not switch while user paused', () => {
@@ -163,18 +163,70 @@ describe('Playback Session automatic recovery', () => {
       type: 'timer.sourceChangeTimeout',
       attemptId: 1,
       sourceKey: 'current-1',
+      nowMs: 25_000,
+      snapshot: { currentTime: 0 },
     });
 
     expect(result.effects).toEqual([]);
     expect(result.state).toBe(state);
   });
 
-  it('removes a failed recovery target while keeping the previous source excluded', () => {
-    const switched = reducePlaybackSession(loadSources(), {
-      type: 'video.waiting',
-      nowMs: 10_000,
+  it('switches to another usable source when the active source change times out', () => {
+    const state = reducePlaybackSession(
+      loadSources({
+        sourceStatuses: new Map<string, SourceStatus>([
+          ['bad-3', { kind: 'unavailable' }],
+          ['proxy-4', { kind: 'proxy' }],
+          ['direct-5', { kind: 'direct' }],
+        ]),
+        sourceScores: new Map([['direct-5', { score: 20 }]]),
+      }),
+      {
+        type: 'sourceChange.started',
+        attemptId: 2,
+        sourceKey: 'current-1',
+      }
+    ).state;
+
+    const result = reducePlaybackSession(state, {
+      type: 'timer.sourceChangeTimeout',
+      attemptId: 2,
+      sourceKey: 'current-1',
+      nowMs: 25_000,
       snapshot: { currentTime: 438.123 },
-    }).state;
+    });
+
+    expect(result.effects).toEqual([
+      {
+        type: 'switchSource',
+        sourceKey: 'direct-5',
+        source: state.sources[4],
+        episodeIndex: 2,
+        resumeTime: 433.12,
+        reason: 'source-timeout',
+      },
+    ]);
+    expect(result.state.sourceChangeInFlight).toBe(false);
+    expect(result.state.sourceChangeSourceKey).toBeNull();
+    expect(result.state.recoveredSourceKeys.has('current-1')).toBe(true);
+    expect(result.state.recoveredSourceKeys.has('direct-5')).toBe(true);
+  });
+
+  it('removes a failed recovery target while keeping the previous source excluded', () => {
+    const switched = reducePlaybackSession(
+      loadSources({
+        sourceStatuses: new Map<string, SourceStatus>([
+          ['bad-3', { kind: 'unavailable' }],
+          ['proxy-4', { kind: 'unavailable' }],
+          ['direct-5', { kind: 'direct' }],
+        ]),
+      }),
+      {
+        type: 'video.waiting',
+        nowMs: 10_000,
+        snapshot: { currentTime: 438.123 },
+      }
+    ).state;
 
     const result = reducePlaybackSession(switched, {
       type: 'recovery.switchFailed',
