@@ -117,6 +117,23 @@ describe('source status behavior', () => {
     ).toBe('{}');
   });
 
+  it('clears source-specific unavailable memory for aborted browser probes', () => {
+    rememberSourcePlaybackQuality('slow-1', 'media.example.com', {
+      mode: 'unavailable',
+      lastError: 'The operation was aborted',
+      confidence: 'medium',
+    });
+
+    expect(
+      getRememberedSourceStatusForSource('slow-1', [
+        'https://media.example.com/20250508/demo/index.m3u8',
+      ])
+    ).toBeNull();
+    expect(
+      window.localStorage.getItem('sourcePlaybackQualityPreferences')
+    ).toBe('{}');
+  });
+
   it('does not restore low-confidence browser speed-test failures as unavailable', () => {
     rememberSourcePlaybackQuality('slow-1', 'media.example.com', {
       mode: 'unavailable',

@@ -23,6 +23,8 @@ const BROWSER_PROBE_ERROR_PATTERNS = [
   'Failed to load video metadata',
   '浏览器直连检测失败',
   'HLS播放失败:',
+  'The operation was aborted',
+  'AbortError',
 ];
 
 function readSourceDomainPreferenceMap(): Record<
@@ -452,9 +454,7 @@ export function getSourceStatusDescription(
   videoInfo?: SourceVideoInfo
 ): string {
   if (status?.kind === 'probing') {
-    return videoInfo && !videoInfo.hasError
-      ? `${formatSourceVideoInfoSpeed(videoInfo)} · ${videoInfo.pingTime}ms`
-      : '检测中，可切换';
+    return '正在检测当前线路';
   }
 
   if (videoInfo && !videoInfo.hasError) {

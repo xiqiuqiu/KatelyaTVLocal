@@ -105,6 +105,7 @@ import {
 } from '@/lib/types';
 import {
   buildHlsProxyUrl,
+  createPlayableSourceStatus,
   createSourceStatus,
   getRememberedSourceStatusForSource,
   getSourceDomainFromEpisodes,
@@ -1646,7 +1647,12 @@ function PlayPageClient() {
     ) => {
       preferenceData.results.forEach((result) => {
         const existingStatus = statusMap.get(result.sourceKey);
-        if (existingStatus?.fromMemory) {
+        const measured = buildVideoInfoFromPreferenceResult(result);
+        const canRescueFromMemory =
+          existingStatus?.kind === 'unavailable' &&
+          result.kind !== 'unavailable';
+
+        if (existingStatus?.fromMemory && !canRescueFromMemory) {
           statusMap.set(result.sourceKey, {
             ...existingStatus,
             rankScore: result.rankScore,
@@ -1659,16 +1665,22 @@ function PlayPageClient() {
           return;
         }
 
-        const measured = buildVideoInfoFromPreferenceResult(result);
-        const nextStatus = createSourceStatus(result.kind, {
+        const statusOptions = {
           reason: result.reason,
           playbackMode: result.kind === 'unavailable' ? undefined : result.kind,
-          domain: result.domain || null,
+          domain: result.domain || existingStatus?.domain || null,
           measured: measured || undefined,
           updatedAt: result.updatedAt,
           rankingSource: result.rankingSource,
           rankScore: result.rankScore,
-        });
+        };
+        const nextStatus =
+          canRescueFromMemory && (!measured || measured.speedPending)
+            ? createPlayableSourceStatus({
+                ...statusOptions,
+                reason: result.reason || '后端检测通过，可尝试播放',
+              })
+            : createSourceStatus(result.kind, statusOptions);
 
         statusMap.set(result.sourceKey, nextStatus);
         if (measured) {

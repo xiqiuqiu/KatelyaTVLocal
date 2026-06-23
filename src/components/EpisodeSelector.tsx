@@ -166,8 +166,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             : undefined,
         hasWebKitPointConversion:
           typeof window !== 'undefined' &&
-          typeof (window as any).webkitConvertPointFromNodeToPage ===
-            'function',
+          typeof (
+            window as Window & {
+              webkitConvertPointFromNodeToPage?: unknown;
+            }
+          ).webkitConvertPointFromNodeToPage === 'function',
       }),
     []
   );
@@ -221,17 +224,48 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     [createBackendRescuedStatus, hasBackendRescueMetrics]
   );
 
-  const canBackendPreferenceRescueUnavailable = useCallback(
+  const canPreferenceResultRescueUnavailable = useCallback(
+    (
+      previousStatus: SourceStatus | null | undefined,
+      result: Awaited<
+        ReturnType<typeof fetchSourcePreferencesInBatches>
+      >['results'][number]
+    ) =>
+      previousStatus?.kind === 'unavailable' && result.kind !== 'unavailable',
+    []
+  );
+
+  const createRescuedSourceStatus = useCallback(
     (
       previousStatus: SourceStatus | null | undefined,
       result: Awaited<
         ReturnType<typeof fetchSourcePreferencesInBatches>
       >['results'][number],
       measured: SourceVideoInfo | null
-    ) =>
-      previousStatus?.kind === 'unavailable' &&
-      result.kind !== 'unavailable' &&
-      hasBackendRescueMetrics(measured),
+    ) => {
+      const commonOptions = {
+        reason: result.reason,
+        playbackMode: result.kind === 'unavailable' ? undefined : result.kind,
+        domain: result.domain || previousStatus?.domain || null,
+        measured: measured || undefined,
+        updatedAt: result.updatedAt,
+        rankingSource: result.rankingSource,
+        rankScore: result.rankScore,
+      };
+
+      if (
+        previousStatus?.kind === 'unavailable' &&
+        result.kind !== 'unavailable' &&
+        !hasBackendRescueMetrics(measured)
+      ) {
+        return createPlayableSourceStatus({
+          ...commonOptions,
+          reason: result.reason || '后端检测通过，可尝试播放',
+        });
+      }
+
+      return createSourceStatus(result.kind, commonOptions);
+    },
     [hasBackendRescueMetrics]
   );
 
@@ -787,11 +821,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           const measured = buildVideoInfoFromPreferenceResult(result);
           if (
             !canReplaceSourceStatus(previousStatus) &&
-            !canBackendPreferenceRescueUnavailable(
-              previousStatus,
-              result,
-              measured
-            ) &&
+            !canPreferenceResultRescueUnavailable(previousStatus, result) &&
             result.kind !== 'unavailable'
           ) {
             return;
@@ -799,16 +829,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
           next.set(
             result.sourceKey,
-            createSourceStatus(result.kind, {
-              reason: result.reason,
-              playbackMode:
-                result.kind === 'unavailable' ? undefined : result.kind,
-              domain: result.domain || previousStatus?.domain || null,
-              measured: measured || undefined,
-              updatedAt: result.updatedAt,
-              rankingSource: result.rankingSource,
-              rankScore: result.rankScore,
-            })
+            createRescuedSourceStatus(previousStatus, result, measured)
           );
         });
 
@@ -1002,8 +1023,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     activeTab,
     availableSources,
     canReplaceSourceStatus,
-    canBackendPreferenceRescueUnavailable,
+    canPreferenceResultRescueUnavailable,
     currentSourceKey,
+    createRescuedSourceStatus,
     getKnownSourceStatus,
     getBackendRescuedStatus,
     sourceSelectionScores,
