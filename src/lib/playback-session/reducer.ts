@@ -1,9 +1,10 @@
 import { getHlsAdSkipDecision, getHlsAdSkipWindowKey } from '@/lib/hls-ad-skip';
 import {
-  getAutoRecoveryResumeTime,
+  getAutoRecoveryResumePlan,
   getNextRecoverySourceCandidate,
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
+import { rememberPlaybackBadPoint } from '@/lib/playback-stuck-escape';
 import type { SourceStatusKind } from '@/lib/types';
 
 import type {
@@ -27,6 +28,7 @@ export function createInitialPlaybackSessionState(
     sourceScores: new Map(),
     measuredVideoInfo: new Map(),
     recoveredSourceKeys: new Set(),
+    badPoints: [],
     adSkipWindows: [],
     lastAdSkipWindowKey: null,
     pendingResumeTime: null,
@@ -58,7 +60,8 @@ function shouldRespectManualSeekGrace(
 function createRecoverySwitchEffect(
   state: PlaybackSessionState,
   snapshot: VideoSnapshot,
-  reason: 'auto-recovery' | 'source-timeout'
+  reason: 'auto-recovery' | 'source-timeout',
+  nowMs: number
 ): { state: PlaybackSessionState; effect: PlaybackSessionEffect } | null {
   const candidate = getNextRecoverySourceCandidate({
     candidates: state.sources,
@@ -77,7 +80,21 @@ function createRecoverySwitchEffect(
   }
 
   const sourceKey = getSourceKey(candidate);
-  const resumeTime = getAutoRecoveryResumeTime(snapshot.currentTime);
+  const escape = getAutoRecoveryResumePlan({
+    currentPlayTime: snapshot.currentTime,
+    badPoints: state.badPoints,
+    sourceKey: state.currentSourceKey,
+    mode: 'cross-source',
+  });
+  const resumeTime = escape.resumeTime;
+  const badPoints =
+    escape.recordBadPointAt != null
+      ? rememberPlaybackBadPoint(state.badPoints, {
+          sourceKey: state.currentSourceKey,
+          timeSeconds: escape.recordBadPointAt,
+          nowMs,
+        })
+      : state.badPoints;
   const nextRecoveredSourceKeys = new Set(state.recoveredSourceKeys);
   if (state.currentSourceKey) {
     nextRecoveredSourceKeys.add(state.currentSourceKey);
@@ -87,6 +104,7 @@ function createRecoverySwitchEffect(
   return {
     state: {
       ...state,
+      badPoints,
       recoveredSourceKeys: nextRecoveredSourceKeys,
       pendingResumeTime: resumeTime,
     },
@@ -115,7 +133,7 @@ function maybeRecoverFromSnapshot(
     return { state, effects: [] };
   }
 
-  const recovery = createRecoverySwitchEffect(state, snapshot, reason);
+  const recovery = createRecoverySwitchEffect(state, snapshot, reason, nowMs);
   if (!recovery) {
     return { state, effects: [] };
   }

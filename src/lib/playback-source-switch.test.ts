@@ -19,6 +19,8 @@ describe('getSourceSwitchResumePlan', () => {
     ).toEqual({
       resumeTime: 433.6,
       saveAfterCanPlay: true,
+      action: 'rewind',
+      recordBadPointAt: 438.6,
     });
   });
 
@@ -36,7 +38,23 @@ describe('getSourceSwitchResumePlan', () => {
     });
   });
 
-  it('does not overwrite an existing resume target when one is already queued', () => {
+  it('keeps an already queued resume target without double-rewinding it', () => {
+    expect(
+      getSourceSwitchResumePlan({
+        currentEpisodeIndex: 2,
+        targetEpisodeIndex: 2,
+        currentPlayTime: 12,
+        existingResumeTime: 120,
+      })
+    ).toEqual({
+      resumeTime: 120,
+      saveAfterCanPlay: true,
+      action: 'none',
+      recordBadPointAt: null,
+    });
+  });
+
+  it('prefers a later playhead when the queued resume target is stale', () => {
     expect(
       getSourceSwitchResumePlan({
         currentEpisodeIndex: 2,
@@ -44,9 +62,10 @@ describe('getSourceSwitchResumePlan', () => {
         currentPlayTime: 438.6,
         existingResumeTime: 120,
       })
-    ).toEqual({
-      resumeTime: 115,
+    ).toMatchObject({
+      resumeTime: 433.6,
       saveAfterCanPlay: true,
+      action: 'rewind',
     });
   });
 
@@ -64,7 +83,7 @@ describe('getSourceSwitchResumePlan', () => {
     });
   });
 
-  it('falls back to zero instead of saving null when a queued resume target rewinds below the start', () => {
+  it('falls back to zero instead of saving null when a queued resume target is still near the start', () => {
     expect(
       getSourceSwitchResumePlan({
         currentEpisodeIndex: 1,
@@ -75,6 +94,8 @@ describe('getSourceSwitchResumePlan', () => {
     ).toEqual({
       resumeTime: 0,
       saveAfterCanPlay: true,
+      action: 'none',
+      recordBadPointAt: null,
     });
   });
 
@@ -92,7 +113,7 @@ describe('getSourceSwitchResumePlan', () => {
     });
   });
 
-  it('normalizes a sub-second queued resume target to zero when rewind would return null', () => {
+  it('normalizes a sub-second queued resume target to zero', () => {
     expect(
       getSourceSwitchResumePlan({
         currentEpisodeIndex: 1,
@@ -103,6 +124,8 @@ describe('getSourceSwitchResumePlan', () => {
     ).toEqual({
       resumeTime: 0,
       saveAfterCanPlay: true,
+      action: 'none',
+      recordBadPointAt: null,
     });
   });
 });

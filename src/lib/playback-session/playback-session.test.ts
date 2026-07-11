@@ -152,6 +152,53 @@ describe('Playback Session automatic recovery', () => {
     expect(result.effects).toEqual([]);
   });
 
+  it('skips forward on a later recovery near a recorded stuck point', () => {
+    const first = reducePlaybackSession(
+      loadSources({
+        sourceStatuses: new Map<string, SourceStatus>([
+          ['direct-5', { kind: 'direct' }],
+          ['proxy-4', { kind: 'direct' }],
+        ]),
+        sourceScores: new Map([
+          ['direct-5', { score: 10 }],
+          ['proxy-4', { score: 5 }],
+        ]),
+      }),
+      {
+        type: 'video.waiting',
+        nowMs: 10_000,
+        snapshot: { currentTime: 438.123 },
+      }
+    );
+
+    expect(first.effects[0]).toMatchObject({
+      type: 'switchSource',
+      resumeTime: 433.12,
+    });
+    expect(first.state.badPoints).toHaveLength(1);
+
+    const afterSwitch = reducePlaybackSession(
+      {
+        ...first.state,
+        currentSourceKey: 'direct-5',
+        sourceChangeInFlight: false,
+      },
+      {
+        type: 'video.waiting',
+        nowMs: 20_000,
+        snapshot: { currentTime: 436.5 },
+      }
+    );
+
+    expect(afterSwitch.effects[0]).toMatchObject({
+      type: 'switchSource',
+      sourceKey: 'proxy-4',
+    });
+    expect(
+      (afterSwitch.effects[0] as { resumeTime: number | null }).resumeTime
+    ).toBeGreaterThan(438.123);
+  });
+
   it('ignores stale source change timeout attempts', () => {
     const state = reducePlaybackSession(loadSources(), {
       type: 'sourceChange.started',

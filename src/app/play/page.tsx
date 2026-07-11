@@ -85,11 +85,17 @@ import {
 import {
   clampSourceSwitchResumeTime,
   getNextRecoverySourceCandidate,
-  getRewoundPlaybackResumeTime,
   getSourceSwitchResumePlan,
   getSourceSwitchTargetEpisodeIndex,
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
+import {
+  planStallEscapeResume,
+  readPersistedPlaybackBadPoints,
+  rememberPlaybackBadPoint,
+  writePersistedPlaybackBadPoints,
+  type PlaybackBadPoint,
+} from '@/lib/playback-stuck-escape';
 import {
   createProgressiveSourceProbeFailureStatus,
   selectProgressiveSourceProbeCandidates,
@@ -585,7 +591,12 @@ function PlayPageClient() {
   const progressiveSourceProbeAttemptedKeysRef = useRef<Set<string>>(new Set());
   const autoRecoveredSourceKeysRef = useRef<Set<string>>(new Set());
   const playbackSessionStateRef = useRef<PlaybackSessionState>(
-    createInitialPlaybackSessionState()
+    createInitialPlaybackSessionState({
+      badPoints:
+        typeof window !== 'undefined'
+          ? readPersistedPlaybackBadPoints(window.sessionStorage)
+          : [],
+    })
   );
   const hlsAutoSourceSwitchSessionRef = useRef<number | null>(null);
   const hlsRecoveryStateRef = useRef({
@@ -684,6 +695,32 @@ function PlayPageClient() {
   const getCurrentSourceKey = () =>
     getSourceIdentityKey(currentSourceRef.current, currentIdRef.current);
 
+  const persistSessionBadPoints = (badPoints: PlaybackBadPoint[]) => {
+    playbackSessionStateRef.current = {
+      ...playbackSessionStateRef.current,
+      badPoints,
+    };
+    if (typeof window !== 'undefined') {
+      writePersistedPlaybackBadPoints(badPoints, window.sessionStorage);
+    }
+  };
+
+  const rememberCurrentPlaybackBadPoint = (
+    timeSeconds: number,
+    sourceKey: string | null = getCurrentSourceKey()
+  ) => {
+    const nextBadPoints = rememberPlaybackBadPoint(
+      playbackSessionStateRef.current.badPoints,
+      {
+        sourceKey,
+        timeSeconds,
+        nowMs: Date.now(),
+      }
+    );
+    persistSessionBadPoints(nextBadPoints);
+    return nextBadPoints;
+  };
+
   const getCurrentVideoSnapshot = (): VideoSnapshot => {
     const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
     return {
@@ -726,6 +763,7 @@ function PlayPageClient() {
   const dispatchPlaybackSessionEvent = (
     event: Parameters<typeof reducePlaybackSession>[1]
   ) => {
+    const previousBadPoints = playbackSessionStateRef.current.badPoints;
     const result = reducePlaybackSession(
       playbackSessionStateRef.current,
       event
@@ -734,6 +772,14 @@ function PlayPageClient() {
     autoRecoveredSourceKeysRef.current = new Set(
       result.state.recoveredSourceKeys
     );
+    if (result.state.badPoints !== previousBadPoints) {
+      if (typeof window !== 'undefined') {
+        writePersistedPlaybackBadPoints(
+          result.state.badPoints,
+          window.sessionStorage
+        );
+      }
+    }
     return result;
   };
 
@@ -1150,6 +1196,23 @@ function PlayPageClient() {
 
     const buffered = video.buffered;
     const currentTime = video.currentTime || 0;
+    const escape = planStallEscapeResume({
+      currentPlayTime: currentTime,
+      badPoints: playbackSessionStateRef.current.badPoints,
+      sourceKey: getCurrentSourceKey(),
+      mode: 'same-source',
+    });
+    if (escape.action === 'skip-forward' && escape.resumeTime != null) {
+      if (escape.recordBadPointAt != null) {
+        rememberCurrentPlaybackBadPoint(escape.recordBadPointAt);
+      }
+      video.currentTime = escape.resumeTime;
+      return true;
+    }
+    if (escape.recordBadPointAt != null) {
+      rememberCurrentPlaybackBadPoint(escape.recordBadPointAt);
+    }
+
     const bufferedRanges = Array.from(
       { length: buffered.length },
       (_, index) => ({
@@ -2437,7 +2500,7 @@ function PlayPageClient() {
     const decision = getNativeJitterDecision({
       events: state.jitterEvents,
       nowMs: now,
-      previousJitterWindows: 0,
+      previousJitterWindows: state.jitterWindowCount,
     });
     state.jitterEvents = decision.events;
 
@@ -2453,6 +2516,33 @@ function PlayPageClient() {
       state.lastJitterWindowAt = now;
     }
 
+    const stuckTime = Number((video.currentTime || 0).toFixed(2));
+    rememberCurrentPlaybackBadPoint(stuckTime);
+
+    if (state.jitterWindowCount >= 2 && stuckTime > 1) {
+      const escape = planStallEscapeResume({
+        currentPlayTime: stuckTime,
+        badPoints: playbackSessionStateRef.current.badPoints,
+        sourceKey: getCurrentSourceKey(),
+        mode: 'same-source',
+      });
+      if (escape.action === 'skip-forward' && escape.resumeTime != null) {
+        video.currentTime = escape.resumeTime;
+        emitPlaybackDebugLog(
+          'native-jitter-skip-forward',
+          '原生播放器连续抖动，已向前越过坏点',
+          {
+            fromTime: stuckTime,
+            targetTime: escape.resumeTime,
+            jitterWindowCount: state.jitterWindowCount,
+          },
+          {
+            playbackUrl,
+          }
+        );
+      }
+    }
+
     if (now - state.lastJitterLogAt >= 8000) {
       state.lastJitterLogAt = now;
       emitPlaybackDebugLog(
@@ -2466,7 +2556,7 @@ function PlayPageClient() {
           maxRollbackSeconds: decision.maxRollbackSeconds,
           jitterWindowCount: state.jitterWindowCount,
           reasons: decision.reasons,
-          currentTime: Number((video.currentTime || 0).toFixed(2)),
+          currentTime: stuckTime,
           readyState: video.readyState,
           networkState: video.networkState,
           paused: video.paused,
@@ -2666,6 +2756,30 @@ function PlayPageClient() {
     if (decision.action === 'resume-playback') {
       state.sourceRecoveryAttempts += 1;
       state.ignoreStallUntil = Date.now() + NATIVE_PLAY_RESUME_GRACE_MS;
+      const stuckTime = video.currentTime || 0;
+      const escape = planStallEscapeResume({
+        currentPlayTime: stuckTime,
+        badPoints: playbackSessionStateRef.current.badPoints,
+        sourceKey: getCurrentSourceKey(),
+        mode: 'same-source',
+      });
+      if (escape.recordBadPointAt != null) {
+        rememberCurrentPlaybackBadPoint(escape.recordBadPointAt);
+      }
+      if (escape.action === 'skip-forward' && escape.resumeTime != null) {
+        video.currentTime = escape.resumeTime;
+        emitPlaybackDebugLog(
+          'native-stall-skip-forward',
+          '原生播放器卡死后已向前越过坏点',
+          {
+            fromTime: Number(stuckTime.toFixed(2)),
+            targetTime: escape.resumeTime,
+          },
+          {
+            playbackUrl,
+          }
+        );
+      }
       void video.play().catch((error) => {
         state.playIntent = 'paused';
         state.browserAutoplayLocked = true;
@@ -3117,8 +3231,28 @@ function PlayPageClient() {
         const targetIndex = historyRecord.index - 1;
         if (targetIndex >= 0 && targetIndex < detailData.episodes.length) {
           setCurrentEpisodeIndex(targetIndex);
-          resumeTimeRef.current =
-            getRewoundPlaybackResumeTime(historyRecord.play_time) ?? 0;
+          const historySourceKey = getSourceIdentityKey(
+            detailData.source,
+            detailData.id
+          );
+          const escape = planStallEscapeResume({
+            currentPlayTime: historyRecord.play_time,
+            badPoints: playbackSessionStateRef.current.badPoints,
+            sourceKey: historySourceKey,
+            mode: 'same-source',
+          });
+          // Only reinforce an already-known stuck point on refresh; never mark
+          // ordinary continue-watching resumes as bad points.
+          if (
+            escape.action === 'skip-forward' &&
+            escape.recordBadPointAt != null
+          ) {
+            rememberCurrentPlaybackBadPoint(
+              escape.recordBadPointAt,
+              historySourceKey
+            );
+          }
+          resumeTimeRef.current = escape.resumeTime ?? 0;
         } else {
           setCurrentEpisodeIndex(0);
           resumeTimeRef.current = null;
@@ -3230,12 +3364,25 @@ function PlayPageClient() {
         typeof options.resumeTime === 'number' && options.resumeTime > 0
           ? options.resumeTime
           : resumeTimeRef.current;
+      const nextSourceKey = getSourceIdentityKey(newSource, newId);
       const resumePlan = getSourceSwitchResumePlan({
         currentEpisodeIndex: activeEpisodeIndex,
         targetEpisodeIndex: targetIndex,
         currentPlayTime,
         existingResumeTime: plannedResumeTime,
+        badPoints: playbackSessionStateRef.current.badPoints,
+        currentSourceKey: getCurrentSourceKey(),
+        targetSourceKey: nextSourceKey,
       });
+      if (
+        resumePlan.recordBadPointAt != null &&
+        (options.autoRecovery || resumePlan.action === 'skip-forward')
+      ) {
+        rememberCurrentPlaybackBadPoint(
+          resumePlan.recordBadPointAt,
+          getCurrentSourceKey()
+        );
+      }
       resumeTimeRef.current = resumePlan.resumeTime;
       sourceSwitchSavePendingRef.current = resumePlan.saveAfterCanPlay;
       sourceSwitchAutoPlayPendingRef.current = Boolean(

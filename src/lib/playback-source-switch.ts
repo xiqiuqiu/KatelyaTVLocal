@@ -1,13 +1,25 @@
+import {
+  PLAYBACK_RESUME_REWIND_SECONDS as DEFAULT_RESUME_REWIND_SECONDS,
+  planStallEscapeResume,
+  type PlaybackBadPoint,
+  type StallEscapeAction,
+} from '@/lib/playback-stuck-escape';
+
 interface SourceSwitchResumeInput {
   currentEpisodeIndex: number;
   targetEpisodeIndex: number;
   currentPlayTime: number;
   existingResumeTime: number | null;
+  badPoints?: readonly PlaybackBadPoint[];
+  currentSourceKey?: string | null;
+  targetSourceKey?: string | null;
 }
 
 interface SourceSwitchResumePlan {
   resumeTime: number | null;
   saveAfterCanPlay: boolean;
+  action?: StallEscapeAction;
+  recordBadPointAt?: number | null;
 }
 
 interface SourceSwitchTargetEpisodeInput {
@@ -45,6 +57,11 @@ interface RecoverySourceCandidateInput<T extends RecoverySourceCandidate> {
 interface AutoRecoveryResumeInput {
   currentPlayTime: number;
   rewindSeconds?: number;
+  badPoints?: readonly PlaybackBadPoint[];
+  sourceKey?: string | null;
+  mode?: 'same-source' | 'cross-source';
+  skipForwardSeconds?: number;
+  matchWindowSeconds?: number;
 }
 
 interface ClampSourceSwitchResumeTimeInput {
@@ -62,7 +79,7 @@ interface SourceChangeTimeoutInput {
   currentSourceKey: string | null | undefined;
 }
 
-export const PLAYBACK_RESUME_REWIND_SECONDS = 5;
+export const PLAYBACK_RESUME_REWIND_SECONDS = DEFAULT_RESUME_REWIND_SECONDS;
 
 function getRecoverySourcePriority(
   statusKind?: RecoverySourceStatusKind | null
@@ -105,17 +122,31 @@ export function getSourceSwitchTargetEpisodeIndex({
   return requireCurrentEpisode ? null : 0;
 }
 
+export function getAutoRecoveryResumePlan(
+  input: number | AutoRecoveryResumeInput
+) {
+  if (typeof input === 'number') {
+    return planStallEscapeResume({
+      currentPlayTime: input,
+      mode: 'cross-source',
+    });
+  }
+
+  return planStallEscapeResume({
+    currentPlayTime: input.currentPlayTime,
+    rewindSeconds: input.rewindSeconds,
+    badPoints: input.badPoints,
+    sourceKey: input.sourceKey,
+    mode: input.mode ?? 'cross-source',
+    skipForwardSeconds: input.skipForwardSeconds,
+    matchWindowSeconds: input.matchWindowSeconds,
+  });
+}
+
 export function getAutoRecoveryResumeTime(
   input: number | AutoRecoveryResumeInput
 ): number | null {
-  const currentPlayTime =
-    typeof input === 'number' ? input : input.currentPlayTime;
-  const rewindSeconds =
-    typeof input === 'number'
-      ? PLAYBACK_RESUME_REWIND_SECONDS
-      : input.rewindSeconds ?? PLAYBACK_RESUME_REWIND_SECONDS;
-
-  return getRewoundPlaybackResumeTime(currentPlayTime, rewindSeconds);
+  return getAutoRecoveryResumePlan(input).resumeTime;
 }
 
 export function getRewoundPlaybackResumeTime(
@@ -212,6 +243,9 @@ export function getSourceSwitchResumePlan({
   targetEpisodeIndex,
   currentPlayTime,
   existingResumeTime,
+  badPoints,
+  currentSourceKey = null,
+  targetSourceKey = null,
 }: SourceSwitchResumeInput): SourceSwitchResumePlan {
   if (targetEpisodeIndex !== currentEpisodeIndex) {
     return {
@@ -220,17 +254,72 @@ export function getSourceSwitchResumePlan({
     };
   }
 
-  if (existingResumeTime && existingResumeTime > 0) {
+  const isCrossSource = Boolean(
+    currentSourceKey &&
+      targetSourceKey &&
+      currentSourceKey !== targetSourceKey
+  );
+  const escapeMode = isCrossSource ? 'cross-source' : 'same-source';
+
+  if (existingResumeTime && existingResumeTime > 0 && existingResumeTime <= 1) {
     return {
-      resumeTime: getRewoundPlaybackResumeTime(existingResumeTime) ?? 0,
+      resumeTime: 0,
       saveAfterCanPlay: true,
+      action: 'none',
+      recordBadPointAt: null,
+    };
+  }
+
+  // User scrubbed past a stale queued resume — prefer the later playhead.
+  if (
+    existingResumeTime &&
+    existingResumeTime > 0 &&
+    currentPlayTime >
+      existingResumeTime + PLAYBACK_RESUME_REWIND_SECONDS
+  ) {
+    const escape = planStallEscapeResume({
+      currentPlayTime,
+      badPoints,
+      sourceKey: currentSourceKey,
+      mode: escapeMode,
+    });
+    return {
+      resumeTime: escape.resumeTime ?? 0,
+      saveAfterCanPlay: true,
+      action: escape.action,
+      recordBadPointAt: escape.recordBadPointAt,
+    };
+  }
+
+  // Already-planned resume targets must not be rewound a second time.
+  if (existingResumeTime && existingResumeTime > 0) {
+    const escape = planStallEscapeResume({
+      currentPlayTime: existingResumeTime,
+      badPoints,
+      sourceKey: currentSourceKey,
+      mode: escapeMode,
+      preferExistingWithoutRewind: true,
+    });
+    return {
+      resumeTime: escape.resumeTime ?? existingResumeTime,
+      saveAfterCanPlay: true,
+      action: escape.action,
+      recordBadPointAt: escape.recordBadPointAt,
     };
   }
 
   if (currentPlayTime > 1) {
+    const escape = planStallEscapeResume({
+      currentPlayTime,
+      badPoints,
+      sourceKey: currentSourceKey,
+      mode: escapeMode,
+    });
     return {
-      resumeTime: getRewoundPlaybackResumeTime(currentPlayTime) ?? 0,
+      resumeTime: escape.resumeTime ?? 0,
       saveAfterCanPlay: true,
+      action: escape.action,
+      recordBadPointAt: escape.recordBadPointAt,
     };
   }
 

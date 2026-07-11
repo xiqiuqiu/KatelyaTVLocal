@@ -1,5 +1,6 @@
 import type { HlsAdSkipWindow } from '@/lib/hls-ad-skip';
 import type { PlayRecordSaveReason } from '@/lib/play-record-save-policy';
+import type { PlaybackBadPoint } from '@/lib/playback-stuck-escape';
 import type { SearchResult, SourceStatus, SourceVideoInfo } from '@/lib/types';
 
 export type PlaybackIntent = 'playing' | 'paused';
@@ -26,6 +27,7 @@ export interface PlaybackSessionState {
   sourceScores: Map<string, PlaybackSessionSourceScore>;
   measuredVideoInfo: Map<string, SourceVideoInfo>;
   recoveredSourceKeys: Set<string>;
+  badPoints: PlaybackBadPoint[];
   adSkipWindows: HlsAdSkipWindow[];
   lastAdSkipWindowKey: string | null;
   pendingResumeTime: number | null;
