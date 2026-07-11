@@ -4,7 +4,13 @@
 
 import { AlertCircle, ArrowLeft, Heart, RefreshCw, Search } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useRef, useState } from 'react';
+import {
+  Suspense,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 
 import type { CastStatus } from '@/lib/cast';
 import {
@@ -136,6 +142,65 @@ const NATIVE_RECENT_BUFFER_ISSUE_WINDOW_MS = 30000;
 const HLS_MANUAL_INTERACTION_GRACE_MS = 4000;
 const HLS_SEEK_BUFFER_GRACE_MS = 10000;
 const PROGRESSIVE_SOURCE_PROBE_LIMIT = 1;
+
+type VideoLoadingStage = 'initing' | 'sourceChanging';
+
+type VideoPlaybackUiState = {
+  videoUrl: string;
+  isVideoLoading: boolean;
+  videoLoadingStage: VideoLoadingStage;
+  playbackMode: SourcePlaybackMode;
+};
+
+type VideoPlaybackUiAction =
+  | { type: 'url.clear' }
+  | {
+      type: 'url.start';
+      videoUrl: string;
+      playbackMode: SourcePlaybackMode;
+      stage: VideoLoadingStage;
+    }
+  | { type: 'loading.start'; stage: VideoLoadingStage }
+  | { type: 'loading.end' }
+  | { type: 'playbackMode.set'; mode: SourcePlaybackMode };
+
+const initialVideoPlaybackUiState: VideoPlaybackUiState = {
+  videoUrl: '',
+  isVideoLoading: true,
+  videoLoadingStage: 'initing',
+  playbackMode: 'direct',
+};
+
+function reduceVideoPlaybackUi(
+  state: VideoPlaybackUiState,
+  action: VideoPlaybackUiAction
+): VideoPlaybackUiState {
+  switch (action.type) {
+    case 'url.clear':
+      return { ...state, videoUrl: '' };
+    case 'url.start':
+      return {
+        videoUrl: action.videoUrl,
+        playbackMode: action.playbackMode,
+        isVideoLoading: true,
+        videoLoadingStage: action.stage,
+      };
+    case 'loading.start':
+      return {
+        ...state,
+        isVideoLoading: true,
+        videoLoadingStage: action.stage,
+      };
+    case 'loading.end':
+      return { ...state, isVideoLoading: false };
+    case 'playbackMode.set':
+      return state.playbackMode === action.mode
+        ? state
+        : { ...state, playbackMode: action.mode };
+    default:
+      return state;
+  }
+}
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
@@ -355,8 +420,12 @@ function PlayPageClient() {
   }, [needPrefer]);
   // 集数相关
   const [currentEpisodeIndex, setCurrentEpisodeIndex] = useState(0);
-  const [playbackMode, setPlaybackMode] =
-    useState<SourcePlaybackMode>('direct');
+  const [videoPlaybackUi, dispatchVideoPlaybackUi] = useReducer(
+    reduceVideoPlaybackUi,
+    initialVideoPlaybackUiState
+  );
+  const { videoUrl, isVideoLoading, videoLoadingStage, playbackMode } =
+    videoPlaybackUi;
 
   const currentSourceRef = useRef(currentSource);
   const currentIdRef = useRef(currentId);
@@ -441,11 +510,8 @@ function PlayPageClient() {
 
   const applyPlaybackMode = (mode: SourcePlaybackMode) => {
     playbackModeRef.current = mode;
-    setPlaybackMode(mode);
+    dispatchVideoPlaybackUi({ type: 'playbackMode.set', mode });
   };
-
-  // 视频播放地址
-  const [videoUrl, setVideoUrl] = useState('');
 
   useEffect(() => {
     videoUrlRef.current = videoUrl;
@@ -563,12 +629,6 @@ function PlayPageClient() {
   // 折叠状态（仅在 lg 及以上屏幕有效）
   const [isEpisodeSelectorCollapsed, setIsEpisodeSelectorCollapsed] =
     useState(false);
-
-  // 换源加载状态
-  const [isVideoLoading, setIsVideoLoading] = useState(true);
-  const [videoLoadingStage, setVideoLoadingStage] = useState<
-    'initing' | 'sourceChanging'
-  >('initing');
 
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -763,7 +823,7 @@ function PlayPageClient() {
           force: true,
         }
       );
-      setIsVideoLoading(false);
+      dispatchVideoPlaybackUi({ type: 'loading.end' });
       emitPlaybackDebugLog(
         'switch-source-timeout',
         isNativeVideo
@@ -1773,7 +1833,7 @@ function PlayPageClient() {
       !detailData.episodes ||
       episodeIndex >= detailData.episodes.length
     ) {
-      setVideoUrl('');
+      dispatchVideoPlaybackUi({ type: 'url.clear' });
       return;
     }
     const directUrl = detailData?.episodes[episodeIndex] || '';
@@ -1807,7 +1867,6 @@ function PlayPageClient() {
     });
 
     playbackPolicyRef.current = playbackPolicy;
-    applyPlaybackMode(playbackPolicy.mode);
     logHlsPlaybackPolicy(directUrl, playbackPolicy.url, playbackPolicy);
     observeIosAdSignals(directUrl, observationUrl, playbackPolicy);
 
@@ -1818,8 +1877,6 @@ function PlayPageClient() {
       playbackStartupStartedAtRef.current = Date.now();
       startHlsPlaybackSession();
       resetHlsRecoveryCounters();
-      setVideoLoadingStage('initing');
-      setIsVideoLoading(true);
       scheduleSourceChangeTimeout({
         source: detailData,
         targetIndex: episodeIndex,
@@ -1827,9 +1884,21 @@ function PlayPageClient() {
         reason: '播放源起播超时',
       });
       videoUrlRef.current = nextUrl;
-      setVideoUrl(nextUrl);
+      playbackModeRef.current = playbackPolicy.mode;
+      // 换集/换址时一次写入 URL、加载态与播放模式，避免同 effect 内多次 setState
+      dispatchVideoPlaybackUi({
+        type: 'url.start',
+        videoUrl: nextUrl,
+        playbackMode: playbackPolicy.mode,
+        stage: 'initing',
+      });
+    } else {
+      applyPlaybackMode(playbackPolicy.mode);
     }
   };
+
+  const updateVideoUrlRef = useRef(updateVideoUrl);
+  updateVideoUrlRef.current = updateVideoUrl;
 
   const trySwitchToNextAvailableSource = async (reason: string) => {
     const currentSessionId = hlsRecoveryStateRef.current.playbackSessionId;
@@ -2856,7 +2925,7 @@ function PlayPageClient() {
 
   // 当集数索引变化时自动更新视频地址
   useEffect(() => {
-    updateVideoUrl(detail, currentEpisodeIndex);
+    updateVideoUrlRef.current(detail, currentEpisodeIndex);
   }, [detail, currentEpisodeIndex]);
 
   // 进入页面时直接获取全部源信息
@@ -3088,8 +3157,10 @@ function PlayPageClient() {
   ): Promise<boolean> => {
     try {
       // 显示换源加载状态
-      setVideoLoadingStage('sourceChanging');
-      setIsVideoLoading(true);
+      dispatchVideoPlaybackUi({
+        type: 'loading.start',
+        stage: 'sourceChanging',
+      });
       sourceSwitchSavePendingRef.current = false;
       sourceSwitchAutoPlayPendingRef.current = false;
 
@@ -3109,7 +3180,7 @@ function PlayPageClient() {
         (source) => source.source === newSource && source.id === newId
       );
       if (!newDetail) {
-        setIsVideoLoading(false);
+        dispatchVideoPlaybackUi({ type: 'loading.end' });
         setPlaybackError('未找到匹配结果', 'not-found');
         return false;
       }
@@ -3119,7 +3190,7 @@ function PlayPageClient() {
         newDetail.episodes
       );
       if (rememberedStatus?.kind === 'unavailable') {
-        setIsVideoLoading(false);
+        dispatchVideoPlaybackUi({ type: 'loading.end' });
         setPlaybackError(
           rememberedStatus.reason || '该播放源当前不可用',
           'source-unavailable'
@@ -3136,7 +3207,7 @@ function PlayPageClient() {
       });
 
       if (targetIndex === null) {
-        setIsVideoLoading(false);
+        dispatchVideoPlaybackUi({ type: 'loading.end' });
         emitPlaybackDebugLog(
           'switch-source-skip-episode-mismatch',
           '候选播放源不包含当前集，已跳过自动切源',
@@ -3211,7 +3282,7 @@ function PlayPageClient() {
       return true;
     } catch (err) {
       // 隐藏换源加载状态
-      setIsVideoLoading(false);
+      dispatchVideoPlaybackUi({ type: 'loading.end' });
       setPlaybackError(err instanceof Error ? err.message : '换源失败');
       return false;
     }
@@ -4316,7 +4387,7 @@ function PlayPageClient() {
           }, 0);
 
           // 隐藏换源加载状态
-          setIsVideoLoading(false);
+          dispatchVideoPlaybackUi({ type: 'loading.end' });
 
           const shouldAutoPlayAfterSourceSwitch =
             sourceSwitchAutoPlayPendingRef.current;
