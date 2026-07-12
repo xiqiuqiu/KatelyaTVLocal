@@ -2779,6 +2779,22 @@ function PlayPageClient() {
             playbackUrl,
           }
         );
+      } else {
+        // Already-"playing" stalls need a buffered nudge; bare play() is a no-op.
+        const nudged = tryNudgePlayback(video);
+        if (nudged) {
+          emitPlaybackDebugLog(
+            'native-stall-nudge',
+            '原生播放器卡死后已微调播放位置',
+            {
+              fromTime: Number(stuckTime.toFixed(2)),
+              targetTime: Number((video.currentTime || 0).toFixed(2)),
+            },
+            {
+              playbackUrl,
+            }
+          );
+        }
       }
       void video.play().catch((error) => {
         state.playIntent = 'paused';
@@ -2918,6 +2934,7 @@ function PlayPageClient() {
         const severity = getNativeStallSeverity({
           ended: video.ended,
           paused: video.paused,
+          playIntent: state.playIntent,
           mediaSourceUnavailable,
           readyState: video.readyState,
           networkState: video.networkState,
@@ -4539,15 +4556,28 @@ function PlayPageClient() {
           const shouldAutoPlayAfterSourceSwitch =
             sourceSwitchAutoPlayPendingRef.current;
           sourceSwitchAutoPlayPendingRef.current = false;
-          if (shouldAutoPlayAfterSourceSwitch) {
-            requestNativeRecoveryAutoplay(
-              artPlayerRef.current?.video as HTMLVideoElement | undefined,
-              {
-                trigger: 'video-canplay',
-                resumeTime: appliedResumeTime,
-                sourceKey: getCurrentSourceKey(),
-              }
-            );
+          const nativeState = nativeRecoveryStateRef.current;
+          const canplayVideo = artPlayerRef.current?.video as
+            | HTMLVideoElement
+            | undefined;
+          // D1 ff31a0a3: buffering pause left playIntent=playing + paused=true at
+          // canplay/readyState>=3; without this, watchdog treated paused as user stop.
+          const shouldResumeAfterBufferingPause =
+            playbackPolicyRef.current?.runtime === 'native-hls' &&
+            nativeState.playIntent === 'playing' &&
+            Boolean(canplayVideo?.paused);
+          if (
+            shouldAutoPlayAfterSourceSwitch ||
+            shouldResumeAfterBufferingPause
+          ) {
+            requestNativeRecoveryAutoplay(canplayVideo, {
+              trigger: shouldAutoPlayAfterSourceSwitch
+                ? 'video-canplay'
+                : 'video-canplay-buffering-resume',
+              resumeTime: appliedResumeTime,
+              sourceKey: getCurrentSourceKey(),
+              pauseReason: nativeState.pauseReason,
+            });
           }
 
           if (sourceSwitchSavePendingRef.current) {

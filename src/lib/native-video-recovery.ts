@@ -71,6 +71,8 @@ interface NativeJitterDecisionInput {
 interface NativeStallSeverityInput {
   ended: boolean;
   paused: boolean;
+  /** When paused but intent is still playing (e.g. buffering pause), keep stall classification. */
+  playIntent?: NativePlaybackIntent;
   mediaSourceUnavailable: boolean;
   readyState: number;
   networkState: number;
@@ -168,6 +170,7 @@ export function getNativeJitterDecision({
 export function getNativeStallSeverity({
   ended,
   paused,
+  playIntent = 'paused',
   mediaSourceUnavailable,
   readyState,
   networkState,
@@ -182,7 +185,9 @@ export function getNativeStallSeverity({
     return 'source-failed';
   }
 
-  if (paused) {
+  // User pause must not trigger recovery. Buffering-induced pause keeps
+  // playIntent === 'playing' and still needs resume / escalate.
+  if (paused && playIntent !== 'playing') {
     return 'observe';
   }
 

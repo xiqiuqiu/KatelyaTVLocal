@@ -298,6 +298,7 @@ describe('getNativeStallSeverity', () => {
       getNativeStallSeverity({
         ended: false,
         paused: true,
+        playIntent: 'paused',
         mediaSourceUnavailable: false,
         readyState: 2,
         networkState: 2,
@@ -305,6 +306,24 @@ describe('getNativeStallSeverity', () => {
         hasRecentProgress: false,
       })
     ).toBe('observe');
+  });
+
+  // Repro from D1 session ff31a0a3 (仙逆 / iOS native-hls):
+  // pauseReason=buffering, playIntent=playing, readyState=4, paused=true —
+  // watchdog must not treat this as a user pause (otherwise auto-resume never fires).
+  it('recovers buffering pause when play intent is still playing', () => {
+    expect(
+      getNativeStallSeverity({
+        ended: false,
+        paused: true,
+        playIntent: 'playing',
+        mediaSourceUnavailable: false,
+        readyState: 4,
+        networkState: 2,
+        stalledForMs: NATIVE_HARD_STALL_THRESHOLD_MS,
+        hasRecentProgress: false,
+      })
+    ).toBe('hard-stall');
   });
 });
 

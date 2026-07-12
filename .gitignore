@@ -44,6 +44,9 @@ sitemap-*.xml
 src/lib/runtime.ts
 public/manifest.json
 
+# brainstorm / agent scratch
+.superpowers/
+
 # test artifacts
 .playwright-mcp/
 tmp-cloudflare-play-test.png
