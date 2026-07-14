@@ -7,6 +7,14 @@ KatelyaTVLocal is a video discovery and playback application. This context defin
 **Playback Session**:
 A user's active attempt to watch one selected title through one playable source and episode position. A Playback Session includes user playback actions, browser video events, source changes, recovery decisions, progress saving, and debug evidence for that active watch attempt.
 
+**Playback Attempt**:
+The evidence-correlation unit for one Playback Session. All browser events, session decisions, source feedback, debug logs, and user actions for that watch are joined by a single `sessionId` from play-page entry until title change, leave, or session end. Same-title source switches and episode changes stay inside one Playback Attempt.
+_Avoid_: minting a new correlation id on every source switch; using content or route keys alone as the attempt identity
+
+**Source Attempt**:
+One actual start or switch onto a playable source inside a Playback Attempt, correlated by `(sessionId, sourceChangeAttemptId)` and stamped with content, episode, source, and runtime dimensions.
+_Avoid_: treating source preference probes that never start playback as Source Attempts
+
 **Playback Intent**:
 The single authoritative record, for the current Playback Session, of whether the user wants playback to continue, pause, scrub the timeline, or change source or episode. Playback Intent is stamped only by explicit user gestures; ambiguous media pause or stall events are not user intent.
 _Avoid_: playIntent, userPausedAt, pauseReason (as parallel authorities)
