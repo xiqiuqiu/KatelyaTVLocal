@@ -225,8 +225,10 @@ describe('Playback Session Intent gate', () => {
 });
 
 describe('Playback Session automatic recovery', () => {
-  it('switches to the highest scored unrecovered playable source on recovery', () => {
-    const state = loadSources({
+  function loadPlayableAlts(
+    overrides: Parameters<typeof loadSources>[0] = {}
+  ) {
+    return loadSources({
       sourceStatuses: new Map<string, SourceStatus>([
         ['bad-3', { kind: 'unavailable' }],
         ['proxy-4', { kind: 'proxy' }],
@@ -236,7 +238,12 @@ describe('Playback Session automatic recovery', () => {
         ['proxy-4', { score: 99 }],
         ['direct-5', { score: 10 }],
       ]),
+      ...overrides,
     });
+  }
+
+  it('enters R0 observe on soft stall without privately escalating to R3', () => {
+    const state = loadPlayableAlts();
 
     const result = reducePlaybackSession(state, {
       type: 'video.waiting',
@@ -244,16 +251,256 @@ describe('Playback Session automatic recovery', () => {
       snapshot: { currentTime: 438.123 },
     });
 
-    expect(result.effects).toEqual([
-      {
-        type: 'switchSource',
-        sourceKey: 'direct-5',
-        source: state.sources[4],
-        episodeIndex: 2,
-        resumeTime: 433.12,
-        reason: 'auto-recovery',
+    expect(result.state.recoveryStage).toBe('R0');
+    expect(result.state.stallEpisodeActive).toBe(true);
+    expect(result.effects.some((effect) => effect.type === 'switchSource')).toBe(
+      false
+    );
+  });
+
+  it('escalates R0 → R1 same-source recover after soft observe window', () => {
+    const r0 = reducePlaybackSession(loadPlayableAlts(), {
+      type: 'video.waiting',
+      nowMs: 10_000,
+      snapshot: { currentTime: 438.123 },
+    }).state;
+
+    const result = reducePlaybackSession(r0, {
+      type: 'video.waiting',
+      nowMs: 12_600,
+      snapshot: { currentTime: 438.123 },
+    });
+
+    expect(result.state.recoveryStage).toBe('R1');
+    expect(result.state.recoveryInFlight).toBe('R1');
+    expect(result.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'sameSourceRecover',
+          stage: 'R1',
+        }),
+      ])
+    );
+    expect(result.effects.some((effect) => effect.type === 'switchSource')).toBe(
+      false
+    );
+  });
+
+  it('escalates to R2 escape when playhead is inside a known fault interval', () => {
+    const withBadPoint = {
+      ...loadPlayableAlts(),
+      badPoints: [
+        {
+          sourceKey: 'current-1',
+          timeSeconds: 438.12,
+          hitCount: 1,
+          updatedAtMs: 9_000,
+        },
+      ],
+    };
+
+    const r0 = reducePlaybackSession(withBadPoint, {
+      type: 'video.waiting',
+      nowMs: 10_000,
+      snapshot: { currentTime: 438.123 },
+    }).state;
+
+    const result = reducePlaybackSession(r0, {
+      type: 'video.waiting',
+      nowMs: 12_600,
+      snapshot: { currentTime: 438.123 },
+    });
+
+    expect(result.state.recoveryStage).toBe('R2');
+    expect(result.state.recoveryResumeTime).toBeGreaterThan(438.123);
+    expect(result.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'sameSourceRecover',
+          stage: 'R2',
+          action: 'escape-bad-point',
+        }),
+      ])
+    );
+    expect(
+      result.effects.some((effect) => effect.type === 'applyRecoveryResume')
+    ).toBe(false);
+  });
+
+  it('keeps Recovery Resume Time as Session authority and only applies via effects', () => {
+    const withBadPoint = {
+      ...loadPlayableAlts(),
+      badPoints: [
+        {
+          sourceKey: 'current-1',
+          timeSeconds: 100,
+          hitCount: 2,
+          updatedAtMs: 9_000,
+        },
+      ],
+    };
+    const r0 = reducePlaybackSession(withBadPoint, {
+      type: 'video.waiting',
+      nowMs: 10_000,
+      snapshot: { currentTime: 100 },
+    }).state;
+    const escaped = reducePlaybackSession(r0, {
+      type: 'video.waiting',
+      nowMs: 12_600,
+      snapshot: { currentTime: 100 },
+    });
+
+    expect(escaped.state.recoveryResumeTime).toBe(
+      escaped.state.pendingResumeTime
+    );
+    expect(escaped.state.recoveryResumeTime).toBeGreaterThan(100);
+    const escapeEffect = escaped.effects.find(
+      (effect) =>
+        effect.type === 'sameSourceRecover' && effect.action === 'escape-bad-point'
+    ) as { targetTime: number | null };
+    expect(escapeEffect.targetTime).toBe(escaped.state.recoveryResumeTime);
+  });
+
+  it('cancels recovery without erasing bad points', () => {
+    const withBadPoint = {
+      ...loadPlayableAlts(),
+      badPoints: [
+        {
+          sourceKey: 'current-1',
+          timeSeconds: 50,
+          hitCount: 1,
+          updatedAtMs: 1_000,
+        },
+      ],
+    };
+    const r0 = reducePlaybackSession(withBadPoint, {
+      type: 'video.waiting',
+      nowMs: 10_000,
+      snapshot: { currentTime: 50 },
+    }).state;
+
+    const cancelled = reducePlaybackSession(r0, { type: 'recovery.cancel' });
+
+    expect(cancelled.state.recoveryStage).toBe('idle');
+    expect(cancelled.state.stallEpisodeActive).toBe(false);
+    expect(cancelled.state.badPoints).toEqual(withBadPoint.badPoints);
+  });
+
+  it('scopes bad points by contentKey+episodeIndex; episode change hides prior scope', () => {
+    const initial = reducePlaybackSession(createInitialPlaybackSessionState(), {
+      type: 'sources.loaded',
+      sources: [createSource('current', '1')],
+      currentSourceKey: 'current-1',
+      currentEpisodeIndex: 0,
+      contentKey: 'title-a',
+    }).state;
+
+    const withPoint = {
+      ...initial,
+      badPoints: [
+        {
+          sourceKey: 'current-1',
+          timeSeconds: 40,
+          hitCount: 1,
+          updatedAtMs: 1_000,
+        },
+      ],
+    };
+
+    const nextEpisode = reducePlaybackSession(withPoint, {
+      type: 'user.switchEpisode',
+      episodeIndex: 1,
+      nowMs: 20_000,
+    }).state;
+
+    expect(nextEpisode.badPoints).toEqual([]);
+    expect(nextEpisode.badPointsByScope.get('title-a::0')).toEqual(
+      withPoint.badPoints
+    );
+
+    const back = reducePlaybackSession(nextEpisode, {
+      type: 'user.switchEpisode',
+      episodeIndex: 0,
+      nowMs: 30_000,
+    }).state;
+    expect(back.badPoints).toEqual(withPoint.badPoints);
+  });
+
+  it('routes native jitter evidence into the same R tree (strengthens R2, no parallel switch)', () => {
+    const r0 = reducePlaybackSession(loadPlayableAlts(), {
+      type: 'recovery.runtimeEvidence',
+      nowMs: 10_000,
+      snapshot: { currentTime: 200 },
+      evidence: {
+        platform: 'apple-native',
+        stallCandidate: true,
+        native: {
+          severity: 'soft-stall',
+          isJitter: true,
+          jitterWindowCount: 2,
+        },
       },
-    ]);
+    });
+
+    // Jitter ≥2 strengthens R2 on the shared tree — never a parallel commander.
+    expect(r0.effects.some((effect) => effect.type === 'switchSource')).toBe(
+      false
+    );
+    expect(r0.state.recoveryStage === 'R2' || r0.state.recoveryStage === 'R0').toBe(
+      true
+    );
+
+    const afterObserve =
+      r0.state.recoveryStage === 'R0'
+        ? reducePlaybackSession(r0.state, {
+            type: 'recovery.runtimeEvidence',
+            nowMs: 12_600,
+            snapshot: { currentTime: 200 },
+            evidence: {
+              platform: 'apple-native',
+              stallCandidate: true,
+              native: {
+                severity: 'soft-stall',
+                isJitter: true,
+                jitterWindowCount: 2,
+              },
+            },
+          })
+        : r0;
+
+    expect(afterObserve.state.recoveryStage).toBe('R2');
+    expect(
+      afterObserve.effects.some((effect) => effect.type === 'sameSourceRecover')
+    ).toBe(true);
+    expect(
+      afterObserve.effects.some((effect) => effect.type === 'switchSource')
+    ).toBe(false);
+  });
+
+  it('switches via R3 hard-failure path using Availability + Session attempted', () => {
+    const state = loadPlayableAlts();
+
+    const result = reducePlaybackSession(state, {
+      type: 'video.error',
+      nowMs: 10_000,
+      snapshot: { currentTime: 438.123 },
+      errorCode: 3,
+    });
+
+    expect(result.effects).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'switchSource',
+          sourceKey: 'direct-5',
+          source: state.sources[4],
+          episodeIndex: 2,
+          resumeTime: 433.12,
+          reason: 'auto-recovery',
+        },
+      ])
+    );
+    expect(result.state.recoveryStage).toBe('R3');
+    expect(result.state.recoveryResumeTime).toBe(433.12);
     expect(result.state.recoveredSourceKeys.has('current-1')).toBe(true);
     expect(result.state.recoveredSourceKeys.has('direct-5')).toBe(true);
   });
@@ -270,6 +517,7 @@ describe('Playback Session automatic recovery', () => {
     });
 
     expect(result.effects).toEqual([]);
+    expect(result.state.recoveryStage).toBe('idle');
   });
 
   it('does not switch during manual seek grace', () => {
@@ -304,7 +552,10 @@ describe('Playback Session automatic recovery', () => {
       errorCode: 3,
     });
 
-    expect(result.effects).toEqual([]);
+    expect(
+      result.effects.filter((effect) => effect.type === 'switchSource')
+    ).toEqual([]);
+    expect(result.state.recoveryStage).toBe('exhausted');
   });
 
   it('selects a backend-rescued playable source via Availability, not status-kind alone', () => {
@@ -336,21 +587,23 @@ describe('Playback Session automatic recovery', () => {
     });
 
     const result = reducePlaybackSession(state, {
-      type: 'video.waiting',
+      type: 'video.error',
       nowMs: 10_000,
       snapshot: { currentTime: 438.123 },
     });
 
-    expect(result.effects).toEqual([
-      {
-        type: 'switchSource',
-        sourceKey: 'direct-5',
-        source: state.sources[4],
-        episodeIndex: 2,
-        resumeTime: 433.12,
-        reason: 'auto-recovery',
-      },
-    ]);
+    expect(result.effects).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'switchSource',
+          sourceKey: 'direct-5',
+          source: state.sources[4],
+          episodeIndex: 2,
+          resumeTime: 433.12,
+          reason: 'auto-recovery',
+        },
+      ])
+    );
   });
 
   it('does not switch to an already recovered source', () => {
@@ -365,15 +618,17 @@ describe('Playback Session automatic recovery', () => {
     });
 
     const result = reducePlaybackSession(state, {
-      type: 'video.waiting',
+      type: 'video.error',
       nowMs: 10_000,
       snapshot: { currentTime: 438.123 },
     });
 
-    expect(result.effects).toEqual([]);
+    expect(
+      result.effects.filter((effect) => effect.type === 'switchSource')
+    ).toEqual([]);
   });
 
-  it('skips forward on a later recovery near a recorded stuck point', () => {
+  it('skips forward on a later R3 near a recorded stuck point', () => {
     const first = reducePlaybackSession(
       loadSources({
         sourceStatuses: new Map<string, SourceStatus>([
@@ -386,16 +641,20 @@ describe('Playback Session automatic recovery', () => {
         ]),
       }),
       {
-        type: 'video.waiting',
+        type: 'video.error',
         nowMs: 10_000,
         snapshot: { currentTime: 438.123 },
       }
     );
 
-    expect(first.effects[0]).toMatchObject({
-      type: 'switchSource',
-      resumeTime: 433.12,
-    });
+    expect(first.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'switchSource',
+          resumeTime: 433.12,
+        }),
+      ])
+    );
     expect(first.state.badPoints).toHaveLength(1);
 
     const afterSwitch = reducePlaybackSession(
@@ -403,21 +662,29 @@ describe('Playback Session automatic recovery', () => {
         ...first.state,
         currentSourceKey: 'direct-5',
         sourceChangeInFlight: false,
+        recoveryStage: 'idle',
+        stallEpisodeActive: false,
+        recoveryInFlight: null,
       },
       {
-        type: 'video.waiting',
+        type: 'video.error',
         nowMs: 20_000,
         snapshot: { currentTime: 436.5 },
       }
     );
 
-    expect(afterSwitch.effects[0]).toMatchObject({
-      type: 'switchSource',
-      sourceKey: 'proxy-4',
-    });
-    expect(
-      (afterSwitch.effects[0] as { resumeTime: number | null }).resumeTime
-    ).toBeGreaterThan(438.123);
+    expect(afterSwitch.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'switchSource',
+          sourceKey: 'proxy-4',
+        }),
+      ])
+    );
+    const switchEffect = afterSwitch.effects.find(
+      (effect) => effect.type === 'switchSource'
+    ) as { resumeTime: number | null };
+    expect(switchEffect.resumeTime).toBeGreaterThan(438.123);
   });
 
   it('ignores stale source change timeout attempts', () => {
@@ -464,16 +731,18 @@ describe('Playback Session automatic recovery', () => {
       snapshot: { currentTime: 438.123 },
     });
 
-    expect(result.effects).toEqual([
-      {
-        type: 'switchSource',
-        sourceKey: 'direct-5',
-        source: state.sources[4],
-        episodeIndex: 2,
-        resumeTime: 433.12,
-        reason: 'source-timeout',
-      },
-    ]);
+    expect(result.effects).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'switchSource',
+          sourceKey: 'direct-5',
+          source: state.sources[4],
+          episodeIndex: 2,
+          resumeTime: 433.12,
+          reason: 'source-timeout',
+        },
+      ])
+    );
     expect(result.state.sourceChangeInFlight).toBe(false);
     expect(result.state.sourceChangeSourceKey).toBeNull();
     expect(result.state.recoveredSourceKeys.has('current-1')).toBe(true);
@@ -490,7 +759,7 @@ describe('Playback Session automatic recovery', () => {
         ]),
       }),
       {
-        type: 'video.waiting',
+        type: 'video.error',
         nowMs: 10_000,
         snapshot: { currentTime: 438.123 },
       }
@@ -638,6 +907,108 @@ describe('Playback Session Ad Skip Window effects', () => {
         type: 'cancelAdSkip',
         windowKey: 'rule-1:10.000-20.000',
         reason: 'user-paused',
+      },
+    ]);
+  });
+
+  it('suppresses Ad Skip while R1+ recovery is in-flight', () => {
+    const loaded = {
+      ...loadAdWindows(),
+      recoveryStage: 'R1' as const,
+      stallEpisodeActive: true,
+      recoveryInFlight: 'R1' as const,
+    };
+
+    const result = reducePlaybackSession(loaded, {
+      type: 'video.timeupdate',
+      nowMs: 10_000,
+      snapshot: { currentTime: 12 },
+    });
+
+    expect(result.effects).toEqual([]);
+  });
+
+  it('suppresses Ad Skip while Recovery Resume is pending/in-flight', () => {
+    const loaded = {
+      ...loadAdWindows(),
+      recoveryResumeTime: 55,
+      pendingResumeTime: 55,
+      recoveryInFlight: 'resume' as const,
+    };
+
+    const result = reducePlaybackSession(loaded, {
+      type: 'video.timeupdate',
+      nowMs: 10_000,
+      snapshot: { currentTime: 12 },
+    });
+
+    expect(result.effects).toEqual([]);
+  });
+
+  it('allows Ad Skip alongside R0 observe when Intent permits', () => {
+    const loaded = {
+      ...loadAdWindows(),
+      recoveryStage: 'R0' as const,
+      stallEpisodeActive: true,
+      r0EnteredAtMs: 9_000,
+      recoveryInFlight: null,
+    };
+
+    const result = reducePlaybackSession(loaded, {
+      type: 'video.timeupdate',
+      nowMs: 10_000,
+      snapshot: { currentTime: 12 },
+    });
+
+    expect(result.effects).toEqual([
+      {
+        type: 'skipAdWindow',
+        targetTime: 20.35,
+        windowKey: 'rule-1:10.000-20.000',
+        reason: 'hls-ad-window',
+        platform: 'hlsjs',
+      },
+    ]);
+  });
+
+  it('allows optional S1 only after resume settles', () => {
+    const pending = {
+      ...loadAdWindows(),
+      recoveryResumeTime: 55,
+      pendingResumeTime: 55,
+      recoveryInFlight: 'resume' as const,
+    };
+
+    expect(
+      reducePlaybackSession(pending, {
+        type: 'video.timeupdate',
+        nowMs: 10_000,
+        snapshot: { currentTime: 12 },
+      }).effects
+    ).toEqual([]);
+
+    const settled = reducePlaybackSession(pending, {
+      type: 'recovery.effectSettled',
+      kind: 'resume',
+      nowMs: 11_000,
+    }).state;
+
+    expect(settled.recoveryResumeTime).toBeNull();
+    expect(settled.recoveryInFlight).toBeNull();
+
+    expect(
+      reducePlaybackSession(settled, {
+        type: 'video.timeupdate',
+        nowMs: 11_100,
+        snapshot: { currentTime: 12 },
+      }).effects
+    ).toEqual([
+      {
+        type: 'skipAdWindow',
+        targetTime: 20.35,
+        windowKey: 'rule-1:10.000-20.000',
+        reason: 'hls-ad-window',
+        platform: 'hlsjs',
       },
     ]);
   });

@@ -14,13 +14,32 @@ export type AutomaticEffectKind =
   | 'same-source-recovery'
   | 'auto-source-switch';
 
+export type PlaybackRecoveryStage =
+  | 'idle'
+  | 'R0'
+  | 'R1'
+  | 'R2'
+  | 'R3'
+  | 'exhausted';
+
+export type RecoveryInFlightKind = 'R1' | 'R2' | 'R3' | 'resume' | null;
+
+export type SameSourceRecoverAction =
+  | 'nudge-playback'
+  | 'restart-load'
+  | 'recover-media'
+  | 'resume-playback'
+  | 'escape-bad-point';
+
 export interface PlaybackIntentGateResult {
   allowed: boolean;
   deniedBy?:
     | 'user-paused'
     | 'seeking'
     | 'seek-settled'
-    | 'source-switch-settle';
+    | 'source-switch-settle'
+    | 'recovery-in-flight'
+    | 'resume-pending';
 }
 
 export interface VideoSnapshot {
@@ -37,19 +56,55 @@ export interface PlaybackSessionSourceScore {
   score: number;
 }
 
+export interface BadPointScope {
+  contentKey: string;
+  episodeIndex: number;
+}
+
+/** Adapter-only media/runtime summaries — never carry private escalation plans. */
+export interface RecoveryRuntimeEvidence {
+  platform: 'apple-native' | 'hlsjs';
+  stallCandidate?: boolean;
+  /** Hard failure may shorten R0/R1; still requires Intent for R3. */
+  hardFailure?: boolean;
+  hls?: {
+    stallCount: number;
+    fatal?: boolean;
+    errorType?: string | null;
+  };
+  native?: {
+    severity: 'observe' | 'soft-stall' | 'hard-stall' | 'source-failed';
+    isJitter: boolean;
+    jitterWindowCount: number;
+  };
+}
+
 export interface PlaybackSessionState {
   sources: SearchResult[];
   currentSourceKey: string | null;
   currentEpisodeIndex: number;
+  contentKey: string | null;
   sourceStatuses: Map<string, SourceStatus>;
   sourceScores: Map<string, PlaybackSessionSourceScore>;
   measuredVideoInfo: Map<string, SourceVideoInfo>;
   recoveredSourceKeys: Set<string>;
+  /** Bad points visible for the active Bad Point Scope only. */
   badPoints: PlaybackBadPoint[];
+  /** Scoped storage: `${contentKey}::${episodeIndex}` → points. */
+  badPointsByScope: Map<string, PlaybackBadPoint[]>;
   adSkipWindows: HlsAdSkipWindow[];
   lastAdSkipWindowKey: string | null;
   adSkipInFlightWindowKey: string | null;
+  /** Recovery Resume Time — sole Session authority for planned playhead. */
+  recoveryResumeTime: number | null;
+  /** @deprecated Alias of recoveryResumeTime during M3 migration. */
   pendingResumeTime: number | null;
+  recoveryStage: PlaybackRecoveryStage;
+  stallEpisodeActive: boolean;
+  r0EnteredAtMs: number | null;
+  r1AttemptCount: number;
+  r2AttemptCount: number;
+  recoveryInFlight: RecoveryInFlightKind;
   playbackIntent: PlaybackIntent;
   resumeIntentAfterSeek: 'playing' | 'user-paused' | null;
   lastUserSeekAtMs: number | null;
@@ -69,6 +124,7 @@ export type PlaybackSessionEvent =
       sources: SearchResult[];
       currentSourceKey: string | null;
       currentEpisodeIndex: number;
+      contentKey?: string | null;
       sourceStatuses?: Map<string, SourceStatus>;
       sourceScores?: Map<string, PlaybackSessionSourceScore>;
       measuredVideoInfo?: Map<string, SourceVideoInfo>;
@@ -93,6 +149,23 @@ export type PlaybackSessionEvent =
   | { type: 'sourceChange.started'; attemptId: number; sourceKey: string }
   | { type: 'sourceChange.completed'; attemptId: number; sourceKey: string }
   | { type: 'recovery.switchFailed'; sourceKey: string }
+  | {
+      type: 'recovery.runtimeEvidence';
+      snapshot: VideoSnapshot;
+      nowMs: number;
+      evidence: RecoveryRuntimeEvidence;
+    }
+  | {
+      type: 'recovery.progressHealthy';
+      snapshot: VideoSnapshot;
+      nowMs: number;
+    }
+  | { type: 'recovery.cancel' }
+  | {
+      type: 'recovery.effectSettled';
+      kind: 'R1' | 'R2' | 'resume';
+      nowMs: number;
+    }
   | { type: 'video.waiting'; snapshot: VideoSnapshot; nowMs: number }
   | {
       type: 'video.timeupdate';
@@ -125,6 +198,17 @@ export type PlaybackSessionEffect =
       reason: 'auto-recovery' | 'source-timeout';
     }
   | {
+      type: 'sameSourceRecover';
+      stage: 'R1' | 'R2';
+      action: SameSourceRecoverAction;
+      targetTime: number | null;
+      reason: string;
+    }
+  | {
+      type: 'applyRecoveryResume';
+      resumeTime: number;
+    }
+  | {
       type: 'skipAdWindow';
       targetTime: number;
       windowKey: string;
@@ -134,7 +218,12 @@ export type PlaybackSessionEffect =
   | {
       type: 'cancelAdSkip';
       windowKey: string;
-      reason: 'user-paused' | 'seeking' | 'user-switch';
+      reason:
+        | 'user-paused'
+        | 'seeking'
+        | 'user-switch'
+        | 'recovery-in-flight'
+        | 'resume-pending';
     }
   | {
       type: 'saveProgress';
