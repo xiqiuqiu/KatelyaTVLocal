@@ -302,10 +302,28 @@ export function selectRecoveryCandidate(
   return (
     buildSourceAvailabilityList(input)
       .filter(
-        (item) => item.autoRecovery.eligible && !attempted.has(item.sourceKey)
+        (item) =>
+          item.autoRecovery.eligible &&
+          !item.isCurrent &&
+          !attempted.has(item.sourceKey)
       )
       .sort(
         (left, right) => left.autoRecovery.rank - right.autoRecovery.rank
       )[0] || null
   );
 }
+
+export {
+  clearAttemptedLedgersOnEpisodeChange,
+  clearAttemptedLedgersOnTitleChange,
+} from './attempted-ledgers';
+export type { SourceAttemptedLedgers } from './attempted-ledgers';
+export {
+  getSourceCandidateAuthorityMode,
+  isSourceAvailabilityCandidateAuthorityEnabled,
+  resolveRecoveryCandidateSource,
+} from './authority';
+export type {
+  ResolveRecoveryCandidateSourceInput,
+  SourceCandidateAuthorityMode,
+} from './authority';

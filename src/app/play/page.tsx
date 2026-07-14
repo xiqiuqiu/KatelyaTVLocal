@@ -87,7 +87,6 @@ import {
 } from '@/lib/playback-session';
 import {
   clampSourceSwitchResumeTime,
-  getNextRecoverySourceCandidate,
   getSourceSwitchResumePlan,
   getSourceSwitchTargetEpisodeIndex,
   shouldIgnoreSourceChangeTimeout,
@@ -104,6 +103,11 @@ import {
   selectProgressiveSourceProbeCandidates,
   shouldStartProgressiveSourceProbe,
 } from '@/lib/progressive-source-probe';
+import {
+  clearAttemptedLedgersOnEpisodeChange,
+  clearAttemptedLedgersOnTitleChange,
+} from '@/lib/source-availability/attempted-ledgers';
+import { selectRecoveryCandidate } from '@/lib/source-availability/index';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import { buildVideoInfoFromPreferenceResult } from '@/lib/source-preference-video-info';
 import {
@@ -593,6 +597,7 @@ function PlayPageClient() {
   const progressiveSourceProbeStableStartedAtRef = useRef(0);
   const progressiveSourceProbeAttemptedKeysRef = useRef<Set<string>>(new Set());
   const autoRecoveredSourceKeysRef = useRef<Set<string>>(new Set());
+  const attemptedLedgerTitleKeyRef = useRef<string | null>(null);
   const playbackSessionStateRef = useRef<PlaybackSessionState>(
     createInitialPlaybackSessionState({
       badPoints:
@@ -682,15 +687,39 @@ function PlayPageClient() {
   }, [sourceSelectionScores]);
 
   useEffect(() => {
-    autoRecoveredSourceKeysRef.current.clear();
-    progressiveSourceProbeAttemptedKeysRef.current.clear();
+    const nextLedgers = clearAttemptedLedgersOnEpisodeChange({
+      autoRecoveryAttempted: autoRecoveredSourceKeysRef.current,
+      probeSchedulingAttempted: progressiveSourceProbeAttemptedKeysRef.current,
+    });
+    autoRecoveredSourceKeysRef.current = nextLedgers.autoRecoveryAttempted;
+    progressiveSourceProbeAttemptedKeysRef.current =
+      nextLedgers.probeSchedulingAttempted;
     playbackSessionStateRef.current = {
       ...playbackSessionStateRef.current,
-      recoveredSourceKeys: new Set(),
+      recoveredSourceKeys: new Set(nextLedgers.autoRecoveryAttempted),
       currentEpisodeIndex,
     };
     resetProgressiveSourceProbeStability();
   }, [currentEpisodeIndex]);
+
+  useEffect(() => {
+    const titleKey = `${videoTitle}::${videoYear}`;
+    const previousTitleKey = attemptedLedgerTitleKeyRef.current;
+    attemptedLedgerTitleKeyRef.current = titleKey;
+    if (previousTitleKey === null || previousTitleKey === titleKey) {
+      return;
+    }
+
+    const nextLedgers = clearAttemptedLedgersOnTitleChange();
+    autoRecoveredSourceKeysRef.current = nextLedgers.autoRecoveryAttempted;
+    progressiveSourceProbeAttemptedKeysRef.current =
+      nextLedgers.probeSchedulingAttempted;
+    playbackSessionStateRef.current = {
+      ...playbackSessionStateRef.current,
+      recoveredSourceKeys: new Set(),
+    };
+    resetProgressiveSourceProbeStability();
+  }, [videoTitle, videoYear]);
 
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
@@ -1189,35 +1218,18 @@ function PlayPageClient() {
   };
 
   const getNextRecoverySource = () => {
-    return getNextRecoverySourceCandidate({
-      candidates: availableSourcesRef.current,
+    const selected = selectRecoveryCandidate({
+      sources: availableSourcesRef.current,
       currentSourceKey: getCurrentSourceKey(),
-      recoveredSourceKeys: autoRecoveredSourceKeysRef.current,
       currentEpisodeIndex: currentEpisodeIndexRef.current,
-      getSourceKey: (source) => getSourceIdentityKey(source.source, source.id),
-      getEpisodeCount: (source) => source.episodes?.length || 0,
-      getStatusKind: (source) => {
-        if (!source.episodes) {
-          return 'unavailable';
-        }
-        const sourceKey = getSourceIdentityKey(source.source, source.id);
-        const rememberedStatus = getRememberedSourceStatusForSource(
-          sourceKey,
-          source.episodes
-        );
-        if (rememberedStatus?.kind === 'unavailable') {
-          return 'unavailable';
-        }
-        const status =
-          precomputedSourceStatusesRef.current.get(sourceKey) ||
-          rememberedStatus;
-        return status?.kind;
-      },
-      getCandidateScore: (source) =>
-        sourceSelectionScoresRef.current.get(
-          getSourceIdentityKey(source.source, source.id)
-        )?.score,
+      statuses: buildPlaybackSessionSourceStatuses(
+        availableSourcesRef.current
+      ),
+      measured: precomputedVideoInfoRef.current,
+      sourceSelectionScores: sourceSelectionScoresRef.current,
+      attemptedSourceKeys: autoRecoveredSourceKeysRef.current,
     });
+    return selected?.source;
   };
 
   const tryNudgePlayback = (video: HTMLVideoElement | null) => {

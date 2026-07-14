@@ -1,17 +1,19 @@
 import { getHlsAdSkipDecision, getHlsAdSkipWindowKey } from '@/lib/hls-ad-skip';
 import {
   getAutoRecoveryResumePlan,
-  getNextRecoverySourceCandidate,
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
 import { rememberPlaybackBadPoint } from '@/lib/playback-stuck-escape';
-import type { SourceStatusKind } from '@/lib/types';
+import { selectRecoveryCandidate } from '@/lib/source-availability/index';
+import type { SourceSelectionScore } from '@/lib/source-selection';
+import type { SearchResult } from '@/lib/types';
 
 import { allowsAutomaticEffect } from './intent';
 import type {
   PlaybackSessionEffect,
   PlaybackSessionEvent,
   PlaybackSessionResult,
+  PlaybackSessionSourceScore,
   PlaybackSessionState,
   VideoSnapshot,
 } from './types';
@@ -56,6 +58,28 @@ function getSourceKey(source: { source: string; id: string }) {
   return `${source.source}-${source.id}`;
 }
 
+function toSelectionScores(
+  sources: SearchResult[],
+  sourceScores: Map<string, PlaybackSessionSourceScore>
+): Map<string, SourceSelectionScore> {
+  const scores = new Map<string, SourceSelectionScore>();
+  sources.forEach((source, originalIndex) => {
+    const sourceKey = getSourceKey(source);
+    const score = sourceScores.get(sourceKey);
+    if (!score) {
+      return;
+    }
+    scores.set(sourceKey, {
+      sourceKey,
+      score: score.score,
+      reason: '',
+      source,
+      originalIndex,
+    });
+  });
+  return scores;
+}
+
 function shouldRespectManualSeekGrace(
   state: PlaybackSessionState,
   nowMs: number
@@ -69,23 +93,25 @@ function createRecoverySwitchEffect(
   reason: 'auto-recovery' | 'source-timeout',
   nowMs: number
 ): { state: PlaybackSessionState; effect: PlaybackSessionEffect } | null {
-  const candidate = getNextRecoverySourceCandidate({
-    candidates: state.sources,
+  const selected = selectRecoveryCandidate({
+    sources: state.sources,
     currentSourceKey: state.currentSourceKey,
-    recoveredSourceKeys: state.recoveredSourceKeys,
     currentEpisodeIndex: state.currentEpisodeIndex,
-    getSourceKey,
-    getStatusKind: (source): SourceStatusKind | null | undefined =>
-      state.sourceStatuses.get(getSourceKey(source))?.kind,
-    getCandidateScore: (source) =>
-      state.sourceScores.get(getSourceKey(source))?.score,
+    statuses: state.sourceStatuses,
+    measured: state.measuredVideoInfo,
+    sourceSelectionScores: toSelectionScores(
+      state.sources,
+      state.sourceScores
+    ),
+    attemptedSourceKeys: state.recoveredSourceKeys,
   });
 
-  if (!candidate) {
+  if (!selected) {
     return null;
   }
 
-  const sourceKey = getSourceKey(candidate);
+  const candidate = selected.source;
+  const sourceKey = selected.sourceKey;
   const escape = getAutoRecoveryResumePlan({
     currentPlayTime: snapshot.currentTime,
     badPoints: state.badPoints,

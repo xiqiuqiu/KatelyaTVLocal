@@ -4,6 +4,10 @@ import {
   type PlaybackBadPoint,
   type StallEscapeAction,
 } from '@/lib/playback-stuck-escape';
+import { resolveRecoveryCandidateSource } from '@/lib/source-availability/authority';
+import { selectRecoveryCandidate } from '@/lib/source-availability/index';
+import type { SourceSelectionScore } from '@/lib/source-selection';
+import type { SearchResult, SourceStatus } from '@/lib/types';
 
 interface SourceSwitchResumeInput {
   currentEpisodeIndex: number;
@@ -189,6 +193,21 @@ export function shouldIgnoreSourceChangeTimeout({
 
 export function getNextRecoverySourceCandidate<
   T extends RecoverySourceCandidate
+>(input: RecoverySourceCandidateInput<T>): T | undefined {
+  return (
+    resolveRecoveryCandidateSource({
+      availabilitySelect: () => selectAvailabilityRecoverySource(input),
+      legacySelect: () => selectLegacyRecoverySourceCandidate(input),
+    }) ?? undefined
+  );
+}
+
+/**
+ * Legacy eligibility/ranking furnace. Kept only for instant rollback when
+ * NEXT_PUBLIC_SOURCE_AVAILABILITY_CANDIDATE_AUTHORITY=false.
+ */
+export function selectLegacyRecoverySourceCandidate<
+  T extends RecoverySourceCandidate
 >({
   candidates,
   currentSourceKey,
@@ -236,6 +255,61 @@ export function getNextRecoverySourceCandidate<
         getRecoverySourcePriority(getStatusKind(b))
       );
     })[0];
+}
+
+function selectAvailabilityRecoverySource<T extends RecoverySourceCandidate>(
+  input: RecoverySourceCandidateInput<T>
+): T | null {
+  const {
+    candidates,
+    currentSourceKey,
+    recoveredSourceKeys,
+    currentEpisodeIndex,
+    getSourceKey = (candidate) => `${candidate.source}-${candidate.id}`,
+    getStatusKind = (candidate) => candidate.statusKind,
+    getCandidateScore,
+  } = input;
+
+  const statuses = new Map<string, SourceStatus>();
+  const sourceSelectionScores = new Map<string, SourceSelectionScore>();
+
+  candidates.forEach((candidate, originalIndex) => {
+    const sourceKey = getSourceKey(candidate);
+    const statusKind = getStatusKind(candidate);
+    if (statusKind) {
+      statuses.set(sourceKey, { kind: statusKind });
+    }
+
+    const score = getCandidateScore?.(candidate);
+    if (typeof score === 'number') {
+      sourceSelectionScores.set(sourceKey, {
+        sourceKey,
+        score,
+        reason: '',
+        source: candidate as unknown as SearchResult,
+        originalIndex,
+      });
+    }
+  });
+
+  const selected = selectRecoveryCandidate({
+    sources: candidates as unknown as SearchResult[],
+    currentSourceKey,
+    currentEpisodeIndex,
+    statuses,
+    sourceSelectionScores,
+    attemptedSourceKeys: recoveredSourceKeys,
+  });
+
+  if (!selected) {
+    return null;
+  }
+
+  return (
+    candidates.find(
+      (candidate) => getSourceKey(candidate) === selected.sourceKey
+    ) || null
+  );
 }
 
 export function getSourceSwitchResumePlan({

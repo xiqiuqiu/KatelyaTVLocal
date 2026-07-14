@@ -25,10 +25,22 @@ function loadSources({
   sourceStatuses = new Map<string, SourceStatus>(),
   sourceScores = new Map<string, { score: number }>(),
   recoveredSourceKeys = new Set<string>(),
+  measuredVideoInfo,
 }: {
   sourceStatuses?: Map<string, SourceStatus>;
   sourceScores?: Map<string, { score: number }>;
   recoveredSourceKeys?: Set<string>;
+  measuredVideoInfo?: Map<
+    string,
+    {
+      quality: string;
+      loadSpeed: string;
+      pingTime: number;
+      speedSource?: 'backend' | 'browser' | 'feedback' | 'none';
+      speedPending?: boolean;
+      hasError?: boolean;
+    }
+  >;
 } = {}) {
   const sources = [
     createSource('current', '1'),
@@ -47,6 +59,7 @@ function loadSources({
     sourceStatuses,
     sourceScores,
     recoveredSourceKeys,
+    measuredVideoInfo,
   }).state;
 }
 
@@ -292,6 +305,52 @@ describe('Playback Session automatic recovery', () => {
     });
 
     expect(result.effects).toEqual([]);
+  });
+
+  it('selects a backend-rescued playable source via Availability, not status-kind alone', () => {
+    const state = loadSources({
+      sourceStatuses: new Map<string, SourceStatus>([
+        ['bad-3', { kind: 'unavailable' }],
+        ['proxy-4', { kind: 'proxy' }],
+        [
+          'direct-5',
+          {
+            kind: 'unavailable',
+            reason: '该源近期在本机不可用',
+            fromMemory: true,
+          },
+        ],
+      ]),
+      measuredVideoInfo: new Map([
+        [
+          'direct-5',
+          {
+            quality: '1080p',
+            loadSpeed: '后端 2.4 MB/s · 280ms',
+            pingTime: 280,
+            speedSource: 'backend',
+            speedPending: false,
+          },
+        ],
+      ]),
+    });
+
+    const result = reducePlaybackSession(state, {
+      type: 'video.waiting',
+      nowMs: 10_000,
+      snapshot: { currentTime: 438.123 },
+    });
+
+    expect(result.effects).toEqual([
+      {
+        type: 'switchSource',
+        sourceKey: 'direct-5',
+        source: state.sources[4],
+        episodeIndex: 2,
+        resumeTime: 433.12,
+        reason: 'auto-recovery',
+      },
+    ]);
   });
 
   it('does not switch to an already recovered source', () => {
