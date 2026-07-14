@@ -3,7 +3,25 @@ import type { PlayRecordSaveReason } from '@/lib/play-record-save-policy';
 import type { PlaybackBadPoint } from '@/lib/playback-stuck-escape';
 import type { SearchResult, SourceStatus, SourceVideoInfo } from '@/lib/types';
 
-export type PlaybackIntent = 'playing' | 'paused';
+export type PlaybackIntent =
+  | 'playing'
+  | 'user-paused'
+  | 'seeking'
+  | 'seek-settled';
+
+export type AutomaticEffectKind =
+  | 'ad-skip'
+  | 'same-source-recovery'
+  | 'auto-source-switch';
+
+export interface PlaybackIntentGateResult {
+  allowed: boolean;
+  deniedBy?:
+    | 'user-paused'
+    | 'seeking'
+    | 'seek-settled'
+    | 'source-switch-settle';
+}
 
 export interface VideoSnapshot {
   currentTime: number;
@@ -30,12 +48,18 @@ export interface PlaybackSessionState {
   badPoints: PlaybackBadPoint[];
   adSkipWindows: HlsAdSkipWindow[];
   lastAdSkipWindowKey: string | null;
+  adSkipInFlightWindowKey: string | null;
   pendingResumeTime: number | null;
   playbackIntent: PlaybackIntent;
+  resumeIntentAfterSeek: 'playing' | 'user-paused' | null;
   lastUserSeekAtMs: number | null;
+  seekSettledAtMs: number | null;
+  seekSettledShortGuardMs: number;
+  seekSettledLongGuardMs: number;
   sourceChangeInFlight: boolean;
   currentSourceChangeAttemptId: number;
   sourceChangeSourceKey: string | null;
+  sourceSwitchSettledUntilMs: number | null;
   manualSeekGraceMs: number;
 }
 
@@ -53,6 +77,17 @@ export type PlaybackSessionEvent =
   | { type: 'user.play' }
   | { type: 'user.pause' }
   | { type: 'user.seekStarted'; nowMs: number }
+  | { type: 'user.seekSettled'; nowMs: number }
+  | {
+      type: 'user.switchSource';
+      sourceKey: string;
+      nowMs: number;
+    }
+  | {
+      type: 'user.switchEpisode';
+      episodeIndex: number;
+      nowMs: number;
+    }
   | { type: 'adSkipWindows.loaded'; windows: HlsAdSkipWindow[] }
   | { type: 'progressSave.requested'; reason: PlayRecordSaveReason }
   | { type: 'sourceChange.started'; attemptId: number; sourceKey: string }
@@ -95,6 +130,11 @@ export type PlaybackSessionEffect =
       windowKey: string;
       reason: 'hls-ad-window';
       platform: 'apple-native' | 'hlsjs';
+    }
+  | {
+      type: 'cancelAdSkip';
+      windowKey: string;
+      reason: 'user-paused' | 'seeking' | 'user-switch';
     }
   | {
       type: 'saveProgress';

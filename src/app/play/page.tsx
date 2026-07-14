@@ -80,7 +80,10 @@ import {
   type PlaybackSessionState,
   type VideoSnapshot,
   createInitialPlaybackSessionState,
+  getPlaybackIntentAuthorityMode,
+  isPlaybackIntentSessionAuthorityEnabled,
   reducePlaybackSession,
+  resolveAdapterAutomaticEffectAllowed,
 } from '@/lib/playback-session';
 import {
   clampSourceSwitchResumeTime,
@@ -598,6 +601,7 @@ function PlayPageClient() {
           : [],
     })
   );
+  const systemSeekInFlightRef = useRef(false);
   const hlsAutoSourceSwitchSessionRef = useRef<number | null>(null);
   const hlsRecoveryStateRef = useRef({
     stallCount: 0,
@@ -780,6 +784,21 @@ function PlayPageClient() {
         );
       }
     }
+
+    for (const effect of result.effects) {
+      if (effect.type === 'cancelAdSkip') {
+        emitPlaybackDebugLog(
+          'ad-skip-cancelled',
+          '已取消进行中的 Ad Skip',
+          {
+            windowKey: effect.windowKey,
+            reason: effect.reason,
+            intentAuthority: getPlaybackIntentAuthorityMode(),
+          }
+        );
+      }
+    }
+
     return result;
   };
 
@@ -1078,7 +1097,7 @@ function PlayPageClient() {
 
   const markHlsUserSeeked = (currentTime?: number) => {
     const now = Date.now();
-    dispatchPlaybackSessionEvent({ type: 'user.seekStarted', nowMs: now });
+    dispatchPlaybackSessionEvent({ type: 'user.seekSettled', nowMs: now });
     const state = hlsRecoveryStateRef.current;
     clearWaitingRecoveryTimer();
     state.isSeeking = false;
@@ -1086,6 +1105,18 @@ function PlayPageClient() {
     state.seekBufferGraceUntil = now + HLS_SEEK_BUFFER_GRACE_MS;
     resetHlsStallWindow('user-seeked', currentTime);
   };
+
+  const isSessionAutomaticEffectAllowed = (
+    kind: 'ad-skip' | 'same-source-recovery' | 'auto-source-switch',
+    nowMs: number,
+    legacyIsUserPaused: boolean
+  ) =>
+    resolveAdapterAutomaticEffectAllowed({
+      kind,
+      nowMs,
+      sessionState: playbackSessionStateRef.current,
+      legacyIsUserPaused,
+    });
 
   const markPlaybackHealthy = (currentTime?: number) => {
     if (typeof currentTime === 'number') {
@@ -1206,6 +1237,7 @@ function PlayPageClient() {
       if (escape.recordBadPointAt != null) {
         rememberCurrentPlaybackBadPoint(escape.recordBadPointAt);
       }
+      systemSeekInFlightRef.current = true;
       video.currentTime = escape.resumeTime;
       return true;
     }
@@ -2211,6 +2243,7 @@ function PlayPageClient() {
     }
 
     const fromTime = video.currentTime || 0;
+    systemSeekInFlightRef.current = true;
     video.currentTime = skipEffect.targetTime;
     emitPlaybackDebugLog(
       'ios-ad-skip',
@@ -2520,6 +2553,15 @@ function PlayPageClient() {
     rememberCurrentPlaybackBadPoint(stuckTime);
 
     if (state.jitterWindowCount >= 2 && stuckTime > 1) {
+      if (
+        !isSessionAutomaticEffectAllowed(
+          'same-source-recovery',
+          now,
+          state.playIntent === 'paused'
+        )
+      ) {
+        return;
+      }
       const escape = planStallEscapeResume({
         currentPlayTime: stuckTime,
         badPoints: playbackSessionStateRef.current.badPoints,
@@ -2527,6 +2569,7 @@ function PlayPageClient() {
         mode: 'same-source',
       });
       if (escape.action === 'skip-forward' && escape.resumeTime != null) {
+        systemSeekInFlightRef.current = true;
         video.currentTime = escape.resumeTime;
         emitPlaybackDebugLog(
           'native-jitter-skip-forward',
@@ -2683,9 +2726,42 @@ function PlayPageClient() {
     stalledForMs: number
   ) => {
     const state = nativeRecoveryStateRef.current;
+    const now = Date.now();
+    const legacyIsUserPaused = state.playIntent === 'paused';
+    if (
+      !isSessionAutomaticEffectAllowed(
+        severity === 'source-failed' || state.sourceRecoveryAttempts > 0
+          ? 'auto-source-switch'
+          : 'same-source-recovery',
+        now,
+        legacyIsUserPaused
+      )
+    ) {
+      emitPlaybackDebugLog(
+        'native-recovery-ignored',
+        '已忽略原生自动恢复',
+        {
+          reason: 'intent-gate',
+          intentAuthority: getPlaybackIntentAuthorityMode(),
+          playbackIntent: playbackSessionStateRef.current.playbackIntent,
+          recoveryMode: severity,
+          stallObservedForMs: stalledForMs,
+        },
+        { playbackUrl }
+      );
+      return false;
+    }
+
+    const playIntentForDecision =
+      getPlaybackIntentAuthorityMode() === 'session'
+        ? playbackSessionStateRef.current.playbackIntent === 'user-paused'
+          ? 'paused'
+          : 'playing'
+        : state.playIntent;
+
     const decision = getNativeRecoveryAction({
       severity,
-      playIntent: state.playIntent,
+      playIntent: playIntentForDecision,
       browserAutoplayLocked: state.browserAutoplayLocked,
       hasAlternativeSource: Boolean(getNextRecoverySource()),
       sourceRecoveryAttempts: state.sourceRecoveryAttempts,
@@ -2767,6 +2843,7 @@ function PlayPageClient() {
         rememberCurrentPlaybackBadPoint(escape.recordBadPointAt);
       }
       if (escape.action === 'skip-forward' && escape.resumeTime != null) {
+        systemSeekInFlightRef.current = true;
         video.currentTime = escape.resumeTime;
         emitPlaybackDebugLog(
           'native-stall-skip-forward',
@@ -2897,18 +2974,31 @@ function PlayPageClient() {
     };
     const handleSeeking = () => {
       resetProgressiveSourceProbeStability();
+      if (systemSeekInFlightRef.current) {
+        return;
+      }
       const now = Date.now();
       dispatchPlaybackSessionEvent({ type: 'user.seekStarted', nowMs: now });
+    };
+    const handleSeeked = () => {
+      if (systemSeekInFlightRef.current) {
+        systemSeekInFlightRef.current = false;
+        return;
+      }
+      const now = Date.now();
+      dispatchPlaybackSessionEvent({ type: 'user.seekSettled', nowMs: now });
     };
 
     video.recoveryPlayingListener = handlePlaying;
     video.recoveryErrorListener = handleError;
     video.recoveryTimeupdateListener = handleTimeupdate;
     video.recoverySeekingListener = handleSeeking;
+    video.recoverySeekedListener = handleSeeked;
     video.addEventListener('playing', handlePlaying);
     video.addEventListener('error', handleError);
     video.addEventListener('timeupdate', handleTimeupdate);
     video.addEventListener('seeking', handleSeeking);
+    video.addEventListener('seeked', handleSeeked);
 
     if (typeof window !== 'undefined') {
       nativeWatchdogTimerRef.current = window.setInterval(() => {
@@ -2917,6 +3007,17 @@ function PlayPageClient() {
         const stalledForMs = now - state.lastProgressAt;
 
         if (
+          !isSessionAutomaticEffectAllowed(
+            'same-source-recovery',
+            now,
+            state.playIntent === 'paused'
+          )
+        ) {
+          return;
+        }
+
+        if (
+          getPlaybackIntentAuthorityMode() === 'legacy' &&
           shouldIgnoreNativeStall({
             playIntent: state.playIntent,
             mediaSourceUnavailable,
@@ -3443,6 +3544,13 @@ function PlayPageClient() {
       setCurrentId(newId);
       setDetail(newDetail);
       setCurrentEpisodeIndex(targetIndex);
+      if (!options.autoRecovery) {
+        dispatchPlaybackSessionEvent({
+          type: 'user.switchSource',
+          sourceKey: nextSourceKey,
+          nowMs: Date.now(),
+        });
+      }
       return true;
     } catch (err) {
       // 隐藏换源加载状态
@@ -3472,6 +3580,11 @@ function PlayPageClient() {
         requestSaveCurrentPlayProgress('episode-change');
       }
       setCurrentEpisodeIndex(episodeIndex);
+      dispatchPlaybackSessionEvent({
+        type: 'user.switchEpisode',
+        episodeIndex,
+        nowMs: Date.now(),
+      });
     }
   };
 
@@ -3482,7 +3595,13 @@ function PlayPageClient() {
       if (artPlayerRef.current && !artPlayerRef.current.paused) {
         requestSaveCurrentPlayProgress('episode-change');
       }
-      setCurrentEpisodeIndex(idx - 1);
+      const episodeIndex = idx - 1;
+      setCurrentEpisodeIndex(episodeIndex);
+      dispatchPlaybackSessionEvent({
+        type: 'user.switchEpisode',
+        episodeIndex,
+        nowMs: Date.now(),
+      });
     }
   };
 
@@ -3494,7 +3613,13 @@ function PlayPageClient() {
       if (artPlayerRef.current && !artPlayerRef.current.paused) {
         requestSaveCurrentPlayProgress('episode-change');
       }
-      setCurrentEpisodeIndex(idx + 1);
+      const episodeIndex = idx + 1;
+      setCurrentEpisodeIndex(episodeIndex);
+      dispatchPlaybackSessionEvent({
+        type: 'user.switchEpisode',
+        episodeIndex,
+        nowMs: Date.now(),
+      });
     }
   };
 
@@ -4003,10 +4128,43 @@ function PlayPageClient() {
                 const now = Date.now();
                 const state = hlsRecoveryStateRef.current;
                 const nativeState = nativeRecoveryStateRef.current;
-                const isUserPaused =
+                const legacyIsUserPaused =
                   nativeState.playIntent === 'paused' &&
                   nativeState.pauseReason === 'user' &&
                   video.paused;
+                if (
+                  !isSessionAutomaticEffectAllowed(
+                    'same-source-recovery',
+                    now,
+                    legacyIsUserPaused
+                  )
+                ) {
+                  emitPlaybackDebugLog(
+                    'hls-recovery-ignored',
+                    '已忽略 HLS.js 自动恢复',
+                    {
+                      action: 'ignore',
+                      planReason: 'intent-gate',
+                      intentAuthority: getPlaybackIntentAuthorityMode(),
+                      playbackIntent:
+                        playbackSessionStateRef.current.playbackIntent,
+                      errorType,
+                      errorDetails,
+                      fatal,
+                      currentTime: Number((video.currentTime || 0).toFixed(2)),
+                      paused: video.paused,
+                      seeking: video.seeking,
+                      playbackSessionId: state.playbackSessionId,
+                    },
+                    {
+                      playbackUrl: video.currentSrc || videoUrlRef.current,
+                    }
+                  );
+                  return;
+                }
+
+                const useLegacyGuard =
+                  getPlaybackIntentAuthorityMode() === 'legacy';
                 const guard = shouldTriggerHlsWaitingRecovery({
                   timerSessionId: hlsSessionId,
                   currentSessionId: state.playbackSessionId,
@@ -4018,11 +4176,17 @@ function PlayPageClient() {
                   }),
                   isSameVideoElement: artPlayerRef.current?.video === hlsVideo,
                   isEnded: video.ended,
-                  isUserPaused,
-                  isSeeking: state.isSeeking || video.seeking,
+                  isUserPaused: useLegacyGuard ? legacyIsUserPaused : false,
+                  isSeeking: useLegacyGuard
+                    ? state.isSeeking || video.seeking
+                    : video.seeking,
                   nowMs: now,
-                  manualInteractionUntilMs: state.manualInteractionUntil,
-                  seekBufferGraceUntilMs: state.seekBufferGraceUntil,
+                  manualInteractionUntilMs: useLegacyGuard
+                    ? state.manualInteractionUntil
+                    : 0,
+                  seekBufferGraceUntilMs: useLegacyGuard
+                    ? state.seekBufferGraceUntil
+                    : 0,
                 });
                 if (!guard.shouldTrigger) {
                   emitPlaybackDebugLog(
@@ -4176,6 +4340,44 @@ function PlayPageClient() {
                   const state = hlsRecoveryStateRef.current;
                   const now = Date.now();
                   const nativeState = nativeRecoveryStateRef.current;
+                  const legacyIsUserPaused =
+                    nativeState.playIntent === 'paused' &&
+                    nativeState.pauseReason === 'user' &&
+                    video.paused;
+                  if (
+                    !isSessionAutomaticEffectAllowed(
+                      'same-source-recovery',
+                      now,
+                      legacyIsUserPaused
+                    )
+                  ) {
+                    emitPlaybackDebugLog(
+                      'hls-recovery-ignored',
+                      '已忽略 HLS.js waiting 恢复',
+                      {
+                        reason: 'intent-gate',
+                        intentAuthority: getPlaybackIntentAuthorityMode(),
+                        playbackIntent:
+                          playbackSessionStateRef.current.playbackIntent,
+                        timerSessionId,
+                        currentSessionId: state.playbackSessionId,
+                        startedAt,
+                        waitedMs: now - startedAt,
+                        currentTime: Number(
+                          (video.currentTime || 0).toFixed(2)
+                        ),
+                        paused: video.paused,
+                      },
+                      {
+                        playbackUrl:
+                          video.currentSrc || videoUrlRef.current || url,
+                      }
+                    );
+                    return;
+                  }
+
+                  const useLegacyGuard =
+                    getPlaybackIntentAuthorityMode() === 'legacy';
                   const guard = shouldTriggerHlsWaitingRecovery({
                     timerSessionId,
                     currentSessionId: state.playbackSessionId,
@@ -4188,14 +4390,17 @@ function PlayPageClient() {
                     isSameVideoElement:
                       artPlayerRef.current?.video === timerVideo,
                     isEnded: video.ended,
-                    isUserPaused:
-                      nativeState.playIntent === 'paused' &&
-                      nativeState.pauseReason === 'user' &&
-                      video.paused,
-                    isSeeking: state.isSeeking || video.seeking,
+                    isUserPaused: useLegacyGuard ? legacyIsUserPaused : false,
+                    isSeeking: useLegacyGuard
+                      ? state.isSeeking || video.seeking
+                      : video.seeking,
                     nowMs: now,
-                    manualInteractionUntilMs: state.manualInteractionUntil,
-                    seekBufferGraceUntilMs: state.seekBufferGraceUntil,
+                    manualInteractionUntilMs: useLegacyGuard
+                      ? state.manualInteractionUntil
+                      : 0,
+                    seekBufferGraceUntilMs: useLegacyGuard
+                      ? state.seekBufferGraceUntil
+                      : 0,
                   });
                   if (!guard.shouldTrigger) {
                     emitPlaybackDebugLog(
@@ -4250,11 +4455,18 @@ function PlayPageClient() {
 
               const handleVideoSeeking = () => {
                 resetProgressiveSourceProbeStability();
+                if (systemSeekInFlightRef.current) {
+                  return;
+                }
                 markHlsUserSeeking(video.currentTime || 0);
               };
 
               const handleVideoSeeked = () => {
                 resetProgressiveSourceProbeStability();
+                if (systemSeekInFlightRef.current) {
+                  systemSeekInFlightRef.current = false;
+                  return;
+                }
                 markHlsUserSeeked(video.currentTime || 0);
               };
 
@@ -4414,6 +4626,8 @@ function PlayPageClient() {
           setNativePlaybackIntent('playing');
           if (playbackPolicyRef.current?.runtime !== 'native-hls') {
             markHlsUserPlay();
+          } else if (isPlaybackIntentSessionAuthorityEnabled()) {
+            dispatchPlaybackSessionEvent({ type: 'user.play' });
           }
           emitNativeVideoStateDebugLog(
             'native-video-play',
@@ -4451,9 +4665,17 @@ function PlayPageClient() {
             state.lastProgressAt = now;
             if (playbackPolicyRef.current?.runtime !== 'native-hls') {
               markHlsUserPause(video?.currentTime || 0);
+            } else if (isPlaybackIntentSessionAuthorityEnabled()) {
+              dispatchPlaybackSessionEvent({ type: 'user.pause' });
             }
           } else {
             state.pauseReason = 'buffering';
+            // Q1: buffer/loading misclassification must not leave Session Intent
+            // as playing when session authority is on — stamp pause so gates
+            // cannot be bypassed by the legacy Native track.
+            if (isPlaybackIntentSessionAuthorityEnabled()) {
+              dispatchPlaybackSessionEvent({ type: 'user.pause' });
+            }
           }
           emitNativeVideoStateDebugLog(
             'native-video-pause',

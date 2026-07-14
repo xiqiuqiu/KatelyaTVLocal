@@ -7,6 +7,7 @@ import {
 import { rememberPlaybackBadPoint } from '@/lib/playback-stuck-escape';
 import type { SourceStatusKind } from '@/lib/types';
 
+import { allowsAutomaticEffect } from './intent';
 import type {
   PlaybackSessionEffect,
   PlaybackSessionEvent,
@@ -16,6 +17,9 @@ import type {
 } from './types';
 
 const DEFAULT_MANUAL_SEEK_GRACE_MS = 4000;
+const DEFAULT_SEEK_SETTLED_SHORT_GUARD_MS = 4000;
+const DEFAULT_SEEK_SETTLED_LONG_GUARD_MS = 10_000;
+const DEFAULT_SOURCE_SWITCH_SETTLE_MS = 2000;
 
 export function createInitialPlaybackSessionState(
   input: Partial<PlaybackSessionState> = {}
@@ -31,12 +35,18 @@ export function createInitialPlaybackSessionState(
     badPoints: [],
     adSkipWindows: [],
     lastAdSkipWindowKey: null,
+    adSkipInFlightWindowKey: null,
     pendingResumeTime: null,
     playbackIntent: 'playing',
+    resumeIntentAfterSeek: null,
     lastUserSeekAtMs: null,
+    seekSettledAtMs: null,
+    seekSettledShortGuardMs: DEFAULT_SEEK_SETTLED_SHORT_GUARD_MS,
+    seekSettledLongGuardMs: DEFAULT_SEEK_SETTLED_LONG_GUARD_MS,
     sourceChangeInFlight: false,
     currentSourceChangeAttemptId: 0,
     sourceChangeSourceKey: null,
+    sourceSwitchSettledUntilMs: null,
     manualSeekGraceMs: DEFAULT_MANUAL_SEEK_GRACE_MS,
     ...input,
   };
@@ -50,11 +60,7 @@ function shouldRespectManualSeekGrace(
   state: PlaybackSessionState,
   nowMs: number
 ) {
-  return (
-    state.lastUserSeekAtMs !== null &&
-    nowMs - state.lastUserSeekAtMs >= 0 &&
-    nowMs - state.lastUserSeekAtMs < state.manualSeekGraceMs
-  );
+  return !allowsAutomaticEffect(state, 'auto-source-switch', nowMs);
 }
 
 function createRecoverySwitchEffect(
@@ -125,7 +131,7 @@ function maybeRecoverFromSnapshot(
   nowMs: number,
   reason: 'auto-recovery' | 'source-timeout'
 ): PlaybackSessionResult {
-  if (state.playbackIntent === 'paused') {
+  if (!allowsAutomaticEffect(state, 'auto-source-switch', nowMs)) {
     return { state, effects: [] };
   }
 
@@ -141,6 +147,49 @@ function maybeRecoverFromSnapshot(
   return {
     state: recovery.state,
     effects: [recovery.effect],
+  };
+}
+
+function cancelInFlightAdSkip(
+  state: PlaybackSessionState,
+  reason: 'user-paused' | 'seeking' | 'user-switch'
+): PlaybackSessionResult {
+  const windowKey = state.adSkipInFlightWindowKey;
+  if (!windowKey) {
+    return { state, effects: [] };
+  }
+
+  return {
+    state: {
+      ...state,
+      adSkipInFlightWindowKey: null,
+    },
+    effects: [
+      {
+        type: 'cancelAdSkip',
+        windowKey,
+        reason,
+      },
+    ],
+  };
+}
+
+function withIntentTransition(
+  state: PlaybackSessionState,
+  nextState: PlaybackSessionState,
+  cancelReason: 'user-paused' | 'seeking' | 'user-switch' | null
+): PlaybackSessionResult {
+  if (!cancelReason) {
+    return { state: nextState, effects: [] };
+  }
+
+  const cancelled = cancelInFlightAdSkip(state, cancelReason);
+  return {
+    state: {
+      ...nextState,
+      adSkipInFlightWindowKey: cancelled.state.adSkipInFlightWindowKey,
+    },
+    effects: cancelled.effects,
   };
 }
 
@@ -165,16 +214,96 @@ export function reducePlaybackSession(
       };
 
     case 'user.play':
-      return { state: { ...state, playbackIntent: 'playing' }, effects: [] };
+      return withIntentTransition(
+        state,
+        {
+          ...state,
+          playbackIntent: 'playing',
+          resumeIntentAfterSeek: null,
+          seekSettledAtMs: null,
+          sourceSwitchSettledUntilMs: null,
+        },
+        null
+      );
 
     case 'user.pause':
-      return { state: { ...state, playbackIntent: 'paused' }, effects: [] };
+      return withIntentTransition(
+        state,
+        {
+          ...state,
+          playbackIntent: 'user-paused',
+          resumeIntentAfterSeek: null,
+          seekSettledAtMs: null,
+          sourceSwitchSettledUntilMs: null,
+        },
+        'user-paused'
+      );
 
     case 'user.seekStarted':
+      return withIntentTransition(
+        state,
+        {
+          ...state,
+          playbackIntent: 'seeking',
+          resumeIntentAfterSeek:
+            state.playbackIntent === 'user-paused' ||
+            state.resumeIntentAfterSeek === 'user-paused'
+              ? 'user-paused'
+              : 'playing',
+          lastUserSeekAtMs: event.nowMs,
+          seekSettledAtMs: null,
+        },
+        'seeking'
+      );
+
+    case 'user.seekSettled': {
+      const resumeIntent =
+        state.resumeIntentAfterSeek === 'user-paused'
+          ? 'user-paused'
+          : 'seek-settled';
       return {
-        state: { ...state, lastUserSeekAtMs: event.nowMs },
+        state: {
+          ...state,
+          playbackIntent: resumeIntent,
+          resumeIntentAfterSeek: null,
+          lastUserSeekAtMs: event.nowMs,
+          seekSettledAtMs:
+            resumeIntent === 'seek-settled' ? event.nowMs : null,
+        },
         effects: [],
       };
+    }
+
+    case 'user.switchSource':
+      return withIntentTransition(
+        state,
+        {
+          ...state,
+          playbackIntent: 'playing',
+          resumeIntentAfterSeek: null,
+          currentSourceKey: event.sourceKey,
+          seekSettledAtMs: null,
+          sourceSwitchSettledUntilMs:
+            event.nowMs + DEFAULT_SOURCE_SWITCH_SETTLE_MS,
+        },
+        'user-switch'
+      );
+
+    case 'user.switchEpisode':
+      return withIntentTransition(
+        state,
+        {
+          ...state,
+          playbackIntent: 'playing',
+          resumeIntentAfterSeek: null,
+          currentEpisodeIndex: event.episodeIndex,
+          seekSettledAtMs: null,
+          recoveredSourceKeys: new Set(),
+          sourceSwitchSettledUntilMs:
+            event.nowMs + DEFAULT_SOURCE_SWITCH_SETTLE_MS,
+        },
+        'user-switch'
+      );
 
     case 'adSkipWindows.loaded':
       return {
@@ -182,6 +311,7 @@ export function reducePlaybackSession(
           ...state,
           adSkipWindows: event.windows,
           lastAdSkipWindowKey: null,
+          adSkipInFlightWindowKey: null,
         },
         effects: [],
       };
@@ -230,6 +360,10 @@ export function reducePlaybackSession(
     }
 
     case 'video.timeupdate': {
+      if (!allowsAutomaticEffect(state, 'ad-skip', event.nowMs)) {
+        return { state, effects: [] };
+      }
+
       const decision = getHlsAdSkipDecision({
         currentTimeSeconds: event.snapshot.currentTime,
         windows: state.adSkipWindows,
@@ -253,6 +387,7 @@ export function reducePlaybackSession(
         state: {
           ...state,
           lastAdSkipWindowKey: windowKey,
+          adSkipInFlightWindowKey: windowKey,
         },
         effects: [
           {

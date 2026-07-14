@@ -1,4 +1,5 @@
 import {
+  allowsAutomaticEffect,
   createInitialPlaybackSessionState,
   reducePlaybackSession,
 } from '@/lib/playback-session';
@@ -48,6 +49,167 @@ function loadSources({
     recoveredSourceKeys,
   }).state;
 }
+
+describe('Playback Session Intent gate', () => {
+  it('freezes automatic effects after explicit pause until play', () => {
+    const paused = reducePlaybackSession(loadSources(), {
+      type: 'user.pause',
+    }).state;
+
+    expect(paused.playbackIntent).toBe('user-paused');
+    expect(allowsAutomaticEffect(paused, 'ad-skip', 10_000)).toBe(false);
+    expect(allowsAutomaticEffect(paused, 'same-source-recovery', 10_000)).toBe(
+      false
+    );
+    expect(allowsAutomaticEffect(paused, 'auto-source-switch', 10_000)).toBe(
+      false
+    );
+
+    const afterWaiting = reducePlaybackSession(paused, {
+      type: 'video.waiting',
+      nowMs: 10_000,
+      snapshot: { currentTime: 438.123 },
+    });
+    expect(afterWaiting.effects).toEqual([]);
+    expect(afterWaiting.state.playbackIntent).toBe('user-paused');
+
+    const afterPlay = reducePlaybackSession(paused, { type: 'user.play' }).state;
+    expect(afterPlay.playbackIntent).toBe('playing');
+    expect(allowsAutomaticEffect(afterPlay, 'auto-source-switch', 10_000)).toBe(
+      true
+    );
+  });
+
+  it('does not treat ambiguous media pause snapshots as user pause intent', () => {
+    const playing = loadSources();
+    expect(playing.playbackIntent).toBe('playing');
+
+    const afterMediaPauseShape = reducePlaybackSession(playing, {
+      type: 'video.waiting',
+      nowMs: 10_000,
+      snapshot: {
+        currentTime: 12,
+        paused: true,
+        readyState: 4,
+      },
+    });
+
+    expect(afterMediaPauseShape.state.playbackIntent).toBe('playing');
+  });
+
+  it('freezes all automatic effects while seeking', () => {
+    const seeking = reducePlaybackSession(loadSources(), {
+      type: 'user.seekStarted',
+      nowMs: 10_000,
+    }).state;
+
+    expect(seeking.playbackIntent).toBe('seeking');
+    expect(allowsAutomaticEffect(seeking, 'ad-skip', 10_100)).toBe(false);
+    expect(
+      allowsAutomaticEffect(seeking, 'same-source-recovery', 10_100)
+    ).toBe(false);
+    expect(allowsAutomaticEffect(seeking, 'auto-source-switch', 10_100)).toBe(
+      false
+    );
+
+    const afterStall = reducePlaybackSession(seeking, {
+      type: 'video.stalled',
+      nowMs: 10_100,
+      snapshot: { currentTime: 50 },
+    });
+    expect(afterStall.effects).toEqual([]);
+  });
+
+  it('applies seek-settled protection windows per Intent contract', () => {
+    const seeking = reducePlaybackSession(loadSources(), {
+      type: 'user.seekStarted',
+      nowMs: 10_000,
+    }).state;
+    const settled = reducePlaybackSession(seeking, {
+      type: 'user.seekSettled',
+      nowMs: 10_500,
+    }).state;
+
+    expect(settled.playbackIntent).toBe('seek-settled');
+
+    // Within S1/S2 window (~4s): all auto effects denied
+    expect(allowsAutomaticEffect(settled, 'ad-skip', 13_000)).toBe(false);
+    expect(
+      allowsAutomaticEffect(settled, 'same-source-recovery', 13_000)
+    ).toBe(false);
+    expect(allowsAutomaticEffect(settled, 'auto-source-switch', 13_000)).toBe(
+      false
+    );
+
+    // After S1/S2 window but still inside S3 window (≥10s): only auto switch denied
+    expect(allowsAutomaticEffect(settled, 'ad-skip', 15_000)).toBe(true);
+    expect(
+      allowsAutomaticEffect(settled, 'same-source-recovery', 15_000)
+    ).toBe(true);
+    expect(allowsAutomaticEffect(settled, 'auto-source-switch', 15_000)).toBe(
+      false
+    );
+
+    // After S3 window: all allowed while still seek-settled
+    expect(allowsAutomaticEffect(settled, 'auto-source-switch', 21_000)).toBe(
+      true
+    );
+    expect(settled.playbackIntent).toBe('seek-settled');
+  });
+
+  it('treats manual source and episode switches as implied play with settle', () => {
+    const paused = reducePlaybackSession(loadSources(), {
+      type: 'user.pause',
+    }).state;
+
+    const afterSource = reducePlaybackSession(paused, {
+      type: 'user.switchSource',
+      sourceKey: 'direct-5',
+      nowMs: 10_000,
+    }).state;
+
+    expect(afterSource.playbackIntent).toBe('playing');
+    expect(afterSource.currentSourceKey).toBe('direct-5');
+    expect(
+      allowsAutomaticEffect(afterSource, 'auto-source-switch', 10_500)
+    ).toBe(false);
+    expect(
+      allowsAutomaticEffect(afterSource, 'auto-source-switch', 12_100)
+    ).toBe(true);
+
+    const afterEpisode = reducePlaybackSession(paused, {
+      type: 'user.switchEpisode',
+      episodeIndex: 1,
+      nowMs: 20_000,
+    }).state;
+
+    expect(afterEpisode.playbackIntent).toBe('playing');
+    expect(afterEpisode.currentEpisodeIndex).toBe(1);
+    expect(
+      allowsAutomaticEffect(afterEpisode, 'ad-skip', 20_500)
+    ).toBe(false);
+    expect(allowsAutomaticEffect(afterEpisode, 'ad-skip', 22_100)).toBe(true);
+  });
+
+  it('keeps user-paused freeze across seek until play or implied-play', () => {
+    const paused = reducePlaybackSession(loadSources(), {
+      type: 'user.pause',
+    }).state;
+    const seeking = reducePlaybackSession(paused, {
+      type: 'user.seekStarted',
+      nowMs: 10_000,
+    }).state;
+    const settled = reducePlaybackSession(seeking, {
+      type: 'user.seekSettled',
+      nowMs: 10_500,
+    }).state;
+
+    expect(settled.playbackIntent).toBe('user-paused');
+    expect(allowsAutomaticEffect(settled, 'auto-source-switch', 30_000)).toBe(
+      false
+    );
+  });
+});
 
 describe('Playback Session automatic recovery', () => {
   it('switches to the highest scored unrecovered playable source on recovery', () => {
@@ -286,8 +448,8 @@ describe('Playback Session automatic recovery', () => {
 });
 
 describe('Playback Session Ad Skip Window effects', () => {
-  it('returns a dedicated skipAdWindow effect for playback inside an ad window', () => {
-    const loaded = reducePlaybackSession(createInitialPlaybackSessionState(), {
+  function loadAdWindows() {
+    return reducePlaybackSession(createInitialPlaybackSessionState(), {
       type: 'adSkipWindows.loaded',
       windows: [
         {
@@ -299,6 +461,10 @@ describe('Playback Session Ad Skip Window effects', () => {
         },
       ],
     }).state;
+  }
+
+  it('returns a dedicated skipAdWindow effect for playback inside an ad window', () => {
+    const loaded = loadAdWindows();
 
     const result = reducePlaybackSession(loaded, {
       type: 'video.timeupdate',
@@ -319,18 +485,7 @@ describe('Playback Session Ad Skip Window effects', () => {
   });
 
   it('does not repeat the same Ad Skip Window after a skip effect', () => {
-    const loaded = reducePlaybackSession(createInitialPlaybackSessionState(), {
-      type: 'adSkipWindows.loaded',
-      windows: [
-        {
-          startTimeSeconds: 10,
-          endTimeSeconds: 20,
-          ruleId: 'rule-1',
-          confidence: 'high',
-          action: 'filter',
-        },
-      ],
-    }).state;
+    const loaded = loadAdWindows();
     const skipped = reducePlaybackSession(loaded, {
       type: 'video.timeupdate',
       nowMs: 10_000,
@@ -347,18 +502,7 @@ describe('Playback Session Ad Skip Window effects', () => {
   });
 
   it('does not skip during manual seek grace', () => {
-    const loaded = reducePlaybackSession(createInitialPlaybackSessionState(), {
-      type: 'adSkipWindows.loaded',
-      windows: [
-        {
-          startTimeSeconds: 10,
-          endTimeSeconds: 20,
-          ruleId: 'rule-1',
-          confidence: 'high',
-          action: 'filter',
-        },
-      ],
-    }).state;
+    const loaded = loadAdWindows();
     const seeking = reducePlaybackSession(loaded, {
       type: 'user.seekStarted',
       nowMs: 10_000,
@@ -371,6 +515,72 @@ describe('Playback Session Ad Skip Window effects', () => {
     });
 
     expect(result.effects).toEqual([]);
+  });
+
+  it('does not skip while user-paused or inside seek-settled short guard', () => {
+    const paused = reducePlaybackSession(loadAdWindows(), {
+      type: 'user.pause',
+    }).state;
+    expect(
+      reducePlaybackSession(paused, {
+        type: 'video.timeupdate',
+        nowMs: 10_000,
+        snapshot: { currentTime: 12 },
+      }).effects
+    ).toEqual([]);
+
+    const seeking = reducePlaybackSession(loadAdWindows(), {
+      type: 'user.seekStarted',
+      nowMs: 10_000,
+    }).state;
+    const settled = reducePlaybackSession(seeking, {
+      type: 'user.seekSettled',
+      nowMs: 10_500,
+    }).state;
+
+    expect(
+      reducePlaybackSession(settled, {
+        type: 'video.timeupdate',
+        nowMs: 12_000,
+        snapshot: { currentTime: 12 },
+      }).effects
+    ).toEqual([]);
+
+    expect(
+      reducePlaybackSession(settled, {
+        type: 'video.timeupdate',
+        nowMs: 15_000,
+        snapshot: { currentTime: 12 },
+      }).effects
+    ).toEqual([
+      {
+        type: 'skipAdWindow',
+        targetTime: 20.35,
+        windowKey: 'rule-1:10.000-20.000',
+        reason: 'hls-ad-window',
+        platform: 'hlsjs',
+      },
+    ]);
+  });
+
+  it('cancels in-flight Ad Skip on explicit pause', () => {
+    const loaded = loadAdWindows();
+    const withPending = {
+      ...loaded,
+      adSkipInFlightWindowKey: 'rule-1:10.000-20.000',
+    };
+
+    const result = reducePlaybackSession(withPending, { type: 'user.pause' });
+
+    expect(result.state.playbackIntent).toBe('user-paused');
+    expect(result.state.adSkipInFlightWindowKey).toBeNull();
+    expect(result.effects).toEqual([
+      {
+        type: 'cancelAdSkip',
+        windowKey: 'rule-1:10.000-20.000',
+        reason: 'user-paused',
+      },
+    ]);
   });
 });
 
