@@ -28,15 +28,24 @@ describe('playback debug logs', () => {
         sessionId: 'session-1',
         eventType: 'native-stall',
         sourceKey: 'ruyi:38961',
-        playbackUrl: 'https://example.com/video.m3u8',
+        sourceChangeAttemptId: 3,
+        contentKey: '鬼泣::2024',
+        episodeIndex: 1,
+        playbackUrl:
+          'https://user:secret@cdn.example.com/video.m3u8?token=SIGNED&expires=999',
         title: '鬼泣',
         runtime: 'native-hls',
         playlistFilter: 'proxy-observe',
         segmentMode: 'direct',
         recoveryProfile: 'native-video',
         currentTime: 438.2,
-        details: { action: 'reload-source' },
-        userAgent: 'iPad Chrome',
+        details: {
+          action: 'reload-source',
+          token: 'should-strip',
+          username: 'alice',
+        },
+        userAgent:
+          'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ExtraFingerprintMaterial',
       }
     );
 
@@ -49,8 +58,8 @@ describe('playback debug logs', () => {
       'session-1',
       'native-stall',
       'ruyi:38961',
-      'https://example.com/video.m3u8',
-      'example.com',
+      'https://cdn.example.com/video.m3u8',
+      'cdn.example.com',
       '鬼泣',
       'native-hls',
       'proxy-observe',
@@ -62,10 +71,18 @@ describe('playback debug logs', () => {
       null,
       null,
       null,
-      JSON.stringify({ action: 'reload-source' }),
-      'iPad Chrome',
+      JSON.stringify({
+        action: 'reload-source',
+        sourceChangeAttemptId: 3,
+        contentKey: '鬼泣::2024',
+        episodeIndex: 1,
+      }),
+      expect.stringMatching(/^Mozilla\/5\.0 \(iPad/),
       expect.any(Number)
     );
+    const boundArgs = mock.bind.mock.calls[0] as unknown as unknown[];
+    const boundUa = String(boundArgs[18] ?? '');
+    expect(boundUa.length).toBeLessThanOrEqual(80);
     expect(mock.run).toHaveBeenCalled();
   });
 

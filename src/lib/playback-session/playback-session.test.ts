@@ -85,7 +85,17 @@ describe('Playback Session Intent gate', () => {
       nowMs: 10_000,
       snapshot: { currentTime: 438.123 },
     });
-    expect(afterWaiting.effects).toEqual([]);
+    expect(afterWaiting.effects).toEqual([
+      {
+        type: 'emitDebugEvent',
+        eventType: 'intent.gate.denied',
+        message: 'Automatic effect gated by Playback Intent',
+        details: {
+          deniedBy: 'user-paused',
+          kind: 'same-source-recovery',
+        },
+      },
+    ]);
     expect(afterWaiting.state.playbackIntent).toBe('user-paused');
 
     const afterPlay = reducePlaybackSession(paused, {
@@ -134,7 +144,12 @@ describe('Playback Session Intent gate', () => {
       nowMs: 10_100,
       snapshot: { currentTime: 50 },
     });
-    expect(afterStall.effects).toEqual([]);
+    expect(afterStall.effects).toEqual([
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'intent.gate.denied',
+      }),
+    ]);
   });
 
   it('applies seek-settled protection windows per Intent contract', () => {
@@ -517,7 +532,12 @@ describe('Playback Session automatic recovery', () => {
       snapshot: { currentTime: 438.123 },
     });
 
-    expect(result.effects).toEqual([]);
+    expect(result.effects).toEqual([
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'intent.gate.denied',
+      }),
+    ]);
     expect(result.state.recoveryStage).toBe('idle');
   });
 
@@ -533,7 +553,12 @@ describe('Playback Session automatic recovery', () => {
       snapshot: { currentTime: 438.123 },
     });
 
-    expect(result.effects).toEqual([]);
+    expect(result.effects).toEqual([
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'intent.gate.denied',
+      }),
+    ]);
   });
 
   it('does not switch to a source without the current episode', () => {
@@ -810,6 +835,10 @@ describe('Playback Session Ad Skip Window effects', () => {
         reason: 'hls-ad-window',
         platform: 'apple-native',
       },
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'adSkip.emitted',
+      }),
     ]);
   });
 
@@ -889,6 +918,10 @@ describe('Playback Session Ad Skip Window effects', () => {
         reason: 'hls-ad-window',
         platform: 'hlsjs',
       },
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'adSkip.emitted',
+      }),
     ]);
   });
 
@@ -909,6 +942,10 @@ describe('Playback Session Ad Skip Window effects', () => {
         windowKey: 'rule-1:10.000-20.000',
         reason: 'user-paused',
       },
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'adSkip.cancelled',
+      }),
     ]);
   });
 
@@ -969,6 +1006,10 @@ describe('Playback Session Ad Skip Window effects', () => {
         reason: 'hls-ad-window',
         platform: 'hlsjs',
       },
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'adSkip.emitted',
+      }),
     ]);
   });
 
@@ -1011,6 +1052,10 @@ describe('Playback Session Ad Skip Window effects', () => {
         reason: 'hls-ad-window',
         platform: 'hlsjs',
       },
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'adSkip.emitted',
+      }),
     ]);
   });
 });
@@ -1030,7 +1075,65 @@ describe('Playback Session progress-save effects', () => {
         type: 'saveProgress',
         reason: 'resume-sync',
       },
+      {
+        type: 'emitDebugEvent',
+        eventType: 'progressSave.requested',
+        message: 'Progress save requested',
+        details: { reason: 'resume-sync' },
+      },
     ]);
+  });
+
+  it('emits adSkip lifecycle debug events for loaded / emitted / cancelled', () => {
+    const withWindows = reducePlaybackSession(loadSources(), {
+      type: 'adSkipWindows.loaded',
+      windows: [
+        {
+          startTimeSeconds: 10,
+          endTimeSeconds: 20,
+          ruleId: 'rule-1',
+          confidence: 'high',
+          action: 'filter',
+        },
+      ],
+    });
+
+    expect(withWindows.effects).toContainEqual({
+      type: 'emitDebugEvent',
+      eventType: 'adSkip.loaded',
+      message: 'Ad skip windows loaded',
+      details: { windowCount: 1 },
+    });
+
+    const emitted = reducePlaybackSession(withWindows.state, {
+      type: 'video.timeupdate',
+      nowMs: 20_000,
+      platform: 'hlsjs',
+      snapshot: { currentTime: 12 },
+    });
+
+    expect(emitted.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'skipAdWindow' }),
+        expect.objectContaining({
+          type: 'emitDebugEvent',
+          eventType: 'adSkip.emitted',
+        }),
+      ])
+    );
+
+    const cancelled = reducePlaybackSession(emitted.state, {
+      type: 'user.pause',
+    });
+    expect(cancelled.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'cancelAdSkip' }),
+        expect.objectContaining({
+          type: 'emitDebugEvent',
+          eventType: 'adSkip.cancelled',
+        }),
+      ])
+    );
   });
 
   it('emits a previous-episode save intent before switching episodes', () => {

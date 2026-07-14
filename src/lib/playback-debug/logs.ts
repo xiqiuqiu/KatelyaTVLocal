@@ -1,3 +1,9 @@
+import {
+  sanitizeEvidenceDetails,
+  sanitizePlaybackEvidenceUrl,
+  summarizeUserAgent,
+} from '@/lib/playback-attempt';
+
 export type PlaybackDebugRuntime = 'hlsjs' | 'native-hls' | string;
 export type PlaybackDebugPlaylistFilter =
   | 'client-filter'
@@ -13,6 +19,9 @@ export interface PlaybackDebugLogInput {
   sessionId: string;
   eventType: string;
   sourceKey?: string | null;
+  sourceChangeAttemptId?: number | null;
+  contentKey?: string | null;
+  episodeIndex?: number | null;
   playbackUrl?: string | null;
   title?: string | null;
   runtime?: PlaybackDebugRuntime | null;
@@ -79,17 +88,6 @@ function toBooleanNumber(value: unknown): number | null {
   return null;
 }
 
-function getPlaybackDomain(playbackUrl: string | null): string | null {
-  if (!playbackUrl) {
-    return null;
-  }
-  try {
-    return new URL(playbackUrl).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
 function stringifyDetails(details: unknown): string | null {
   if (details == null) {
     return null;
@@ -124,13 +122,31 @@ function createLogId(): string {
 }
 
 function normalizeInput(input: PlaybackDebugLogInput) {
-  const playbackUrl = toLimitedString(input.playbackUrl, 2048);
+  const sanitizedUrl = sanitizePlaybackEvidenceUrl(input.playbackUrl);
+  const baseDetails =
+    input.details && typeof input.details === 'object' && !Array.isArray(input.details)
+      ? sanitizeEvidenceDetails(input.details as Record<string, unknown>)
+      : input.details == null
+        ? undefined
+        : { value: input.details };
+
+  const details = {
+    ...(baseDetails || {}),
+    ...(input.sourceChangeAttemptId != null
+      ? { sourceChangeAttemptId: input.sourceChangeAttemptId }
+      : {}),
+    ...(input.contentKey ? { contentKey: input.contentKey } : {}),
+    ...(input.episodeIndex != null ? { episodeIndex: input.episodeIndex } : {}),
+  };
+
   return {
     sessionId: toLimitedString(input.sessionId, 128),
     eventType: toLimitedString(input.eventType, 80),
     sourceKey: toLimitedString(input.sourceKey, 160),
-    playbackUrl,
-    playbackDomain: getPlaybackDomain(playbackUrl),
+    playbackUrl: sanitizedUrl.playbackUrl
+      ? sanitizedUrl.playbackUrl.slice(0, 2048)
+      : null,
+    playbackDomain: sanitizedUrl.playbackDomain,
     title: toLimitedString(input.title, 200),
     runtime: toLimitedString(input.runtime, 40),
     playlistFilter: toLimitedString(input.playlistFilter, 40),
@@ -142,8 +158,10 @@ function normalizeInput(input: PlaybackDebugLogInput) {
     networkState: toFiniteNumber(input.networkState),
     paused: toBooleanNumber(input.paused),
     ended: toBooleanNumber(input.ended),
-    detailsJson: stringifyDetails(input.details),
-    userAgent: toLimitedString(input.userAgent, 500),
+    detailsJson: stringifyDetails(
+      Object.keys(details).length > 0 ? details : null
+    ),
+    userAgent: summarizeUserAgent(toLimitedString(input.userAgent, 500)),
   };
 }
 

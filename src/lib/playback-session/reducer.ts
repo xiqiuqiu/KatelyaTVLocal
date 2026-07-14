@@ -8,7 +8,7 @@ import { selectRecoveryCandidate } from '@/lib/source-availability/index';
 import type { SourceSelectionScore } from '@/lib/source-selection';
 import type { SearchResult } from '@/lib/types';
 
-import { allowsAutomaticEffect } from './intent';
+import { allowsAutomaticEffect, getAutomaticEffectGate } from './intent';
 import {
   advanceRecoveryLadder,
   cancelRecoveryEpisode,
@@ -251,7 +251,24 @@ function handleStallCandidate(
   );
 
   if (!sameSourceGate && !autoSwitchGate) {
-    return { state, effects: [] };
+    const denied =
+      getAutomaticEffectGate(state, 'same-source-recovery', nowMs).deniedBy ||
+      getAutomaticEffectGate(state, 'auto-source-switch', nowMs).deniedBy ||
+      'user-paused';
+    return {
+      state,
+      effects: [
+        {
+          type: 'emitDebugEvent',
+          eventType: 'intent.gate.denied',
+          message: 'Automatic effect gated by Playback Intent',
+          details: {
+            deniedBy: denied,
+            kind: 'same-source-recovery',
+          },
+        },
+      ],
+    };
   }
 
   if (
@@ -364,6 +381,12 @@ function cancelInFlightAdSkip(
         type: 'cancelAdSkip',
         windowKey,
         reason,
+      },
+      {
+        type: 'emitDebugEvent',
+        eventType: 'adSkip.cancelled',
+        message: 'Ad skip cancelled',
+        details: { windowKey, reason },
       },
     ],
   };
@@ -685,13 +708,28 @@ export function reducePlaybackSession(
           lastAdSkipWindowKey: null,
           adSkipInFlightWindowKey: null,
         },
-        effects: [],
+        effects: [
+          {
+            type: 'emitDebugEvent',
+            eventType: 'adSkip.loaded',
+            message: 'Ad skip windows loaded',
+            details: { windowCount: event.windows.length },
+          },
+        ],
       };
 
     case 'progressSave.requested':
       return {
         state,
-        effects: [{ type: 'saveProgress', reason: event.reason }],
+        effects: [
+          { type: 'saveProgress', reason: event.reason },
+          {
+            type: 'emitDebugEvent',
+            eventType: 'progressSave.requested',
+            message: 'Progress save requested',
+            details: { reason: event.reason },
+          },
+        ],
       };
 
     case 'sourceChange.started':
@@ -722,7 +760,14 @@ export function reducePlaybackSession(
           recoveryInFlight:
             state.recoveryInFlight === 'R3' ? 'resume' : state.recoveryInFlight,
         },
-        effects: [],
+        effects: [
+          {
+            type: 'emitDebugEvent',
+            eventType: 'sourceChange.completed',
+            message: 'Source change completed',
+            details: { attemptId: event.attemptId },
+          },
+        ],
       };
 
     case 'recovery.switchFailed': {
@@ -883,6 +928,16 @@ export function reducePlaybackSession(
             windowKey,
             reason: 'hls-ad-window',
             platform: event.platform || 'hlsjs',
+          },
+          {
+            type: 'emitDebugEvent',
+            eventType: 'adSkip.emitted',
+            message: 'Ad skip window emitted',
+            details: {
+              windowKey,
+              targetTime: decision.targetTimeSeconds,
+              platform: event.platform || 'hlsjs',
+            },
           },
         ],
       };

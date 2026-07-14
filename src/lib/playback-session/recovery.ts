@@ -514,6 +514,11 @@ function emitR2(
   }
 
   const attempt = state.r2AttemptCount + 1;
+  const rememberedBadPoint =
+    planned.badPoints !== state.badPoints && planned.badPoints.length > 0
+      ? planned.badPoints[planned.badPoints.length - 1]
+      : null;
+
   return {
     state: withStage(
       {
@@ -531,6 +536,29 @@ function emitR2(
         targetTime: planned.targetTime,
         reason,
       },
+      ...(rememberedBadPoint
+        ? [
+            {
+              type: 'emitDebugEvent' as const,
+              eventType: 'badPoint.remembered',
+              message: 'Bad point remembered during R2 escape',
+              details: {
+                sourceKey: rememberedBadPoint.sourceKey,
+                anchorTimeSeconds: rememberedBadPoint.timeSeconds,
+              },
+            },
+          ]
+        : []),
+      ...(planned.targetTime != null
+        ? [
+            {
+              type: 'emitDebugEvent' as const,
+              eventType: 'resume.planned',
+              message: 'Recovery resume time planned',
+              details: { resumeTime: planned.targetTime, stage: 'R2' },
+            },
+          ]
+        : []),
     ],
   };
 }

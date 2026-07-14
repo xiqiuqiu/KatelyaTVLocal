@@ -23,25 +23,32 @@ function resolveEnv(): RuntimeEnv {
   }
 }
 
-async function canUsePlaybackDebug(request: NextRequest | Request) {
+async function resolvePlaybackDebugAccess(request: NextRequest | Request): Promise<{
+  allowed: boolean;
+  skipReason?: 'admin-off' | 'not-admin';
+}> {
   const config = await getConfig();
   if (!config.SiteConfig.PlaybackDebugEnabled) {
-    return false;
+    return { allowed: false, skipReason: 'admin-off' };
   }
 
   const authInfo = await getAuthInfoFromCookie(request as NextRequest);
   if (!authInfo?.username) {
-    return false;
+    return { allowed: false, skipReason: 'not-admin' };
   }
 
   if (authInfo.username === process.env.USERNAME) {
-    return true;
+    return { allowed: true };
   }
 
   const user = config.UserConfig.Users.find(
     (entry) => entry.username === authInfo.username
   );
-  return user?.role === 'admin';
+  if (user?.role === 'admin') {
+    return { allowed: true };
+  }
+
+  return { allowed: false, skipReason: 'not-admin' };
 }
 
 export async function OPTIONS() {
@@ -49,12 +56,12 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
-  const enabled = await canUsePlaybackDebug(request);
+  const access = await resolvePlaybackDebugAccess(request);
   return addCorsHeaders(
     NextResponse.json(
       {
-        enabled,
-        canViewOverlay: enabled,
+        enabled: access.allowed,
+        canViewOverlay: access.allowed,
       },
       {
         headers: {
@@ -86,14 +93,14 @@ export async function POST(request: NextRequest) {
     return addCorsHeaders(response);
   }
 
-  const enabled = await canUsePlaybackDebug(request);
-  if (!enabled) {
+  const access = await resolvePlaybackDebugAccess(request);
+  if (!access.allowed) {
     return addCorsHeaders(
       NextResponse.json(
         {
           saved: false,
           skipped: true,
-          reason: 'disabled',
+          reason: access.skipReason || 'admin-off',
         },
         { status: 202 }
       )
@@ -107,7 +114,7 @@ export async function POST(request: NextRequest) {
         {
           saved: false,
           skipped: true,
-          reason: 'storage-unavailable',
+          reason: 'no-d1',
         },
         { status: 202 }
       )

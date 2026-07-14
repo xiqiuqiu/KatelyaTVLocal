@@ -208,7 +208,7 @@ describe('playback debug route', () => {
     await expect(response.json()).resolves.toEqual({
       saved: false,
       skipped: true,
-      reason: 'disabled',
+      reason: 'admin-off',
     });
   });
 

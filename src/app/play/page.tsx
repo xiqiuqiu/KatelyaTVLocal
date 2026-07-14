@@ -66,6 +66,14 @@ import {
   shouldSavePlayRecord,
 } from '@/lib/play-record-save-policy';
 import {
+  createPlaybackAttemptReporter,
+  isPlaybackAttemptEnhancedReportingEnabled,
+  sanitizePlaybackEvidenceUrl,
+  summarizeUserAgent,
+  type PlaybackAttemptEvent,
+  type PlaybackAttemptReporter,
+} from '@/lib/playback-attempt';
+import {
   type PlaybackHistoryRecord,
   resolvePlaybackHistoryRecovery,
 } from '@/lib/playback-history-recovery';
@@ -251,6 +259,9 @@ interface PlaybackDebugLogPayload {
   sessionId: string;
   eventType: string;
   sourceKey?: string | null;
+  sourceChangeAttemptId?: number | null;
+  contentKey?: string | null;
+  episodeIndex?: number | null;
   playbackUrl?: string | null;
   title?: string | null;
   runtime?: string | null;
@@ -318,13 +329,6 @@ type PlaybackErrorKind =
   | 'source-unavailable'
   | 'player'
   | 'generic';
-
-function createPlaybackDebugSessionId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `playback-debug-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
 
 function formatDebugPlaybackTime(value?: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -457,8 +461,13 @@ function PlayPageClient() {
   const playbackModeRef = useRef<SourcePlaybackMode>('direct');
   const originalVideoUrlRef = useRef('');
   const videoUrlRef = useRef('');
-  const playbackDebugSessionIdRef = useRef(createPlaybackDebugSessionId());
+  const playbackAttemptReporterRef = useRef<PlaybackAttemptReporter>(
+    createPlaybackAttemptReporter({
+      enhancedReportingEnabled: isPlaybackAttemptEnhancedReportingEnabled(),
+    })
+  );
   const playbackDebugEnabledRef = useRef(false);
+  const playbackAttemptChannelSkipEmittedRef = useRef(false);
   const playbackDebugLastCanplayRef =
     useRef<PlaybackDebugCanplaySnapshot | null>(null);
   const sourceFallbackAttemptedRef = useRef(false);
@@ -712,23 +721,35 @@ function PlayPageClient() {
   }, [currentEpisodeIndex]);
 
   useEffect(() => {
-    const titleKey = `${videoTitle}::${videoYear}`;
-    const previousTitleKey = attemptedLedgerTitleKeyRef.current;
-    attemptedLedgerTitleKeyRef.current = titleKey;
-    if (previousTitleKey === null || previousTitleKey === titleKey) {
-      return;
-    }
-
-    const nextLedgers = clearAttemptedLedgersOnTitleChange();
-    autoRecoveredSourceKeysRef.current = nextLedgers.autoRecoveryAttempted;
-    progressiveSourceProbeAttemptedKeysRef.current =
-      nextLedgers.probeSchedulingAttempted;
-    playbackSessionStateRef.current = {
-      ...playbackSessionStateRef.current,
-      recoveredSourceKeys: new Set(),
+    const reporter = playbackAttemptReporterRef.current;
+    return () => {
+      const ended = reporter.endAttempt('leave');
+      if (!ended || !playbackDebugEnabledRef.current) {
+        return;
+      }
+      void fetch('/api/playback-debug', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: ended.sessionId,
+          eventType: ended.eventType,
+          sourceKey: ended.sourceKey ?? null,
+          sourceChangeAttemptId: ended.sourceChangeAttemptId,
+          contentKey: ended.contentKey ?? null,
+          episodeIndex: ended.episodeIndex ?? null,
+          runtime: ended.runtime ?? null,
+          details: {
+            message: 'Playback attempt ended on leave',
+            ...ended.details,
+          },
+          userAgent: summarizeUserAgent(
+            typeof navigator !== 'undefined' ? navigator.userAgent : null
+          ),
+        }),
+        keepalive: true,
+      }).catch(() => undefined);
     };
-    resetProgressiveSourceProbeStability();
-  }, [videoTitle, videoYear]);
+  }, []);
 
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
@@ -937,16 +958,18 @@ function PlayPageClient() {
       onApplyRecoveryResume: (effect) => {
         applySessionRecoveryResumeTime(effect.resumeTime);
       },
-      onCancelAdSkip: (effect) => {
-        emitPlaybackDebugLog('ad-skip-cancelled', '已取消进行中的 Ad Skip', {
-          windowKey: effect.windowKey,
-          reason: effect.reason,
-          intentAuthority: getPlaybackIntentAuthorityMode(),
-          recoveryAuthority: getPlaybackRecoveryAuthorityMode(),
-        });
+      onCancelAdSkip: () => {
+        // Session already emits adSkip.cancelled via emitDebugEvent.
       },
       onEmitDebugEvent: (effect) => {
         emitPlaybackDebugLog(effect.eventType, effect.message, effect.details);
+      },
+      onSkipAdWindow: (effect) => {
+        emitPlaybackDebugLog('adSkip.completed', 'Ad skip window completed', {
+          windowKey: effect.windowKey,
+          targetTime: effect.targetTime,
+          platform: effect.platform,
+        });
       },
     });
 
@@ -1001,7 +1024,15 @@ function PlayPageClient() {
       return;
     }
 
-    const timeoutAttemptId = sourceChangeAttemptIdRef.current + 1;
+    const sourceAttempt = playbackAttemptReporterRef.current.beginSourceAttempt({
+      sourceKey: getSourceIdentityKey(source.source, source.id),
+      reason: reason?.includes('auto') ? 'auto' : 'manual',
+      episodeIndex: targetIndex,
+      runtime: playbackPolicyRef.current?.runtime || null,
+      contentKey: getPlaybackContentKey(),
+    });
+    publishPlaybackAttemptEvent(sourceAttempt, 'Source change started');
+    const timeoutAttemptId = sourceAttempt.sourceChangeAttemptId || 1;
     sourceChangeAttemptIdRef.current = timeoutAttemptId;
     const timeoutSourceKey = getSourceIdentityKey(source.source, source.id);
     dispatchPlaybackSessionEvent({
@@ -1501,30 +1532,75 @@ function PlayPageClient() {
     };
   };
 
-  const sendPlaybackDebugLog = (payload: PlaybackDebugLogPayload) => {
-    const body = JSON.stringify(payload);
-    if (
-      typeof navigator !== 'undefined' &&
-      typeof navigator.sendBeacon === 'function'
-    ) {
+  const sendPlaybackDebugLog = async (payload: PlaybackDebugLogPayload) => {
+    try {
+      const response = await fetch('/api/playback-debug', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      });
+      let transport: {
+        saved?: boolean;
+        skipped?: boolean;
+        reason?: string;
+      } = {};
       try {
-        const blob = new Blob([body], { type: 'application/json' });
-        if (navigator.sendBeacon('/api/playback-debug', blob)) {
-          return;
-        }
+        transport = (await response.json()) as typeof transport;
       } catch {
-        /* fall back to fetch */
+        transport = {
+          saved: false,
+          skipped: true,
+          reason: 'network-error',
+        };
+      }
+
+      if (transport.skipped) {
+        const skipped = playbackAttemptReporterRef.current.resolveTransportResult(
+          {
+            eventType: payload.eventType,
+            transport,
+          }
+        );
+        if (skipped) {
+          setPlaybackDebugEvents((prev) =>
+            [
+              {
+                eventType: skipped.eventType,
+                message: `channel.skipped:${String(skipped.details?.reason || 'unknown')}`,
+                createdAt: Date.now(),
+                details: skipped.details,
+              },
+              ...prev,
+            ].slice(0, 20)
+          );
+        }
+      }
+    } catch {
+      const skipped = playbackAttemptReporterRef.current.resolveTransportResult({
+        eventType: payload.eventType,
+        transport: {
+          saved: false,
+          skipped: true,
+          reason: 'network-error',
+        },
+      });
+      if (skipped) {
+        setPlaybackDebugEvents((prev) =>
+          [
+            {
+              eventType: skipped.eventType,
+              message: 'channel.skipped:network-error',
+              createdAt: Date.now(),
+              details: skipped.details,
+            },
+            ...prev,
+          ].slice(0, 20)
+        );
       }
     }
-
-    void fetch('/api/playback-debug', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body,
-      keepalive: true,
-    }).catch(() => undefined);
   };
 
   const shouldSkipCanplayDebugLog = (
@@ -1578,17 +1654,84 @@ function PlayPageClient() {
     return shouldSkip;
   };
 
+  const publishPlaybackAttemptEvent = (
+    reported: PlaybackAttemptEvent,
+    message = reported.eventType
+  ) => {
+    const videoSnapshot = getPlaybackDebugVideoSnapshot();
+    const policy = playbackPolicyRef.current;
+    const sanitizedPlayback = sanitizePlaybackEvidenceUrl(
+      typeof reported.playbackUrl === 'string' ? reported.playbackUrl : null
+    );
+
+    if (!playbackDebugEnabledRef.current) {
+      if (!playbackAttemptChannelSkipEmittedRef.current) {
+        playbackAttemptChannelSkipEmittedRef.current = true;
+        const skipped =
+          playbackAttemptReporterRef.current.resolveTransportResult({
+            eventType: reported.eventType,
+            transport: { saved: false, skipped: true, reason: 'admin-off' },
+          });
+        if (skipped) {
+          setPlaybackDebugEvents((prev) =>
+            [
+              {
+                eventType: skipped.eventType,
+                message: 'channel.skipped:admin-off',
+                createdAt: Date.now(),
+                details: skipped.details,
+              },
+              ...prev,
+            ].slice(0, 20)
+          );
+        }
+      }
+      return;
+    }
+
+    setPlaybackDebugEvents((prev) =>
+      [
+        {
+          eventType: reported.eventType,
+          message,
+          createdAt: Date.now(),
+          currentTime: videoSnapshot.currentTime,
+          details: reported.details,
+        },
+        ...prev,
+      ].slice(0, 20)
+    );
+
+    void sendPlaybackDebugLog({
+      sessionId: reported.sessionId,
+      eventType: reported.eventType,
+      sourceKey: reported.sourceKey ?? null,
+      sourceChangeAttemptId: reported.sourceChangeAttemptId,
+      contentKey: reported.contentKey ?? null,
+      episodeIndex: reported.episodeIndex ?? null,
+      playbackUrl: sanitizedPlayback.playbackUrl,
+      title: videoTitleRef.current || null,
+      runtime: reported.runtime ?? policy?.runtime ?? null,
+      playlistFilter: policy?.playlistFilter || null,
+      segmentMode: policy?.segmentMode || null,
+      recoveryProfile: policy?.recoveryProfile || null,
+      ...videoSnapshot,
+      details: {
+        message,
+        ...reported.details,
+      },
+      userAgent: summarizeUserAgent(
+        typeof navigator !== 'undefined' ? navigator.userAgent : null
+      ),
+    });
+  };
+
   const emitPlaybackDebugLog = (
     eventType: string,
     message: string,
     details: Record<string, unknown> = {},
     options: PlaybackDebugEmitOptions = {}
   ) => {
-    if (!playbackDebugEnabledRef.current) {
-      return;
-    }
-
-    const videoSnapshot = getPlaybackDebugVideoSnapshot();
     const policy = options.policy ?? playbackPolicyRef.current;
     const detailPlaybackUrl =
       typeof details.playbackUrl === 'string' ? details.playbackUrl : null;
@@ -1597,42 +1740,90 @@ function PlayPageClient() {
 
     if (
       eventType === 'video-canplay' &&
-      shouldSkipCanplayDebugLog(effectivePlaybackUrl, videoSnapshot)
+      shouldSkipCanplayDebugLog(
+        effectivePlaybackUrl,
+        getPlaybackDebugVideoSnapshot()
+      )
     ) {
       return;
     }
 
-    const event: PlaybackDebugEvent = {
-      eventType,
-      message,
-      createdAt: Date.now(),
-      currentTime: videoSnapshot.currentTime,
-      details,
-    };
+    const isProbeEvent = eventType.startsWith('progressive-source-probe');
+    const reported = isProbeEvent
+      ? playbackAttemptReporterRef.current.reportProbeEvent({
+          eventType,
+          sourceKey: getCurrentSourceKey() || null,
+          details: { message, ...details },
+        })
+      : playbackAttemptReporterRef.current.report({
+          eventType,
+          details: { message, ...details },
+          contentKey: getPlaybackContentKey(),
+          episodeIndex: currentEpisodeIndexRef.current,
+          sourceKey: getCurrentSourceKey() || null,
+          runtime: policy?.runtime || null,
+          playbackUrl: effectivePlaybackUrl,
+        });
 
-    setPlaybackDebugEvents((prev) => [event, ...prev].slice(0, 20));
-
-    const payload: PlaybackDebugLogPayload = {
-      sessionId: playbackDebugSessionIdRef.current,
-      eventType,
-      sourceKey: getCurrentSourceKey() || null,
-      playbackUrl: effectivePlaybackUrl,
-      title: videoTitleRef.current || null,
-      runtime: policy?.runtime || null,
-      playlistFilter: policy?.playlistFilter || null,
-      segmentMode: policy?.segmentMode || null,
-      recoveryProfile: policy?.recoveryProfile || null,
-      ...videoSnapshot,
-      details: {
-        message,
-        ...details,
-      },
-      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-    };
-
-    console.info(`[播放调试] ${message}`, payload);
-    sendPlaybackDebugLog(payload);
+    publishPlaybackAttemptEvent(reported, message);
   };
+
+  useEffect(() => {
+    const titleKey = `${videoTitle}::${videoYear}`;
+    const previousTitleKey = attemptedLedgerTitleKeyRef.current;
+    attemptedLedgerTitleKeyRef.current = titleKey;
+
+    if (previousTitleKey === null) {
+      playbackAttemptChannelSkipEmittedRef.current = false;
+      const started = playbackAttemptReporterRef.current.beginAttempt({
+        contentKey: buildWatchProgressContentKey({
+          title: videoTitle,
+          year: videoYear,
+        }),
+        episodeIndex: currentEpisodeIndexRef.current,
+        sourceKey: getSourceIdentityKey(
+          currentSourceRef.current,
+          currentIdRef.current
+        ),
+        runtime: playbackPolicyRef.current?.runtime || null,
+      });
+      publishPlaybackAttemptEvent(started, 'Playback attempt started');
+      return;
+    }
+
+    if (previousTitleKey === titleKey) {
+      return;
+    }
+
+    playbackAttemptChannelSkipEmittedRef.current = false;
+    const { ended, started } = playbackAttemptReporterRef.current.changeTitle({
+      contentKey: buildWatchProgressContentKey({
+        title: videoTitle,
+        year: videoYear,
+      }),
+      episodeIndex: currentEpisodeIndexRef.current,
+      sourceKey: getSourceIdentityKey(
+        currentSourceRef.current,
+        currentIdRef.current
+      ),
+      runtime: playbackPolicyRef.current?.runtime || null,
+    });
+    publishPlaybackAttemptEvent(
+      ended,
+      'Playback attempt ended on title change'
+    );
+    publishPlaybackAttemptEvent(started, 'Playback attempt started');
+
+    const nextLedgers = clearAttemptedLedgersOnTitleChange();
+    autoRecoveredSourceKeysRef.current = nextLedgers.autoRecoveryAttempted;
+    progressiveSourceProbeAttemptedKeysRef.current =
+      nextLedgers.probeSchedulingAttempted;
+    playbackSessionStateRef.current = {
+      ...playbackSessionStateRef.current,
+      recoveredSourceKeys: new Set(),
+    };
+    resetProgressiveSourceProbeStability();
+  }, [videoTitle, videoYear]);
 
   const emitNativeVideoStateDebugLog = (
     eventType: string,
