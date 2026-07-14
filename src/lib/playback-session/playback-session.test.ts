@@ -25,11 +25,13 @@ function loadSources({
   sourceStatuses = new Map<string, SourceStatus>(),
   sourceScores = new Map<string, { score: number }>(),
   recoveredSourceKeys = new Set<string>(),
+  currentEpisodeIndex = 2,
   measuredVideoInfo,
 }: {
   sourceStatuses?: Map<string, SourceStatus>;
   sourceScores?: Map<string, { score: number }>;
   recoveredSourceKeys?: Set<string>;
+  currentEpisodeIndex?: number;
   measuredVideoInfo?: Map<
     string,
     {
@@ -55,7 +57,7 @@ function loadSources({
     type: 'sources.loaded',
     sources,
     currentSourceKey: 'current-1',
-    currentEpisodeIndex: 2,
+    currentEpisodeIndex,
     sourceStatuses,
     sourceScores,
     recoveredSourceKeys,
@@ -1029,5 +1031,41 @@ describe('Playback Session progress-save effects', () => {
         reason: 'resume-sync',
       },
     ]);
+  });
+
+  it('emits a previous-episode save intent before switching episodes', () => {
+    const state = loadSources({ currentEpisodeIndex: 1 });
+
+    const result = reducePlaybackSession(state, {
+      type: 'user.switchEpisode',
+      episodeIndex: 2,
+      nowMs: 5_000,
+    });
+
+    expect(result.state.currentEpisodeIndex).toBe(2);
+    expect(result.effects).toContainEqual({
+      type: 'saveProgress',
+      reason: 'episode-change',
+      episodeIndex: 1,
+    });
+  });
+
+  it('emits a completed save intent before ended→next auto-advance', () => {
+    const state = loadSources({ currentEpisodeIndex: 0 });
+
+    const result = reducePlaybackSession(state, {
+      type: 'video.ended',
+      nextEpisodeIndex: 1,
+      nowMs: 9_000,
+    });
+
+    expect(result.state.currentEpisodeIndex).toBe(1);
+    expect(result.state.playbackIntent).toBe('playing');
+    expect(result.effects[0]).toEqual({
+      type: 'saveProgress',
+      reason: 'episode-ended',
+      episodeIndex: 0,
+      completed: true,
+    });
   });
 });

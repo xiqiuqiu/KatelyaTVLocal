@@ -29,6 +29,10 @@ export interface PlayRecord {
   total_time: number; // 总进度（秒）
   save_time: number; // 记录保存时间（时间戳）
   search_title?: string; // 搜索时使用的标题
+  /** Resume-route preference — not part of Watch Progress identity. */
+  route_source?: string;
+  /** Resume-route preference — not part of Watch Progress identity. */
+  route_id?: string;
 }
 
 // ---- 收藏类型 ----
@@ -600,7 +604,94 @@ export function generateStorageKey(source: string, id: string): string {
   return `${source}+${id}`;
 }
 
-// ---- API ----
+async function persistPlayRecordByKey(
+  key: string,
+  record: PlayRecord,
+  options?: {
+    keepalive?: boolean;
+  }
+): Promise<void> {
+  // 数据库存储模式：乐观更新策略（包括 redis、d1、upstash）
+  if (STORAGE_TYPE !== 'localstorage') {
+    markPlayRecordsMutated();
+    // 立即更新缓存
+    const cachedRecords = await getPlayRecordsMutationBase();
+    cachedRecords[key] = record;
+    cacheManager.cachePlayRecords(cachedRecords);
+
+    // 触发立即更新事件
+    emitPlayRecordsUpdated(cachedRecords);
+
+    // 异步同步到数据库
+    try {
+      const res = await fetch('/api/playrecords', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ key, record }),
+        keepalive: options?.keepalive,
+      });
+
+      if (!res.ok) {
+        throw new Error(`保存播放记录失败: ${res.status}`);
+      }
+    } catch (err) {
+      await handleDatabaseOperationFailure('playRecords', err);
+      throw err;
+    }
+    return;
+  }
+
+  // localstorage 模式
+  if (typeof window === 'undefined') {
+    console.warn('无法在服务端保存播放记录到 localStorage');
+    return;
+  }
+
+  try {
+    const allRecords = await getAllPlayRecords();
+    allRecords[key] = record;
+    localStorage.setItem(PLAY_RECORDS_KEY, JSON.stringify(allRecords));
+    emitPlayRecordsUpdated(allRecords);
+  } catch (err) {
+    console.error('保存播放记录失败:', err);
+    throw err;
+  }
+}
+
+/**
+ * 保存播放记录。
+ * 数据库存储模式下使用乐观更新：先更新缓存，再异步同步到数据库。
+ */
+export async function savePlayRecord(
+  source: string,
+  id: string,
+  record: PlayRecord,
+  options?: {
+    keepalive?: boolean;
+  }
+): Promise<void> {
+  const key = generateStorageKey(source, id);
+  await persistPlayRecordByKey(key, record, options);
+}
+
+/**
+ * Persist Watch Progress to one or more planned storage keys (contentKey + dual-write).
+ */
+export async function savePlayRecordKeys(
+  keys: string[],
+  record: PlayRecord,
+  options?: {
+    keepalive?: boolean;
+  }
+): Promise<void> {
+  const uniqueKeys = Array.from(new Set(keys.filter(Boolean)));
+  for (const key of uniqueKeys) {
+    await persistPlayRecordByKey(key, record, options);
+  }
+}
+
 /**
  * 读取全部播放记录。
  * D1 存储模式下使用混合缓存策略：优先返回缓存数据，后台异步同步最新数据。
@@ -674,78 +765,10 @@ export async function getRecentPlayRecords(
 }
 
 /**
- * 保存播放记录。
- * 数据库存储模式下使用乐观更新：先更新缓存（立即生效），再异步同步到数据库。
- */
-export async function savePlayRecord(
-  source: string,
-  id: string,
-  record: PlayRecord,
-  options?: {
-    keepalive?: boolean;
-  }
-): Promise<void> {
-  const key = generateStorageKey(source, id);
-
-  // 数据库存储模式：乐观更新策略（包括 redis、d1、upstash）
-  if (STORAGE_TYPE !== 'localstorage') {
-    markPlayRecordsMutated();
-    // 立即更新缓存
-    const cachedRecords = await getPlayRecordsMutationBase();
-    cachedRecords[key] = record;
-    cacheManager.cachePlayRecords(cachedRecords);
-
-    // 触发立即更新事件
-    emitPlayRecordsUpdated(cachedRecords);
-
-    // 异步同步到数据库
-    try {
-      const res = await fetch('/api/playrecords', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ key, record }),
-        keepalive: options?.keepalive,
-      });
-
-      if (!res.ok) {
-        throw new Error(`保存播放记录失败: ${res.status}`);
-      }
-    } catch (err) {
-      await handleDatabaseOperationFailure('playRecords', err);
-      throw err;
-    }
-    return;
-  }
-
-  // localstorage 模式
-  if (typeof window === 'undefined') {
-    console.warn('无法在服务端保存播放记录到 localStorage');
-    return;
-  }
-
-  try {
-    const allRecords = await getAllPlayRecords();
-    allRecords[key] = record;
-    localStorage.setItem(PLAY_RECORDS_KEY, JSON.stringify(allRecords));
-    emitPlayRecordsUpdated(allRecords);
-  } catch (err) {
-    console.error('保存播放记录失败:', err);
-    throw err;
-  }
-}
-
-/**
  * 删除播放记录。
  * 数据库存储模式下使用乐观更新：先更新缓存，再异步同步到数据库。
  */
-export async function deletePlayRecord(
-  source: string,
-  id: string
-): Promise<void> {
-  const key = generateStorageKey(source, id);
-
+export async function deletePlayRecordByKey(key: string): Promise<void> {
   // 数据库存储模式：乐观更新策略（包括 redis、d1、upstash）
   if (STORAGE_TYPE !== 'localstorage') {
     markPlayRecordsMutated();
@@ -788,6 +811,13 @@ export async function deletePlayRecord(
     console.error('删除播放记录失败:', err);
     throw err;
   }
+}
+
+export async function deletePlayRecord(
+  source: string,
+  id: string
+): Promise<void> {
+  await deletePlayRecordByKey(generateStorageKey(source, id));
 }
 
 /* ---------------- 搜索历史相关 API ---------------- */

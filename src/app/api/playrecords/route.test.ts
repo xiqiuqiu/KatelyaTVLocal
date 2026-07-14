@@ -77,9 +77,11 @@ jest.mock('@/lib/db', () => ({
   db: {
     clearAllPlayRecords: jest.fn(),
     deletePlayRecord: jest.fn(),
+    deletePlayRecordByKey: jest.fn(),
     getAllPlayRecords: jest.fn(),
     getRecentPlayRecords: jest.fn(),
     savePlayRecord: jest.fn(),
+    savePlayRecordByKey: jest.fn(),
   },
 }));
 

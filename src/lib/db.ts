@@ -86,6 +86,14 @@ export class DbManager {
     await this.storage.setPlayRecord(userName, key, record);
   }
 
+  async savePlayRecordByKey(
+    userName: string,
+    key: string,
+    record: PlayRecord
+  ): Promise<void> {
+    await this.storage.setPlayRecord(userName, key, record);
+  }
+
   async getAllPlayRecords(userName: string): Promise<{
     [key: string]: PlayRecord;
   }> {
@@ -110,6 +118,10 @@ export class DbManager {
     id: string
   ): Promise<void> {
     const key = generateStorageKey(source, id);
+    await this.storage.deletePlayRecord(userName, key);
+  }
+
+  async deletePlayRecordByKey(userName: string, key: string): Promise<void> {
     await this.storage.deletePlayRecord(userName, key);
   }
 

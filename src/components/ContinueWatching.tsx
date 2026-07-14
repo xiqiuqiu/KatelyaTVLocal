@@ -6,11 +6,14 @@ import { useEffect, useState } from 'react';
 
 import type { PlayRecord } from '@/lib/db.client';
 import {
-  deletePlayRecord,
+  deletePlayRecordByKey,
   getRecentPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { buildContinueWatchingRecords } from '@/lib/play-records';
+import {
+  buildContinueWatchingRecords,
+  resolveContinueWatchingRoute,
+} from '@/lib/play-records';
 
 import ScrollableRow from '@/components/ScrollableRow';
 import ActionLink from '@/components/ui/ActionLink';
@@ -79,14 +82,6 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
     return (record.play_time / record.total_time) * 100;
   };
 
-  // 从 key 中解析 source 和 id
-  const parseKey = (key: string) => {
-    const plusIndex = key.indexOf('+');
-    const source = plusIndex >= 0 ? key.slice(0, plusIndex) : key;
-    const id = plusIndex >= 0 ? key.slice(plusIndex + 1) : '';
-    return { source, id };
-  };
-
   return (
     <section className={`mb-8 ${className || ''}`}>
       <SectionHeader
@@ -114,7 +109,11 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
             ))
           : // 显示真实数据
             playRecords.map((record) => {
-              const { source, id } = parseKey(record.key);
+              const route = resolveContinueWatchingRoute(record);
+              if (!route) {
+                return null;
+              }
+              const { source, id } = route;
               return (
                 <div key={record.key} className={cardWidthClass}>
                   <VideoCard
@@ -130,18 +129,8 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
                     query={record.search_title}
                     from='playrecord'
                     onDeleteRecord={async () => {
-                      const secondaryKeys = record.groupedKeys.filter(
-                        (groupedKey) => groupedKey !== record.key
-                      );
-                      const keysToDelete = [...secondaryKeys, record.key];
-
-                      for (const groupedKey of keysToDelete) {
-                        const { source: groupedSource, id: groupedId } =
-                          parseKey(groupedKey);
-                        if (!groupedSource || !groupedId) {
-                          continue;
-                        }
-                        await deletePlayRecord(groupedSource, groupedId);
+                      for (const groupedKey of record.groupedKeys) {
+                        await deletePlayRecordByKey(groupedKey);
                       }
                     }}
                     onDelete={() =>

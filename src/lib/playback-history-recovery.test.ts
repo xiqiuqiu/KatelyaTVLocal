@@ -124,4 +124,68 @@ describe('resolvePlaybackHistoryRecovery', () => {
     expect(result.resumeEpisodeIndex).toBe(0);
     expect(result.resumeTime).toBeNull();
   });
+
+  it('restores episode from the play record when the URL omits episode', () => {
+    const requested = createSource({
+      episodes: [
+        'https://example.com/1.m3u8',
+        'https://example.com/2.m3u8',
+        'https://example.com/3.m3u8',
+      ],
+    });
+
+    const result = resolvePlaybackHistoryRecovery({
+      currentSource: 'source-a',
+      currentId: '1',
+      searchResults: [requested],
+      detailResults: [],
+      isFromPlayRecord: false,
+      urlEpisodeIndex: null,
+      historyRecord: createRecord({ index: 3, play_time: 180 }),
+    });
+
+    expect(result.resumeEpisodeIndex).toBe(2);
+    expect(result.resumeTime).toBeGreaterThan(0);
+    expect(result.contentKey).toBe('测试影片::2026');
+  });
+
+  it('does not invent episode one when a play record already has progress', () => {
+    const requested = createSource();
+
+    const result = resolvePlaybackHistoryRecovery({
+      currentSource: 'source-a',
+      currentId: '1',
+      searchResults: [requested],
+      detailResults: [],
+      isFromPlayRecord: true,
+      urlEpisodeIndex: null,
+      historyRecord: createRecord({ index: 2, play_time: 96 }),
+    });
+
+    expect(result.resumeEpisodeIndex).not.toBe(0);
+    expect(result.resumeEpisodeIndex).toBe(1);
+  });
+
+  it('lets an explicit URL episode win over the play-record episode', () => {
+    const requested = createSource({
+      episodes: [
+        'https://example.com/1.m3u8',
+        'https://example.com/2.m3u8',
+        'https://example.com/3.m3u8',
+      ],
+    });
+
+    const result = resolvePlaybackHistoryRecovery({
+      currentSource: 'source-a',
+      currentId: '1',
+      searchResults: [requested],
+      detailResults: [],
+      isFromPlayRecord: false,
+      urlEpisodeIndex: 0,
+      historyRecord: createRecord({ index: 3, play_time: 180 }),
+    });
+
+    expect(result.resumeEpisodeIndex).toBe(0);
+    expect(result.resumeTime).toBeNull();
+  });
 });

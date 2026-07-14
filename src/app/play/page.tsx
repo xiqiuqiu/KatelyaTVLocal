@@ -18,7 +18,7 @@ import {
   getAllPlayRecords,
   isFavorited,
   saveFavorite,
-  savePlayRecord,
+  savePlayRecordKeys,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import type { M3U8AdFilterDebugInfo } from '@/lib/hls-ad-filter';
@@ -84,6 +84,15 @@ import {
   resolveAdapterAutomaticEffectAllowed,
   resolveNativeJitterRouting,
 } from '@/lib/playback-session';
+import {
+  adaptWatchProgressPlayhead,
+  buildWatchProgressContentKey,
+  getWatchProgressAuthorityMode,
+  isWatchProgressDualWriteEnabled,
+  planEpisodeChangeSave,
+  planLatestWatchProgressForContent,
+  planWatchProgressWrite,
+} from '@/lib/watch-progress';
 import {
   clampSourceSwitchResumeTime,
   getSourceSwitchResumePlan,
@@ -454,6 +463,7 @@ function PlayPageClient() {
     useRef<PlaybackDebugCanplaySnapshot | null>(null);
   const sourceFallbackAttemptedRef = useRef(false);
   const sourceSwitchSavePendingRef = useRef(false);
+  const sourceDurationBeforeSwitchRef = useRef<number | null>(null);
   const sourceSwitchAutoPlayPendingRef = useRef(false);
   const playbackPolicyLogKeysRef = useRef(new Set<string>());
   const playbackPolicyRef = useRef<HlsPlaybackPolicyResult | null>(null);
@@ -793,7 +803,10 @@ function PlayPageClient() {
   };
 
   const getPlaybackContentKey = () =>
-    `${videoTitleRef.current || ''}::${videoYearRef.current || ''}`;
+    buildWatchProgressContentKey({
+      title: videoTitleRef.current || searchTitle || '',
+      year: videoYearRef.current || '',
+    });
 
   const settleSystemRecoverySeekIfNeeded = () => {
     if (!isPlaybackRecoverySessionAuthorityEnabled()) {
@@ -3514,8 +3527,29 @@ function PlayPageClient() {
       if (currentSource && currentId) {
         try {
           const allRecords = await getAllPlayRecords();
-          historyRecord =
-            allRecords[generateStorageKey(currentSource, currentId)];
+          const contentKey = buildWatchProgressContentKey({
+            title: searchTitle || videoTitle,
+            year: videoYear,
+          });
+          const latest = planLatestWatchProgressForContent({
+            contentKey,
+            records: allRecords as Record<
+              string,
+              import('@/lib/types').PlayRecord
+            >,
+            legacyRoute: { source: currentSource, id: currentId },
+            authorityMode: getWatchProgressAuthorityMode(),
+          });
+
+          if (latest.record) {
+            historyRecord = {
+              index: latest.record.index,
+              play_time: latest.record.play_time,
+              total_time: latest.record.total_time,
+              title: latest.record.title,
+              year: latest.record.year,
+            };
+          }
         } catch (err) {
           console.error('读取播放记录失败:', err);
         }
@@ -3524,8 +3558,16 @@ function PlayPageClient() {
       let sourcesInfo = searchResults;
       let detailData: SearchResult | null = searchResults[0] || null;
       let fellBackFromHistory = false;
+      let restoredEpisodeIndex: number | null = null;
+      let restoredResumeTime: number | null = null;
 
       if (currentSource && currentId) {
+        const urlEpisodeParam = searchParams.get('episode');
+        const urlEpisodeIndex =
+          urlEpisodeParam == null || urlEpisodeParam === ''
+            ? null
+            : Math.max(0, Number.parseInt(urlEpisodeParam, 10) - 1);
+
         const recovery = resolvePlaybackHistoryRecovery({
           currentSource,
           currentId,
@@ -3533,6 +3575,11 @@ function PlayPageClient() {
           detailResults,
           isFromPlayRecord: isFromPlayRecordEntry,
           historyRecord,
+          urlEpisodeIndex,
+          contentKey: buildWatchProgressContentKey({
+            title: searchTitle || videoTitle,
+            year: videoYear,
+          }),
         });
 
         if (!recovery.detail) {
@@ -3547,6 +3594,8 @@ function PlayPageClient() {
         sourcesInfo = recovery.sources;
         detailData = recovery.detail;
         fellBackFromHistory = recovery.fellBackFromHistory;
+        restoredEpisodeIndex = recovery.resumeEpisodeIndex;
+        restoredResumeTime = recovery.resumeTime;
       }
 
       if (!detailData || sourcesInfo.length === 0) {
@@ -3608,36 +3657,35 @@ function PlayPageClient() {
       setVideoCover(detailData.poster);
       setDetail(detailData);
 
-      if (historyRecord) {
-        const targetIndex = historyRecord.index - 1;
-        if (targetIndex >= 0 && targetIndex < detailData.episodes.length) {
-          setCurrentEpisodeIndex(targetIndex);
-          const historySourceKey = getSourceIdentityKey(
-            detailData.source,
-            detailData.id
+      if (restoredEpisodeIndex != null) {
+        setCurrentEpisodeIndex(restoredEpisodeIndex);
+        const historySourceKey = getSourceIdentityKey(
+          detailData.source,
+          detailData.id
+        );
+        const seedPlayTime =
+          historyRecord && historyRecord.index - 1 === restoredEpisodeIndex
+            ? historyRecord.play_time
+            : restoredResumeTime ?? 0;
+        const escape = planStallEscapeResume({
+          currentPlayTime: seedPlayTime,
+          badPoints: playbackSessionStateRef.current.badPoints,
+          sourceKey: historySourceKey,
+          mode: 'same-source',
+        });
+        // Only reinforce an already-known stuck point on refresh; never mark
+        // ordinary continue-watching resumes as bad points.
+        if (
+          escape.action === 'skip-forward' &&
+          escape.recordBadPointAt != null
+        ) {
+          rememberCurrentPlaybackBadPoint(
+            escape.recordBadPointAt,
+            historySourceKey
           );
-          const escape = planStallEscapeResume({
-            currentPlayTime: historyRecord.play_time,
-            badPoints: playbackSessionStateRef.current.badPoints,
-            sourceKey: historySourceKey,
-            mode: 'same-source',
-          });
-          // Only reinforce an already-known stuck point on refresh; never mark
-          // ordinary continue-watching resumes as bad points.
-          if (
-            escape.action === 'skip-forward' &&
-            escape.recordBadPointAt != null
-          ) {
-            rememberCurrentPlaybackBadPoint(
-              escape.recordBadPointAt,
-              historySourceKey
-            );
-          }
-          resumeTimeRef.current = escape.resumeTime ?? 0;
-        } else {
-          setCurrentEpisodeIndex(0);
-          resumeTimeRef.current = null;
         }
+        resumeTimeRef.current =
+          restoredResumeTime ?? escape.resumeTime ?? 0;
       } else if (currentEpisodeIndex >= detailData.episodes.length) {
         setCurrentEpisodeIndex(0);
       }
@@ -3678,6 +3726,8 @@ function PlayPageClient() {
       });
       sourceSwitchSavePendingRef.current = false;
       sourceSwitchAutoPlayPendingRef.current = false;
+      sourceDurationBeforeSwitchRef.current =
+        artPlayerRef.current?.duration || null;
 
       // 记录当前播放进度（仅在同一集数切换时恢复）
       const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
@@ -3838,16 +3888,13 @@ function PlayPageClient() {
     // episodeNumber是显示的集数（从1开始），需要转换为索引（从0开始）
     const episodeIndex = episodeNumber - 1;
     if (episodeIndex >= 0 && episodeIndex < totalEpisodes) {
-      // 在更换集数前保存当前播放进度
-      if (artPlayerRef.current && artPlayerRef.current.paused) {
-        requestSaveCurrentPlayProgress('episode-change');
-      }
-      setCurrentEpisodeIndex(episodeIndex);
-      dispatchPlaybackSessionEvent({
+      const result = dispatchPlaybackSessionEvent({
         type: 'user.switchEpisode',
         episodeIndex,
         nowMs: Date.now(),
       });
+      void executeSaveProgressEffects(result.effects);
+      setCurrentEpisodeIndex(episodeIndex);
     }
   };
 
@@ -3855,16 +3902,14 @@ function PlayPageClient() {
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx > 0) {
-      if (artPlayerRef.current && !artPlayerRef.current.paused) {
-        requestSaveCurrentPlayProgress('episode-change');
-      }
       const episodeIndex = idx - 1;
-      setCurrentEpisodeIndex(episodeIndex);
-      dispatchPlaybackSessionEvent({
+      const result = dispatchPlaybackSessionEvent({
         type: 'user.switchEpisode',
         episodeIndex,
         nowMs: Date.now(),
       });
+      void executeSaveProgressEffects(result.effects);
+      setCurrentEpisodeIndex(episodeIndex);
     }
   };
 
@@ -3873,16 +3918,14 @@ function PlayPageClient() {
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx < d.episodes.length - 1) {
-      if (artPlayerRef.current && !artPlayerRef.current.paused) {
-        requestSaveCurrentPlayProgress('episode-change');
-      }
       const episodeIndex = idx + 1;
-      setCurrentEpisodeIndex(episodeIndex);
-      dispatchPlaybackSessionEvent({
+      const result = dispatchPlaybackSessionEvent({
         type: 'user.switchEpisode',
         episodeIndex,
         nowMs: Date.now(),
       });
+      void executeSaveProgressEffects(result.effects);
+      setCurrentEpisodeIndex(episodeIndex);
     }
   };
 
@@ -3992,6 +4035,10 @@ function PlayPageClient() {
     reason: PlayRecordSaveReason = 'heartbeat',
     options?: {
       keepalive?: boolean;
+      episodeIndex?: number;
+      completed?: boolean;
+      playTime?: number;
+      totalTime?: number;
     }
   ) => {
     if (
@@ -4005,18 +4052,52 @@ function PlayPageClient() {
     }
 
     const player = artPlayerRef.current;
-    const currentTime = Math.floor(player.currentTime || 0);
-    const duration = Math.floor(player.duration || 0);
+    const duration = Math.floor(
+      options?.totalTime ?? player.duration ?? 0
+    );
+    const episodeIndex =
+      options?.episodeIndex ?? currentEpisodeIndexRef.current;
+    const rawPlayTime = Math.floor(
+      options?.playTime ?? player.currentTime ?? 0
+    );
+    const sealed =
+      reason === 'episode-ended' || options?.completed
+        ? planEpisodeChangeSave({
+            previousEpisodeIndex: episodeIndex,
+            nextEpisodeIndex: episodeIndex + 1,
+            playTime: rawPlayTime,
+            totalTime: duration,
+            reason: 'episode-ended',
+          })
+        : null;
+    const currentTime = sealed?.completed
+      ? Math.floor(sealed.playTime)
+      : rawPlayTime;
 
-    // 如果播放时间太短（少于5秒）或者视频时长无效，不保存
-    if (currentTime < 1 || !duration) {
+    // 如果播放时间太短或者视频时长无效，不保存（完成态除外）
+    if (
+      !sealed?.completed &&
+      (currentTime < 1 || !duration)
+    ) {
       return;
     }
 
+    const contentKey = getPlaybackContentKey();
+    const writePlan = planWatchProgressWrite({
+      contentKey,
+      episodeIndex,
+      route: {
+        source: currentSourceRef.current,
+        id: currentIdRef.current,
+      },
+      authorityMode: getWatchProgressAuthorityMode(),
+      dualWrite: isWatchProgressDualWriteEnabled(),
+    });
+
     const saveTime = Date.now();
     const snapshot = {
-      key: generateStorageKey(currentSourceRef.current, currentIdRef.current),
-      episodeIndex: currentEpisodeIndexRef.current,
+      key: writePlan.primaryKey,
+      episodeIndex,
       playTime: currentTime,
       totalTime: duration,
       savedAt: saveTime,
@@ -4026,22 +4107,25 @@ function PlayPageClient() {
       return;
     }
 
+    const record = {
+      title: videoTitleRef.current,
+      source_name: detailRef.current?.source_name || '',
+      year: detailRef.current?.year || videoYearRef.current || '',
+      cover: detailRef.current?.poster || '',
+      index: episodeIndex + 1, // 转换为1基索引
+      total_episodes: detailRef.current?.episodes.length || 1,
+      play_time: currentTime,
+      total_time: duration || currentTime,
+      save_time: saveTime,
+      search_title: searchTitle,
+      route_source: currentSourceRef.current,
+      route_id: currentIdRef.current,
+    };
+
     try {
-      await savePlayRecord(
-        currentSourceRef.current,
-        currentIdRef.current,
-        {
-          title: videoTitleRef.current,
-          source_name: detailRef.current?.source_name || '',
-          year: detailRef.current?.year,
-          cover: detailRef.current?.poster || '',
-          index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
-          total_episodes: detailRef.current?.episodes.length || 1,
-          play_time: currentTime,
-          total_time: duration,
-          save_time: saveTime,
-          search_title: searchTitle,
-        },
+      await savePlayRecordKeys(
+        [writePlan.primaryKey, ...writePlan.dualWriteKeys],
+        record,
         options
       );
 
@@ -4049,6 +4133,28 @@ function PlayPageClient() {
       lastSavedSnapshotRef.current = snapshot;
     } catch (err) {
       console.error('保存播放进度失败:', err);
+    }
+  };
+
+  const executeSaveProgressEffects = async (
+    effects: PlaybackSessionEffect[],
+    options?: {
+      keepalive?: boolean;
+      playTime?: number;
+      totalTime?: number;
+    }
+  ) => {
+    for (const effect of effects) {
+      if (effect.type !== 'saveProgress') {
+        continue;
+      }
+      await saveCurrentPlayProgress(effect.reason, {
+        keepalive: options?.keepalive,
+        episodeIndex: effect.episodeIndex,
+        completed: effect.completed,
+        playTime: options?.playTime,
+        totalTime: options?.totalTime,
+      });
     }
   };
 
@@ -4062,18 +4168,7 @@ function PlayPageClient() {
       type: 'progressSave.requested',
       reason,
     });
-    const saveEffect = result.effects.find(
-      (
-        effect
-      ): effect is Extract<PlaybackSessionEffect, { type: 'saveProgress' }> =>
-        effect.type === 'saveProgress'
-    );
-
-    if (!saveEffect) {
-      return;
-    }
-
-    await saveCurrentPlayProgress(saveEffect.reason, options);
+    await executeSaveProgressEffects(result.effects, options);
   };
 
   useEffect(() => {
@@ -5071,8 +5166,13 @@ function PlayPageClient() {
           if (resumeTimeRef.current && resumeTimeRef.current > 0) {
             try {
               const duration = artPlayerRef.current.duration || 0;
+              const adapted = adaptWatchProgressPlayhead({
+                playTime: resumeTimeRef.current,
+                sourceTotalTime: sourceDurationBeforeSwitchRef.current,
+                targetTotalTime: duration,
+              });
               const target = clampSourceSwitchResumeTime({
-                resumeTime: resumeTimeRef.current,
+                resumeTime: adapted,
                 duration,
               });
               artPlayerRef.current.currentTime = target;
@@ -5299,14 +5399,27 @@ function PlayPageClient() {
           return;
         });
 
-        // 监听视频播放结束事件，自动播放下一集
+        // 监听视频播放结束事件，自动播放下一集（先存上一集完成态）
         artPlayerRef.current.on('video:ended', () => {
           const d = detailRef.current;
           const idx = currentEpisodeIndexRef.current;
           if (d && d.episodes && idx < d.episodes.length - 1) {
-            setTimeout(() => {
-              setCurrentEpisodeIndex(idx + 1);
-            }, 1000);
+            const player = artPlayerRef.current;
+            const playTime = Math.floor(player?.currentTime || 0);
+            const totalTime = Math.floor(player?.duration || 0);
+            const result = dispatchPlaybackSessionEvent({
+              type: 'video.ended',
+              nextEpisodeIndex: idx + 1,
+              nowMs: Date.now(),
+            });
+            void executeSaveProgressEffects(result.effects, {
+              playTime,
+              totalTime,
+            }).then(() => {
+              setTimeout(() => {
+                setCurrentEpisodeIndex(idx + 1);
+              }, 1000);
+            });
           }
         });
 

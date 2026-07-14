@@ -80,6 +80,8 @@ export class D1Storage implements IStorage {
       total_time: row.total_time,
       save_time: row.save_time,
       search_title: row.search_title || undefined,
+      route_source: row.route_source || undefined,
+      route_id: row.route_id || undefined,
     };
   }
 
@@ -115,8 +117,8 @@ export class D1Storage implements IStorage {
         .prepare(
           `
           INSERT INTO play_records 
-          (username, key, title, source_name, cover, year, index_episode, total_episodes, play_time, total_time, save_time, search_title)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (username, key, title, source_name, cover, year, index_episode, total_episodes, play_time, total_time, save_time, search_title, route_source, route_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(username, key) DO UPDATE SET
             title = excluded.title,
             source_name = excluded.source_name,
@@ -127,7 +129,9 @@ export class D1Storage implements IStorage {
             play_time = excluded.play_time,
             total_time = excluded.total_time,
             save_time = excluded.save_time,
-            search_title = excluded.search_title
+            search_title = excluded.search_title,
+            route_source = excluded.route_source,
+            route_id = excluded.route_id
         `
         )
         .bind(
@@ -142,7 +146,9 @@ export class D1Storage implements IStorage {
           record.play_time,
           record.total_time,
           record.save_time,
-          record.search_title || null
+          record.search_title || null,
+          record.route_source || null,
+          record.route_id || null
         )
         .run();
     } catch (err) {

@@ -18,11 +18,13 @@ jest.mock('next/navigation', () => ({
 
 jest.mock('@/lib/db.client', () => ({
   deleteFavorite: jest.fn(),
+  deletePlayRecordByKey: jest.fn(),
   generateStorageKey: (source: string, id: string) => `${source}+${id}`,
   getAllPlayRecords: jest.fn(),
   isFavorited: jest.fn().mockResolvedValue(false),
   saveFavorite: jest.fn(),
   savePlayRecord: jest.fn(),
+  savePlayRecordKeys: jest.fn(),
   subscribeToDataUpdates: jest.fn(() => jest.fn()),
 }));
 

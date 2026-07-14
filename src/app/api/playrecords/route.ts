@@ -9,6 +9,7 @@ import {
   parsePlayRecordKey,
 } from '@/lib/play-record-key';
 import { PlayRecord } from '@/lib/types';
+import { isWatchProgressStorageKey } from '@/lib/watch-progress';
 
 export const runtime = 'edge';
 
@@ -62,6 +63,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const finalRecord = {
+      ...record,
+      save_time: record.save_time ?? Date.now(),
+    } as PlayRecord;
+
+    if (isWatchProgressStorageKey(key)) {
+      await db.savePlayRecordByKey(authInfo.username, key, finalRecord);
+      return NextResponse.json({ success: true }, { status: 200 });
+    }
+
     // 从key中解析source和id
     const parsedKey = parsePlayRecordKey(key);
     if (!parsedKey) {
@@ -70,11 +81,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    const finalRecord = {
-      ...record,
-      save_time: record.save_time ?? Date.now(),
-    } as PlayRecord;
 
     await db.savePlayRecord(
       authInfo.username,
@@ -106,6 +112,11 @@ export async function DELETE(request: NextRequest) {
     const key = searchParams.get('key');
 
     if (key) {
+      if (isWatchProgressStorageKey(key)) {
+        await db.deletePlayRecordByKey(username, key);
+        return NextResponse.json({ success: true }, { status: 200 });
+      }
+
       // 如果提供了 key，删除单条播放记录
       const parsedKey = parsePlayRecordKey(key);
       if (!parsedKey) {

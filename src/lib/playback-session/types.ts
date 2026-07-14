@@ -144,6 +144,11 @@ export type PlaybackSessionEvent =
       episodeIndex: number;
       nowMs: number;
     }
+  | {
+      type: 'video.ended';
+      nextEpisodeIndex: number;
+      nowMs: number;
+    }
   | { type: 'adSkipWindows.loaded'; windows: HlsAdSkipWindow[] }
   | { type: 'progressSave.requested'; reason: PlayRecordSaveReason }
   | { type: 'sourceChange.started'; attemptId: number; sourceKey: string }
@@ -228,6 +233,10 @@ export type PlaybackSessionEffect =
   | {
       type: 'saveProgress';
       reason: PlayRecordSaveReason;
+      /** Episode to seal when saving before an advance; omit = current. */
+      episodeIndex?: number;
+      /** Ended→next completion semantics for the sealed episode. */
+      completed?: boolean;
     }
   | {
       type: 'emitDebugEvent';

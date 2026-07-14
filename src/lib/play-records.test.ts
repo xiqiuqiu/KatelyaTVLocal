@@ -1,5 +1,8 @@
 import type { PlayRecord } from '@/lib/db.client';
-import { buildContinueWatchingRecords } from '@/lib/play-records';
+import {
+  buildContinueWatchingRecords,
+  resolveContinueWatchingRoute,
+} from '@/lib/play-records';
 
 function createRecord(overrides: Partial<PlayRecord> = {}): PlayRecord {
   return {
@@ -66,5 +69,28 @@ describe('buildContinueWatchingRecords', () => {
     expect(result).toHaveLength(1);
     expect(result[0].key).toBe('source-b+99');
     expect(result[0].groupedKeys).toEqual(['source-b+99', 'source-a+1']);
+  });
+
+  it('groups contentKey progress with legacy source+id under one continue-watching card', () => {
+    const records = {
+      'wp:示例影片::2026#2': createRecord({
+        index: 3,
+        save_time: 400,
+        route_source: 'source-b',
+        route_id: '99',
+      }),
+      'source-a+1': createRecord({
+        index: 2,
+        save_time: 100,
+      }),
+    };
+
+    const result = buildContinueWatchingRecords(records);
+    expect(result).toHaveLength(1);
+    expect(result[0].key).toBe('wp:示例影片::2026#2');
+    expect(resolveContinueWatchingRoute(result[0])).toEqual({
+      source: 'source-b',
+      id: '99',
+    });
   });
 });

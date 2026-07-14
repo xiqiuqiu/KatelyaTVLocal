@@ -1,34 +1,36 @@
 import type { PlayRecord } from '@/lib/db.client';
+import {
+  buildWatchProgressContentKey,
+  isWatchProgressStorageKey,
+  parseWatchProgressStorageKey,
+} from '@/lib/watch-progress';
 
 export interface ContinueWatchingRecord extends PlayRecord {
   key: string;
   groupedKeys: string[];
 }
 
-function normalizeRecordLabel(value?: string): string {
-  return value?.trim().toLowerCase().replace(/\s+/g, '') || '';
-}
-
 function getRecordKind(record: PlayRecord): 'movie' | 'tv' {
   return record.total_episodes > 1 ? 'tv' : 'movie';
 }
 
-function getRecordSignatures(record: PlayRecord): string[] {
-  const year = normalizeRecordLabel(record.year);
-  const kind = getRecordKind(record);
-  const labels = [record.search_title, record.title]
-    .map(normalizeRecordLabel)
-    .filter(Boolean);
-
-  if (labels.length === 0) {
-    return [`unknown::${year}::${kind}`];
+function getRecordSignatures(record: PlayRecord, key: string): string[] {
+  const parsed = parseWatchProgressStorageKey(key);
+  if (parsed) {
+    return [`${parsed.contentKey}::${getRecordKind(record)}`];
   }
 
-  return Array.from(new Set(labels)).map(
-    (label) => `${label}::${year}::${kind}`
-  );
+  const contentKey = buildWatchProgressContentKey({
+    title: record.search_title || record.title,
+    year: record.year,
+  });
+  return [`${contentKey}::${getRecordKind(record)}`];
 }
 
+/**
+ * Continue Watching groups by Watch Progress content identity.
+ * Entry card uses the newest save_time record; route comes from route_* or legacy key.
+ */
 export function buildContinueWatchingRecords(
   allRecords: Record<string, PlayRecord>
 ): ContinueWatchingRecord[] {
@@ -39,7 +41,7 @@ export function buildContinueWatchingRecords(
   const signatureToGroupIndex = new Map<string, number>();
 
   sortedEntries.forEach(([key, record]) => {
-    const signatures = getRecordSignatures(record);
+    const signatures = getRecordSignatures(record, key);
     const matchedGroupIndex = signatures.reduce<number | undefined>(
       (foundIndex, signature) =>
         foundIndex ?? signatureToGroupIndex.get(signature),
@@ -67,4 +69,37 @@ export function buildContinueWatchingRecords(
   });
 
   return groupedRecords;
+}
+
+export function resolveContinueWatchingRoute(
+  record: ContinueWatchingRecord
+): { source: string; id: string } | null {
+  if (record.route_source && record.route_id) {
+    return { source: record.route_source, id: record.route_id };
+  }
+
+  if (isWatchProgressStorageKey(record.key)) {
+    for (const groupedKey of record.groupedKeys) {
+      if (isWatchProgressStorageKey(groupedKey)) {
+        continue;
+      }
+      const plusIndex = groupedKey.indexOf('+');
+      if (plusIndex > 0) {
+        return {
+          source: groupedKey.slice(0, plusIndex),
+          id: groupedKey.slice(plusIndex + 1),
+        };
+      }
+    }
+    return null;
+  }
+
+  const plusIndex = record.key.indexOf('+');
+  if (plusIndex <= 0) {
+    return null;
+  }
+  return {
+    source: record.key.slice(0, plusIndex),
+    id: record.key.slice(plusIndex + 1),
+  };
 }

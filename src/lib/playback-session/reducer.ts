@@ -601,8 +601,24 @@ export function reducePlaybackSession(
         'user-switch'
       );
 
-    case 'user.switchEpisode':
-      return withIntentTransition(
+    case 'user.switchEpisode': {
+      if (event.episodeIndex === state.currentEpisodeIndex) {
+        return withIntentTransition(
+          state,
+          {
+            ...state,
+            playbackIntent: 'playing',
+            resumeIntentAfterSeek: null,
+            seekSettledAtMs: null,
+            sourceSwitchSettledUntilMs:
+              event.nowMs + DEFAULT_SOURCE_SWITCH_SETTLE_MS,
+          },
+          'user-switch'
+        );
+      }
+
+      const previousEpisodeIndex = state.currentEpisodeIndex;
+      const switched = withIntentTransition(
         state,
         {
           ...switchEpisodeScope(state, event.episodeIndex),
@@ -614,6 +630,52 @@ export function reducePlaybackSession(
         },
         'user-switch'
       );
+
+      return {
+        state: switched.state,
+        effects: [
+          {
+            type: 'saveProgress',
+            reason: 'episode-change',
+            episodeIndex: previousEpisodeIndex,
+          },
+          ...switched.effects,
+        ],
+      };
+    }
+
+    case 'video.ended': {
+      if (event.nextEpisodeIndex === state.currentEpisodeIndex) {
+        return { state, effects: [] };
+      }
+
+      const previousEpisodeIndex = state.currentEpisodeIndex;
+      const switched = withIntentTransition(
+        state,
+        {
+          ...switchEpisodeScope(state, event.nextEpisodeIndex),
+          playbackIntent: 'playing',
+          resumeIntentAfterSeek: null,
+          seekSettledAtMs: null,
+          sourceSwitchSettledUntilMs:
+            event.nowMs + DEFAULT_SOURCE_SWITCH_SETTLE_MS,
+        },
+        'user-switch'
+      );
+
+      return {
+        state: switched.state,
+        effects: [
+          {
+            type: 'saveProgress',
+            reason: 'episode-ended',
+            episodeIndex: previousEpisodeIndex,
+            completed: true,
+          },
+          ...switched.effects,
+        ],
+      };
+    }
 
     case 'adSkipWindows.loaded':
       return {

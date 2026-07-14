@@ -2,6 +2,7 @@ export type PlayRecordSaveReason =
   | 'heartbeat'
   | 'pause'
   | 'episode-change'
+  | 'episode-ended'
   | 'source-change'
   | 'visibility-hidden'
   | 'beforeunload'
@@ -48,6 +49,11 @@ export function shouldSavePlayRecord(
     previous.key !== next.key ||
     previous.episodeIndex !== next.episodeIndex
   ) {
+    return true;
+  }
+
+  // Episode completion must never be dropped by heartbeat debounce.
+  if (reason === 'episode-ended' || reason === 'episode-change') {
     return true;
   }
 
