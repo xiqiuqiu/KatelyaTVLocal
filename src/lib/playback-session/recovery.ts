@@ -1,3 +1,4 @@
+import { HLS_SUSTAINED_STALL_SWITCH_THRESHOLD } from '@/lib/hls-recovery';
 import {
   findNearbyPlaybackBadPoint,
   planStallEscapeResume,
@@ -151,6 +152,31 @@ function pickR1Action(
   return 'recover-media';
 }
 
+/** Effective HLS soft-stall intensity (matches legacy getHlsRecoveryPlan). */
+export function getHlsEffectiveStallCount(
+  evidence: RecoveryRuntimeEvidence | null
+): number {
+  if (!evidence?.hls) {
+    return 0;
+  }
+  return Math.max(
+    evidence.hls.stallCount || 0,
+    evidence.hls.stallWindowCount || 0
+  );
+}
+
+/**
+ * Sustained non-fatal HLS stalls should escalate like legacy switch-source,
+ * not sit forever in same-source R1/R2.
+ */
+export function isHlsSustainedSoftStall(
+  evidence: RecoveryRuntimeEvidence | null
+): boolean {
+  return (
+    getHlsEffectiveStallCount(evidence) >= HLS_SUSTAINED_STALL_SWITCH_THRESHOLD
+  );
+}
+
 function shouldAccelerateToR3(
   evidence: RecoveryRuntimeEvidence | null,
   hardFailure: boolean
@@ -171,6 +197,9 @@ function shouldAccelerateToR3(
     return true;
   }
   if (evidence.hls?.fatal) {
+    return true;
+  }
+  if (isHlsSustainedSoftStall(evidence)) {
     return true;
   }
   return false;

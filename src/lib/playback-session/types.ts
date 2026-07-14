@@ -69,6 +69,8 @@ export interface RecoveryRuntimeEvidence {
   hardFailure?: boolean;
   hls?: {
     stallCount: number;
+    /** 30s window counter from the HLS adapter; max(stallCount, this) drives R3. */
+    stallWindowCount?: number;
     fatal?: boolean;
     errorType?: string | null;
   };

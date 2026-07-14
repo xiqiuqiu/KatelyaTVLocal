@@ -840,6 +840,15 @@ function PlayPageClient() {
         kind: inFlight,
         nowMs: Date.now(),
       });
+      // Defense in depth: if anything still parks on resume after R2, clear it
+      // in the same seeked tick (a second seeked will not fire).
+      if (playbackSessionStateRef.current.recoveryInFlight === 'resume') {
+        dispatchPlaybackSessionEvent({
+          type: 'recovery.effectSettled',
+          kind: 'resume',
+          nowMs: Date.now(),
+        });
+      }
       return;
     }
     if (
@@ -4804,6 +4813,7 @@ function PlayPageClient() {
                       hardFailure: fatal,
                       hls: {
                         stallCount: state.stallCount,
+                        stallWindowCount: state.stallWindowCount,
                         fatal,
                         errorType: errorType || null,
                       },

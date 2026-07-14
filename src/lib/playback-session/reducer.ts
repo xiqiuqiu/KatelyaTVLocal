@@ -13,6 +13,7 @@ import {
   advanceRecoveryLadder,
   cancelRecoveryEpisode,
   clearStallEpisode,
+  isHlsSustainedSoftStall,
   isRecoveryInFlightBlockingAdSkip,
   isResumePendingBlockingAdSkip,
   loadBadPointsForScope,
@@ -849,30 +850,41 @@ export function reducePlaybackSession(
         return { state, effects: [] };
       }
 
+      // R2 escape seek is already applied by the adapter before settle.
+      // Parking on 'resume' required a second seeked that never comes and
+      // blocked the soft-stall ladder from reaching R3.
+      if (event.kind === 'R2') {
+        return {
+          state: {
+            ...setRecoveryResumeTime(state, null),
+            recoveryInFlight: null,
+          },
+          effects: [],
+        };
+      }
+
       return {
         state: {
           ...state,
-          // After R2 escape seek, treat resume as pending until settle.
-          recoveryInFlight:
-            event.kind === 'R2' && state.recoveryResumeTime != null
-              ? 'resume'
-              : null,
+          recoveryInFlight: null,
         },
         effects: [],
       };
     }
 
-    case 'recovery.runtimeEvidence':
+    case 'recovery.runtimeEvidence': {
+      const sustainedSoftStall = isHlsSustainedSoftStall(event.evidence);
       return handleStallCandidate(state, event.snapshot, event.nowMs, {
         evidence: event.evidence,
         hardFailure: Boolean(
           event.evidence.hardFailure ||
             event.evidence.native?.severity === 'source-failed' ||
-            event.evidence.hls?.fatal
+            event.evidence.hls?.fatal ||
+            sustainedSoftStall
         ),
         r3Reason: 'auto-recovery',
       });
-
+    }
     case 'video.timeupdate': {
       if (!allowsAutomaticEffect(state, 'ad-skip', event.nowMs)) {
         return { state, effects: [] };

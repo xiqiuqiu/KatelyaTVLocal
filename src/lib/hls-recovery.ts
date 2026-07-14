@@ -28,6 +28,9 @@ export interface HlsRecoveryPlan {
   reason: string;
 }
 
+/** Soft-stall count at which recovery should switch source (legacy + Session). */
+export const HLS_SUSTAINED_STALL_SWITCH_THRESHOLD = 5;
+
 const STALL_DETAIL_SET = new Set([
   'bufferStalledError',
   'bufferNudgeOnStall',
@@ -284,7 +287,10 @@ export function getHlsRecoveryPlan({
       };
     }
 
-    if (hasAlternativeSource) {
+    if (
+      effectiveStallCount >= HLS_SUSTAINED_STALL_SWITCH_THRESHOLD &&
+      hasAlternativeSource
+    ) {
       return {
         action: 'switch-source',
         reason: '当前线路持续卡顿，切换到其他播放源',
