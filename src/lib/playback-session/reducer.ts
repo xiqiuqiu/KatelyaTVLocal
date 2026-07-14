@@ -125,10 +125,7 @@ function createRecoverySwitchEffect(
     currentEpisodeIndex: state.currentEpisodeIndex,
     statuses: state.sourceStatuses,
     measured: state.measuredVideoInfo,
-    sourceSelectionScores: toSelectionScores(
-      state.sources,
-      state.sourceScores
-    ),
+    sourceSelectionScores: toSelectionScores(state.sources, state.sourceScores),
     attemptedSourceKeys: state.recoveredSourceKeys,
   });
 
@@ -321,7 +318,10 @@ function handleStallCandidate(
       );
       return {
         state: r3.state,
-        effects: [...ladder.effects.filter((e) => e.type === 'emitDebugEvent'), ...r3.effects],
+        effects: [
+          ...ladder.effects.filter((e) => e.type === 'emitDebugEvent'),
+          ...r3.effects,
+        ],
       };
     }
   }
@@ -488,15 +488,12 @@ export function reducePlaybackSession(
         contentKey != null &&
         state.contentKey != null &&
         contentKey !== state.contentKey;
-      const episodeChanged = event.currentEpisodeIndex !== state.currentEpisodeIndex;
+      const episodeChanged =
+        event.currentEpisodeIndex !== state.currentEpisodeIndex;
 
       let scoped = state;
       if (titleChanged) {
-        scoped = switchTitleScope(
-          state,
-          contentKey,
-          event.currentEpisodeIndex
-        );
+        scoped = switchTitleScope(state, contentKey, event.currentEpisodeIndex);
       } else if (episodeChanged) {
         scoped = switchEpisodeScope(state, event.currentEpisodeIndex);
       } else if (contentKey !== state.contentKey) {
@@ -582,8 +579,7 @@ export function reducePlaybackSession(
           playbackIntent: resumeIntent,
           resumeIntentAfterSeek: null,
           lastUserSeekAtMs: event.nowMs,
-          seekSettledAtMs:
-            resumeIntent === 'seek-settled' ? event.nowMs : null,
+          seekSettledAtMs: resumeIntent === 'seek-settled' ? event.nowMs : null,
         },
         effects: [],
       };
@@ -644,7 +640,9 @@ export function reducePlaybackSession(
           currentSourceChangeAttemptId: event.attemptId,
           sourceChangeSourceKey: event.sourceKey,
           recoveryInFlight:
-            state.recoveryResumeTime != null ? 'resume' : state.recoveryInFlight,
+            state.recoveryResumeTime != null
+              ? 'resume'
+              : state.recoveryInFlight,
         },
         effects: [],
       };

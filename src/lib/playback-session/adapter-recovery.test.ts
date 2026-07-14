@@ -1,9 +1,9 @@
+import type { PlaybackSessionEffect } from '@/lib/playback-session';
+import { resolveNativeJitterRouting } from '@/lib/playback-session';
 import {
   applySameSourceRecoverAction,
   executePlaybackSessionEffects,
 } from '@/lib/playback-session/adapter-effects';
-import type { PlaybackSessionEffect } from '@/lib/playback-session';
-import { resolveNativeJitterRouting } from '@/lib/playback-session';
 
 describe('Playback Session recovery adapter mapping', () => {
   const originalFlag =
@@ -13,7 +13,8 @@ describe('Playback Session recovery adapter mapping', () => {
     if (originalFlag === undefined) {
       delete process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY;
     } else {
-      process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY = originalFlag;
+      process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY =
+        originalFlag;
     }
   });
 
@@ -48,7 +49,8 @@ describe('Playback Session recovery adapter mapping', () => {
     executePlaybackSessionEffects(effects, {
       onSwitchSource: () => seen.push('switch'),
       onSameSourceRecover: (effect) => seen.push(effect.action),
-      onApplyRecoveryResume: (effect) => seen.push(`resume:${effect.resumeTime}`),
+      onApplyRecoveryResume: (effect) =>
+        seen.push(`resume:${effect.resumeTime}`),
     });
 
     expect(seen).toEqual(['resume:42', 'nudge-playback']);

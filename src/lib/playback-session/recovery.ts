@@ -77,7 +77,9 @@ export function isResumePendingBlockingAdSkip(
   );
 }
 
-export function clearStallEpisode(state: PlaybackSessionState): PlaybackSessionState {
+export function clearStallEpisode(
+  state: PlaybackSessionState
+): PlaybackSessionState {
   return {
     ...state,
     recoveryStage: 'idle',
@@ -97,8 +99,10 @@ export function cancelRecoveryEpisode(
     ...clearStallEpisode(state),
     // Keep recoveryResumeTime if already planned? Spec: cancel aborts in-flight
     // S2/S3; planned resume for a cancelled switch should clear.
-    recoveryResumeTime: state.recoveryInFlight === 'R3' ? null : state.recoveryResumeTime,
-    pendingResumeTime: state.recoveryInFlight === 'R3' ? null : state.pendingResumeTime,
+    recoveryResumeTime:
+      state.recoveryInFlight === 'R3' ? null : state.recoveryResumeTime,
+    pendingResumeTime:
+      state.recoveryInFlight === 'R3' ? null : state.pendingResumeTime,
   };
 }
 
@@ -355,8 +359,7 @@ function advanceFromR0(
   preferR2: boolean,
   forceR3?: boolean
 ): RecoveryLadderResult {
-  const elapsed =
-    state.r0EnteredAtMs != null ? nowMs - state.r0EnteredAtMs : 0;
+  const elapsed = state.r0EnteredAtMs != null ? nowMs - state.r0EnteredAtMs : 0;
   const observeDone =
     accelerate || forceR3 || preferR2 || elapsed >= RECOVERY_R0_SOFT_OBSERVE_MS;
 
@@ -364,7 +367,10 @@ function advanceFromR0(
     return { state, effects: [] };
   }
 
-  if (forceR3 || (accelerate && state.r1AttemptCount >= RECOVERY_R1_MAX_ATTEMPTS)) {
+  if (
+    forceR3 ||
+    (accelerate && state.r1AttemptCount >= RECOVERY_R1_MAX_ATTEMPTS)
+  ) {
     return { state, effects: [] }; // caller handles R3 via Intent + Availability
   }
 

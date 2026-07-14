@@ -4,13 +4,7 @@
 
 import { AlertCircle, ArrowLeft, Heart, RefreshCw, Search } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import {
-  Suspense,
-  useEffect,
-  useReducer,
-  useRef,
-  useState,
-} from 'react';
+import { Suspense, useEffect, useReducer, useRef, useState } from 'react';
 
 import type { CastStatus } from '@/lib/cast';
 import {
@@ -97,11 +91,11 @@ import {
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
 import {
+  type PlaybackBadPoint,
   planStallEscapeResume,
   readPersistedPlaybackBadPoints,
   rememberPlaybackBadPoint,
   writePersistedPlaybackBadPoints,
-  type PlaybackBadPoint,
 } from '@/lib/playback-stuck-escape';
 import {
   createProgressiveSourceProbeFailureStatus,
@@ -1354,9 +1348,7 @@ function PlayPageClient() {
       sources: availableSourcesRef.current,
       currentSourceKey: getCurrentSourceKey(),
       currentEpisodeIndex: currentEpisodeIndexRef.current,
-      statuses: buildPlaybackSessionSourceStatuses(
-        availableSourcesRef.current
-      ),
+      statuses: buildPlaybackSessionSourceStatuses(availableSourcesRef.current),
       measured: precomputedVideoInfoRef.current,
       sourceSelectionScores: sourceSelectionScoresRef.current,
       attemptedSourceKeys: autoRecoveredSourceKeysRef.current,
@@ -2962,7 +2954,8 @@ function PlayPageClient() {
         evidence: {
           platform: 'apple-native',
           stallCandidate: severity !== 'observe',
-          hardFailure: severity === 'source-failed' || severity === 'hard-stall',
+          hardFailure:
+            severity === 'source-failed' || severity === 'hard-stall',
           native: {
             severity,
             isJitter: false,
@@ -2979,7 +2972,9 @@ function PlayPageClient() {
       );
       if (switchEffect) {
         reportCurrentPlaybackFailureFeedback(
-          severity === 'source-failed' ? 'ios-source-failed' : 'ios-native-stall'
+          severity === 'source-failed'
+            ? 'ios-source-failed'
+            : 'ios-native-stall'
         );
         state.sourceRecoveryAttempts = 0;
         if (switchEffect.resumeTime != null) {

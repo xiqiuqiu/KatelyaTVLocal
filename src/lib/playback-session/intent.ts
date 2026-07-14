@@ -32,7 +32,10 @@ export function getAutomaticEffectGate(
     return { allowed: false, deniedBy: 'source-switch-settle' };
   }
 
-  if (state.playbackIntent === 'seek-settled' && state.seekSettledAtMs != null) {
+  if (
+    state.playbackIntent === 'seek-settled' &&
+    state.seekSettledAtMs != null
+  ) {
     const elapsed = nowMs - state.seekSettledAtMs;
     if (elapsed < 0) {
       return { allowed: false, deniedBy: 'seek-settled' };

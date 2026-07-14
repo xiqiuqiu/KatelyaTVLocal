@@ -12,7 +12,8 @@ describe('Playback Recovery authority façade (paired rollback)', () => {
     if (originalFlag === undefined) {
       delete process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY;
     } else {
-      process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY = originalFlag;
+      process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY =
+        originalFlag;
     }
   });
 

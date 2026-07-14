@@ -7,7 +7,8 @@ import {
 } from '@/lib/playback-session';
 
 describe('Playback Intent authority façade', () => {
-  const originalFlag = process.env.NEXT_PUBLIC_PLAYBACK_INTENT_SESSION_AUTHORITY;
+  const originalFlag =
+    process.env.NEXT_PUBLIC_PLAYBACK_INTENT_SESSION_AUTHORITY;
 
   afterEach(() => {
     if (originalFlag === undefined) {

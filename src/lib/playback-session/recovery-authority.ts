@@ -6,7 +6,9 @@ export type NativeJitterRoutingMode = 'session-tree' | 'legacy-parallel';
  * When false, adapters restore legacy parallel commanders together.
  */
 export function isPlaybackRecoverySessionAuthorityEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY !== 'false';
+  return (
+    process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY !== 'false'
+  );
 }
 
 export function getPlaybackRecoveryAuthorityMode(): PlaybackRecoveryAuthorityMode {

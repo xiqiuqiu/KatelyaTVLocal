@@ -86,7 +86,9 @@ describe('Playback Session Intent gate', () => {
     expect(afterWaiting.effects).toEqual([]);
     expect(afterWaiting.state.playbackIntent).toBe('user-paused');
 
-    const afterPlay = reducePlaybackSession(paused, { type: 'user.play' }).state;
+    const afterPlay = reducePlaybackSession(paused, {
+      type: 'user.play',
+    }).state;
     expect(afterPlay.playbackIntent).toBe('playing');
     expect(allowsAutomaticEffect(afterPlay, 'auto-source-switch', 10_000)).toBe(
       true
@@ -118,9 +120,9 @@ describe('Playback Session Intent gate', () => {
 
     expect(seeking.playbackIntent).toBe('seeking');
     expect(allowsAutomaticEffect(seeking, 'ad-skip', 10_100)).toBe(false);
-    expect(
-      allowsAutomaticEffect(seeking, 'same-source-recovery', 10_100)
-    ).toBe(false);
+    expect(allowsAutomaticEffect(seeking, 'same-source-recovery', 10_100)).toBe(
+      false
+    );
     expect(allowsAutomaticEffect(seeking, 'auto-source-switch', 10_100)).toBe(
       false
     );
@@ -147,18 +149,18 @@ describe('Playback Session Intent gate', () => {
 
     // Within S1/S2 window (~4s): all auto effects denied
     expect(allowsAutomaticEffect(settled, 'ad-skip', 13_000)).toBe(false);
-    expect(
-      allowsAutomaticEffect(settled, 'same-source-recovery', 13_000)
-    ).toBe(false);
+    expect(allowsAutomaticEffect(settled, 'same-source-recovery', 13_000)).toBe(
+      false
+    );
     expect(allowsAutomaticEffect(settled, 'auto-source-switch', 13_000)).toBe(
       false
     );
 
     // After S1/S2 window but still inside S3 window (≥10s): only auto switch denied
     expect(allowsAutomaticEffect(settled, 'ad-skip', 15_000)).toBe(true);
-    expect(
-      allowsAutomaticEffect(settled, 'same-source-recovery', 15_000)
-    ).toBe(true);
+    expect(allowsAutomaticEffect(settled, 'same-source-recovery', 15_000)).toBe(
+      true
+    );
     expect(allowsAutomaticEffect(settled, 'auto-source-switch', 15_000)).toBe(
       false
     );
@@ -198,9 +200,7 @@ describe('Playback Session Intent gate', () => {
 
     expect(afterEpisode.playbackIntent).toBe('playing');
     expect(afterEpisode.currentEpisodeIndex).toBe(1);
-    expect(
-      allowsAutomaticEffect(afterEpisode, 'ad-skip', 20_500)
-    ).toBe(false);
+    expect(allowsAutomaticEffect(afterEpisode, 'ad-skip', 20_500)).toBe(false);
     expect(allowsAutomaticEffect(afterEpisode, 'ad-skip', 22_100)).toBe(true);
   });
 
@@ -225,9 +225,7 @@ describe('Playback Session Intent gate', () => {
 });
 
 describe('Playback Session automatic recovery', () => {
-  function loadPlayableAlts(
-    overrides: Parameters<typeof loadSources>[0] = {}
-  ) {
+  function loadPlayableAlts(overrides: Parameters<typeof loadSources>[0] = {}) {
     return loadSources({
       sourceStatuses: new Map<string, SourceStatus>([
         ['bad-3', { kind: 'unavailable' }],
@@ -253,9 +251,9 @@ describe('Playback Session automatic recovery', () => {
 
     expect(result.state.recoveryStage).toBe('R0');
     expect(result.state.stallEpisodeActive).toBe(true);
-    expect(result.effects.some((effect) => effect.type === 'switchSource')).toBe(
-      false
-    );
+    expect(
+      result.effects.some((effect) => effect.type === 'switchSource')
+    ).toBe(false);
   });
 
   it('escalates R0 → R1 same-source recover after soft observe window', () => {
@@ -281,9 +279,9 @@ describe('Playback Session automatic recovery', () => {
         }),
       ])
     );
-    expect(result.effects.some((effect) => effect.type === 'switchSource')).toBe(
-      false
-    );
+    expect(
+      result.effects.some((effect) => effect.type === 'switchSource')
+    ).toBe(false);
   });
 
   it('escalates to R2 escape when playhead is inside a known fault interval', () => {
@@ -356,7 +354,8 @@ describe('Playback Session automatic recovery', () => {
     expect(escaped.state.recoveryResumeTime).toBeGreaterThan(100);
     const escapeEffect = escaped.effects.find(
       (effect) =>
-        effect.type === 'sameSourceRecover' && effect.action === 'escape-bad-point'
+        effect.type === 'sameSourceRecover' &&
+        effect.action === 'escape-bad-point'
     ) as { targetTime: number | null };
     expect(escapeEffect.targetTime).toBe(escaped.state.recoveryResumeTime);
   });
@@ -446,9 +445,9 @@ describe('Playback Session automatic recovery', () => {
     expect(r0.effects.some((effect) => effect.type === 'switchSource')).toBe(
       false
     );
-    expect(r0.state.recoveryStage === 'R2' || r0.state.recoveryStage === 'R0').toBe(
-      true
-    );
+    expect(
+      r0.state.recoveryStage === 'R2' || r0.state.recoveryStage === 'R0'
+    ).toBe(true);
 
     const afterObserve =
       r0.state.recoveryStage === 'R0'

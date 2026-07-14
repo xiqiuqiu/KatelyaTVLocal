@@ -1,7 +1,4 @@
-import type {
-  PlaybackSessionEffect,
-  SameSourceRecoverAction,
-} from './types';
+import type { PlaybackSessionEffect, SameSourceRecoverAction } from './types';
 
 export interface ApplySameSourceRecoverHandlers {
   nudgePlayback: (targetTime: number | null) => void;
