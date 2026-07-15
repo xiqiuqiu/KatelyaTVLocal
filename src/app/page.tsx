@@ -15,10 +15,12 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
+import { selectHomeHeroCandidate } from '@/lib/home-hero';
 import { DoubanItem } from '@/lib/types';
 import { homeTabMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
 import ContinueWatching from '@/components/ContinueWatching';
+import HomeHero from '@/components/HomeHero';
 import PageLayout from '@/components/PageLayout';
 import { useSite } from '@/components/SiteProvider';
 import ActionLink from '@/components/ui/ActionLink';
@@ -163,6 +165,11 @@ function HomeClient() {
 
   const currentHeaderMeta =
     activeTab === 'favorites' ? homeTabMeta.favorites : homeTabMeta.home;
+  const homeHeroCandidate = selectHomeHeroCandidate(
+    hotMovies,
+    hotTvShows,
+    hotVarietyShows
+  );
 
   const renderHomeSection = ({
     href,
@@ -221,15 +228,14 @@ function HomeClient() {
       activePath={activeTab === 'favorites' ? '/?tab=favorites' : '/'}
     >
       <div className='space-y-8 overflow-visible sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
-        {/* 主内容区大型 KatelyaTV Logo - 仅在首页显示 */}
-        {/* {activeTab === 'home' && <MainKatelyaLogo />} */}
+        {activeTab === 'favorites' ? (
+          <PageHeader
+            subtitle={currentHeaderMeta.subtitle}
+            title={currentHeaderMeta.title}
+          />
+        ) : null}
 
-        <PageHeader
-          subtitle={currentHeaderMeta.subtitle}
-          title={currentHeaderMeta.title}
-        />
-
-        <div className='mx-auto w-full max-w-none'>
+        <div className='mx-auto w-full max-w-none space-y-8'>
           {activeTab === 'favorites' ? (
             // 收藏夹视图
             <>
@@ -275,9 +281,10 @@ function HomeClient() {
               <BottomKatelyaLogo />
             </>
           ) : (
-            // 首页视图
+            // 首页视图：Hero 为首屏构图，继续观看紧随其后
             <>
-              {/* 继续观看 */}
+              <HomeHero candidate={homeHeroCandidate} loading={loading} />
+
               <ContinueWatching />
 
               {renderHomeSection({
@@ -312,11 +319,9 @@ const HomeFallback = () => {
   return (
     <PageLayout activePath='/'>
       <div className='space-y-8 overflow-visible sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
-        <PageHeader
-          subtitle={homeTabMeta.home.subtitle}
-          title={homeTabMeta.home.title}
-        />
-        <div className='mx-auto w-full max-w-none'>
+        <div className='mx-auto w-full max-w-none space-y-8'>
+          <HomeHero candidate={null} loading />
+
           <ContinueWatching />
 
           {[
@@ -324,7 +329,7 @@ const HomeFallback = () => {
             pageSectionLabels.popularShows,
             pageSectionLabels.popularVariety,
           ].map((title, sectionIndex) => (
-            <section key={sectionIndex} className='space-y-4 mt-8'>
+            <section key={sectionIndex} className='space-y-4'>
               <SectionHeader title={title} />
               <PosterGrid className='grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6'>
                 {Array.from({ length: 12 }).map((_, index) => (

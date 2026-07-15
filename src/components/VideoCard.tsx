@@ -24,6 +24,7 @@ import {
   saveFavorite,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { buildHomeHeroPlayHref } from '@/lib/home-hero';
 import { SearchResult } from '@/lib/types';
 import { type ImageProxyOptions, processImageUrl } from '@/lib/utils';
 
@@ -232,11 +233,14 @@ export default function VideoCard({
     let href = '';
 
     if (from === 'douban') {
-      const params = new URLSearchParams();
-      params.set('title', actualTitle.trim());
-      if (actualYear) params.set('year', actualYear);
-      if (actualSearchType) params.set('stype', actualSearchType);
-      href = `/play?${params.toString()}`;
+      href = buildHomeHeroPlayHref(
+        { title: actualTitle, year: actualYear || '' },
+        actualSearchType === 'movie' ||
+          actualSearchType === 'tv' ||
+          actualSearchType === 'show'
+          ? actualSearchType
+          : ''
+      );
     } else if (actualSource && actualId) {
       const params = new URLSearchParams();
       params.set('source', actualSource);
@@ -464,7 +468,7 @@ export default function VideoCard({
       {config.showProgress ? (
         <div className='mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10'>
           <div
-            className='h-full rounded-full bg-[rgb(var(--ui-success))] transition-all duration-500 ease-out'
+            className='h-full rounded-full bg-[rgb(var(--ui-accent))] transition-all duration-500 ease-out'
             style={{ width: `${progress}%` }}
           />
         </div>

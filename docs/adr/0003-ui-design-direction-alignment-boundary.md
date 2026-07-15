@@ -1,0 +1,3 @@
+# UI Design Direction alignment boundary
+
+`UI_1.0_web.png` is Design Direction for Primary Viewing Surfaces — visual and structural authority, not pixel acceptance. UI Alignment Slices may close Structural Alignment Targets (home Hero, search tabs/richer cards, playback lower detail / 猜你喜欢) and visual token work, but must not change playback probing/switching/resume or search aggregation meaning. Accepted Design Deviations stay: AI Find on search, playback episode/source side panel, brand ReelFind. Acceptance is Desktop-First; Douban/login/user menu get Secondary Surface Polish only. Admin, TVBox, and debug are out of scope.

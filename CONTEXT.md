@@ -4,6 +4,34 @@ KatelyaTVLocal is a video discovery and playback application. This context defin
 
 ## Language
 
+**Design Direction**:
+The role of `UI_1.0_web.png` in UI work: the authoritative visual and information-architecture direction for color, hierarchy, card language, and spacing rhythm — not a pixel-perfect acceptance checklist. Intentional deviations (capabilities the product has that the mock lacks, or mock structures that would change working playback interaction) are allowed when recorded explicitly.
+_Avoid_: hard mock acceptance; inspiration-only moodboard; silent drift from the mock
+
+**Primary Viewing Surface**:
+The user-facing screens in scope for Design Direction alignment: home, search, playback, Douban category browsing, login, and the user menu. Admin, TVBox, and debug surfaces are outside that alignment scope.
+_Avoid_: full-site redesign; treating admin or TVBox as Design Direction acceptance surfaces
+
+**UI Alignment Slice**:
+A Design Direction change that stays in visual-only or structural territory: tokens, spacing, hierarchy, section composition, and card information architecture — without changing playback probing/switching/resume, search aggregation meaning, favorites, or other user-facing behavior. Behavioral or data-contract changes are out of a UI Alignment Slice and need their own decision.
+_Avoid_: mixing playback interaction redesign into a style pass; silent behavioral changes under a "UI polish" label
+
+**Accepted Design Deviation**:
+A deliberate, recorded departure from `UI_1.0_web.png` that stays in product: keep AI Find on search, keep the playback episode/source side panel (instead of below-player tabs), and keep the live brand name ReelFind rather than the mock's KatelyaTV.
+_Avoid_: treating these as unfinished mock debt; closing them "for free" inside a UI Alignment Slice
+
+**Structural Alignment Target**:
+The composition gaps a UI Alignment Slice is meant to close on Primary Viewing Surfaces: home Hero, search category tabs and richer result cards, and the playback lower detail / "猜你喜欢" composition — without converting playback chrome into a behavioral redesign.
+_Avoid_: counting side-panel-to-tabs migration as a Structural Alignment Target
+
+**Desktop-First Alignment**:
+Design Direction acceptance for a UI Alignment Slice is judged on desktop web against `UI_1.0_web.png`. Narrow viewports must keep the shared shell and tokens usable, but `UI_1.0_APP.png` is not an acceptance reference for that slice.
+_Avoid_: dual web+app mock acceptance in one slice; freezing mobile token/shell updates entirely
+
+**Secondary Surface Polish**:
+On Douban browsing, login, and the user menu, a UI Alignment Slice only applies visual-only alignment to shared tokens, shell, and control language — not new structural compositions.
+_Avoid_: treating Douban/login/menu structural redesign as part of the same slice as home/search/play Structural Alignment Targets
+
 **Playback Session**:
 A user's active attempt to watch one selected title through one playable source and episode position. A Playback Session includes user playback actions, browser video events, source changes, recovery decisions, progress saving, and debug evidence for that active watch attempt.
 
