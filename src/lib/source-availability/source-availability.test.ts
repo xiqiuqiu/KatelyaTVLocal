@@ -175,7 +175,7 @@ describe('selectRecoveryCandidate', () => {
     expect(candidate?.source).toBe(direct);
   });
 
-  it('never selects unknown sources for automatic recovery', () => {
+  it('never selects unknown sources for automatic recovery by default', () => {
     const statuses = new Map<string, SourceStatus>([
       ['unknown-2', { kind: 'idle' }],
       ['probing-3', { kind: 'probing', reason: '检测中' }],
@@ -193,6 +193,48 @@ describe('selectRecoveryCandidate', () => {
     });
 
     expect(candidate).toBeNull();
+  });
+
+  it('startup fallback may select an idle source when no verified alt exists', () => {
+    const statuses = new Map<string, SourceStatus>([
+      ['unknown-2', { kind: 'idle' }],
+      ['probing-3', { kind: 'probing', reason: '检测中' }],
+    ]);
+
+    const candidate = selectRecoveryCandidate({
+      sources: [
+        createSource('current', '1'),
+        createSource('unknown', '2'),
+        createSource('probing', '3'),
+      ],
+      currentSourceKey: 'current-1',
+      currentEpisodeIndex: 0,
+      statuses,
+      allowUnverifiedFallback: true,
+    });
+
+    expect(candidate?.sourceKey).toBe('unknown-2');
+  });
+
+  it('startup fallback still prefers a verified direct source over idle', () => {
+    const statuses = new Map<string, SourceStatus>([
+      ['unknown-2', { kind: 'idle' }],
+      ['direct-3', { kind: 'direct', reason: '浏览器可直接播放' }],
+    ]);
+
+    const candidate = selectRecoveryCandidate({
+      sources: [
+        createSource('current', '1'),
+        createSource('unknown', '2'),
+        createSource('direct', '3'),
+      ],
+      currentSourceKey: 'current-1',
+      currentEpisodeIndex: 0,
+      statuses,
+      allowUnverifiedFallback: true,
+    });
+
+    expect(candidate?.sourceKey).toBe('direct-3');
   });
 
   it('skips current and already-attempted auto-recovery sources', () => {

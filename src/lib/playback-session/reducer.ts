@@ -114,6 +114,18 @@ function setRecoveryResumeTime(
   };
 }
 
+function shouldAllowUnverifiedRecoveryFallback(
+  reason: 'auto-recovery' | 'source-timeout',
+  snapshot: VideoSnapshot
+): boolean {
+  // Startup hang: progressive probe never starts without stable playback, so
+  // requiring direct/playable evidence leaves the user stuck on a dead source.
+  if (reason === 'source-timeout') {
+    return true;
+  }
+  return (snapshot.currentTime || 0) < 1;
+}
+
 function createRecoverySwitchEffect(
   state: PlaybackSessionState,
   snapshot: VideoSnapshot,
@@ -128,6 +140,10 @@ function createRecoverySwitchEffect(
     measured: state.measuredVideoInfo,
     sourceSelectionScores: toSelectionScores(state.sources, state.sourceScores),
     attemptedSourceKeys: state.recoveredSourceKeys,
+    allowUnverifiedFallback: shouldAllowUnverifiedRecoveryFallback(
+      reason,
+      snapshot
+    ),
   });
 
   if (!selected) {

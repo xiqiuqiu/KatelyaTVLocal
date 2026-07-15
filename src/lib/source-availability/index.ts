@@ -71,6 +71,12 @@ export interface BuildSourceAvailabilityListInput {
 
 export type SelectRecoveryCandidateInput = BuildSourceAvailabilityListInput & {
   attemptedSourceKeys?: Set<string>;
+  /**
+   * When no verified (direct/playable) candidate exists, allow unknown/probing
+   * sources that still have the current episode. Used for startup hang / source
+   * timeout so playback is not stuck waiting for evidence that never arrives.
+   */
+  allowUnverifiedFallback?: boolean;
 };
 
 function hasBackendPlayableMetrics(info: SourceVideoInfo | undefined): boolean {
@@ -294,13 +300,12 @@ export function buildSourceAvailabilityList({
   });
 }
 
-export function selectRecoveryCandidate(
-  input: SelectRecoveryCandidateInput
+function pickAutoRecoveryCandidate(
+  items: SourceAvailabilityItem[],
+  attempted: Set<string>
 ): SourceAvailabilityItem | null {
-  const attempted = input.attemptedSourceKeys || new Set<string>();
-
   return (
-    buildSourceAvailabilityList(input)
+    items
       .filter(
         (item) =>
           item.autoRecovery.eligible &&
@@ -311,6 +316,41 @@ export function selectRecoveryCandidate(
         (left, right) => left.autoRecovery.rank - right.autoRecovery.rank
       )[0] || null
   );
+}
+
+function pickUnverifiedStartupFallbackCandidate(
+  items: SourceAvailabilityItem[],
+  attempted: Set<string>
+): SourceAvailabilityItem | null {
+  return (
+    items
+      .filter(
+        (item) =>
+          !item.isCurrent &&
+          !attempted.has(item.sourceKey) &&
+          item.episode.exists &&
+          (item.availabilityKind === 'unknown' ||
+            item.availabilityKind === 'probing')
+      )
+      .sort((left, right) => left.orderIndex - right.orderIndex)[0] || null
+  );
+}
+
+export function selectRecoveryCandidate(
+  input: SelectRecoveryCandidateInput
+): SourceAvailabilityItem | null {
+  const attempted = input.attemptedSourceKeys || new Set<string>();
+  const items = buildSourceAvailabilityList(input);
+  const verified = pickAutoRecoveryCandidate(items, attempted);
+  if (verified) {
+    return verified;
+  }
+
+  if (!input.allowUnverifiedFallback) {
+    return null;
+  }
+
+  return pickUnverifiedStartupFallbackCandidate(items, attempted);
 }
 
 export {

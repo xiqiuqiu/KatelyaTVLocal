@@ -299,6 +299,9 @@ function selectAvailabilityRecoverySource<T extends RecoverySourceCandidate>(
     statuses,
     sourceSelectionScores,
     attemptedSourceKeys: recoveredSourceKeys,
+    // Legacy getNextRecoverySourceCandidate callers may lack playback clock;
+    // keep verified-only here. Startup hang uses Session selectRecoveryCandidate
+    // with allowUnverifiedFallback instead.
   });
 
   if (!selected) {

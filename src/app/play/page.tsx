@@ -1054,6 +1054,7 @@ function PlayPageClient() {
 
     sourceChangeTimeoutTimerRef.current = window.setTimeout(() => {
       sourceChangeTimeoutTimerRef.current = null;
+      syncPlaybackSessionSources();
       const timeoutResult = dispatchPlaybackSessionEvent({
         type: 'timer.sourceChangeTimeout',
         attemptId: timeoutAttemptId,
@@ -1399,6 +1400,11 @@ function PlayPageClient() {
   };
 
   const getNextRecoverySource = () => {
+    const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+    const currentPlayTime =
+      typeof video?.currentTime === 'number'
+        ? video.currentTime
+        : artPlayerRef.current?.currentTime || 0;
     const selected = selectRecoveryCandidate({
       sources: availableSourcesRef.current,
       currentSourceKey: getCurrentSourceKey(),
@@ -1407,6 +1413,8 @@ function PlayPageClient() {
       measured: precomputedVideoInfoRef.current,
       sourceSelectionScores: sourceSelectionScoresRef.current,
       attemptedSourceKeys: autoRecoveredSourceKeysRef.current,
+      allowUnverifiedFallback:
+        isVideoLoadingRef.current || currentPlayTime < 1,
     });
     return selected?.source;
   };
@@ -2913,6 +2921,7 @@ function PlayPageClient() {
     // Session authority: jitter is evidence only — never a parallel seek commander.
     if (resolveNativeJitterRouting() === 'session-tree') {
       rememberCurrentPlaybackBadPoint(stuckTime);
+      syncPlaybackSessionSources();
       dispatchPlaybackSessionEvent({
         type: 'recovery.runtimeEvidence',
         nowMs: now,
@@ -3155,6 +3164,7 @@ function PlayPageClient() {
 
     // Session authority: feed runtime evidence; execute Session effects only.
     if (isPlaybackRecoverySessionAuthorityEnabled()) {
+      syncPlaybackSessionSources();
       const sessionResult = dispatchPlaybackSessionEvent({
         type: 'recovery.runtimeEvidence',
         nowMs: now,
@@ -4798,6 +4808,7 @@ function PlayPageClient() {
 
                 // Session recovery authority: HLS feeds evidence only; no private R ladder.
                 if (isPlaybackRecoverySessionAuthorityEnabled()) {
+                  syncPlaybackSessionSources();
                   const sessionResult = dispatchPlaybackSessionEvent({
                     type: 'recovery.runtimeEvidence',
                     nowMs: now,
