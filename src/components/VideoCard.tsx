@@ -50,6 +50,8 @@ interface VideoCardProps {
   rate?: string;
   items?: SearchResult[];
   type?: string;
+  typeName?: string;
+  statusText?: string;
   size?: 'default' | 'small';
   imagePriority?: boolean;
   imageSize?: ImageProxyOptions;
@@ -73,6 +75,8 @@ export default function VideoCard({
   rate,
   items,
   type = '',
+  typeName,
+  statusText,
   size = 'default',
   imagePriority = false,
   imageSize,
@@ -135,6 +139,9 @@ export default function VideoCard({
   );
   const actualEpisodes = aggregateData?.mostFrequentEpisodes ?? episodes;
   const actualYear = aggregateData?.first.year ?? year;
+  const displayYear =
+    (year && year !== 'unknown' ? year : undefined) ||
+    (actualYear && actualYear !== 'unknown' ? actualYear : undefined);
   const actualQuery = query || '';
   const actualSearchType = isAggregate
     ? aggregateData?.first.episodes?.length === 1
@@ -492,6 +499,22 @@ export default function VideoCard({
             <span className='truncate'>{actualTitle}</span>
           </span>
         </button>
+
+        {from === 'search' && (typeName || displayYear || statusText) ? (
+          <div
+            className={`mt-1.5 flex flex-wrap items-center justify-center gap-1.5 text-[rgb(var(--ui-text-muted))] ${
+              isSmall ? 'text-[10px]' : 'text-xs'
+            }`}
+          >
+            {typeName ? (
+              <span className='inline-flex items-center rounded-md border border-white/10 bg-white/5 px-2 py-0.5'>
+                {typeName}
+              </span>
+            ) : null}
+            {displayYear ? <span>{displayYear}</span> : null}
+            {statusText ? <span>{statusText}</span> : null}
+          </div>
+        ) : null}
 
         {config.showSourceName && source_name ? (
           <span

@@ -13,6 +13,12 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import {
+  buildSearchCategoryTabs,
+  filterSearchResultsByCategory,
+  getSearchCardMeta,
+  type SearchCategory,
+} from '@/lib/search-category';
+import {
   shouldSuggestAiFind,
   sortSearchResultGroupsByRanking,
   sortSearchResultsByRanking,
@@ -21,6 +27,7 @@ import { SearchResult } from '@/lib/types';
 import { pageMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
 import AiFindPanel from '@/components/AiFindPanel';
+import CapsuleSwitch from '@/components/CapsuleSwitch';
 import PageLayout from '@/components/PageLayout';
 import ActionLink from '@/components/ui/ActionLink';
 import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
@@ -63,11 +70,32 @@ function SearchPageClient() {
   const [viewMode, setViewMode] = useState<'agg' | 'all'>(() => {
     return getDefaultAggregate() ? 'agg' : 'all';
   });
+  const [resultCategory, setResultCategory] = useState<SearchCategory>('all');
+
+  const categoryTabs = useMemo(
+    () => buildSearchCategoryTabs(searchResults),
+    [searchResults]
+  );
+
+  const categoryTabOptions = useMemo(
+    () =>
+      categoryTabs.map((tab) => ({
+        value: tab.value,
+        label: `${tab.label} ${tab.count}`,
+      })),
+    [categoryTabs]
+  );
+
+  // 仅对已加载结果做客户端分类过滤，不改动 /api/search 与聚合身份
+  const filteredSearchResults = useMemo(
+    () => filterSearchResultsByCategory(searchResults, resultCategory),
+    [resultCategory, searchResults]
+  );
 
   // 聚合后的结果（按标题和年份分组）
   const aggregatedResults = useMemo(() => {
     const map = new Map<string, SearchResult[]>();
-    searchResults.forEach((item) => {
+    filteredSearchResults.forEach((item) => {
       // 使用 title + year + type 作为键，year 必然存在，但依然兜底 'unknown'
       const key = `${item.title.replaceAll(' ', '')}-${
         item.year || 'unknown'
@@ -80,7 +108,7 @@ function SearchPageClient() {
       searchQuery,
       Array.from(map.entries())
     );
-  }, [searchQuery, searchResults]);
+  }, [filteredSearchResults, searchQuery]);
 
   const shouldShowAiFindGuide = useMemo(
     () =>
@@ -163,6 +191,7 @@ function SearchPageClient() {
   const fetchSearchResults = async (query: string) => {
     try {
       setIsLoading(true);
+      setResultCategory('all');
       const response = await fetch(
         `/api/search?q=${encodeURIComponent(query.trim())}`
       );
@@ -199,7 +228,7 @@ function SearchPageClient() {
       : pageMeta['/search'].subtitle
     : pageMeta['/search'].subtitle;
   const displayedResultCount =
-    viewMode === 'agg' ? aggregatedResults.length : searchResults.length;
+    viewMode === 'agg' ? aggregatedResults.length : filteredSearchResults.length;
 
   return (
     <PageLayout activePath='/search'>
@@ -310,51 +339,81 @@ function SearchPageClient() {
                 </Surface>
               ) : null}
               {searchResults.length > 0 ? (
-                <PosterGrid
-                  key={`search-results-${viewMode}`}
-                  className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'
-                >
-                  {viewMode === 'agg'
-                    ? aggregatedResults.map(([mapKey, group]) => {
-                        return (
-                          <div key={`agg-${mapKey}`} className='w-full'>
-                            <VideoCard
-                              from='search'
-                              items={group}
-                              query={
-                                searchQuery.trim() !== group[0].title
-                                  ? searchQuery.trim()
-                                  : ''
-                              }
-                            />
-                          </div>
-                        );
-                      })
-                    : searchResults.map((item) => (
-                        <div
-                          key={`all-${item.source}-${item.id}`}
-                          className='w-full'
-                        >
-                          <VideoCard
-                            id={item.id}
-                            title={item.title}
-                            poster={item.poster}
-                            episodes={item.episodes.length}
-                            source={item.source}
-                            source_name={item.source_name}
-                            douban_id={item.douban_id?.toString()}
-                            query={
-                              searchQuery.trim() !== item.title
-                                ? searchQuery.trim()
-                                : ''
-                            }
-                            year={item.year}
-                            from='search'
-                            type={item.episodes.length > 1 ? 'tv' : 'movie'}
-                          />
-                        </div>
-                      ))}
-                </PosterGrid>
+                <>
+                  <CapsuleSwitch
+                    active={resultCategory}
+                    aria-label='结果分类'
+                    onChange={(value) =>
+                      setResultCategory(value as SearchCategory)
+                    }
+                    options={categoryTabOptions}
+                  />
+                  {filteredSearchResults.length > 0 ? (
+                    <PosterGrid
+                      key={`search-results-${viewMode}-${resultCategory}`}
+                      className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'
+                    >
+                      {viewMode === 'agg'
+                        ? aggregatedResults.map(([mapKey, group]) => {
+                            const meta = getSearchCardMeta(group[0]);
+                            return (
+                              <div key={`agg-${mapKey}`} className='w-full'>
+                                <VideoCard
+                                  from='search'
+                                  items={group}
+                                  query={
+                                    searchQuery.trim() !== group[0].title
+                                      ? searchQuery.trim()
+                                      : ''
+                                  }
+                                  statusText={meta.statusText}
+                                  typeName={meta.typeChip}
+                                  year={meta.year}
+                                />
+                              </div>
+                            );
+                          })
+                        : filteredSearchResults.map((item) => {
+                            const meta = getSearchCardMeta(item);
+                            return (
+                              <div
+                                key={`all-${item.source}-${item.id}`}
+                                className='w-full'
+                              >
+                                <VideoCard
+                                  id={item.id}
+                                  title={item.title}
+                                  poster={item.poster}
+                                  episodes={item.episodes.length}
+                                  source={item.source}
+                                  source_name={item.source_name}
+                                  douban_id={item.douban_id?.toString()}
+                                  query={
+                                    searchQuery.trim() !== item.title
+                                      ? searchQuery.trim()
+                                      : ''
+                                  }
+                                  year={meta.year}
+                                  from='search'
+                                  type={
+                                    item.episodes.length > 1 ? 'tv' : 'movie'
+                                  }
+                                  typeName={meta.typeChip}
+                                  statusText={meta.statusText}
+                                />
+                              </div>
+                            );
+                          })}
+                    </PosterGrid>
+                  ) : (
+                    <Surface
+                      className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
+                      variant='plain'
+                    >
+                      该分类下暂无结果
+                    </Surface>
+                  )}
+                </>
               ) : (
                 <Surface
                   className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'

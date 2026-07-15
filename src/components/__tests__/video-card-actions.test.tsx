@@ -284,6 +284,62 @@ describe('VideoCard', () => {
     expect(push).toHaveBeenCalledWith(expect.stringContaining('prefer=true'));
   });
 
+  it('surfaces rich search metadata without changing primary click routing', () => {
+    render(
+      <VideoCard
+        id='1'
+        source='test'
+        title='庆余年'
+        poster='https://example.com/poster.jpg'
+        episodes={36}
+        source_name='测试源'
+        year='2024'
+        from='search'
+        typeName='国产剧'
+        statusText='共36集'
+      />
+    );
+
+    expect(screen.getByText('国产剧')).toBeInTheDocument();
+    expect(screen.getByText('2024')).toBeInTheDocument();
+    expect(screen.getByText('共36集')).toBeInTheDocument();
+    expect(screen.getByText('测试源')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '打开 庆余年' }));
+
+    expect(push).toHaveBeenCalledWith(
+      expect.stringContaining('/play?source=test&id=1')
+    );
+  });
+
+  it('keeps favorite clicks from navigating when rich search metadata is present', async () => {
+    render(
+      <VideoCard
+        id='1'
+        source='test'
+        title='庆余年'
+        poster='https://example.com/poster.jpg'
+        episodes={12}
+        source_name='测试源'
+        year='2024'
+        from='search'
+        typeName='国产剧'
+        statusText='共12集'
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '切换收藏' }));
+
+    await waitFor(() => {
+      expect(dbClient.saveFavorite).toHaveBeenCalledWith(
+        'test',
+        '1',
+        expect.any(Object)
+      );
+    });
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it('requests optimized poster sizes and can prioritize first-screen cards', () => {
     window.RUNTIME_CONFIG = {
       IMAGE_PROXY: '/api/image-proxy?url=',
