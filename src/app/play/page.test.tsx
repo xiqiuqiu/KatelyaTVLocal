@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import { getAllPlayRecords } from '@/lib/db.client';
@@ -28,6 +28,27 @@ jest.mock('@/lib/db.client', () => ({
   subscribeToDataUpdates: jest.fn(() => jest.fn()),
 }));
 
+jest.mock('@/lib/douban.client', () => ({
+  getDoubanCategories: jest.fn(async ({ kind }: { kind: string }) => {
+    if (kind === 'movie') {
+      return {
+        code: 200,
+        message: 'ok',
+        list: [
+          {
+            id: 'rec-1',
+            title: '推荐电影甲',
+            poster: 'https://img.example/rec1.jpg',
+            rate: '8.8',
+            year: '2025',
+          },
+        ],
+      };
+    }
+    return { code: 200, message: 'ok', list: [] };
+  }),
+}));
+
 jest.mock('@/components/PageLayout', () => ({
   __esModule: true,
   default: ({ children }: { children: ReactNode }) => (
@@ -54,7 +75,9 @@ jest.mock('@/components/player/PlayerLoadingOverlay', () => ({
 
 jest.mock('@/components/player/PlayerSidebar', () => ({
   __esModule: true,
-  default: ({ children }: { children: ReactNode }) => <aside>{children}</aside>,
+  default: ({ children }: { children: ReactNode }) => (
+    <aside data-testid='player-sidebar'>{children}</aside>
+  ),
 }));
 
 jest.mock('@/components/SkipController', () => ({
@@ -69,6 +92,16 @@ jest.mock('@/components/EpisodeSelector', () => ({
       {availableSources.map((source) => source.source_name).join(',')}
     </div>
   ),
+}));
+
+jest.mock('@/components/ScrollableRow', () => ({
+  __esModule: true,
+  default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+
+jest.mock('@/components/VideoCard', () => ({
+  __esModule: true,
+  default: ({ title }: { title: string }) => <div>{title}</div>,
 }));
 
 jest.mock('artplayer', () => ({
@@ -118,6 +151,22 @@ function createSource(overrides: Partial<SearchResult> = {}): SearchResult {
   };
 }
 
+async function settlePlayPage() {
+  await waitFor(() => {
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/detail?source=detail-source&id=detail-id'
+    );
+  });
+
+  act(() => {
+    jest.advanceTimersByTime(1000);
+  });
+
+  expect(
+    await screen.findByTestId('episode-selector-sources')
+  ).toHaveTextContent('详情源');
+}
+
 describe('PlayPage source initialization', () => {
   const mockedGetAllPlayRecords = getAllPlayRecords as jest.MockedFunction<
     typeof getAllPlayRecords
@@ -163,19 +212,91 @@ describe('PlayPage source initialization', () => {
 
   it('syncs available sources from detail fallback after search misses the current source', async () => {
     render(<PlayPage />);
+    await settlePlayPage();
+  });
+});
 
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        '/api/detail?source=detail-source&id=detail-id'
-      );
+describe('PlayPage lower detail composition', () => {
+  const mockedGetAllPlayRecords = getAllPlayRecords as jest.MockedFunction<
+    typeof getAllPlayRecords
+  >;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockSearchParams = new URLSearchParams(
+      'source=detail-source&id=detail-id&title=%E8%AF%A6%E6%83%85%E5%BD%B1%E7%89%87'
+    );
+    mockedGetAllPlayRecords.mockResolvedValue({});
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.startsWith('/api/playback-debug')) {
+        return {
+          ok: true,
+          json: async () => ({ enabled: false }),
+        } as Response;
+      }
+      if (url.startsWith('/api/search')) {
+        return {
+          ok: true,
+          json: async () => ({ results: [] }),
+        } as Response;
+      }
+      if (url.startsWith('/api/detail')) {
+        return {
+          ok: true,
+          json: async () =>
+            createSource({
+              poster: 'https://img.example/detail.jpg',
+              class: '剧情',
+              type_name: '电视剧',
+              desc: '这是一段剧情简介。',
+            }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({}),
+      } as Response;
     });
+  });
 
-    act(() => {
-      jest.advanceTimersByTime(1000);
-    });
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
 
+  it('shows Design Direction detail hierarchy and 猜你喜欢 below the side panel', async () => {
+    const { container } = render(<PlayPage />);
+    await settlePlayPage();
+    jest.useRealTimers();
+
+    expect(screen.getByTestId('player-sidebar')).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: /详情|讨论/ })).toBeNull();
+
+    const detail = await screen.findByRole('region', { name: '影片详情' });
     expect(
-      await screen.findByTestId('episode-selector-sources')
-    ).toHaveTextContent('详情源');
+      within(detail).getByRole('heading', { name: '详情影片' })
+    ).toBeTruthy();
+    expect(within(detail).getByAltText('详情影片')).toHaveAttribute(
+      'src',
+      expect.stringContaining('detail.jpg')
+    );
+    expect(within(detail).getByText('2026')).toBeTruthy();
+    expect(within(detail).getByText('电视剧')).toBeTruthy();
+    expect(within(detail).getByText('这是一段剧情简介。')).toBeTruthy();
+
+    const recommendations = await screen.findByRole('region', {
+      name: '猜你喜欢',
+    });
+    expect(
+      within(recommendations).getByRole('heading', { name: '猜你喜欢' })
+    ).toBeTruthy();
+    expect(await within(recommendations).findByText('推荐电影甲')).toBeTruthy();
+
+    const synopsisIndex =
+      container.textContent?.indexOf('这是一段剧情简介。') ?? -1;
+    const recommendIndex = container.textContent?.indexOf('猜你喜欢') ?? -1;
+    expect(synopsisIndex).toBeGreaterThanOrEqual(0);
+    expect(recommendIndex).toBeGreaterThan(synopsisIndex);
   });
 });

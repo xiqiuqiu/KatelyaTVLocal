@@ -124,6 +124,7 @@ import {
   clearAttemptedLedgersOnTitleChange,
 } from '@/lib/source-availability/attempted-ledgers';
 import { selectRecoveryCandidate } from '@/lib/source-availability/index';
+import { classifySearchResult } from '@/lib/search-category';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import { buildVideoInfoFromPreferenceResult } from '@/lib/source-preference-video-info';
 import {
@@ -146,13 +147,14 @@ import {
   getSourceDomainFromEpisodes,
   getSourceIdentityKey,
   getVideoResolutionFromM3u8,
-  processImageUrl,
   rememberSourceDomainPreference,
   rememberSourcePlaybackQuality,
 } from '@/lib/utils';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
+import PlayDetailSection from '@/components/PlayDetailSection';
+import PlayRecommendations from '@/components/PlayRecommendations';
 import InitialLoadingOverlay from '@/components/player/InitialLoadingOverlay';
 import PlayerHeader from '@/components/player/PlayerHeader';
 import PlayerLoadingOverlay from '@/components/player/PlayerLoadingOverlay';
@@ -5994,67 +5996,17 @@ function PlayPageClient() {
           </PlayerSidebar>
         </div>
 
-        {/* 详情展示 */}
-        <Surface
-          variant='plain'
-          className='grid grid-cols-1 gap-4 overflow-hidden p-4 md:grid-cols-4'
-        >
-          {/* 文字区 */}
-          <div className='md:col-span-3'>
-            <div className='p-6 flex flex-col min-h-0'>
-              {/* 标题 */}
-              <h1 className='text-3xl font-bold mb-2 tracking-wide flex items-center flex-shrink-0 text-center md:text-left w-full'>
-                {videoTitle || '影片标题'}
-              </h1>
-
-              {/* 关键信息行 */}
-              <div className='flex flex-wrap items-center gap-3 text-base mb-4 opacity-80 flex-shrink-0'>
-                {detail?.class && (
-                  <span className='font-semibold text-[rgb(var(--ui-success))]'>
-                    {detail.class}
-                  </span>
-                )}
-                {(detail?.year || videoYear) && (
-                  <span>{detail?.year || videoYear}</span>
-                )}
-                {detail?.source_name && (
-                  <span className='rounded border border-[rgba(var(--ui-text-muted),0.6)] px-2 py-[1px]'>
-                    {detail.source_name}
-                  </span>
-                )}
-                {detail?.type_name && <span>{detail.type_name}</span>}
-              </div>
-              {/* 剧情简介 */}
-              {detail?.desc && (
-                <div
-                  className='mt-0 text-base leading-relaxed opacity-90 overflow-y-auto pr-2 flex-1 min-h-0 scrollbar-hide'
-                  style={{ whiteSpace: 'pre-line' }}
-                >
-                  {detail.desc}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* 封面展示 */}
-          <div className='hidden md:block md:col-span-1 md:order-first'>
-            <div className='pl-0 py-4 pr-6'>
-              <div className='flex aspect-[2/3] items-center justify-center overflow-hidden rounded-ui-md bg-[rgb(var(--ui-surface))]'>
-                {videoCover ? (
-                  <img
-                    src={processImageUrl(videoCover)}
-                    alt={videoTitle}
-                    className='h-full w-full object-cover'
-                  />
-                ) : (
-                  <span className='text-[rgb(var(--ui-text-muted))]'>
-                    封面图片
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </Surface>
+        {/* 详情展示 + 猜你喜欢 */}
+        <PlayDetailSection
+          cover={videoCover || detail?.poster}
+          detail={detail}
+          title={videoTitle}
+          year={videoYear}
+        />
+        <PlayRecommendations
+          excludeTitle={videoTitle}
+          preferCategory={detail ? classifySearchResult(detail) : 'movie'}
+        />
       </div>
     </PageLayout>
   );
