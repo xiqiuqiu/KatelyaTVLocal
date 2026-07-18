@@ -6,17 +6,17 @@ import { AlertCircle, ArrowLeft, Heart, RefreshCw, Search } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useReducer, useRef, useState } from 'react';
 
+import { shouldShowMarkAdControl } from '@/lib/ad-skip-mark-control';
+import {
+  type PersistedAdSkipWindow,
+  mergeAdSkipWindowsForLoad,
+} from '@/lib/ad-skip-window';
 import type { CastStatus } from '@/lib/cast';
 import {
   castControlIcon,
   requestCastPlayback,
   resolveCastMediaUrl,
 } from '@/lib/cast';
-import { shouldShowMarkAdControl } from '@/lib/ad-skip-mark-control';
-import {
-  mergeAdSkipWindowsForLoad,
-  type PersistedAdSkipWindow,
-} from '@/lib/ad-skip-window';
 import {
   deleteFavorite,
   generateStorageKey,
@@ -36,8 +36,8 @@ import {
   snapClickToAdStructureBlock,
 } from '@/lib/hls-ad-filter';
 import {
-  getHlsAdSkipWindowKey,
   type HlsAdSkipWindow,
+  getHlsAdSkipWindowKey,
   toHlsAdSkipWindows,
   toUserMarkAdSkipWindow,
 } from '@/lib/hls-ad-skip';
@@ -713,8 +713,8 @@ function PlayPageClient() {
   } | null>(null);
   const adSkipUndoToastRef = useRef(adSkipUndoToast);
   const adSkipControlsVisibleRef = useRef(true);
-  const handleMarkAdSkipRef = useRef<() => void>(() => {});
-  const handleUndoAdSkipRef = useRef<() => void>(() => {});
+  const handleMarkAdSkipRef = useRef<(() => void) | null>(null);
+  const handleUndoAdSkipRef = useRef<(() => void) | null>(null);
 
   const clearAdSkipUndoDismissTimer = () => {
     if (adSkipUndoDismissTimerRef.current) {
@@ -5451,7 +5451,7 @@ function PlayPageClient() {
               html: '<span style="font-size:12px;line-height:1;white-space:nowrap;padding:0 2px">跳广告</span>',
               tooltip: '标记广告并跳过',
               click: function () {
-                handleMarkAdSkipRef.current();
+                handleMarkAdSkipRef.current?.();
               },
             },
             {
@@ -5536,7 +5536,7 @@ function PlayPageClient() {
                 const button = element.querySelector('button');
                 button?.addEventListener('click', (event) => {
                   event.stopPropagation();
-                  handleUndoAdSkipRef.current();
+                  handleUndoAdSkipRef.current?.();
                 });
               },
             },
