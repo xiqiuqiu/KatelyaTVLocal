@@ -108,6 +108,48 @@ export function mergeAdSkipWindowsForLoad(input: {
   return [...persistedMapped, ...analyzerUnique];
 }
 
+/**
+ * Merge two episode configs by timeline range so a full-bag `set` from one
+ * client cannot drop windows another client just wrote.
+ */
+export function mergeEpisodeAdSkipConfigs(
+  existing: EpisodeAdSkipConfig | null,
+  incoming: EpisodeAdSkipConfig
+): EpisodeAdSkipConfig {
+  const byRange = new Map<string, PersistedAdSkipWindow>();
+
+  for (const window of existing?.windows ?? []) {
+    byRange.set(getAdSkipWindowRangeKey(window), { ...window, origin: 'persisted' });
+  }
+
+  for (const window of incoming.windows) {
+    const rangeKey = getAdSkipWindowRangeKey(window);
+    const previous = byRange.get(rangeKey);
+    if (!previous) {
+      byRange.set(rangeKey, { ...window, origin: 'persisted' });
+      continue;
+    }
+    byRange.set(rangeKey, {
+      ...previous,
+      ...window,
+      confirmCount: Math.max(previous.confirmCount, window.confirmCount),
+      undoCount: Math.max(previous.undoCount, window.undoCount),
+      trustScore: Math.max(previous.trustScore, window.trustScore),
+      updated_time: Math.max(previous.updated_time, window.updated_time),
+      ruleId: window.ruleId ?? previous.ruleId,
+      origin: 'persisted',
+    });
+  }
+
+  return {
+    source: incoming.source,
+    id: incoming.id,
+    episodeIndex: incoming.episodeIndex,
+    windows: Array.from(byRange.values()),
+    updated_time: Math.max(existing?.updated_time ?? 0, incoming.updated_time),
+  };
+}
+
 export function applyAdSkipWindowConfirmation(input: {
   source: string;
   id: string;

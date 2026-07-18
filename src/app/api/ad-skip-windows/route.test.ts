@@ -204,11 +204,126 @@ describe('ad-skip-windows route', () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ success: true });
+    await expect(response.json()).resolves.toEqual({
+      success: true,
+      config: sampleConfig,
+    });
+    expect(storage.getAdSkipConfig).toHaveBeenCalledWith('ruyi+38961+0');
     expect(storage.setAdSkipConfig).toHaveBeenCalledWith(
       'ruyi+38961+0',
       sampleConfig
     );
+  });
+
+  it('merges sibling windows on set so concurrent writes do not drop each other', async () => {
+    storage.getAdSkipConfig.mockResolvedValue({
+      source: 'ruyi',
+      id: '38961',
+      episodeIndex: 0,
+      updated_time: 1000,
+      windows: [
+        {
+          source: 'ruyi',
+          id: '38961',
+          episodeIndex: 0,
+          startTimeSeconds: 10,
+          endTimeSeconds: 20,
+          trustScore: 1,
+          confirmCount: 1,
+          undoCount: 0,
+          updated_time: 1000,
+          ruleId: 'user-mark',
+          origin: 'persisted',
+        },
+      ],
+    });
+
+    const incoming: EpisodeAdSkipConfig = {
+      source: 'ruyi',
+      id: '38961',
+      episodeIndex: 0,
+      updated_time: 2000,
+      windows: [
+        {
+          source: 'ruyi',
+          id: '38961',
+          episodeIndex: 0,
+          startTimeSeconds: 100,
+          endTimeSeconds: 110,
+          trustScore: 1,
+          confirmCount: 1,
+          undoCount: 0,
+          updated_time: 2000,
+          ruleId: 'cue-out',
+          origin: 'persisted',
+        },
+      ],
+    };
+
+    const response = await POST(
+      new MockRequest('https://app.example.com/api/ad-skip-windows', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'set',
+          key: 'ruyi+38961+0',
+          config: incoming,
+        }),
+      }) as unknown as Request
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      success: boolean;
+      config: EpisodeAdSkipConfig;
+    };
+    expect(payload.success).toBe(true);
+    expect(payload.config.windows).toHaveLength(2);
+    expect(storage.setAdSkipConfig).toHaveBeenCalledWith(
+      'ruyi+38961+0',
+      expect.objectContaining({
+        windows: expect.arrayContaining([
+          expect.objectContaining({ startTimeSeconds: 10 }),
+          expect.objectContaining({ startTimeSeconds: 100 }),
+        ]),
+      })
+    );
+  });
+
+  it('records a confirmation on the server without client-side read-modify-write', async () => {
+    storage.getAdSkipConfig.mockResolvedValue(null);
+
+    const response = await POST(
+      new MockRequest('https://app.example.com/api/ad-skip-windows', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'recordConfirmation',
+          source: 'ruyi',
+          id: '38961',
+          episodeIndex: 0,
+          kind: 'confirm',
+          nowMs: 5000,
+          window: {
+            startTimeSeconds: 10,
+            endTimeSeconds: 20,
+            ruleId: 'user-mark',
+          },
+        }),
+      }) as unknown as Request
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      success: boolean;
+      config: EpisodeAdSkipConfig;
+    };
+    expect(payload.success).toBe(true);
+    expect(payload.config.windows[0]).toMatchObject({
+      confirmCount: 1,
+      trustScore: 1,
+      startTimeSeconds: 10,
+      endTimeSeconds: 20,
+    });
+    expect(storage.setAdSkipConfig).toHaveBeenCalled();
   });
 
   it('lists all shared Ad Skip Window configs', async () => {

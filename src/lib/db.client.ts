@@ -1844,7 +1844,8 @@ export async function deleteAdSkipConfig(
 }
 
 /**
- * 记录确认/撤销：合并后写入持久层。失败时降级（不打断播放）。
+ * 记录确认/撤销：写入持久层。失败时降级（不打断播放）。
+ * 非 localstorage：服务端 get→apply→merge-set，避免客户端整袋覆盖。
  */
 export async function recordAdSkipWindowConfirmation(input: {
   source: string;
@@ -1859,37 +1860,67 @@ export async function recordAdSkipWindowConfirmation(input: {
   nowMs?: number;
 }): Promise<EpisodeAdSkipConfig | null> {
   try {
-    const existing = await getAdSkipConfig(
-      input.source,
-      input.id,
-      input.episodeIndex
-    );
-    const next = applyAdSkipWindowConfirmation({
-      source: input.source,
-      id: input.id,
-      episodeIndex: input.episodeIndex,
-      existing,
-      window: input.window,
-      kind: input.kind,
-      nowMs: input.nowMs ?? Date.now(),
-    });
+    const nowMs = input.nowMs ?? Date.now();
 
-    if (!next) {
+    if (STORAGE_TYPE === 'localstorage') {
+      const existing = await getAdSkipConfig(
+        input.source,
+        input.id,
+        input.episodeIndex
+      );
+      const next = applyAdSkipWindowConfirmation({
+        source: input.source,
+        id: input.id,
+        episodeIndex: input.episodeIndex,
+        existing,
+        window: input.window,
+        kind: input.kind,
+        nowMs,
+      });
+      if (!next) {
+        return null;
+      }
+      try {
+        await saveAdSkipConfig(
+          input.source,
+          input.id,
+          input.episodeIndex,
+          next
+        );
+      } catch (err) {
+        console.error('持久化 Ad Skip Window 确认失败（已降级）:', err);
+      }
+      return next;
+    }
+
+    const authInfo = getRuntimeCurrentUser();
+    if (!authInfo?.username) {
       return null;
     }
 
-    try {
-      await saveAdSkipConfig(
-        input.source,
-        input.id,
-        input.episodeIndex,
-        next
-      );
-    } catch (err) {
-      console.error('持久化 Ad Skip Window 确认失败（已降级）:', err);
+    const response = await fetch('/api/ad-skip-windows', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'recordConfirmation',
+        source: input.source,
+        id: input.id,
+        episodeIndex: input.episodeIndex,
+        window: input.window,
+        kind: input.kind,
+        nowMs,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('持久化 Ad Skip Window 确认失败（已降级）:', response.status);
+      return null;
     }
 
-    return next;
+    const data = await response.json();
+    return (data.config as EpisodeAdSkipConfig | null) || null;
   } catch (err) {
     console.error('记录 Ad Skip Window 确认失败:', err);
     return null;

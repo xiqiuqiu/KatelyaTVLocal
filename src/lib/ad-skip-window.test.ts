@@ -4,6 +4,7 @@ import {
   applyAdSkipWindowConfirmation,
   generateAdSkipConfigKey,
   mergeAdSkipWindowsForLoad,
+  mergeEpisodeAdSkipConfigs,
   toPersistedAdSkipWindow,
   type EpisodeAdSkipConfig,
   type PersistedAdSkipWindow,
@@ -214,5 +215,95 @@ describe('applyAdSkipWindowConfirmation', () => {
     });
 
     expect(next).toBeNull();
+  });
+});
+
+describe('mergeEpisodeAdSkipConfigs', () => {
+  it('unions different timeline windows so concurrent writers do not drop siblings', () => {
+    const existing: EpisodeAdSkipConfig = {
+      source: 'ruyi',
+      id: '38961',
+      episodeIndex: 0,
+      updated_time: 1000,
+      windows: [
+        toPersistedAdSkipWindow({
+          source: 'ruyi',
+          id: '38961',
+          episodeIndex: 0,
+          startTimeSeconds: 10,
+          endTimeSeconds: 20,
+          ruleId: 'user-mark',
+          updated_time: 1000,
+        }),
+      ],
+    };
+    const incoming: EpisodeAdSkipConfig = {
+      source: 'ruyi',
+      id: '38961',
+      episodeIndex: 0,
+      updated_time: 2000,
+      windows: [
+        toPersistedAdSkipWindow({
+          source: 'ruyi',
+          id: '38961',
+          episodeIndex: 0,
+          startTimeSeconds: 100,
+          endTimeSeconds: 110,
+          ruleId: 'cue-out',
+          updated_time: 2000,
+        }),
+      ],
+    };
+
+    const merged = mergeEpisodeAdSkipConfigs(existing, incoming);
+    expect(merged.windows).toHaveLength(2);
+    expect(merged.windows.map((w) => w.startTimeSeconds).sort()).toEqual([
+      10, 100,
+    ]);
+  });
+
+  it('keeps the higher confirm/undo counts for the same timeline range', () => {
+    const existing: EpisodeAdSkipConfig = {
+      source: 'ruyi',
+      id: '38961',
+      episodeIndex: 0,
+      updated_time: 1000,
+      windows: [
+        toPersistedAdSkipWindow({
+          source: 'ruyi',
+          id: '38961',
+          episodeIndex: 0,
+          startTimeSeconds: 10,
+          endTimeSeconds: 20,
+          confirmCount: 3,
+          undoCount: 1,
+          updated_time: 1000,
+        }),
+      ],
+    };
+    const incoming: EpisodeAdSkipConfig = {
+      source: 'ruyi',
+      id: '38961',
+      episodeIndex: 0,
+      updated_time: 2000,
+      windows: [
+        toPersistedAdSkipWindow({
+          source: 'ruyi',
+          id: '38961',
+          episodeIndex: 0,
+          startTimeSeconds: 10,
+          endTimeSeconds: 20,
+          confirmCount: 2,
+          undoCount: 0,
+          updated_time: 2000,
+        }),
+      ],
+    };
+
+    expect(mergeEpisodeAdSkipConfigs(existing, incoming).windows[0]).toMatchObject({
+      confirmCount: 3,
+      undoCount: 1,
+      updated_time: 2000,
+    });
   });
 });

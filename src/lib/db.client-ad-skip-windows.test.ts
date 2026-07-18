@@ -125,22 +125,16 @@ describe('db.client ad skip windows', () => {
     );
   });
 
-  it('records a confirm by merging into existing config without throwing on API failure', async () => {
+  it('records confirm via server action and degrades to null on API failure', async () => {
     window.RUNTIME_CONFIG = {
       STORAGE_TYPE: 'd1',
       CURRENT_USER: { username: 'alice', role: 'user' },
     };
 
-    const fetchMock = jest
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ config: null }),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-      });
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+    });
     global.fetch = fetchMock;
 
     const { recordAdSkipWindowConfirmation } = loadAdSkipClient();
@@ -157,10 +151,25 @@ describe('db.client ad skip windows', () => {
       nowMs: 5000,
     });
 
-    // Optimistic local result still returned; save failure is swallowed.
-    expect(result?.windows[0]).toMatchObject({
-      confirmCount: 1,
-      trustScore: 1,
-    });
+    expect(result).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/ad-skip-windows',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'recordConfirmation',
+          source: 'ruyi',
+          id: '38961',
+          episodeIndex: 0,
+          window: {
+            startTimeSeconds: 10,
+            endTimeSeconds: 20,
+            ruleId: 'user-mark',
+          },
+          kind: 'confirm',
+          nowMs: 5000,
+        }),
+      })
+    );
   });
 });
