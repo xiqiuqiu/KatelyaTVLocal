@@ -15,11 +15,14 @@ import Swal from 'sweetalert2';
 import {
   type PlayRecord,
   clearAllPlayRecords,
-  deletePlayRecord,
+  deletePlayRecordByKey,
   getAllPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { parsePlayRecordKey } from '@/lib/play-record-key';
+import {
+  buildContinueWatchingRecords,
+  resolveContinueWatchingRoute,
+} from '@/lib/play-records';
 
 import PageLayout from '@/components/PageLayout';
 import ActionLink from '@/components/ui/ActionLink';
@@ -29,6 +32,7 @@ import SectionHeader from '@/components/ui/SectionHeader';
 
 type HistoryItem = PlayRecord & {
   key: string;
+  groupedKeys: string[];
   source: string;
   id: string;
 };
@@ -94,19 +98,18 @@ export default function HistoryPage() {
   const [busy, setBusy] = useState(false);
 
   const items = useMemo<HistoryItem[]>(() => {
-    return Object.entries(records)
-      .map(([key, record]) => {
-        const parsed = parsePlayRecordKey(key);
-        if (!parsed) return null;
+    // 复用继续观看的归一逻辑：同一视频的不同源/wp+legacy 记录合并成一条
+    return buildContinueWatchingRecords(records)
+      .map((record) => {
+        const route = resolveContinueWatchingRoute(record);
+        if (!route) return null;
         return {
           ...record,
-          key,
-          source: parsed.source,
-          id: parsed.id,
+          source: route.source,
+          id: route.id,
         };
       })
-      .filter((item): item is HistoryItem => Boolean(item))
-      .sort((left, right) => right.save_time - left.save_time);
+      .filter((item): item is HistoryItem => Boolean(item));
   }, [records]);
 
   const selectedCount = selectedKeys.size;
@@ -172,15 +175,16 @@ export default function HistoryPage() {
     });
   };
 
-  const removeItems = async (keys: string[]) => {
-    if (keys.length === 0) return;
+  const removeItems = async (targets: HistoryItem[]) => {
+    if (targets.length === 0) return;
 
     setBusy(true);
     try {
-      for (const key of keys) {
-        const parsed = parsePlayRecordKey(key);
-        if (!parsed) continue;
-        await deletePlayRecord(parsed.source, parsed.id);
+      for (const target of targets) {
+        // 删除整组（wp 主键 + 各源 legacy 键），避免残留记录再次拆分显示
+        for (const groupedKey of target.groupedKeys) {
+          await deletePlayRecordByKey(groupedKey);
+        }
       }
       setSelectedKeys(new Set());
     } finally {
@@ -195,18 +199,18 @@ export default function HistoryPage() {
       confirmButtonText: '删除',
     });
     if (!confirmed) return;
-    await removeItems([item.key]);
+    await removeItems([item]);
   };
 
   const handleDeleteSelected = async () => {
-    const keys = Array.from(selectedKeys);
+    const targets = items.filter((item) => selectedKeys.has(item.key));
     const confirmed = await confirmDangerAction({
-      title: `删除已选 ${keys.length} 条记录？`,
+      title: `删除已选 ${targets.length} 条记录？`,
       text: '删除后这些播放进度不会再出现在继续观看和历史记录中。',
       confirmButtonText: '删除已选',
     });
     if (!confirmed) return;
-    await removeItems(keys);
+    await removeItems(targets);
   };
 
   const handleClearAll = async () => {
