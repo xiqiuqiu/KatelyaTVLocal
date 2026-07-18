@@ -15,16 +15,28 @@ function getRecordKind(record: PlayRecord): 'movie' | 'tv' {
 }
 
 function getRecordSignatures(record: PlayRecord, key: string): string[] {
+  const kind = getRecordKind(record);
+  const contentKeys = new Set<string>();
+
+  // wp: 主键在写入时把 contentKey 嵌入 key（基于 videoTitle）。
   const parsed = parseWatchProgressStorageKey(key);
   if (parsed) {
-    return [`${parsed.contentKey}::${getRecordKind(record)}`];
+    contentKeys.add(parsed.contentKey);
   }
 
-  const contentKey = buildWatchProgressContentKey({
-    title: record.search_title || record.title,
-    year: record.year,
+  // 同时基于记录自身的 search_title 与 title 推导 contentKey，
+  // 使 dual-write 出的 wp 主键与 legacy 记录（源返回名与搜索词不一致时）仍能归并到同一张卡。
+  [record.search_title, record.title].forEach((title) => {
+    if (title) {
+      contentKeys.add(buildWatchProgressContentKey({ title, year: record.year }));
+    }
   });
-  return [`${contentKey}::${getRecordKind(record)}`];
+
+  if (contentKeys.size === 0) {
+    contentKeys.add(buildWatchProgressContentKey({ title: '', year: record.year }));
+  }
+
+  return Array.from(contentKeys).map((contentKey) => `${contentKey}::${kind}`);
 }
 
 /**

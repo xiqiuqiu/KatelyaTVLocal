@@ -71,6 +71,34 @@ describe('buildContinueWatchingRecords', () => {
     expect(result[0].groupedKeys).toEqual(['source-b+99', 'source-a+1']);
   });
 
+  it('groups wp dual-write record with its legacy twin when video title differs from search title', () => {
+    // dual-write：wp 主键 contentKey 用 videoTitle（record.title），legacy 用 search_title
+    const records = {
+      'wp:凡人修仙传番4::unknown#6': createRecord({
+        title: '凡人修仙传番4',
+        search_title: '凡人修仙传',
+        year: '',
+        save_time: 500,
+        route_source: '如意源',
+        route_id: '123',
+      }),
+      '如意源+123': createRecord({
+        title: '凡人修仙传番4',
+        search_title: '凡人修仙传',
+        year: '',
+        save_time: 400,
+        route_source: '如意源',
+        route_id: '123',
+      }),
+    };
+
+    const result = buildContinueWatchingRecords(records);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].groupedKeys).toContain('wp:凡人修仙传番4::unknown#6');
+    expect(result[0].groupedKeys).toContain('如意源+123');
+  });
+
   it('groups contentKey progress with legacy source+id under one continue-watching card', () => {
     const records = {
       'wp:示例影片::2026#2': createRecord({
