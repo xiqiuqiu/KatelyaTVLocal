@@ -80,7 +80,20 @@ The single decision path that consumes all iOS Native recovery evidence — incl
 _Avoid_: native-jitter-skip-forward side effects that never enter the shared recovery decision
 
 **Ad Skip Window**:
-A time range in an HLS playback timeline that the system has identified as safe to skip automatically during a Playback Session. An Ad Skip Window is distinct from ordinary seeking because it represents a system decision to bypass detected advertising content, not a user navigation action or progress recovery.
+A time range on one playable source's episode timeline that the system may bypass automatically during a Playback Session because it is judged to be advertising rather than content. Its identity is `(source, id, episodeIndex)` plus the time range, anchored on the logical episode timeline so it survives segment URL or host rotation, and it persists and is shared across users within one deployment. Distinct from ordinary seeking (a user navigation) and from Recovery Resume Time (progress recovery).
+_Avoid_: keying a window by segment URL/host; sharing windows across sources for the same title; treating it as a per-session ephemeral analyzer output
+
+**Ad Placement Stability**:
+The working assumption that, for a given `(source, id, episodeIndex)`, advertising sits at the same timeline position for all users and across reloads — occasional host or directory rotation does not move it. This is what makes a persisted Ad Skip Window reusable rather than per-request guesswork.
+_Avoid_: assuming stability for sources observed to insert ads randomly per request
+
+**Ad Window Trust Tier**:
+The escalation ladder deciding how forcefully an Ad Skip Window is applied during a Playback Session: observe only, recoverable auto-skip (skipped with a one-tap undo), or silent auto-skip. A window's tier is driven by accumulated Ad Window Confirmation evidence, not by a single report or by analyzer confidence alone.
+_Avoid_: letting analyzer confidence authorize silent skipping; per-runtime private skip ladders
+
+**Ad Window Confirmation**:
+The ground-truth signal for an Ad Skip Window: a user's explicit mark that a range is advertising, or their undo/restore indicating a skip was wrong. Confirmations and undos accumulate to move a window up or down the Ad Window Trust Tier.
+_Avoid_: treating one anonymous report as immediately authoritative for all users
 
 **Source Availability**:
 The system's current judgement of whether a candidate source can be shown, tried manually, or selected automatically during a Playback Session. Source Availability is derived from source status, playback evidence, remembered preferences, measured speed, and the current episode position. Source Availability is a decision model, not the probing or storage mechanism that gathers evidence.
