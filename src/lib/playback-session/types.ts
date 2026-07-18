@@ -107,6 +107,22 @@ export interface PlaybackSessionState {
   r1AttemptCount: number;
   r2AttemptCount: number;
   recoveryInFlight: RecoveryInFlightKind;
+  /**
+   * Wall-clock / playhead anchor for the current continuous healthy run.
+   * A Stall Episode ends only once progress is *sustained* from this anchor,
+   * so a brief post-escape blip cannot reset the R1/R2 escalation budget.
+   * Reset to null whenever continuity breaks (stall candidate, seek, escape).
+   */
+  healthyProgressAnchorMs: number | null;
+  healthyProgressAnchorTime: number | null;
+  /**
+   * Bad-point skip-forward escape budget. Persists across the momentary
+   * healthy blips of a stuttering source and is only cleared on sustained
+   * recovery, a user seek, or a Bad Point Scope change. Guards against the
+   * playhead being ratcheted to the end of the video.
+   */
+  escapeForwardSpanSeconds: number;
+  escapeCount: number;
   playbackIntent: PlaybackIntent;
   resumeIntentAfterSeek: 'playing' | 'user-paused' | null;
   lastUserSeekAtMs: number | null;

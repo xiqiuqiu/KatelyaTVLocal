@@ -11,6 +11,8 @@ import type { SearchResult } from '@/lib/types';
 import { allowsAutomaticEffect, getAutomaticEffectGate } from './intent';
 import {
   advanceRecoveryLadder,
+  applyHealthyProgress,
+  breakHealthyProgressContinuity,
   cancelRecoveryEpisode,
   clearStallEpisode,
   isHlsSustainedSoftStall,
@@ -18,6 +20,7 @@ import {
   isResumePendingBlockingAdSkip,
   loadBadPointsForScope,
   persistBadPointsForScope,
+  resetEscapeBudget,
   shouldEvaluateR3AfterLadder,
 } from './recovery';
 import type {
@@ -60,6 +63,10 @@ export function createInitialPlaybackSessionState(
     r1AttemptCount: 0,
     r2AttemptCount: 0,
     recoveryInFlight: null,
+    healthyProgressAnchorMs: null,
+    healthyProgressAnchorTime: null,
+    escapeForwardSpanSeconds: 0,
+    escapeCount: 0,
     playbackIntent: 'playing',
     resumeIntentAfterSeek: null,
     lastUserSeekAtMs: null,
@@ -256,6 +263,9 @@ function handleStallCandidate(
     r3Reason?: 'auto-recovery' | 'source-timeout';
   } = {}
 ): PlaybackSessionResult {
+  // A stall breaks any continuous healthy run.
+  state = breakHealthyProgressContinuity(state);
+
   const sameSourceGate = allowsAutomaticEffect(
     state,
     'same-source-recovery',
@@ -308,12 +318,21 @@ function handleStallCandidate(
     return { state, effects: [] };
   }
 
+  // Post-seek grace: the user just chose this position, so do not immediately
+  // skip forward off a pre-existing Bad Point — buffer + reload in place first.
+  const suppressSkipForward =
+    state.playbackIntent === 'seek-settled' &&
+    state.seekSettledAtMs != null &&
+    nowMs - state.seekSettledAtMs >= 0 &&
+    nowMs - state.seekSettledAtMs < state.seekSettledLongGuardMs;
+
   const ladder = advanceRecoveryLadder(state, {
     snapshot,
     nowMs,
     evidence: options.evidence,
     hardFailure: options.hardFailure,
     forceR3Evaluation: options.forceR3Evaluation,
+    suppressSkipForward,
   });
 
   if (
@@ -592,10 +611,12 @@ export function reducePlaybackSession(
       );
 
     case 'user.seekStarted':
+      // The user took control: forget the escape budget so their chosen
+      // position starts fresh (no carried-over ratchet).
       return withIntentTransition(
         state,
         {
-          ...state,
+          ...resetEscapeBudget(state),
           playbackIntent: 'seeking',
           resumeIntentAfterSeek:
             state.playbackIntent === 'user-paused' ||
@@ -822,11 +843,26 @@ export function reducePlaybackSession(
       if (!state.stallEpisodeActive && state.recoveryStage === 'idle') {
         return { state, effects: [] };
       }
+
+      // A Stall Episode ends only on *sustained* healthy progress. A brief
+      // post-escape blip merely records the healthy anchor and keeps the
+      // R1/R2 escalation budget, so a stuttering source cannot loop
+      // same-source recovery forever (and skip-forward to the end).
+      const healthy = applyHealthyProgress(
+        state,
+        event.snapshot.currentTime,
+        event.nowMs
+      );
+
+      if (!healthy.episodeEnded) {
+        return { state: healthy.state, effects: [] };
+      }
+
       return {
         state: clearStallEpisode(
           setRecoveryResumeTime(
             {
-              ...state,
+              ...healthy.state,
               recoveryInFlight:
                 state.recoveryInFlight === 'resume'
                   ? state.recoveryInFlight
@@ -841,7 +877,7 @@ export function reducePlaybackSession(
           {
             type: 'emitDebugEvent',
             eventType: 'recovery.stall-episode.ended',
-            message: 'Healthy progress ended stall episode',
+            message: 'Sustained healthy progress ended stall episode',
             details: { previousStage: state.recoveryStage },
           },
         ],
