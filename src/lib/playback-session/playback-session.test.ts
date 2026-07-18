@@ -1,3 +1,5 @@
+import { analyzeM3U8AdCandidates } from '@/lib/hls-ad-filter';
+import { toHlsAdSkipWindows } from '@/lib/hls-ad-skip';
 import {
   allowsAutomaticEffect,
   createInitialPlaybackSessionState,
@@ -1170,5 +1172,189 @@ describe('Playback Session progress-save effects', () => {
       episodeIndex: 0,
       completed: true,
     });
+  });
+});
+
+// 预重构验收：全平台统一到 seek 式 Ad Skip Window。分析器高置信候选与
+// 已知规则命中作为冷启动种子被载入为 Ad Skip Window，桌面/安卓（hls.js）
+// 与 iOS 原生 HLS 均经由 reducer 的 adSkipWindows.loaded + skipAdWindow 以
+// seek 跳过，而非物理删除广告分片。
+describe('Unified cold-start seed → seek Ad Skip Window (pre-refactor #35)', () => {
+  const contentSegments = [
+    '#EXTINF:10.0,',
+    'content-1.ts',
+    '#EXTINF:10.0,',
+    'content-2.ts',
+    '#EXTINF:10.0,',
+    'content-3.ts',
+    '#EXTINF:10.0,',
+    'content-4.ts',
+    '#EXTINF:10.0,',
+    'content-5.ts',
+    '#EXTINF:10.0,',
+    'content-6.ts',
+  ];
+
+  function buildCueMarkerPlaylist(): string {
+    return [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXTINF:10,',
+      'content-before.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXT-X-CUE-OUT:20',
+      '#EXTINF:10,',
+      'ad-1.ts',
+      '#EXTINF:10,',
+      'ad-2.ts',
+      '#EXT-X-DISCONTINUITY',
+      '#EXT-X-CUE-IN',
+      '#EXTINF:10,',
+      'content-after-1.ts',
+      '#EXTINF:10,',
+      'content-after-2.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+  }
+
+  // 如意 ryplay 22 秒中插广告：稳定 6 片段正片组之间夹一个短变长 6 片段广告组。
+  function buildRyplayMidrollPlaylist(): string {
+    return [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:12',
+      ...contentSegments,
+      '#EXT-X-DISCONTINUITY',
+      '#EXTINF:6.0,',
+      'ad-1.ts',
+      '#EXTINF:2.0,',
+      'ad-2.ts',
+      '#EXTINF:4.0,',
+      'ad-3.ts',
+      '#EXTINF:4.0,',
+      'ad-4.ts',
+      '#EXTINF:2.0,',
+      'ad-5.ts',
+      '#EXTINF:4.0,',
+      'ad-6.ts',
+      '#EXT-X-DISCONTINUITY',
+      ...contentSegments,
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+  }
+
+  function loadSeedWindowsFrom(playlist: string, baseUrl: string) {
+    const analysis = analyzeM3U8AdCandidates(playlist, baseUrl);
+    const windows = toHlsAdSkipWindows(analysis.candidates);
+    const loaded = reducePlaybackSession(createInitialPlaybackSessionState(), {
+      type: 'adSkipWindows.loaded',
+      windows,
+    });
+    return { windows, state: loaded.state };
+  }
+
+  it.each(['hlsjs', 'apple-native'] as const)(
+    'loads analyzer high-confidence candidates as seed windows and seeks past them on %s',
+    (platform) => {
+      const { windows, state } = loadSeedWindowsFrom(
+        buildCueMarkerPlaylist(),
+        'https://media.example.com/show/index.m3u8'
+      );
+
+      expect(windows).toEqual([
+        expect.objectContaining({
+          startTimeSeconds: 10,
+          endTimeSeconds: 30,
+          confidence: 'high',
+          action: 'filter',
+        }),
+      ]);
+
+      const result = reducePlaybackSession(state, {
+        type: 'video.timeupdate',
+        nowMs: 10_000,
+        platform,
+        snapshot: { currentTime: 15 },
+      });
+
+      expect(result.effects).toContainEqual(
+        expect.objectContaining({
+          type: 'skipAdWindow',
+          targetTime: 30.35,
+          reason: 'hls-ad-window',
+          platform,
+        })
+      );
+    }
+  );
+
+  it('loads known-rule hits as seed windows and unifies the seek skip across platforms', () => {
+    const baseUrl = 'https://v.ryplay12.com/20260109/clip/index.m3u8';
+    const { windows, state } = loadSeedWindowsFrom(
+      buildRyplayMidrollPlaylist(),
+      baseUrl
+    );
+
+    expect(windows).toEqual([
+      expect.objectContaining({
+        startTimeSeconds: 60,
+        endTimeSeconds: 82,
+        ruleId: 'ruyi-ryplay-22s-midroll-v1',
+        confidence: 'high',
+        action: 'filter',
+      }),
+    ]);
+
+    for (const platform of ['hlsjs', 'apple-native'] as const) {
+      const result = reducePlaybackSession(state, {
+        type: 'video.timeupdate',
+        nowMs: 10_000,
+        platform,
+        snapshot: { currentTime: 65 },
+      });
+
+      expect(result.effects).toContainEqual(
+        expect.objectContaining({
+          type: 'skipAdWindow',
+          targetTime: 82.35,
+          reason: 'hls-ad-window',
+          platform,
+        })
+      );
+    }
+  });
+
+  it('still honors manual-seek grace and already-skipped guards on the unified path', () => {
+    const { state } = loadSeedWindowsFrom(
+      buildCueMarkerPlaylist(),
+      'https://media.example.com/show/index.m3u8'
+    );
+
+    const seeking = reducePlaybackSession(state, {
+      type: 'user.seekStarted',
+      nowMs: 10_000,
+    }).state;
+    expect(
+      reducePlaybackSession(seeking, {
+        type: 'video.timeupdate',
+        nowMs: 11_000,
+        platform: 'hlsjs',
+        snapshot: { currentTime: 15 },
+      }).effects
+    ).toEqual([]);
+
+    const skipped = reducePlaybackSession(state, {
+      type: 'video.timeupdate',
+      nowMs: 20_000,
+      platform: 'hlsjs',
+      snapshot: { currentTime: 15 },
+    }).state;
+    expect(
+      reducePlaybackSession(skipped, {
+        type: 'video.timeupdate',
+        nowMs: 20_100,
+        platform: 'hlsjs',
+        snapshot: { currentTime: 16 },
+      }).effects
+    ).toEqual([]);
   });
 });

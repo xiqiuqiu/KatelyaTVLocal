@@ -24,12 +24,10 @@ import {
 import type { M3U8AdFilterDebugInfo } from '@/lib/hls-ad-filter';
 import {
   analyzeM3U8AdCandidates,
-  applyM3U8AdFiltering,
   formatM3U8AdFilterDebugMessage,
-  getM3U8AdFilterDebugInfo,
   observeM3U8AdSignals,
 } from '@/lib/hls-ad-filter';
-import { toHlsAdSkipWindows } from '@/lib/hls-ad-skip';
+import { getHlsAdSkipWindowKey, toHlsAdSkipWindows } from '@/lib/hls-ad-skip';
 import type { HlsPlaybackPolicyResult } from '@/lib/hls-playback-policy';
 import {
   detectAppleNativeHlsEnvironment,
@@ -66,12 +64,12 @@ import {
   shouldSavePlayRecord,
 } from '@/lib/play-record-save-policy';
 import {
+  type PlaybackAttemptEvent,
+  type PlaybackAttemptReporter,
   createPlaybackAttemptReporter,
   isPlaybackAttemptEnhancedReportingEnabled,
   sanitizePlaybackEvidenceUrl,
   summarizeUserAgent,
-  type PlaybackAttemptEvent,
-  type PlaybackAttemptReporter,
 } from '@/lib/playback-attempt';
 import {
   type PlaybackHistoryRecord,
@@ -93,15 +91,6 @@ import {
   resolveNativeJitterRouting,
 } from '@/lib/playback-session';
 import {
-  adaptWatchProgressPlayhead,
-  buildWatchProgressContentKey,
-  getWatchProgressAuthorityMode,
-  isWatchProgressDualWriteEnabled,
-  planEpisodeChangeSave,
-  planLatestWatchProgressForContent,
-  planWatchProgressWrite,
-} from '@/lib/watch-progress';
-import {
   clampSourceSwitchResumeTime,
   getSourceSwitchResumePlan,
   getSourceSwitchTargetEpisodeIndex,
@@ -119,12 +108,12 @@ import {
   selectProgressiveSourceProbeCandidates,
   shouldStartProgressiveSourceProbe,
 } from '@/lib/progressive-source-probe';
+import { classifySearchResult } from '@/lib/search-category';
 import {
   clearAttemptedLedgersOnEpisodeChange,
   clearAttemptedLedgersOnTitleChange,
 } from '@/lib/source-availability/attempted-ledgers';
 import { selectRecoveryCandidate } from '@/lib/source-availability/index';
-import { classifySearchResult } from '@/lib/search-category';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import { buildVideoInfoFromPreferenceResult } from '@/lib/source-preference-video-info';
 import {
@@ -150,15 +139,24 @@ import {
   rememberSourceDomainPreference,
   rememberSourcePlaybackQuality,
 } from '@/lib/utils';
+import {
+  adaptWatchProgressPlayhead,
+  buildWatchProgressContentKey,
+  getWatchProgressAuthorityMode,
+  isWatchProgressDualWriteEnabled,
+  planEpisodeChangeSave,
+  planLatestWatchProgressForContent,
+  planWatchProgressWrite,
+} from '@/lib/watch-progress';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
 import PlayDetailSection from '@/components/PlayDetailSection';
-import PlayRecommendations from '@/components/PlayRecommendations';
 import InitialLoadingOverlay from '@/components/player/InitialLoadingOverlay';
 import PlayerHeader from '@/components/player/PlayerHeader';
 import PlayerLoadingOverlay from '@/components/player/PlayerLoadingOverlay';
 import PlayerSidebar from '@/components/player/PlayerSidebar';
+import PlayRecommendations from '@/components/PlayRecommendations';
 import SkipController from '@/components/SkipController';
 import Surface from '@/components/ui/Surface';
 
@@ -976,11 +974,29 @@ function PlayPageClient() {
         emitPlaybackDebugLog(effect.eventType, effect.message, effect.details);
       },
       onSkipAdWindow: (effect) => {
-        emitPlaybackDebugLog('adSkip.completed', 'Ad skip window completed', {
-          windowKey: effect.windowKey,
-          targetTime: effect.targetTime,
-          platform: effect.platform,
-        });
+        // 全平台统一：Ad Skip Window 一律通过 seek 跳过（退役物理删分片）。
+        const video = artPlayerRef.current?.video as
+          | HTMLVideoElement
+          | undefined;
+        if (!video) {
+          return;
+        }
+        const fromTime = video.currentTime || 0;
+        systemSeekInFlightRef.current = true;
+        video.currentTime = effect.targetTime;
+        emitPlaybackDebugLog(
+          'adSkip.completed',
+          '已通过 seek 跳过广告时间窗',
+          {
+            windowKey: effect.windowKey,
+            fromTime: Number(fromTime.toFixed(2)),
+            targetTime: Number(effect.targetTime.toFixed(2)),
+            platform: effect.platform,
+          },
+          {
+            playbackUrl: videoUrlRef.current,
+          }
+        );
       },
     });
 
@@ -2584,47 +2600,29 @@ function PlayPageClient() {
     }
   };
 
-  const trySkipNativeAdWindow = (
+  // 统一入口：把一次 timeupdate 喂进 playback-session reducer，
+  // 命中 Ad Skip Window 时由 onSkipAdWindow sink 经 seek 跳过。
+  // 返回本次是否触发了广告跳过（用于短路后续进度记录）。
+  const dispatchTimeupdateForAdSkip = (
     video: HTMLVideoElement,
-    playbackUrl: string
+    platform: 'apple-native' | 'hlsjs'
   ) => {
-    if (playbackPolicyRef.current?.playlistFilter !== 'ios-skip') {
-      return false;
-    }
-
     const sessionResult = dispatchPlaybackSessionEvent({
       type: 'video.timeupdate',
       nowMs: Date.now(),
-      platform: 'apple-native',
+      platform,
       snapshot: { currentTime: video.currentTime || 0 },
     });
-    const skipEffect = sessionResult.effects.find(
-      (
-        effect
-      ): effect is Extract<PlaybackSessionEffect, { type: 'skipAdWindow' }> =>
-        effect.type === 'skipAdWindow'
+    return sessionResult.effects.some(
+      (effect) => effect.type === 'skipAdWindow'
     );
+  };
 
-    if (!skipEffect) {
+  const trySkipNativeAdWindow = (video: HTMLVideoElement) => {
+    if (playbackPolicyRef.current?.runtime !== 'native-hls') {
       return false;
     }
-
-    const fromTime = video.currentTime || 0;
-    systemSeekInFlightRef.current = true;
-    video.currentTime = skipEffect.targetTime;
-    emitPlaybackDebugLog(
-      'ios-ad-skip',
-      'iOS 原生 HLS 已跳过高置信广告时间窗',
-      {
-        fromTime: Number(fromTime.toFixed(2)),
-        targetTime: Number(skipEffect.targetTime.toFixed(2)),
-        windowKey: skipEffect.windowKey,
-      },
-      {
-        playbackUrl,
-      }
-    );
-    return true;
+    return dispatchTimeupdateForAdSkip(video, 'apple-native');
   };
 
   const observeIosAdSignals = (
@@ -2633,12 +2631,7 @@ function PlayPageClient() {
     policy: HlsPlaybackPolicyResult,
     retryAttempt = 0
   ) => {
-    if (
-      policy.runtime !== 'native-hls' ||
-      policy.playlistFilter !== 'ios-skip' ||
-      !directUrl ||
-      !observationProxyUrl
-    ) {
+    if (policy.runtime !== 'native-hls' || !directUrl || !observationProxyUrl) {
       return;
     }
 
@@ -2689,7 +2682,7 @@ function PlayPageClient() {
           | HTMLVideoElement
           | undefined;
         if (video) {
-          trySkipNativeAdWindow(video, directUrl);
+          trySkipNativeAdWindow(video);
         }
       })
       .catch((error) => {
@@ -3453,7 +3446,7 @@ function PlayPageClient() {
       scheduleNativeFalsePlayingCheck();
     };
     const handleTimeupdate = () => {
-      if (trySkipNativeAdWindow(video, playbackUrl)) {
+      if (trySkipNativeAdWindow(video)) {
         return;
       }
       recordProgressIfAdvanced();
@@ -3581,29 +3574,60 @@ function PlayPageClient() {
               stats: any,
               context: any
             ) {
-              // 如果是m3u8文件，按播放策略决定是否改写播放器实际使用的playlist。
+              // 统一到 seek 式 Ad Skip Window（ADR 0004）：
+              // hls.js 不再物理改写 playlist 删除广告分片，改为把分析器
+              // 高置信候选（含已知规则命中）作为 Ad Skip Window 喂进
+              // playback-session reducer，由 seek 跳过。
               if (response.data && typeof response.data === 'string') {
                 const originalContent = response.data;
                 const playlistUrl = response.url || context?.url;
                 const policy = playbackPolicyRef.current;
-                const shouldFilter =
+                const isHlsjsMediaPlaylist =
                   policy?.runtime === 'hlsjs' &&
-                  policy.playlistFilter === 'client-filter';
-                const analysis = shouldFilter
+                  originalContent.includes('#EXTINF');
+                const analysis = isHlsjsMediaPlaylist
                   ? analyzeM3U8AdCandidates(originalContent, playlistUrl)
                   : null;
-                const filteredContent = analysis
-                  ? applyM3U8AdFiltering(originalContent, analysis)
-                  : originalContent;
-                if (shouldFilter) {
-                  response.data = filteredContent;
+                if (analysis) {
+                  const skipWindows = toHlsAdSkipWindows(analysis.candidates);
+                  // 媒体播放列表在换清晰度 / 恢复加载时会被重复拉取。仅在时间窗
+                  // 真正变化时才重新载入，避免重置 already-skipped 守卫（否则用户
+                  // 手动 seek 回已跳过的广告窗会被再次跳过）。
+                  const nextSignature = skipWindows
+                    .map(getHlsAdSkipWindowKey)
+                    .join('|');
+                  const currentSignature =
+                    playbackSessionStateRef.current.adSkipWindows
+                      .map(getHlsAdSkipWindowKey)
+                      .join('|');
+                  const windowsChanged = nextSignature !== currentSignature;
+                  if (windowsChanged) {
+                    dispatchPlaybackSessionEvent({
+                      type: 'adSkipWindows.loaded',
+                      windows: skipWindows,
+                    });
+                    emitPlaybackDebugLog(
+                      'hlsjs-ad-skip-window',
+                      'HLS.js 直连播放已载入广告跳过时间窗',
+                      {
+                        playlistUrl,
+                        playlistType: context?.type || null,
+                        removed: false,
+                        skipWindowCount: skipWindows.length,
+                        skipWindows,
+                        candidates: analysis.candidates,
+                        summary: analysis.summary,
+                        sourceKey: getCurrentSourceKey() || null,
+                        episodeIndex: currentEpisodeIndexRef.current,
+                      },
+                      {
+                        playbackUrl: playlistUrl || videoUrlRef.current,
+                      }
+                    );
+                  }
                 }
-                const debugInfo = shouldFilter
-                  ? getM3U8AdFilterDebugInfo(
-                      originalContent,
-                      filteredContent,
-                      playlistUrl
-                    )
+                const debugInfo = analysis
+                  ? null
                   : logDirectAdObserveDebug(
                       playlistUrl,
                       originalContent,
@@ -3611,19 +3635,15 @@ function PlayPageClient() {
                     );
                 if (debugInfo) {
                   emitPlaybackDebugLog(
-                    shouldFilter ? 'hlsjs-ad-filter' : 'hlsjs-ad-observe',
-                    shouldFilter
-                      ? 'HLS.js 直连播放已应用广告过滤'
-                      : 'HLS.js 直连播放广告信号观测完成',
+                    'hlsjs-ad-observe',
+                    'HLS.js 直连播放广告信号观测完成',
                     {
                       playlistUrl,
                       playlistType: context?.type || null,
-                      removed: shouldFilter,
+                      removed: false,
                       removedLineCount: debugInfo.removedLineCount,
-                      wouldRemoveLineCount: shouldFilter
-                        ? undefined
-                        : debugInfo.removedLineCount,
-                      candidates: analysis?.candidates || [],
+                      wouldRemoveLineCount: debugInfo.removedLineCount,
+                      candidates: [],
                       summary: debugInfo.summary,
                       sourceKey: getCurrentSourceKey() || null,
                       episodeIndex: currentEpisodeIndexRef.current,
@@ -5094,6 +5114,9 @@ function PlayPageClient() {
 
               const handleVideoTimeupdate = () => {
                 clearWaitingRecoveryTimer();
+                if (dispatchTimeupdateForAdSkip(video, 'hlsjs')) {
+                  return;
+                }
                 markHlsPlaybackProgress(video.currentTime || 0);
                 scheduleProgressiveSourceProbe();
               };

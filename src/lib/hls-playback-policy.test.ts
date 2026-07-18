@@ -23,14 +23,14 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
     expect(result.runtime).toBe('native-hls');
-    expect(result.playlistFilter).toBe('ios-skip');
+    expect(result.playlistFilter).toBe('skip');
     expect(result.segmentMode).toBe('direct');
     expect(result.recoveryProfile).toBe('native-video');
     expect(result.forcedProxyForAdFiltering).toBe(false);
     expect(result.reason).toBe('apple-native-hls-ios-skip');
   });
 
-  it('keeps direct-first playback and enables client filtering for Android and desktop browser environments', () => {
+  it('keeps direct-first playback and unifies Android/desktop hls.js on the seek-based ad skip path', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
@@ -42,7 +42,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
     expect(result.runtime).toBe('hlsjs');
-    expect(result.playlistFilter).toBe('client-filter');
+    expect(result.playlistFilter).toBe('skip');
     expect(result.segmentMode).toBe('direct');
     expect(result.recoveryProfile).toBe('hlsjs');
     expect(result.forcedProxyForAdFiltering).toBe(false);
@@ -61,7 +61,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
     expect(result.runtime).toBe('hlsjs');
-    expect(result.playlistFilter).toBe('client-filter');
+    expect(result.playlistFilter).toBe('skip');
     expect(result.segmentMode).toBe('direct');
     expect(result.recoveryProfile).toBe('hlsjs');
     expect(result.forcedProxyForAdFiltering).toBe(false);
@@ -80,7 +80,7 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
     expect(result.runtime).toBe('native-hls');
-    expect(result.playlistFilter).toBe('ios-skip');
+    expect(result.playlistFilter).toBe('skip');
     expect(result.segmentMode).toBe('direct');
     expect(result.recoveryProfile).toBe('native-video');
     expect(result.forcedProxyForAdFiltering).toBe(false);
@@ -97,7 +97,7 @@ describe('resolveHlsPlaybackPolicy', () => {
 
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
-    expect(result.playlistFilter).toBe('ios-skip');
+    expect(result.playlistFilter).toBe('skip');
     expect(result.forcedProxyForAdFiltering).toBe(false);
     expect(result.reason).toBe('apple-native-hls-ios-skip');
   });
