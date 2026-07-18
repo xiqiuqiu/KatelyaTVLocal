@@ -12,6 +12,7 @@ import {
   requestCastPlayback,
   resolveCastMediaUrl,
 } from '@/lib/cast';
+import { shouldShowMarkAdControl } from '@/lib/ad-skip-mark-control';
 import {
   mergeAdSkipWindowsForLoad,
   type PersistedAdSkipWindow,
@@ -710,6 +711,10 @@ function PlayPageClient() {
     content: string;
     url: string;
   } | null>(null);
+  const adSkipUndoToastRef = useRef(adSkipUndoToast);
+  const adSkipControlsVisibleRef = useRef(true);
+  const handleMarkAdSkipRef = useRef<() => void>(() => {});
+  const handleUndoAdSkipRef = useRef<() => void>(() => {});
 
   const clearAdSkipUndoDismissTimer = () => {
     if (adSkipUndoDismissTimerRef.current) {
@@ -718,11 +723,39 @@ function PlayPageClient() {
     }
   };
 
+  /** Sync mark control + undo layer inside ArtPlayer (fullscreen-safe). */
+  const syncAdSkipPlayerChrome = () => {
+    const art = artPlayerRef.current;
+    if (!art) {
+      return;
+    }
+    const video = art.video as HTMLVideoElement | undefined;
+    const undoToastVisible = Boolean(adSkipUndoToastRef.current);
+    const showMark = shouldShowMarkAdControl({
+      controlsVisible: adSkipControlsVisibleRef.current,
+      paused: Boolean(video?.paused),
+      undoToastVisible,
+    });
+    const markEl = art.controls?.markAdSkip as HTMLElement | undefined;
+    if (markEl) {
+      markEl.style.display = showMark ? '' : 'none';
+    }
+    const undoEl = art.layers?.adSkipUndo as HTMLElement | undefined;
+    if (undoEl) {
+      undoEl.style.display = undoToastVisible ? 'flex' : 'none';
+    }
+  };
+
   useEffect(() => {
     return () => {
       clearAdSkipUndoDismissTimer();
     };
   }, []);
+
+  useEffect(() => {
+    adSkipUndoToastRef.current = adSkipUndoToast;
+    syncAdSkipPlayerChrome();
+  }, [adSkipUndoToast]);
 
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
@@ -1216,6 +1249,9 @@ function PlayPageClient() {
     });
     persistAdSkipWindowConfirmation(markedWindow, 'confirm');
   };
+
+  handleMarkAdSkipRef.current = handleMarkAdSkip;
+  handleUndoAdSkipRef.current = handleUndoAdSkip;
 
   const syncPlaybackSessionSources = () => {
     const sources = availableSourcesRef.current;
@@ -5409,6 +5445,16 @@ function PlayPageClient() {
               },
             },
             {
+              name: 'markAdSkip',
+              position: 'right',
+              index: 8,
+              html: '<span style="font-size:12px;line-height:1;white-space:nowrap;padding:0 2px">跳广告</span>',
+              tooltip: '标记广告并跳过',
+              click: function () {
+                handleMarkAdSkipRef.current();
+              },
+            },
+            {
               position: 'right',
               index: 9,
               html: castControlIcon,
@@ -5470,6 +5516,31 @@ function PlayPageClient() {
               },
             },
           ],
+          // 可撤销广告跳过 toast：挂在 ArtPlayer 内部，全屏仍可见
+          layers: [
+            {
+              name: 'adSkipUndo',
+              html: '<button type="button" aria-label="撤销广告跳过并恢复播放位置" style="pointer-events:auto;border-radius:9999px;border:1px solid rgba(255,255,255,0.25);background:rgba(0,0,0,0.8);padding:8px 16px;font-size:14px;font-weight:500;color:#fff;backdrop-filter:blur(8px);cursor:pointer">已为你跳过广告 · 点此恢复</button>',
+              style: {
+                display: 'none',
+                position: 'absolute',
+                left: '0',
+                right: '0',
+                bottom: '56px',
+                justifyContent: 'center',
+                alignItems: 'center',
+                pointerEvents: 'none',
+                zIndex: '50',
+              },
+              mounted: function (element: HTMLElement) {
+                const button = element.querySelector('button');
+                button?.addEventListener('click', (event) => {
+                  event.stopPropagation();
+                  handleUndoAdSkipRef.current();
+                });
+              },
+            },
+          ],
         });
 
         // 监听播放器事件
@@ -5479,6 +5550,20 @@ function PlayPageClient() {
           // 更新视频时长
           const duration = artPlayerRef.current.duration || 0;
           setVideoDuration(duration);
+          syncAdSkipPlayerChrome();
+        });
+
+        artPlayerRef.current.on('control', (state: boolean) => {
+          adSkipControlsVisibleRef.current = state;
+          syncAdSkipPlayerChrome();
+        });
+
+        artPlayerRef.current.on('video:pause', () => {
+          syncAdSkipPlayerChrome();
+        });
+
+        artPlayerRef.current.on('video:play', () => {
+          syncAdSkipPlayerChrome();
         });
 
         artPlayerRef.current.on('video:volumechange', () => {
@@ -6121,34 +6206,6 @@ function PlayPageClient() {
                   onSettingModeChange={setIsSkipSettingMode}
                   onNextEpisode={handleNextEpisode}
                 />
-              )}
-
-              {/* 手动标记 / 跳过广告（#37）：桌面与移动端均可点 */}
-              {!adSkipUndoToast && (
-                <div className='pointer-events-none absolute inset-x-0 bottom-14 z-40 flex justify-end px-3 md:bottom-16'>
-                  <button
-                    type='button'
-                    onClick={handleMarkAdSkip}
-                    className='pointer-events-auto rounded-full border border-white/25 bg-black/70 px-3 py-1.5 text-xs font-medium text-white shadow-ui-strong backdrop-blur transition hover:bg-black/85 md:px-4 md:py-2 md:text-sm'
-                    aria-label='标记并跳过当前广告'
-                  >
-                    标记广告并跳过
-                  </button>
-                </div>
-              )}
-
-              {/* 可撤销广告跳过：浮在进度条上方，不挡底部控件 */}
-              {adSkipUndoToast && (
-                <div className='pointer-events-none absolute inset-x-0 bottom-14 z-40 flex justify-center px-3 md:bottom-16'>
-                  <button
-                    type='button'
-                    onClick={handleUndoAdSkip}
-                    className='pointer-events-auto rounded-full border border-white/25 bg-black/80 px-4 py-2 text-sm font-medium text-white shadow-ui-strong backdrop-blur transition hover:bg-black/90'
-                    aria-label='撤销广告跳过并恢复播放位置'
-                  >
-                    已为你跳过广告 · 点此恢复
-                  </button>
-                </div>
               )}
 
               {/* 换源加载蒙层 */}
