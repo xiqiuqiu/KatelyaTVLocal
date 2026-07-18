@@ -1287,6 +1287,53 @@ describe('Playback Session Ad Skip Window effects', () => {
       ])
     );
   });
+
+  it('preserves persisted Ad Skip Windows across analyzer reloads', () => {
+    const withPersisted = reducePlaybackSession(
+      createInitialPlaybackSessionState(),
+      {
+      type: 'adSkipWindows.loaded',
+      windows: [
+        {
+          startTimeSeconds: 10,
+          endTimeSeconds: 20,
+          ruleId: 'user-mark',
+          confidence: 'high',
+          action: 'filter',
+          origin: 'persisted',
+        },
+      ],
+      }
+    ).state;
+
+    const reloaded = reducePlaybackSession(withPersisted, {
+      type: 'adSkipWindows.loaded',
+      windows: [
+        {
+          startTimeSeconds: 40,
+          endTimeSeconds: 50,
+          ruleId: 'rule-2',
+          confidence: 'high',
+          action: 'filter',
+        },
+      ],
+    });
+
+    expect(reloaded.state.adSkipWindows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          startTimeSeconds: 10,
+          endTimeSeconds: 20,
+          origin: 'persisted',
+        }),
+        expect.objectContaining({
+          startTimeSeconds: 40,
+          endTimeSeconds: 50,
+          ruleId: 'rule-2',
+        }),
+      ])
+    );
+  });
 });
 
 describe('Playback Session progress-save effects', () => {
@@ -1334,7 +1381,7 @@ describe('Playback Session progress-save effects', () => {
       details: {
         windowCount: 1,
         analyzerWindowCount: 1,
-        preservedUserMarkCount: 0,
+        preservedSessionWindowCount: 0,
       },
     });
 

@@ -17,6 +17,7 @@ import {
 import {
   AiFindSavedRecord,
   AiFindSavedRecordSummary,
+  EpisodeAdSkipConfig,
   EpisodeSkipConfig,
   Favorite,
   IStorage,
@@ -425,6 +426,51 @@ export class KvrocksStorage implements IStorage {
       if (value) {
         const configKey = key.replace(`u:${userName}:skip_config:`, '');
         result[configKey] = JSON.parse(value) as EpisodeSkipConfig;
+      }
+    }
+
+    return result;
+  }
+
+  // ---------- Ad Skip Window（同部署共享） ----------
+  private adSkipConfigKey(key: string) {
+    return `ad_skip_config:${key}`;
+  }
+
+  async getAdSkipConfig(key: string): Promise<EpisodeAdSkipConfig | null> {
+    const val = await withRetry(() =>
+      this.client.get(this.adSkipConfigKey(key))
+    );
+    return val ? (JSON.parse(val) as EpisodeAdSkipConfig) : null;
+  }
+
+  async setAdSkipConfig(
+    key: string,
+    config: EpisodeAdSkipConfig
+  ): Promise<void> {
+    await withRetry(() =>
+      this.client.set(this.adSkipConfigKey(key), JSON.stringify(config))
+    );
+  }
+
+  async deleteAdSkipConfig(key: string): Promise<void> {
+    await withRetry(() => this.client.del(this.adSkipConfigKey(key)));
+  }
+
+  async getAllAdSkipConfigs(): Promise<Record<string, EpisodeAdSkipConfig>> {
+    const pattern = 'ad_skip_config:*';
+    const keys = await withRetry(() => this.client.keys(pattern));
+    const result: Record<string, EpisodeAdSkipConfig> = {};
+
+    if (keys.length === 0) return result;
+
+    const values = await withRetry(() => this.client.mGet(keys));
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const value = values[i];
+      if (value) {
+        const configKey = key.replace('ad_skip_config:', '');
+        result[configKey] = JSON.parse(value) as EpisodeAdSkipConfig;
       }
     }
 

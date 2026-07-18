@@ -13,6 +13,7 @@ import {
 import {
   AiFindSavedRecord,
   AiFindSavedRecordSummary,
+  EpisodeAdSkipConfig,
   EpisodeSkipConfig,
   Favorite,
   IStorage,
@@ -838,6 +839,96 @@ export class D1Storage implements IStorage {
         .run();
     } catch (err) {
       console.error('Failed to delete skip config:', err);
+      throw err;
+    }
+  }
+
+  // Ad Skip Window（同部署共享，无 username）
+  async getAdSkipConfig(key: string): Promise<EpisodeAdSkipConfig | null> {
+    try {
+      const db = await this.getDatabase();
+      const result = await db
+        .prepare('SELECT * FROM ad_skip_configs WHERE key = ?')
+        .bind(key)
+        .first<any>();
+
+      if (!result) return null;
+
+      return {
+        source: result.source,
+        id: result.video_id,
+        episodeIndex: result.episode_index,
+        windows: JSON.parse(result.windows),
+        updated_time: result.updated_time,
+      };
+    } catch (err) {
+      console.error('Failed to get ad skip config:', err);
+      throw err;
+    }
+  }
+
+  async setAdSkipConfig(
+    key: string,
+    config: EpisodeAdSkipConfig
+  ): Promise<void> {
+    try {
+      const db = await this.getDatabase();
+      await db
+        .prepare(
+          `
+          INSERT OR REPLACE INTO ad_skip_configs
+          (key, source, video_id, episode_index, windows, updated_time)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `
+        )
+        .bind(
+          key,
+          config.source,
+          config.id,
+          config.episodeIndex,
+          JSON.stringify(config.windows),
+          config.updated_time
+        )
+        .run();
+    } catch (err) {
+      console.error('Failed to set ad skip config:', err);
+      throw err;
+    }
+  }
+
+  async getAllAdSkipConfigs(): Promise<{ [key: string]: EpisodeAdSkipConfig }> {
+    try {
+      const db = await this.getDatabase();
+      const result = await db
+        .prepare('SELECT * FROM ad_skip_configs')
+        .all<any>();
+
+      const configs: { [key: string]: EpisodeAdSkipConfig } = {};
+      for (const row of result.results) {
+        configs[row.key] = {
+          source: row.source,
+          id: row.video_id,
+          episodeIndex: row.episode_index,
+          windows: JSON.parse(row.windows),
+          updated_time: row.updated_time,
+        };
+      }
+      return configs;
+    } catch (err) {
+      console.error('Failed to get all ad skip configs:', err);
+      throw err;
+    }
+  }
+
+  async deleteAdSkipConfig(key: string): Promise<void> {
+    try {
+      const db = await this.getDatabase();
+      await db
+        .prepare('DELETE FROM ad_skip_configs WHERE key = ?')
+        .bind(key)
+        .run();
+    } catch (err) {
+      console.error('Failed to delete ad skip config:', err);
       throw err;
     }
   }

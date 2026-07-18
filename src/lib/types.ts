@@ -1,5 +1,11 @@
 import { AdminConfig } from './admin.types';
+import type {
+  EpisodeAdSkipConfig,
+  PersistedAdSkipWindow,
+} from './ad-skip-window';
 import type { AiFindResponse } from './ai-find/types';
+
+export type { EpisodeAdSkipConfig, PersistedAdSkipWindow };
 
 // 播放记录数据结构
 export interface PlayRecord {
@@ -142,6 +148,12 @@ export interface IStorage {
     userName: string
   ): Promise<{ [key: string]: EpisodeSkipConfig }>;
   deleteSkipConfig(userName: string, key: string): Promise<void>;
+
+  // Ad Skip Window（同部署共享；localstorage 模式在客户端降级为自用）
+  getAdSkipConfig(key: string): Promise<EpisodeAdSkipConfig | null>;
+  setAdSkipConfig(key: string, config: EpisodeAdSkipConfig): Promise<void>;
+  getAllAdSkipConfigs(): Promise<{ [key: string]: EpisodeAdSkipConfig }>;
+  deleteAdSkipConfig(key: string): Promise<void>;
 
   // 用户列表
   getAllUsers(): Promise<string[]>;

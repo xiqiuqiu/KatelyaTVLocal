@@ -14,8 +14,18 @@
  * 如后续需要在客户端读取收藏等其它数据，可按同样方式在此文件中补充实现。
  */
 
+import {
+  applyAdSkipWindowConfirmation,
+  generateAdSkipConfigKey,
+  type EpisodeAdSkipConfig,
+} from './ad-skip-window';
 import { getRuntimeCurrentUser } from './auth';
 import { getRecentPlayRecordsFromAll } from './play-record-key';
+
+export type {
+  EpisodeAdSkipConfig,
+  PersistedAdSkipWindow,
+} from './ad-skip-window';
 
 // ---- 类型 ----
 export interface PlayRecord {
@@ -84,6 +94,7 @@ const PLAY_RECORDS_KEY = 'katelyatv_play_records';
 const FAVORITES_KEY = 'katelyatv_favorites';
 const SEARCH_HISTORY_KEY = 'katelyatv_search_history';
 const SKIP_CONFIGS_KEY = 'katelyatv_skip_configs';
+const AD_SKIP_CONFIGS_KEY = 'katelyatv_ad_skip_configs';
 const LEGACY_PLAY_RECORDS_KEY = 'moontv_play_records';
 const LEGACY_FAVORITES_KEY = 'moontv_favorites';
 const LEGACY_SEARCH_HISTORY_KEY = 'moontv_search_history';
@@ -1689,5 +1700,198 @@ export async function deleteSkipConfig(
   } catch (err) {
     console.error('删除跳过配置失败:', err);
     throw err;
+  }
+}
+
+// ---------------- Ad Skip Window（同部署共享；localstorage 自用） ----------------
+
+/**
+ * 获取单集持久化 Ad Skip Window 配置
+ */
+export async function getAdSkipConfig(
+  source: string,
+  id: string,
+  episodeIndex: number
+): Promise<EpisodeAdSkipConfig | null> {
+  try {
+    const key = generateAdSkipConfigKey(source, id, episodeIndex);
+
+    if (STORAGE_TYPE === 'localstorage') {
+      const allConfigs = JSON.parse(
+        localStorage.getItem(AD_SKIP_CONFIGS_KEY) || '{}'
+      ) as Record<string, EpisodeAdSkipConfig>;
+      return allConfigs[key] || null;
+    }
+
+    const authInfo = getRuntimeCurrentUser();
+    if (!authInfo?.username) {
+      return null;
+    }
+
+    const response = await fetch('/api/ad-skip-windows', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'get',
+        key,
+      }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    return (data.config as EpisodeAdSkipConfig | null) || null;
+  } catch (err) {
+    console.error('获取 Ad Skip Window 失败:', err);
+    return null;
+  }
+}
+
+/**
+ * 保存单集持久化 Ad Skip Window 配置
+ */
+export async function saveAdSkipConfig(
+  source: string,
+  id: string,
+  episodeIndex: number,
+  config: EpisodeAdSkipConfig
+): Promise<void> {
+  try {
+    const key = generateAdSkipConfigKey(source, id, episodeIndex);
+
+    if (STORAGE_TYPE === 'localstorage') {
+      const allConfigs = JSON.parse(
+        localStorage.getItem(AD_SKIP_CONFIGS_KEY) || '{}'
+      ) as Record<string, EpisodeAdSkipConfig>;
+      allConfigs[key] = config;
+      localStorage.setItem(AD_SKIP_CONFIGS_KEY, JSON.stringify(allConfigs));
+      return;
+    }
+
+    const authInfo = getRuntimeCurrentUser();
+    if (!authInfo?.username) {
+      throw new Error('用户未登录');
+    }
+
+    const response = await fetch('/api/ad-skip-windows', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'set',
+        key,
+        config,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('保存 Ad Skip Window 失败');
+    }
+  } catch (err) {
+    console.error('保存 Ad Skip Window 失败:', err);
+    throw err;
+  }
+}
+
+/**
+ * 删除单集持久化 Ad Skip Window 配置
+ */
+export async function deleteAdSkipConfig(
+  source: string,
+  id: string,
+  episodeIndex: number
+): Promise<void> {
+  try {
+    const key = generateAdSkipConfigKey(source, id, episodeIndex);
+
+    if (STORAGE_TYPE === 'localstorage') {
+      const allConfigs = JSON.parse(
+        localStorage.getItem(AD_SKIP_CONFIGS_KEY) || '{}'
+      ) as Record<string, EpisodeAdSkipConfig>;
+      delete allConfigs[key];
+      localStorage.setItem(AD_SKIP_CONFIGS_KEY, JSON.stringify(allConfigs));
+      return;
+    }
+
+    const authInfo = getRuntimeCurrentUser();
+    if (!authInfo?.username) {
+      throw new Error('用户未登录');
+    }
+
+    const response = await fetch('/api/ad-skip-windows', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'delete',
+        key,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('删除 Ad Skip Window 失败');
+    }
+  } catch (err) {
+    console.error('删除 Ad Skip Window 失败:', err);
+    throw err;
+  }
+}
+
+/**
+ * 记录确认/撤销：合并后写入持久层。失败时降级（不打断播放）。
+ */
+export async function recordAdSkipWindowConfirmation(input: {
+  source: string;
+  id: string;
+  episodeIndex: number;
+  window: {
+    startTimeSeconds: number;
+    endTimeSeconds: number;
+    ruleId?: string;
+  };
+  kind: 'confirm' | 'undo';
+  nowMs?: number;
+}): Promise<EpisodeAdSkipConfig | null> {
+  try {
+    const existing = await getAdSkipConfig(
+      input.source,
+      input.id,
+      input.episodeIndex
+    );
+    const next = applyAdSkipWindowConfirmation({
+      source: input.source,
+      id: input.id,
+      episodeIndex: input.episodeIndex,
+      existing,
+      window: input.window,
+      kind: input.kind,
+      nowMs: input.nowMs ?? Date.now(),
+    });
+
+    if (!next) {
+      return null;
+    }
+
+    try {
+      await saveAdSkipConfig(
+        input.source,
+        input.id,
+        input.episodeIndex,
+        next
+      );
+    } catch (err) {
+      console.error('持久化 Ad Skip Window 确认失败（已降级）:', err);
+    }
+
+    return next;
+  } catch (err) {
+    console.error('记录 Ad Skip Window 确认失败:', err);
+    return null;
   }
 }

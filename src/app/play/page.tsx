@@ -13,10 +13,16 @@ import {
   resolveCastMediaUrl,
 } from '@/lib/cast';
 import {
+  mergeAdSkipWindowsForLoad,
+  type PersistedAdSkipWindow,
+} from '@/lib/ad-skip-window';
+import {
   deleteFavorite,
   generateStorageKey,
+  getAdSkipConfig,
   getAllPlayRecords,
   isFavorited,
+  recordAdSkipWindowConfirmation,
   saveFavorite,
   savePlayRecordKeys,
   subscribeToDataUpdates,
@@ -30,6 +36,7 @@ import {
 } from '@/lib/hls-ad-filter';
 import {
   getHlsAdSkipWindowKey,
+  type HlsAdSkipWindow,
   toHlsAdSkipWindows,
   toUserMarkAdSkipWindow,
 } from '@/lib/hls-ad-skip';
@@ -696,6 +703,8 @@ function PlayPageClient() {
   const adSkipUndoDismissTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+  const adSkipLoadGenerationRef = useRef(0);
+  const lastLoadedAnalyzerAdSkipSignatureRef = useRef<string | null>(null);
   // 最近一次媒体播放列表原文：手动标记广告时吸附到结构块边界（#37）
   const latestMediaPlaylistRef = useRef<{
     content: string;
@@ -970,6 +979,38 @@ function PlayPageClient() {
     }
   };
 
+  const resolveAdSkipWindowByKey = (
+    windowKey: string
+  ): HlsAdSkipWindow | undefined =>
+    playbackSessionStateRef.current.adSkipWindows.find(
+      (window) => getHlsAdSkipWindowKey(window) === windowKey
+    );
+
+  const persistAdSkipWindowConfirmation = (
+    window: Pick<
+      HlsAdSkipWindow,
+      'startTimeSeconds' | 'endTimeSeconds' | 'ruleId'
+    >,
+    kind: 'confirm' | 'undo'
+  ) => {
+    const source = currentSourceRef.current;
+    const id = currentIdRef.current;
+    if (!source || !id) {
+      return;
+    }
+    void recordAdSkipWindowConfirmation({
+      source,
+      id,
+      episodeIndex: currentEpisodeIndexRef.current,
+      window: {
+        startTimeSeconds: window.startTimeSeconds,
+        endTimeSeconds: window.endTimeSeconds,
+        ruleId: window.ruleId,
+      },
+      kind,
+    });
+  };
+
   const dispatchPlaybackSessionEvent = (
     event: Parameters<typeof reducePlaybackSession>[1]
   ) => {
@@ -1049,6 +1090,12 @@ function PlayPageClient() {
             type: 'adSkipUndo.dismissed',
             windowKey: effect.windowKey,
           });
+          // Un-undone auto-skip / confirm: persist for crowd reuse (#38).
+          // user-mark already persisted on mark — skip double-count.
+          const window = resolveAdSkipWindowByKey(effect.windowKey);
+          if (window && window.origin !== 'user-mark') {
+            persistAdSkipWindowConfirmation(window, 'confirm');
+          }
         }, effect.dismissAfterMs);
       },
       onRestoreAdSkipWindow: (effect) => {
@@ -1074,15 +1121,51 @@ function PlayPageClient() {
     return result;
   };
 
+  /** Load shared persisted windows and merge with analyzer seeds (#38). */
+  const loadMergedAdSkipWindows = async (
+    analyzerWindows: HlsAdSkipWindow[]
+  ) => {
+    const generation = ++adSkipLoadGenerationRef.current;
+    const source = currentSourceRef.current;
+    const id = currentIdRef.current;
+    const episodeIndex = currentEpisodeIndexRef.current;
+
+    let persisted: PersistedAdSkipWindow[] = [];
+    if (source && id) {
+      try {
+        const config = await getAdSkipConfig(source, id, episodeIndex);
+        persisted = config?.windows ?? [];
+      } catch {
+        persisted = [];
+      }
+    }
+
+    if (generation !== adSkipLoadGenerationRef.current) {
+      return;
+    }
+
+    dispatchPlaybackSessionEvent({
+      type: 'adSkipWindows.loaded',
+      windows: mergeAdSkipWindowsForLoad({
+        persisted,
+        analyzer: analyzerWindows,
+      }),
+    });
+  };
+
   const handleUndoAdSkip = () => {
     if (!adSkipUndoToast) {
       return;
     }
+    const window = resolveAdSkipWindowByKey(adSkipUndoToast.windowKey);
     dispatchPlaybackSessionEvent({
       type: 'user.undoAdSkip',
       windowKey: adSkipUndoToast.windowKey,
       nowMs: Date.now(),
     });
+    if (window) {
+      persistAdSkipWindowConfirmation(window, 'undo');
+    }
   };
 
   const handleMarkAdSkip = () => {
@@ -1124,12 +1207,14 @@ function PlayPageClient() {
       playbackPolicyRef.current?.runtime === 'native-hls'
         ? 'apple-native'
         : 'hlsjs';
+    const markedWindow = toUserMarkAdSkipWindow(snapped);
     dispatchPlaybackSessionEvent({
       type: 'user.markAdSkip',
       nowMs: Date.now(),
       platform,
-      window: toUserMarkAdSkipWindow(snapped),
+      window: markedWindow,
     });
+    persistAdSkipWindowConfirmation(markedWindow, 'confirm');
   };
 
   const syncPlaybackSessionSources = () => {
@@ -2438,7 +2523,8 @@ function PlayPageClient() {
     const directUrl = detailData?.episodes[episodeIndex] || '';
     originalVideoUrlRef.current = directUrl;
     sourceFallbackAttemptedRef.current = false;
-    dispatchPlaybackSessionEvent({ type: 'adSkipWindows.loaded', windows: [] });
+    lastLoadedAnalyzerAdSkipSignatureRef.current = null;
+    void loadMergedAdSkipWindows([]);
 
     const rememberedStatus = detailData
       ? getRememberedSourceStatusForSource(
@@ -2781,10 +2867,10 @@ function PlayPageClient() {
       })
       .then((payload) => {
         const skipWindows = toHlsAdSkipWindows(payload.candidates || []);
-        dispatchPlaybackSessionEvent({
-          type: 'adSkipWindows.loaded',
-          windows: skipWindows,
-        });
+        lastLoadedAnalyzerAdSkipSignatureRef.current = skipWindows
+          .map(getHlsAdSkipWindowKey)
+          .join('|');
+        void loadMergedAdSkipWindows(skipWindows);
         if (
           typeof payload.playlistContent === 'string' &&
           payload.playlistContent.includes('#EXTINF')
@@ -3735,22 +3821,19 @@ function PlayPageClient() {
                   : null;
                 if (analysis) {
                   const skipWindows = toHlsAdSkipWindows(analysis.candidates);
-                  // 媒体播放列表在换清晰度 / 恢复加载时会被重复拉取。仅在时间窗
-                  // 真正变化时才重新载入，避免重置 already-skipped 守卫（否则用户
-                  // 手动 seek 回已跳过的广告窗会被再次跳过）。
+                  // 媒体播放列表在换清晰度 / 恢复加载时会被重复拉取。仅在分析器
+                  // 种子真正变化时才重新载入并与持久窗口合并，避免重置
+                  // already-skipped 守卫。
                   const nextSignature = skipWindows
                     .map(getHlsAdSkipWindowKey)
                     .join('|');
-                  const currentSignature =
-                    playbackSessionStateRef.current.adSkipWindows
-                      .map(getHlsAdSkipWindowKey)
-                      .join('|');
-                  const windowsChanged = nextSignature !== currentSignature;
+                  const windowsChanged =
+                    nextSignature !==
+                    lastLoadedAnalyzerAdSkipSignatureRef.current;
                   if (windowsChanged) {
-                    dispatchPlaybackSessionEvent({
-                      type: 'adSkipWindows.loaded',
-                      windows: skipWindows,
-                    });
+                    lastLoadedAnalyzerAdSkipSignatureRef.current =
+                      nextSignature;
+                    void loadMergedAdSkipWindows(skipWindows);
                     emitPlaybackDebugLog(
                       'hlsjs-ad-skip-window',
                       'HLS.js 直连播放已载入广告跳过时间窗',

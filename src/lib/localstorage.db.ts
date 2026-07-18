@@ -14,6 +14,7 @@ import {
 import {
   AiFindSavedRecord,
   AiFindSavedRecordSummary,
+  EpisodeAdSkipConfig,
   EpisodeSkipConfig,
   Favorite,
   IStorage,
@@ -431,6 +432,77 @@ export class LocalStorage implements IStorage {
       localStorage.removeItem(storageKey);
     } catch (error) {
       console.error('Error deleting skip config:', error);
+    }
+  }
+
+  // ---------- Ad Skip Window（浏览器自用；与 db.client 共用同一 bag key） ----------
+  private static readonly AD_SKIP_CONFIGS_BAG_KEY = 'katelyatv_ad_skip_configs';
+
+  private readAdSkipConfigBag(): { [key: string]: EpisodeAdSkipConfig } {
+    try {
+      return JSON.parse(
+        localStorage.getItem(LocalStorage.AD_SKIP_CONFIGS_BAG_KEY) || '{}'
+      ) as { [key: string]: EpisodeAdSkipConfig };
+    } catch {
+      return {};
+    }
+  }
+
+  private writeAdSkipConfigBag(configs: {
+    [key: string]: EpisodeAdSkipConfig;
+  }): void {
+    localStorage.setItem(
+      LocalStorage.AD_SKIP_CONFIGS_BAG_KEY,
+      JSON.stringify(configs)
+    );
+  }
+
+  async getAdSkipConfig(key: string): Promise<EpisodeAdSkipConfig | null> {
+    if (typeof window === 'undefined') return null;
+
+    try {
+      return this.readAdSkipConfigBag()[key] || null;
+    } catch (error) {
+      console.error('Error getting ad skip config:', error);
+      return null;
+    }
+  }
+
+  async setAdSkipConfig(
+    key: string,
+    config: EpisodeAdSkipConfig
+  ): Promise<void> {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const configs = this.readAdSkipConfigBag();
+      configs[key] = config;
+      this.writeAdSkipConfigBag(configs);
+    } catch (error) {
+      console.error('Error setting ad skip config:', error);
+    }
+  }
+
+  async getAllAdSkipConfigs(): Promise<{ [key: string]: EpisodeAdSkipConfig }> {
+    if (typeof window === 'undefined') return {};
+
+    try {
+      return this.readAdSkipConfigBag();
+    } catch (error) {
+      console.error('Error getting all ad skip configs:', error);
+      return {};
+    }
+  }
+
+  async deleteAdSkipConfig(key: string): Promise<void> {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const configs = this.readAdSkipConfigBag();
+      delete configs[key];
+      this.writeAdSkipConfigBag(configs);
+    } catch (error) {
+      console.error('Error deleting ad skip config:', error);
     }
   }
 

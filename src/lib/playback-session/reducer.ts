@@ -746,15 +746,22 @@ export function reducePlaybackSession(
         ...window,
         origin: window.origin ?? ('analyzer' as const),
       }));
-      const analyzerKeys = new Set(
-        analyzerWindows.map((window) => getHlsAdSkipWindowKey(window))
+      // Timeline range identity — not ruleId — so persisted/user-mark
+      // windows do not duplicate analyzer seeds for the same interval.
+      const analyzerRangeKeys = new Set(
+        analyzerWindows.map(
+          (window) =>
+            `${window.startTimeSeconds.toFixed(3)}-${window.endTimeSeconds.toFixed(3)}`
+        )
       );
-      const preservedUserMarks = state.adSkipWindows.filter(
+      const preservedSessionWindows = state.adSkipWindows.filter(
         (window) =>
-          window.origin === 'user-mark' &&
-          !analyzerKeys.has(getHlsAdSkipWindowKey(window))
+          (window.origin === 'user-mark' || window.origin === 'persisted') &&
+          !analyzerRangeKeys.has(
+            `${window.startTimeSeconds.toFixed(3)}-${window.endTimeSeconds.toFixed(3)}`
+          )
       );
-      const mergedWindows = [...analyzerWindows, ...preservedUserMarks];
+      const mergedWindows = [...analyzerWindows, ...preservedSessionWindows];
 
       return {
         state: {
@@ -773,7 +780,7 @@ export function reducePlaybackSession(
             details: {
               windowCount: mergedWindows.length,
               analyzerWindowCount: analyzerWindows.length,
-              preservedUserMarkCount: preservedUserMarks.length,
+              preservedSessionWindowCount: preservedSessionWindows.length,
             },
           },
         ],

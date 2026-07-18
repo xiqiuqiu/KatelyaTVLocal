@@ -303,6 +303,33 @@ export class DbManager {
       await (this.storage as any).deleteSkipConfig(userName, key);
     }
   }
+
+  // ---------- Ad Skip Window ----------
+  async getAdSkipConfig(key: string): Promise<any> {
+    if (typeof (this.storage as any).getAdSkipConfig === 'function') {
+      return (this.storage as any).getAdSkipConfig(key);
+    }
+    return null;
+  }
+
+  async saveAdSkipConfig(key: string, config: any): Promise<void> {
+    if (typeof (this.storage as any).setAdSkipConfig === 'function') {
+      await (this.storage as any).setAdSkipConfig(key, config);
+    }
+  }
+
+  async getAllAdSkipConfigs(): Promise<{ [key: string]: any }> {
+    if (typeof (this.storage as any).getAllAdSkipConfigs === 'function') {
+      return (this.storage as any).getAllAdSkipConfigs();
+    }
+    return {};
+  }
+
+  async deleteAdSkipConfig(key: string): Promise<void> {
+    if (typeof (this.storage as any).deleteAdSkipConfig === 'function') {
+      await (this.storage as any).deleteAdSkipConfig(key);
+    }
+  }
 }
 
 // 导出默认实例

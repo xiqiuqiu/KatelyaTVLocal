@@ -6,8 +6,13 @@ export interface HlsAdSkipWindow {
   ruleId?: string;
   confidence: M3U8AdCandidate['confidence'];
   action: M3U8AdCandidate['action'];
-  /** Session-local user mark (#37); persists across analyzer reloads in-session. */
-  origin?: 'analyzer' | 'user-mark';
+  /**
+   * Window provenance for session merge:
+   * - analyzer: cold-start seed
+   * - user-mark: session manual mark (#37)
+   * - persisted: loaded from shared Ad Skip Window store (#38)
+   */
+  origin?: 'analyzer' | 'user-mark' | 'persisted';
 }
 
 export function toUserMarkAdSkipWindow(input: {

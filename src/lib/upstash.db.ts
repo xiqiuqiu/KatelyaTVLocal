@@ -17,6 +17,7 @@ import {
 import {
   AiFindSavedRecord,
   AiFindSavedRecordSummary,
+  EpisodeAdSkipConfig,
   EpisodeSkipConfig,
   Favorite,
   IStorage,
@@ -543,6 +544,55 @@ export class UpstashRedisStorage implements IStorage {
       await this.client.del(this.skipConfigKey(userName, key));
       // 从用户的跳过配置集合中移除
       await this.client.srem(this.skipConfigsKey(userName), key);
+    });
+  }
+
+  // Ad Skip Window（同部署共享，无 user 作用域）
+  private adSkipConfigKey(key: string): string {
+    return `katelyatv:ad_skip_config:${key}`;
+  }
+
+  private adSkipConfigsKey(): string {
+    return 'katelyatv:ad_skip_configs';
+  }
+
+  async getAdSkipConfig(key: string): Promise<EpisodeAdSkipConfig | null> {
+    const data = await withRetry(() =>
+      this.client.get(this.adSkipConfigKey(key))
+    );
+    return data ? (data as EpisodeAdSkipConfig) : null;
+  }
+
+  async setAdSkipConfig(
+    key: string,
+    config: EpisodeAdSkipConfig
+  ): Promise<void> {
+    await withRetry(async () => {
+      await this.client.set(this.adSkipConfigKey(key), config);
+      await this.client.sadd(this.adSkipConfigsKey(), key);
+    });
+  }
+
+  async getAllAdSkipConfigs(): Promise<{ [key: string]: EpisodeAdSkipConfig }> {
+    const keys = await withRetry(() =>
+      this.client.smembers(this.adSkipConfigsKey())
+    );
+    const configs: { [key: string]: EpisodeAdSkipConfig } = {};
+    for (const key of ensureStringArray(keys || [])) {
+      const data = await withRetry(() =>
+        this.client.get(this.adSkipConfigKey(key))
+      );
+      if (data) {
+        configs[key] = data as EpisodeAdSkipConfig;
+      }
+    }
+    return configs;
+  }
+
+  async deleteAdSkipConfig(key: string): Promise<void> {
+    await withRetry(async () => {
+      await this.client.del(this.adSkipConfigKey(key));
+      await this.client.srem(this.adSkipConfigsKey(), key);
     });
   }
 }
