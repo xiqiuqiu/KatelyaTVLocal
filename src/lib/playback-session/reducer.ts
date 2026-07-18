@@ -741,11 +741,25 @@ export function reducePlaybackSession(
       };
     }
 
-    case 'adSkipWindows.loaded':
+    case 'adSkipWindows.loaded': {
+      const analyzerWindows = event.windows.map((window) => ({
+        ...window,
+        origin: window.origin ?? ('analyzer' as const),
+      }));
+      const analyzerKeys = new Set(
+        analyzerWindows.map((window) => getHlsAdSkipWindowKey(window))
+      );
+      const preservedUserMarks = state.adSkipWindows.filter(
+        (window) =>
+          window.origin === 'user-mark' &&
+          !analyzerKeys.has(getHlsAdSkipWindowKey(window))
+      );
+      const mergedWindows = [...analyzerWindows, ...preservedUserMarks];
+
       return {
         state: {
           ...state,
-          adSkipWindows: event.windows,
+          adSkipWindows: mergedWindows,
           lastAdSkipWindowKey: null,
           adSkipInFlightWindowKey: null,
           suppressedAdSkipWindowKeys: new Set(),
@@ -756,10 +770,87 @@ export function reducePlaybackSession(
             type: 'emitDebugEvent',
             eventType: 'adSkip.loaded',
             message: 'Ad skip windows loaded',
-            details: { windowCount: event.windows.length },
+            details: {
+              windowCount: mergedWindows.length,
+              analyzerWindowCount: analyzerWindows.length,
+              preservedUserMarkCount: preservedUserMarks.length,
+            },
           },
         ],
       };
+    }
+
+    case 'user.markAdSkip': {
+      const markedWindow = {
+        ...event.window,
+        origin: event.window.origin ?? ('user-mark' as const),
+      };
+      const windowKey = getHlsAdSkipWindowKey(markedWindow);
+      const existingIndex = state.adSkipWindows.findIndex(
+        (window) => getHlsAdSkipWindowKey(window) === windowKey
+      );
+      const adSkipWindows =
+        existingIndex >= 0
+          ? state.adSkipWindows.map((window, index) =>
+              index === existingIndex ? markedWindow : window
+            )
+          : [...state.adSkipWindows, markedWindow];
+
+      const decision = getHlsAdSkipDecision({
+        currentTimeSeconds: markedWindow.startTimeSeconds,
+        windows: [markedWindow],
+        nowMs: event.nowMs,
+      });
+      const targetTime =
+        decision.targetTimeSeconds ?? markedWindow.endTimeSeconds + 0.35;
+      const restoreTimeSeconds = markedWindow.startTimeSeconds;
+      const suppressedAdSkipWindowKeys = new Set(
+        state.suppressedAdSkipWindowKeys
+      );
+      suppressedAdSkipWindowKeys.delete(windowKey);
+
+      return {
+        state: {
+          ...state,
+          adSkipWindows,
+          lastAdSkipWindowKey: windowKey,
+          adSkipInFlightWindowKey: windowKey,
+          recoverableAdSkip: {
+            windowKey,
+            restoreTimeSeconds,
+            skippedAtMs: event.nowMs,
+          },
+          suppressedAdSkipWindowKeys,
+        },
+        effects: [
+          {
+            type: 'skipAdWindow',
+            targetTime,
+            windowKey,
+            reason: 'hls-ad-window',
+            platform: event.platform || 'hlsjs',
+          },
+          {
+            type: 'showAdSkipUndo',
+            windowKey,
+            restoreTimeSeconds,
+            dismissAfterMs: AD_SKIP_UNDO_DISMISS_MS,
+          },
+          {
+            type: 'emitDebugEvent',
+            eventType: 'adSkip.marked',
+            message: 'User marked ad skip window',
+            details: {
+              windowKey,
+              startTimeSeconds: markedWindow.startTimeSeconds,
+              endTimeSeconds: markedWindow.endTimeSeconds,
+              targetTime,
+              confirmation: 'mark',
+            },
+          },
+        ],
+      };
+    }
 
     case 'user.undoAdSkip': {
       const pending = state.recoverableAdSkip;

@@ -2,6 +2,7 @@ import type { M3U8AdCandidate } from './hls-ad-filter';
 import {
   getHlsAdSkipDecision,
   toHlsAdSkipWindows,
+  toUserMarkAdSkipWindow,
 } from './hls-ad-skip';
 
 describe('getHlsAdSkipDecision', () => {
@@ -61,6 +62,19 @@ describe('getHlsAdSkipDecision', () => {
 
     expect(decision.shouldSkip).toBe(false);
     expect(decision.reason).toBe('no-window');
+  });
+});
+
+describe('toUserMarkAdSkipWindow', () => {
+  it('builds a session-local high-confidence user mark window', () => {
+    expect(toUserMarkAdSkipWindow({ startTimeSeconds: 10, endTimeSeconds: 14 })).toEqual({
+      startTimeSeconds: 10,
+      endTimeSeconds: 14,
+      ruleId: 'user-mark',
+      confidence: 'high',
+      action: 'filter',
+      origin: 'user-mark',
+    });
   });
 });
 

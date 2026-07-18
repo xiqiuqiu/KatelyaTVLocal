@@ -1197,6 +1197,96 @@ describe('Playback Session Ad Skip Window effects', () => {
     expect(dismissed.state.recoverableAdSkip).toBeNull();
     expect(dismissed.effects).toEqual([]);
   });
+
+  it('marks a user Ad Skip Window for this session and seeks immediately', () => {
+    const result = reducePlaybackSession(createInitialPlaybackSessionState(), {
+      type: 'user.markAdSkip',
+      nowMs: 10_000,
+      platform: 'hlsjs',
+      window: {
+        startTimeSeconds: 10,
+        endTimeSeconds: 14,
+        ruleId: 'user-mark',
+        confidence: 'high',
+        action: 'filter',
+        origin: 'user-mark',
+      },
+    });
+
+    expect(result.state.adSkipWindows).toEqual([
+      expect.objectContaining({
+        startTimeSeconds: 10,
+        endTimeSeconds: 14,
+        origin: 'user-mark',
+      }),
+    ]);
+    expect(result.effects).toEqual([
+      {
+        type: 'skipAdWindow',
+        targetTime: 14.35,
+        windowKey: 'user-mark:10.000-14.000',
+        reason: 'hls-ad-window',
+        platform: 'hlsjs',
+      },
+      {
+        type: 'showAdSkipUndo',
+        windowKey: 'user-mark:10.000-14.000',
+        restoreTimeSeconds: 10,
+        dismissAfterMs: 5000,
+      },
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'adSkip.marked',
+        details: expect.objectContaining({
+          windowKey: 'user-mark:10.000-14.000',
+          confirmation: 'mark',
+        }),
+      }),
+    ]);
+  });
+
+  it('keeps session-local user marks when analyzer windows reload', () => {
+    const marked = reducePlaybackSession(createInitialPlaybackSessionState(), {
+      type: 'user.markAdSkip',
+      nowMs: 10_000,
+      window: {
+        startTimeSeconds: 10,
+        endTimeSeconds: 14,
+        ruleId: 'user-mark',
+        confidence: 'high',
+        action: 'filter',
+        origin: 'user-mark',
+      },
+    }).state;
+
+    const reloaded = reducePlaybackSession(marked, {
+      type: 'adSkipWindows.loaded',
+      windows: [
+        {
+          startTimeSeconds: 40,
+          endTimeSeconds: 50,
+          ruleId: 'rule-2',
+          confidence: 'high',
+          action: 'filter',
+        },
+      ],
+    });
+
+    expect(reloaded.state.adSkipWindows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          startTimeSeconds: 10,
+          endTimeSeconds: 14,
+          origin: 'user-mark',
+        }),
+        expect.objectContaining({
+          startTimeSeconds: 40,
+          endTimeSeconds: 50,
+          ruleId: 'rule-2',
+        }),
+      ])
+    );
+  });
 });
 
 describe('Playback Session progress-save effects', () => {
@@ -1241,7 +1331,11 @@ describe('Playback Session progress-save effects', () => {
       type: 'emitDebugEvent',
       eventType: 'adSkip.loaded',
       message: 'Ad skip windows loaded',
-      details: { windowCount: 1 },
+      details: {
+        windowCount: 1,
+        analyzerWindowCount: 1,
+        preservedUserMarkCount: 0,
+      },
     });
 
     const emitted = reducePlaybackSession(withWindows.state, {

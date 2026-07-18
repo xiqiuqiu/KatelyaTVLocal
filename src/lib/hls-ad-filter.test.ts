@@ -5,6 +5,7 @@ import {
   formatM3U8AdFilterDebugMessage,
   getM3U8AdFilterDebugInfo,
   observeM3U8AdSignals,
+  snapClickToAdStructureBlock,
 } from './hls-ad-filter';
 import { KNOWN_HLS_AD_RULES } from './hls-ad-rules';
 
@@ -874,5 +875,79 @@ describe('filterAdsFromM3U8', () => {
     expect(
       filterAdsFromM3U8(input, 'https://media.example.com/master.m3u8')
     ).toBe(input);
+  });
+});
+
+describe('snapClickToAdStructureBlock', () => {
+  const shortDiscontinuityPlaylist = [
+    '#EXTM3U',
+    '#EXT-X-TARGETDURATION:10',
+    '#EXTINF:10,',
+    'main-1.ts',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:4,',
+    'short-1.ts',
+    '#EXT-X-DISCONTINUITY',
+    '#EXTINF:10,',
+    'main-2.ts',
+    '#EXT-X-ENDLIST',
+  ].join('\n');
+
+  it('snaps a mid-block click to the enclosing discontinuity block [start, end)', () => {
+    expect(
+      snapClickToAdStructureBlock(
+        shortDiscontinuityPlaylist,
+        12,
+        'https://media.example.com/show/index.m3u8'
+      )
+    ).toEqual({
+      startTimeSeconds: 10,
+      endTimeSeconds: 14,
+      source: 'discontinuity-block',
+    });
+  });
+
+  it('returns null when the click falls outside any structural ad block', () => {
+    expect(
+      snapClickToAdStructureBlock(
+        shortDiscontinuityPlaylist,
+        5,
+        'https://media.example.com/show/index.m3u8'
+      )
+    ).toBeNull();
+  });
+
+  it('snaps into a foreign-path short segment run without discontinuity tags', () => {
+    const playlist = createModuForeignPathInsertCase();
+    const snapped = snapClickToAdStructureBlock(
+      playlist,
+      10,
+      'https://play.example.com/20230919/zQzvuLQv/1143kb/hls/index.m3u8'
+    );
+
+    expect(snapped).not.toBeNull();
+    expect(snapped?.source).toBe('segment-run');
+    expect(snapped?.startTimeSeconds).toBeCloseTo(7.506, 3);
+    expect(snapped?.endTimeSeconds).toBeCloseTo(27.741, 3);
+  });
+
+  it('does not change existing analyze behavior for short discontinuity blocks', () => {
+    const analysis = analyzeM3U8AdCandidates(
+      shortDiscontinuityPlaylist,
+      'https://media.example.com/show/index.m3u8'
+    );
+
+    expect(analysis.candidates).toContainEqual(
+      expect.objectContaining({
+        confidence: 'low',
+        action: 'observe',
+        reasons: ['short-discontinuity'],
+        startTimeSeconds: 10,
+        endTimeSeconds: 14,
+      })
+    );
+    expect(applyM3U8AdFiltering(shortDiscontinuityPlaylist, analysis)).toContain(
+      'short-1.ts'
+    );
   });
 });

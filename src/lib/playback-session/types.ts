@@ -181,6 +181,12 @@ export type PlaybackSessionEvent =
     }
   | { type: 'adSkipWindows.loaded'; windows: HlsAdSkipWindow[] }
   | {
+      type: 'user.markAdSkip';
+      window: HlsAdSkipWindow;
+      nowMs: number;
+      platform?: 'apple-native' | 'hlsjs';
+    }
+  | {
       type: 'user.undoAdSkip';
       windowKey: string;
       nowMs: number;

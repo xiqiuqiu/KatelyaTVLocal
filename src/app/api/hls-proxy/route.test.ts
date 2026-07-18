@@ -156,11 +156,13 @@ describe('hls proxy route', () => {
     const payload = (await response.json()) as {
       observeOnly: boolean;
       removed: boolean;
+      playlistContent?: string;
       candidates: unknown[];
       summary: { candidateAdBlocks: number; removedBlocks: unknown[] };
     };
     expect(payload.observeOnly).toBe(true);
     expect(payload.removed).toBe(false);
+    expect(payload.playlistContent).toContain('#EXTINF');
     expect(payload.candidates.length).toBeGreaterThan(0);
     expect(payload.summary.candidateAdBlocks).toBeGreaterThan(0);
     expect(payload.summary.removedBlocks.length).toBeGreaterThan(0);

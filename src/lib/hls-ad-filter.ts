@@ -1120,3 +1120,86 @@ export function filterAdsFromM3U8(content: string, baseUrl?: string): string {
 
   return fullyFilteredLines.join(newline);
 }
+
+export type AdStructureBlockSnap = {
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  source: 'discontinuity-block' | 'segment-run';
+};
+
+function isStructuralDiscontinuityBlock(block: PlaylistBlock): boolean {
+  // Only blocks bounded by EXT-X-DISCONTINUITY count as structure inserts.
+  // The leading content run (no separatorBefore) is never snapped — that is
+  // the zero-false-positive guard against marking ordinary content.
+  return (
+    Boolean(block.separatorBefore) &&
+    block.segmentCount > 0 &&
+    block.endTimeSeconds > block.startTimeSeconds &&
+    block.durationSeconds <= MAX_AUTO_FILTER_AD_DURATION_SECONDS &&
+    block.segmentCount <= MAX_AUTO_FILTER_AD_SEGMENTS
+  );
+}
+
+/**
+ * Map a user "mark / skip ad" click onto the enclosing discontinuity or
+ * short-segment-run structural block. Returns a content-aligned [start, end)
+ * window, or null when the click sits outside any such structure (weak signal).
+ */
+export function snapClickToAdStructureBlock(
+  content: string,
+  clickTimeSeconds: number,
+  baseUrl?: string
+): AdStructureBlockSnap | null {
+  if (
+    !content ||
+    !Number.isFinite(clickTimeSeconds) ||
+    clickTimeSeconds < 0
+  ) {
+    return null;
+  }
+
+  const lines = content.split(/\r?\n/);
+  const candidates: AdStructureBlockSnap[] = [];
+
+  getKnownSegmentRuleMatches(lines, baseUrl).forEach((match) => {
+    if (
+      match.endTimeSeconds > match.startTimeSeconds &&
+      clickTimeSeconds >= match.startTimeSeconds &&
+      clickTimeSeconds < match.endTimeSeconds
+    ) {
+      candidates.push({
+        startTimeSeconds: Number(match.startTimeSeconds.toFixed(3)),
+        endTimeSeconds: Number(match.endTimeSeconds.toFixed(3)),
+        source: 'segment-run',
+      });
+    }
+  });
+
+  splitIntoBlocks(lines, baseUrl).forEach((block) => {
+    if (
+      !isStructuralDiscontinuityBlock(block) ||
+      clickTimeSeconds < block.startTimeSeconds ||
+      clickTimeSeconds >= block.endTimeSeconds
+    ) {
+      return;
+    }
+
+    candidates.push({
+      startTimeSeconds: Number(block.startTimeSeconds.toFixed(3)),
+      endTimeSeconds: Number(block.endTimeSeconds.toFixed(3)),
+      source: 'discontinuity-block',
+    });
+  });
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  // Prefer the tightest enclosing range to avoid over-cutting when a segment
+  // run sits inside a larger discontinuity block.
+  return candidates.reduce((best, current) => {
+    const bestSpan = best.endTimeSeconds - best.startTimeSeconds;
+    const currentSpan = current.endTimeSeconds - current.startTimeSeconds;
+    return currentSpan < bestSpan ? current : best;
+  });
+}

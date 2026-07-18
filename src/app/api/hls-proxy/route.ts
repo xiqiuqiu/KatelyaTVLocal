@@ -232,6 +232,8 @@ export async function GET(request: Request) {
             observeOnly: true,
             removed: false,
             targetUrl,
+            // Client needs raw playlist to snap manual "mark ad" clicks (#37).
+            playlistContent,
             candidates: adAnalysis.candidates,
             summary: adAnalysis.summary,
             removedLineCount: adAnalysis.removedLineCount,

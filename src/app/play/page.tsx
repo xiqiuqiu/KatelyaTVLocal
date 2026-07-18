@@ -26,8 +26,13 @@ import {
   analyzeM3U8AdCandidates,
   formatM3U8AdFilterDebugMessage,
   observeM3U8AdSignals,
+  snapClickToAdStructureBlock,
 } from '@/lib/hls-ad-filter';
-import { getHlsAdSkipWindowKey, toHlsAdSkipWindows } from '@/lib/hls-ad-skip';
+import {
+  getHlsAdSkipWindowKey,
+  toHlsAdSkipWindows,
+  toUserMarkAdSkipWindow,
+} from '@/lib/hls-ad-skip';
 import type { HlsPlaybackPolicyResult } from '@/lib/hls-playback-policy';
 import {
   detectAppleNativeHlsEnvironment,
@@ -298,6 +303,8 @@ interface IosAdObservationResponse {
   removed?: boolean;
   targetUrl?: string;
   removedLineCount?: number;
+  /** Raw media playlist for session-local mark/snap (#37). */
+  playlistContent?: string;
   candidates?: Parameters<typeof toHlsAdSkipWindows>[0];
   summary?: {
     candidateAdBlocks?: number;
@@ -689,6 +696,11 @@ function PlayPageClient() {
   const adSkipUndoDismissTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+  // 最近一次媒体播放列表原文：手动标记广告时吸附到结构块边界（#37）
+  const latestMediaPlaylistRef = useRef<{
+    content: string;
+    url: string;
+  } | null>(null);
 
   const clearAdSkipUndoDismissTimer = () => {
     if (adSkipUndoDismissTimerRef.current) {
@@ -1070,6 +1082,53 @@ function PlayPageClient() {
       type: 'user.undoAdSkip',
       windowKey: adSkipUndoToast.windowKey,
       nowMs: Date.now(),
+    });
+  };
+
+  const handleMarkAdSkip = () => {
+    const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+    const playlist = latestMediaPlaylistRef.current;
+    const clickTimeSeconds = video?.currentTime ?? currentPlayTime;
+    if (!playlist?.content || !Number.isFinite(clickTimeSeconds)) {
+      artPlayerRef.current &&
+        (artPlayerRef.current.notice.show =
+          '暂无法标记：播放列表尚未就绪');
+      emitPlaybackDebugLog('adSkip.mark-miss', '手动标记广告缺少播放列表', {
+        clickTimeSeconds,
+        hasPlaylist: Boolean(playlist?.content),
+      });
+      return;
+    }
+
+    const snapped = snapClickToAdStructureBlock(
+      playlist.content,
+      clickTimeSeconds,
+      playlist.url
+    );
+    if (!snapped) {
+      artPlayerRef.current &&
+        (artPlayerRef.current.notice.show =
+          '当前位置不在可识别的广告结构块内');
+      emitPlaybackDebugLog(
+        'adSkip.mark-miss',
+        '手动标记广告未命中结构块（弱信号）',
+        {
+          clickTimeSeconds,
+          playlistUrl: playlist.url,
+        }
+      );
+      return;
+    }
+
+    const platform =
+      playbackPolicyRef.current?.runtime === 'native-hls'
+        ? 'apple-native'
+        : 'hlsjs';
+    dispatchPlaybackSessionEvent({
+      type: 'user.markAdSkip',
+      nowMs: Date.now(),
+      platform,
+      window: toUserMarkAdSkipWindow(snapped),
     });
   };
 
@@ -2726,6 +2785,15 @@ function PlayPageClient() {
           type: 'adSkipWindows.loaded',
           windows: skipWindows,
         });
+        if (
+          typeof payload.playlistContent === 'string' &&
+          payload.playlistContent.includes('#EXTINF')
+        ) {
+          latestMediaPlaylistRef.current = {
+            content: payload.playlistContent,
+            url: payload.targetUrl || directUrl,
+          };
+        }
         emitPlaybackDebugLog(
           'ios-ad-observe',
           'iOS 直连播放广告信号观测完成',
@@ -2741,6 +2809,7 @@ function PlayPageClient() {
             removedLineCount: payload.removedLineCount ?? 0,
             summary: payload.summary || null,
             retryAttempt,
+            hasPlaylistContent: Boolean(payload.playlistContent),
           },
           {
             playbackUrl: directUrl,
@@ -3655,6 +3724,12 @@ function PlayPageClient() {
                 const isHlsjsMediaPlaylist =
                   policy?.runtime === 'hlsjs' &&
                   originalContent.includes('#EXTINF');
+                if (isHlsjsMediaPlaylist && playlistUrl) {
+                  latestMediaPlaylistRef.current = {
+                    content: originalContent,
+                    url: playlistUrl,
+                  };
+                }
                 const analysis = isHlsjsMediaPlaylist
                   ? analyzeM3U8AdCandidates(originalContent, playlistUrl)
                   : null;
@@ -4026,6 +4101,8 @@ function PlayPageClient() {
         type: 'loading.start',
         stage: 'sourceChanging',
       });
+      // 旧源清单不能用于新源的结构块吸附
+      latestMediaPlaylistRef.current = null;
       sourceSwitchSavePendingRef.current = false;
       sourceSwitchAutoPlayPendingRef.current = false;
       sourceDurationBeforeSwitchRef.current =
@@ -5961,6 +6038,20 @@ function PlayPageClient() {
                   onSettingModeChange={setIsSkipSettingMode}
                   onNextEpisode={handleNextEpisode}
                 />
+              )}
+
+              {/* 手动标记 / 跳过广告（#37）：桌面与移动端均可点 */}
+              {!adSkipUndoToast && (
+                <div className='pointer-events-none absolute inset-x-0 bottom-14 z-40 flex justify-end px-3 md:bottom-16'>
+                  <button
+                    type='button'
+                    onClick={handleMarkAdSkip}
+                    className='pointer-events-auto rounded-full border border-white/25 bg-black/70 px-3 py-1.5 text-xs font-medium text-white shadow-ui-strong backdrop-blur transition hover:bg-black/85 md:px-4 md:py-2 md:text-sm'
+                    aria-label='标记并跳过当前广告'
+                  >
+                    标记广告并跳过
+                  </button>
+                </div>
               )}
 
               {/* 可撤销广告跳过：浮在进度条上方，不挡底部控件 */}

@@ -6,6 +6,22 @@ export interface HlsAdSkipWindow {
   ruleId?: string;
   confidence: M3U8AdCandidate['confidence'];
   action: M3U8AdCandidate['action'];
+  /** Session-local user mark (#37); persists across analyzer reloads in-session. */
+  origin?: 'analyzer' | 'user-mark';
+}
+
+export function toUserMarkAdSkipWindow(input: {
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+}): HlsAdSkipWindow {
+  return {
+    startTimeSeconds: input.startTimeSeconds,
+    endTimeSeconds: input.endTimeSeconds,
+    ruleId: 'user-mark',
+    confidence: 'high',
+    action: 'filter',
+    origin: 'user-mark',
+  };
 }
 
 export interface HlsAdSkipDecisionInput {
