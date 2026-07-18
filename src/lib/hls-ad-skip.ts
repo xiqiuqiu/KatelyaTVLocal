@@ -1,5 +1,64 @@
 import type { M3U8AdCandidate } from './hls-ad-filter';
 
+/** How forcefully an Ad Skip Window is applied (CONTEXT: Ad Window Trust Tier). */
+export type AdWindowTrustTier = 'observe' | 'recoverable' | 'silent';
+
+/** Repeated undos demote the window to observe (stop auto-skip for everyone). */
+export const AD_WINDOW_UNDO_DEMOTE_THRESHOLD = 2;
+/** Repeated confirms (un-undone skips) promote to silent (no toast). */
+export const AD_WINDOW_CONFIRM_SILENT_THRESHOLD = 3;
+
+/**
+ * Pure resolution of Ad Window Trust Tier from accumulated Ad Window
+ * Confirmation evidence. Analyzer confidence alone never authorizes silent.
+ */
+export function resolveAdWindowTrustTier(evidence: {
+  confirmCount?: number;
+  undoCount?: number;
+  /** Accumulated with confirms/undos; tier thresholds are count-driven. */
+  trustScore?: number;
+}): AdWindowTrustTier {
+  const confirmCount = evidence.confirmCount ?? 0;
+  const undoCount = evidence.undoCount ?? 0;
+
+  if (undoCount >= AD_WINDOW_UNDO_DEMOTE_THRESHOLD) {
+    return 'observe';
+  }
+
+  if (confirmCount >= AD_WINDOW_CONFIRM_SILENT_THRESHOLD) {
+    return 'silent';
+  }
+
+  return 'recoverable';
+}
+
+/**
+ * Prefer an explicit trustTier; otherwise resolve from confirmation counts
+ * (load path). Missing both → cold-start recoverable.
+ */
+export function getEffectiveAdWindowTrustTier(window: {
+  trustTier?: AdWindowTrustTier;
+  confirmCount?: number;
+  undoCount?: number;
+  trustScore?: number;
+}): AdWindowTrustTier {
+  if (window.trustTier) {
+    return window.trustTier;
+  }
+  if (
+    window.confirmCount != null ||
+    window.undoCount != null ||
+    window.trustScore != null
+  ) {
+    return resolveAdWindowTrustTier({
+      confirmCount: window.confirmCount,
+      undoCount: window.undoCount,
+      trustScore: window.trustScore,
+    });
+  }
+  return 'recoverable';
+}
+
 export interface HlsAdSkipWindow {
   startTimeSeconds: number;
   endTimeSeconds: number;
@@ -13,6 +72,11 @@ export interface HlsAdSkipWindow {
    * - persisted: loaded from shared Ad Skip Window store (#38)
    */
   origin?: 'analyzer' | 'user-mark' | 'persisted';
+  /** Resolved Ad Window Trust Tier; omit → treated as cold-start recoverable. */
+  trustTier?: AdWindowTrustTier;
+  confirmCount?: number;
+  undoCount?: number;
+  trustScore?: number;
 }
 
 export function toUserMarkAdSkipWindow(input: {
@@ -26,6 +90,11 @@ export function toUserMarkAdSkipWindow(input: {
     confidence: 'high',
     action: 'filter',
     origin: 'user-mark',
+    // Fresh mark enters recoverable — never silent from a single report.
+    trustTier: 'recoverable',
+    confirmCount: 1,
+    undoCount: 0,
+    trustScore: 1,
   };
 }
 
@@ -43,7 +112,12 @@ export interface HlsAdSkipDecision {
   shouldSkip: boolean;
   targetTimeSeconds: number | null;
   windowKey: string | null;
-  reason: 'ad-window' | 'no-window' | 'already-skipped' | 'manual-seek-grace';
+  reason:
+    | 'ad-window'
+    | 'no-window'
+    | 'already-skipped'
+    | 'manual-seek-grace'
+    | 'observe-tier';
   window?: HlsAdSkipWindow;
 }
 
@@ -66,6 +140,9 @@ export function toHlsAdSkipWindows(
       ruleId: candidate.ruleId,
       confidence: candidate.confidence,
       action: candidate.action,
+      // Cold-start seed: recoverable, never silent from analyzer confidence.
+      trustTier: 'recoverable' as const,
+      origin: 'analyzer' as const,
     }));
 }
 
@@ -119,6 +196,16 @@ export function getHlsAdSkipDecision({
       targetTimeSeconds: null,
       windowKey,
       reason: 'already-skipped',
+      window: matchedWindow,
+    };
+  }
+
+  if (getEffectiveAdWindowTrustTier(matchedWindow) === 'observe') {
+    return {
+      shouldSkip: false,
+      targetTimeSeconds: null,
+      windowKey,
+      reason: 'observe-tier',
       window: matchedWindow,
     };
   }

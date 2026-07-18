@@ -1,4 +1,8 @@
-import type { HlsAdSkipWindow } from '@/lib/hls-ad-skip';
+import {
+  getEffectiveAdWindowTrustTier,
+  resolveAdWindowTrustTier,
+  type HlsAdSkipWindow,
+} from '@/lib/hls-ad-skip';
 
 /** Persisted Ad Skip Window — shared within one deployment (ADR 0004). */
 export interface PersistedAdSkipWindow {
@@ -7,7 +11,7 @@ export interface PersistedAdSkipWindow {
   episodeIndex: number;
   startTimeSeconds: number;
   endTimeSeconds: number;
-  /** Placeholder for Ad Window Trust Tier (#5). */
+  /** Evidence score accumulated with confirm/undo (#39 Trust Tier). */
   trustScore: number;
   confirmCount: number;
   undoCount: number;
@@ -80,6 +84,14 @@ export function persistedToHlsAdSkipWindow(
     confidence: 'high',
     action: 'filter',
     origin: 'persisted',
+    confirmCount: window.confirmCount,
+    undoCount: window.undoCount,
+    trustScore: window.trustScore,
+    trustTier: resolveAdWindowTrustTier({
+      confirmCount: window.confirmCount,
+      undoCount: window.undoCount,
+      trustScore: window.trustScore,
+    }),
   };
 }
 
@@ -103,6 +115,8 @@ export function mergeAdSkipWindowsForLoad(input: {
     .map((window) => ({
       ...window,
       origin: window.origin ?? ('analyzer' as const),
+      // Cold-start seed: recoverable regardless of analyzer confidence.
+      trustTier: getEffectiveAdWindowTrustTier(window),
     }));
 
   return [...persistedMapped, ...analyzerUnique];
@@ -177,6 +191,7 @@ export function applyAdSkipWindowConfirmation(input: {
     windows[existingIndex] = {
       ...current,
       undoCount: current.undoCount + 1,
+      trustScore: Math.max(0, (current.trustScore || 1) - 1),
       updated_time: input.nowMs,
       origin: 'persisted',
     };
@@ -185,7 +200,7 @@ export function applyAdSkipWindowConfirmation(input: {
     windows[existingIndex] = {
       ...current,
       confirmCount: current.confirmCount + 1,
-      trustScore: current.trustScore || 1,
+      trustScore: (current.trustScore || 1) + 1,
       updated_time: input.nowMs,
       ruleId: input.window.ruleId ?? current.ruleId,
       origin: 'persisted',

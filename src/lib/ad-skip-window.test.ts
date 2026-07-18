@@ -1,4 +1,8 @@
 import type { HlsAdSkipWindow } from '@/lib/hls-ad-skip';
+import {
+  AD_WINDOW_CONFIRM_SILENT_THRESHOLD,
+  AD_WINDOW_UNDO_DEMOTE_THRESHOLD,
+} from '@/lib/hls-ad-skip';
 
 import {
   applyAdSkipWindowConfirmation,
@@ -61,6 +65,10 @@ describe('mergeAdSkipWindowsForLoad', () => {
         confidence: 'high',
         action: 'filter',
         origin: 'persisted',
+        confirmCount: 1,
+        undoCount: 0,
+        trustScore: 1,
+        trustTier: 'recoverable',
       },
       {
         startTimeSeconds: 100,
@@ -69,8 +77,45 @@ describe('mergeAdSkipWindowsForLoad', () => {
         confidence: 'high',
         action: 'filter',
         origin: 'analyzer',
+        trustTier: 'recoverable',
       },
     ]);
+  });
+
+  it('resolves observe / silent tiers from persisted confirmation counts on load', () => {
+    const demoted: PersistedAdSkipWindow[] = [
+      toPersistedAdSkipWindow({
+        source: 'ruyi',
+        id: '38961',
+        episodeIndex: 0,
+        startTimeSeconds: 10,
+        endTimeSeconds: 20,
+        confirmCount: 1,
+        undoCount: AD_WINDOW_UNDO_DEMOTE_THRESHOLD,
+        trustScore: 0,
+        updated_time: 1000,
+      }),
+    ];
+    const promoted: PersistedAdSkipWindow[] = [
+      toPersistedAdSkipWindow({
+        source: 'ruyi',
+        id: '38961',
+        episodeIndex: 0,
+        startTimeSeconds: 100,
+        endTimeSeconds: 110,
+        confirmCount: AD_WINDOW_CONFIRM_SILENT_THRESHOLD,
+        undoCount: 0,
+        trustScore: AD_WINDOW_CONFIRM_SILENT_THRESHOLD,
+        updated_time: 1000,
+      }),
+    ];
+
+    expect(mergeAdSkipWindowsForLoad({ persisted: demoted, analyzer: [] })[0].trustTier).toBe(
+      'observe'
+    );
+    expect(mergeAdSkipWindowsForLoad({ persisted: promoted, analyzer: [] })[0].trustTier).toBe(
+      'silent'
+    );
   });
 });
 
@@ -149,7 +194,7 @@ describe('applyAdSkipWindowConfirmation', () => {
 
     expect(next!.windows[0]).toMatchObject({
       confirmCount: 2,
-      trustScore: 1,
+      trustScore: 2,
       undoCount: 0,
       updated_time: 6000,
     });
@@ -195,6 +240,7 @@ describe('applyAdSkipWindowConfirmation', () => {
     expect(next!.windows[0]).toMatchObject({
       confirmCount: 1,
       undoCount: 1,
+      trustScore: 0,
       updated_time: 7000,
     });
   });

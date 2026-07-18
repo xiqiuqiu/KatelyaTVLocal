@@ -1,4 +1,8 @@
-import { getHlsAdSkipDecision, getHlsAdSkipWindowKey } from '@/lib/hls-ad-skip';
+import {
+  getEffectiveAdWindowTrustTier,
+  getHlsAdSkipDecision,
+  getHlsAdSkipWindowKey,
+} from '@/lib/hls-ad-skip';
 import {
   getAutoRecoveryResumePlan,
   shouldIgnoreSourceChangeTimeout,
@@ -742,14 +746,16 @@ export function reducePlaybackSession(
     }
 
     case 'adSkipWindows.loaded': {
-      const analyzerWindows = event.windows.map((window) => ({
-        ...window,
-        origin: window.origin ?? ('analyzer' as const),
-      }));
+      const loadedWindows = event.windows.map((window) => {
+        const origin = window.origin ?? ('analyzer' as const);
+        // Prefer explicit tier; else resolve from persisted confirmation counts.
+        const trustTier = getEffectiveAdWindowTrustTier(window);
+        return { ...window, origin, trustTier };
+      });
       // Timeline range identity — not ruleId — so persisted/user-mark
       // windows do not duplicate analyzer seeds for the same interval.
-      const analyzerRangeKeys = new Set(
-        analyzerWindows.map(
+      const loadedRangeKeys = new Set(
+        loadedWindows.map(
           (window) =>
             `${window.startTimeSeconds.toFixed(3)}-${window.endTimeSeconds.toFixed(3)}`
         )
@@ -757,11 +763,11 @@ export function reducePlaybackSession(
       const preservedSessionWindows = state.adSkipWindows.filter(
         (window) =>
           (window.origin === 'user-mark' || window.origin === 'persisted') &&
-          !analyzerRangeKeys.has(
+          !loadedRangeKeys.has(
             `${window.startTimeSeconds.toFixed(3)}-${window.endTimeSeconds.toFixed(3)}`
           )
       );
-      const mergedWindows = [...analyzerWindows, ...preservedSessionWindows];
+      const mergedWindows = [...loadedWindows, ...preservedSessionWindows];
 
       return {
         state: {
@@ -779,8 +785,18 @@ export function reducePlaybackSession(
             message: 'Ad skip windows loaded',
             details: {
               windowCount: mergedWindows.length,
-              analyzerWindowCount: analyzerWindows.length,
+              loadedWindowCount: loadedWindows.length,
               preservedSessionWindowCount: preservedSessionWindows.length,
+              observeCount: mergedWindows.filter(
+                (window) => getEffectiveAdWindowTrustTier(window) === 'observe'
+              ).length,
+              recoverableCount: mergedWindows.filter(
+                (window) =>
+                  getEffectiveAdWindowTrustTier(window) === 'recoverable'
+              ).length,
+              silentCount: mergedWindows.filter(
+                (window) => getEffectiveAdWindowTrustTier(window) === 'silent'
+              ).length,
             },
           },
         ],
@@ -1143,17 +1159,22 @@ export function reducePlaybackSession(
       }
 
       const restoreTimeSeconds = matchedWindow.startTimeSeconds;
+      const trustTier = getEffectiveAdWindowTrustTier(matchedWindow);
+      const isSilent = trustTier === 'silent';
 
       return {
         state: {
           ...state,
           lastAdSkipWindowKey: windowKey,
           adSkipInFlightWindowKey: windowKey,
-          recoverableAdSkip: {
-            windowKey,
-            restoreTimeSeconds,
-            skippedAtMs: event.nowMs,
-          },
+          // Silent: no toast for this skip; keep any other window's undo state.
+          recoverableAdSkip: isSilent
+            ? state.recoverableAdSkip
+            : {
+                windowKey,
+                restoreTimeSeconds,
+                skippedAtMs: event.nowMs,
+              },
         },
         effects: [
           {
@@ -1163,12 +1184,16 @@ export function reducePlaybackSession(
             reason: 'hls-ad-window',
             platform: event.platform || 'hlsjs',
           },
-          {
-            type: 'showAdSkipUndo',
-            windowKey,
-            restoreTimeSeconds,
-            dismissAfterMs: AD_SKIP_UNDO_DISMISS_MS,
-          },
+          ...(isSilent
+            ? []
+            : [
+                {
+                  type: 'showAdSkipUndo' as const,
+                  windowKey,
+                  restoreTimeSeconds,
+                  dismissAfterMs: AD_SKIP_UNDO_DISMISS_MS,
+                },
+              ]),
           {
             type: 'emitDebugEvent',
             eventType: 'adSkip.emitted',
@@ -1178,6 +1203,7 @@ export function reducePlaybackSession(
               targetTime: decision.targetTimeSeconds,
               restoreTimeSeconds,
               platform: event.platform || 'hlsjs',
+              trustTier,
             },
           },
         ],

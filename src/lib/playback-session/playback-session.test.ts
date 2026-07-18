@@ -873,6 +873,169 @@ describe('Playback Session Ad Skip Window effects', () => {
     });
   });
 
+  it('does not auto-skip observe-tier windows loaded from confirmation evidence', () => {
+    const loaded = reducePlaybackSession(createInitialPlaybackSessionState(), {
+      type: 'adSkipWindows.loaded',
+      windows: [
+        {
+          startTimeSeconds: 10,
+          endTimeSeconds: 20,
+          ruleId: 'rule-1',
+          confidence: 'high',
+          action: 'filter',
+          origin: 'persisted',
+          // Counts only — reducer must resolve observe on load.
+          confirmCount: 1,
+          undoCount: 2,
+          trustScore: 0,
+        },
+      ],
+    }).state;
+
+    expect(loaded.adSkipWindows[0].trustTier).toBe('observe');
+
+    const result = reducePlaybackSession(loaded, {
+      type: 'video.timeupdate',
+      nowMs: 10_000,
+      snapshot: { currentTime: 12 },
+    });
+
+    expect(result.effects).toEqual([]);
+    expect(result.state.recoverableAdSkip).toBeNull();
+  });
+
+  it('auto-skips silent-tier windows without an undo toast', () => {
+    const loaded = reducePlaybackSession(createInitialPlaybackSessionState(), {
+      type: 'adSkipWindows.loaded',
+      windows: [
+        {
+          startTimeSeconds: 10,
+          endTimeSeconds: 20,
+          ruleId: 'rule-1',
+          confidence: 'high',
+          action: 'filter',
+          origin: 'persisted',
+          // Counts only — reducer must resolve silent on load.
+          confirmCount: 3,
+          undoCount: 0,
+          trustScore: 3,
+        },
+      ],
+    }).state;
+
+    expect(loaded.adSkipWindows[0].trustTier).toBe('silent');
+
+    const result = reducePlaybackSession(loaded, {
+      type: 'video.timeupdate',
+      nowMs: 10_000,
+      platform: 'hlsjs',
+      snapshot: { currentTime: 12 },
+    });
+
+    expect(result.effects).toEqual([
+      {
+        type: 'skipAdWindow',
+        targetTime: 20.35,
+        windowKey: 'rule-1:10.000-20.000',
+        reason: 'hls-ad-window',
+        platform: 'hlsjs',
+      },
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'adSkip.emitted',
+        details: expect.objectContaining({
+          trustTier: 'silent',
+        }),
+      }),
+    ]);
+    expect(result.effects).not.toContainEqual(
+      expect.objectContaining({ type: 'showAdSkipUndo' })
+    );
+    expect(result.state.recoverableAdSkip).toBeNull();
+  });
+
+  it('does not clear an in-flight recoverable undo when a silent window skips', () => {
+    const loaded = reducePlaybackSession(createInitialPlaybackSessionState(), {
+      type: 'adSkipWindows.loaded',
+      windows: [
+        {
+          startTimeSeconds: 10,
+          endTimeSeconds: 20,
+          ruleId: 'recoverable-1',
+          confidence: 'high',
+          action: 'filter',
+          trustTier: 'recoverable',
+        },
+        {
+          startTimeSeconds: 30,
+          endTimeSeconds: 40,
+          ruleId: 'silent-1',
+          confidence: 'high',
+          action: 'filter',
+          trustTier: 'silent',
+        },
+      ],
+    }).state;
+
+    const afterRecoverable = reducePlaybackSession(loaded, {
+      type: 'video.timeupdate',
+      nowMs: 10_000,
+      snapshot: { currentTime: 12 },
+    }).state;
+
+    const afterSilent = reducePlaybackSession(afterRecoverable, {
+      type: 'video.timeupdate',
+      nowMs: 10_100,
+      snapshot: { currentTime: 32 },
+    });
+
+    expect(afterSilent.effects).toContainEqual(
+      expect.objectContaining({
+        type: 'skipAdWindow',
+        windowKey: 'silent-1:30.000-40.000',
+      })
+    );
+    expect(afterSilent.effects).not.toContainEqual(
+      expect.objectContaining({ type: 'showAdSkipUndo' })
+    );
+    expect(afterSilent.state.recoverableAdSkip).toEqual({
+      windowKey: 'recoverable-1:10.000-20.000',
+      restoreTimeSeconds: 10,
+      skippedAtMs: 10_000,
+    });
+  });
+
+  it('treats cold-start loaded windows as recoverable (toast + skip)', () => {
+    const loaded = reducePlaybackSession(createInitialPlaybackSessionState(), {
+      type: 'adSkipWindows.loaded',
+      windows: [
+        {
+          startTimeSeconds: 10,
+          endTimeSeconds: 20,
+          ruleId: 'cue-out',
+          confidence: 'high',
+          action: 'filter',
+          origin: 'analyzer',
+        },
+      ],
+    }).state;
+
+    expect(loaded.adSkipWindows[0].trustTier).toBe('recoverable');
+
+    const result = reducePlaybackSession(loaded, {
+      type: 'video.timeupdate',
+      nowMs: 10_000,
+      snapshot: { currentTime: 12 },
+    });
+
+    expect(result.effects).toContainEqual(
+      expect.objectContaining({ type: 'skipAdWindow' })
+    );
+    expect(result.effects).toContainEqual(
+      expect.objectContaining({ type: 'showAdSkipUndo' })
+    );
+  });
+
   it('does not repeat the same Ad Skip Window after a skip effect', () => {
     const loaded = loadAdWindows();
     const skipped = reducePlaybackSession(loaded, {
@@ -1380,8 +1543,11 @@ describe('Playback Session progress-save effects', () => {
       message: 'Ad skip windows loaded',
       details: {
         windowCount: 1,
-        analyzerWindowCount: 1,
+        loadedWindowCount: 1,
         preservedSessionWindowCount: 0,
+        observeCount: 0,
+        recoverableCount: 1,
+        silentCount: 0,
       },
     });
 
