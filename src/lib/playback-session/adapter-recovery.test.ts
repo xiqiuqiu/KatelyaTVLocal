@@ -44,6 +44,17 @@ describe('Playback Session recovery adapter mapping', () => {
         targetTime: 10,
         reason: 'test',
       },
+      {
+        type: 'showAdSkipUndo',
+        windowKey: 'rule-1:10.000-20.000',
+        restoreTimeSeconds: 10,
+        dismissAfterMs: 5000,
+      },
+      {
+        type: 'restoreAdSkipWindow',
+        targetTime: 10,
+        windowKey: 'rule-1:10.000-20.000',
+      },
     ];
 
     executePlaybackSessionEffects(effects, {
@@ -51,9 +62,18 @@ describe('Playback Session recovery adapter mapping', () => {
       onSameSourceRecover: (effect) => seen.push(effect.action),
       onApplyRecoveryResume: (effect) =>
         seen.push(`resume:${effect.resumeTime}`),
+      onShowAdSkipUndo: (effect) =>
+        seen.push(`undo-toast:${effect.windowKey}`),
+      onRestoreAdSkipWindow: (effect) =>
+        seen.push(`restore:${effect.targetTime}`),
     });
 
-    expect(seen).toEqual(['resume:42', 'nudge-playback']);
+    expect(seen).toEqual([
+      'resume:42',
+      'nudge-playback',
+      'undo-toast:rule-1:10.000-20.000',
+      'restore:10',
+    ]);
   });
 
   it('maps Native jitter routing from the paired recovery authority flag', () => {

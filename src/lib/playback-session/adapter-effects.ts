@@ -48,6 +48,12 @@ export interface PlaybackSessionEffectSink {
   onSkipAdWindow?: (
     effect: Extract<PlaybackSessionEffect, { type: 'skipAdWindow' }>
   ) => void;
+  onShowAdSkipUndo?: (
+    effect: Extract<PlaybackSessionEffect, { type: 'showAdSkipUndo' }>
+  ) => void;
+  onRestoreAdSkipWindow?: (
+    effect: Extract<PlaybackSessionEffect, { type: 'restoreAdSkipWindow' }>
+  ) => void;
   onCancelAdSkip?: (
     effect: Extract<PlaybackSessionEffect, { type: 'cancelAdSkip' }>
   ) => void;
@@ -74,6 +80,12 @@ export function executePlaybackSessionEffects(
         break;
       case 'skipAdWindow':
         sink.onSkipAdWindow?.(effect);
+        break;
+      case 'showAdSkipUndo':
+        sink.onShowAdSkipUndo?.(effect);
+        break;
+      case 'restoreAdSkipWindow':
+        sink.onRestoreAdSkipWindow?.(effect);
         break;
       case 'cancelAdSkip':
         sink.onCancelAdSkip?.(effect);

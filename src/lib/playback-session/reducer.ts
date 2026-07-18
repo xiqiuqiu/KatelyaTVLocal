@@ -37,6 +37,7 @@ const DEFAULT_MANUAL_SEEK_GRACE_MS = 4000;
 const DEFAULT_SEEK_SETTLED_SHORT_GUARD_MS = 4000;
 const DEFAULT_SEEK_SETTLED_LONG_GUARD_MS = 10_000;
 const DEFAULT_SOURCE_SWITCH_SETTLE_MS = 2000;
+const AD_SKIP_UNDO_DISMISS_MS = 5000;
 
 export function createInitialPlaybackSessionState(
   input: Partial<PlaybackSessionState> = {}
@@ -57,6 +58,8 @@ export function createInitialPlaybackSessionState(
     adSkipWindows: [],
     lastAdSkipWindowKey: null,
     adSkipInFlightWindowKey: null,
+    suppressedAdSkipWindowKeys: new Set(),
+    recoverableAdSkip: null,
     recoveryStage: 'idle',
     stallEpisodeActive: false,
     r0EnteredAtMs: null,
@@ -745,6 +748,8 @@ export function reducePlaybackSession(
           adSkipWindows: event.windows,
           lastAdSkipWindowKey: null,
           adSkipInFlightWindowKey: null,
+          suppressedAdSkipWindowKeys: new Set(),
+          recoverableAdSkip: null,
         },
         effects: [
           {
@@ -755,6 +760,63 @@ export function reducePlaybackSession(
           },
         ],
       };
+
+    case 'user.undoAdSkip': {
+      const pending = state.recoverableAdSkip;
+      if (!pending || pending.windowKey !== event.windowKey) {
+        return { state, effects: [] };
+      }
+
+      const suppressedAdSkipWindowKeys = new Set(
+        state.suppressedAdSkipWindowKeys
+      );
+      suppressedAdSkipWindowKeys.add(event.windowKey);
+
+      return {
+        state: {
+          ...state,
+          recoverableAdSkip: null,
+          adSkipInFlightWindowKey: null,
+          // Keep already-skipped distinct: clear so suppress owns re-entry.
+          lastAdSkipWindowKey:
+            state.lastAdSkipWindowKey === event.windowKey
+              ? null
+              : state.lastAdSkipWindowKey,
+          suppressedAdSkipWindowKeys,
+          lastUserSeekAtMs: event.nowMs,
+        },
+        effects: [
+          {
+            type: 'restoreAdSkipWindow',
+            targetTime: pending.restoreTimeSeconds,
+            windowKey: event.windowKey,
+          },
+          {
+            type: 'emitDebugEvent',
+            eventType: 'adSkip.undone',
+            message: 'Ad skip undone (wrong window)',
+            details: {
+              windowKey: event.windowKey,
+              restoreTimeSeconds: pending.restoreTimeSeconds,
+              confirmation: 'wrong',
+            },
+          },
+        ],
+      };
+    }
+
+    case 'adSkipUndo.dismissed': {
+      if (state.recoverableAdSkip?.windowKey !== event.windowKey) {
+        return { state, effects: [] };
+      }
+      return {
+        state: {
+          ...state,
+          recoverableAdSkip: null,
+        },
+        effects: [],
+      };
+    }
 
     case 'progressSave.requested':
       return {
@@ -972,18 +1034,28 @@ export function reducePlaybackSession(
         return { state, effects: [] };
       }
 
-      const windowKey = decision.window
-        ? getHlsAdSkipWindowKey(decision.window)
-        : decision.windowKey;
-      if (!windowKey) {
+      const matchedWindow = decision.window;
+      if (!matchedWindow) {
         return { state, effects: [] };
       }
+
+      const windowKey = getHlsAdSkipWindowKey(matchedWindow);
+      if (state.suppressedAdSkipWindowKeys.has(windowKey)) {
+        return { state, effects: [] };
+      }
+
+      const restoreTimeSeconds = matchedWindow.startTimeSeconds;
 
       return {
         state: {
           ...state,
           lastAdSkipWindowKey: windowKey,
           adSkipInFlightWindowKey: windowKey,
+          recoverableAdSkip: {
+            windowKey,
+            restoreTimeSeconds,
+            skippedAtMs: event.nowMs,
+          },
         },
         effects: [
           {
@@ -994,12 +1066,19 @@ export function reducePlaybackSession(
             platform: event.platform || 'hlsjs',
           },
           {
+            type: 'showAdSkipUndo',
+            windowKey,
+            restoreTimeSeconds,
+            dismissAfterMs: AD_SKIP_UNDO_DISMISS_MS,
+          },
+          {
             type: 'emitDebugEvent',
             eventType: 'adSkip.emitted',
             message: 'Ad skip window emitted',
             details: {
               windowKey,
               targetTime: decision.targetTimeSeconds,
+              restoreTimeSeconds,
               platform: event.platform || 'hlsjs',
             },
           },

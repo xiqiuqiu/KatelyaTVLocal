@@ -680,6 +680,28 @@ function PlayPageClient() {
   // 跳过设置状态
   const [isSkipSettingMode, setIsSkipSettingMode] = useState<boolean>(false);
   const [castStatus, setCastStatus] = useState<CastStatus>('idle');
+  // 可撤销自动跳过提示（#36）：短时展示，一键恢复到窗口起点
+  const [adSkipUndoToast, setAdSkipUndoToast] = useState<{
+    windowKey: string;
+    restoreTimeSeconds: number;
+    dismissAfterMs: number;
+  } | null>(null);
+  const adSkipUndoDismissTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+
+  const clearAdSkipUndoDismissTimer = () => {
+    if (adSkipUndoDismissTimerRef.current) {
+      clearTimeout(adSkipUndoDismissTimerRef.current);
+      adSkipUndoDismissTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      clearAdSkipUndoDismissTimer();
+    };
+  }, []);
 
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
@@ -998,9 +1020,57 @@ function PlayPageClient() {
           }
         );
       },
+      onShowAdSkipUndo: (effect) => {
+        clearAdSkipUndoDismissTimer();
+        setAdSkipUndoToast({
+          windowKey: effect.windowKey,
+          restoreTimeSeconds: effect.restoreTimeSeconds,
+          dismissAfterMs: effect.dismissAfterMs,
+        });
+        adSkipUndoDismissTimerRef.current = setTimeout(() => {
+          setAdSkipUndoToast((current) =>
+            current?.windowKey === effect.windowKey ? null : current
+          );
+          adSkipUndoDismissTimerRef.current = null;
+          // Keep Session recoverableAdSkip aligned with toast lifetime.
+          dispatchPlaybackSessionEvent({
+            type: 'adSkipUndo.dismissed',
+            windowKey: effect.windowKey,
+          });
+        }, effect.dismissAfterMs);
+      },
+      onRestoreAdSkipWindow: (effect) => {
+        const video = artPlayerRef.current?.video as
+          | HTMLVideoElement
+          | undefined;
+        if (!video) {
+          return;
+        }
+        systemSeekInFlightRef.current = true;
+        video.currentTime = effect.targetTime;
+        clearAdSkipUndoDismissTimer();
+        setAdSkipUndoToast(null);
+      },
     });
 
+    // Windows reload / undo / toast dismiss clear Session recoverable — drop UI.
+    if (!result.state.recoverableAdSkip) {
+      clearAdSkipUndoDismissTimer();
+      setAdSkipUndoToast((current) => (current ? null : current));
+    }
+
     return result;
+  };
+
+  const handleUndoAdSkip = () => {
+    if (!adSkipUndoToast) {
+      return;
+    }
+    dispatchPlaybackSessionEvent({
+      type: 'user.undoAdSkip',
+      windowKey: adSkipUndoToast.windowKey,
+      nowMs: Date.now(),
+    });
   };
 
   const syncPlaybackSessionSources = () => {
@@ -5891,6 +5961,20 @@ function PlayPageClient() {
                   onSettingModeChange={setIsSkipSettingMode}
                   onNextEpisode={handleNextEpisode}
                 />
+              )}
+
+              {/* 可撤销广告跳过：浮在进度条上方，不挡底部控件 */}
+              {adSkipUndoToast && (
+                <div className='pointer-events-none absolute inset-x-0 bottom-14 z-40 flex justify-center px-3 md:bottom-16'>
+                  <button
+                    type='button'
+                    onClick={handleUndoAdSkip}
+                    className='pointer-events-auto rounded-full border border-white/25 bg-black/80 px-4 py-2 text-sm font-medium text-white shadow-ui-strong backdrop-blur transition hover:bg-black/90'
+                    aria-label='撤销广告跳过并恢复播放位置'
+                  >
+                    已为你跳过广告 · 点此恢复
+                  </button>
+                </div>
               )}
 
               {/* 换源加载蒙层 */}

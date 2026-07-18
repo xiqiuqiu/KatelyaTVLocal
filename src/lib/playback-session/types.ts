@@ -97,6 +97,18 @@ export interface PlaybackSessionState {
   adSkipWindows: HlsAdSkipWindow[];
   lastAdSkipWindowKey: string | null;
   adSkipInFlightWindowKey: string | null;
+  /**
+   * Session-local suppress for windows the user undid (Ad Window Confirmation =
+   * "wrong"). Distinct from `lastAdSkipWindowKey` (already-skipped after a
+   * successful skip) so undo can land back inside the window without looping.
+   */
+  suppressedAdSkipWindowKeys: Set<string>;
+  /** Active recoverable auto-skip while the undo toast is visible (cleared on dismiss/undo). */
+  recoverableAdSkip: {
+    windowKey: string;
+    restoreTimeSeconds: number;
+    skippedAtMs: number;
+  } | null;
   /** Recovery Resume Time — sole Session authority for planned playhead. */
   recoveryResumeTime: number | null;
   /** @deprecated Alias of recoveryResumeTime during M3 migration. */
@@ -168,6 +180,12 @@ export type PlaybackSessionEvent =
       nowMs: number;
     }
   | { type: 'adSkipWindows.loaded'; windows: HlsAdSkipWindow[] }
+  | {
+      type: 'user.undoAdSkip';
+      windowKey: string;
+      nowMs: number;
+    }
+  | { type: 'adSkipUndo.dismissed'; windowKey: string }
   | { type: 'progressSave.requested'; reason: PlayRecordSaveReason }
   | { type: 'sourceChange.started'; attemptId: number; sourceKey: string }
   | { type: 'sourceChange.completed'; attemptId: number; sourceKey: string }
@@ -237,6 +255,17 @@ export type PlaybackSessionEffect =
       windowKey: string;
       reason: 'hls-ad-window';
       platform: 'apple-native' | 'hlsjs';
+    }
+  | {
+      type: 'showAdSkipUndo';
+      windowKey: string;
+      restoreTimeSeconds: number;
+      dismissAfterMs: number;
+    }
+  | {
+      type: 'restoreAdSkipWindow';
+      targetTime: number;
+      windowKey: string;
     }
   | {
       type: 'cancelAdSkip';

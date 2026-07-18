@@ -837,11 +837,40 @@ describe('Playback Session Ad Skip Window effects', () => {
         reason: 'hls-ad-window',
         platform: 'apple-native',
       },
+      {
+        type: 'showAdSkipUndo',
+        windowKey: 'rule-1:10.000-20.000',
+        restoreTimeSeconds: 10,
+        dismissAfterMs: 5000,
+      },
       expect.objectContaining({
         type: 'emitDebugEvent',
         eventType: 'adSkip.emitted',
       }),
     ]);
+  });
+
+  it('emits a recoverable undo toast effect with every automatic ad skip', () => {
+    const loaded = loadAdWindows();
+
+    const result = reducePlaybackSession(loaded, {
+      type: 'video.timeupdate',
+      nowMs: 10_000,
+      platform: 'hlsjs',
+      snapshot: { currentTime: 12 },
+    });
+
+    expect(result.effects).toContainEqual({
+      type: 'showAdSkipUndo',
+      windowKey: 'rule-1:10.000-20.000',
+      restoreTimeSeconds: 10,
+      dismissAfterMs: 5000,
+    });
+    expect(result.state.recoverableAdSkip).toEqual({
+      windowKey: 'rule-1:10.000-20.000',
+      restoreTimeSeconds: 10,
+      skippedAtMs: 10_000,
+    });
   });
 
   it('does not repeat the same Ad Skip Window after a skip effect', () => {
@@ -919,6 +948,12 @@ describe('Playback Session Ad Skip Window effects', () => {
         windowKey: 'rule-1:10.000-20.000',
         reason: 'hls-ad-window',
         platform: 'hlsjs',
+      },
+      {
+        type: 'showAdSkipUndo',
+        windowKey: 'rule-1:10.000-20.000',
+        restoreTimeSeconds: 10,
+        dismissAfterMs: 5000,
       },
       expect.objectContaining({
         type: 'emitDebugEvent',
@@ -1008,6 +1043,12 @@ describe('Playback Session Ad Skip Window effects', () => {
         reason: 'hls-ad-window',
         platform: 'hlsjs',
       },
+      {
+        type: 'showAdSkipUndo',
+        windowKey: 'rule-1:10.000-20.000',
+        restoreTimeSeconds: 10,
+        dismissAfterMs: 5000,
+      },
       expect.objectContaining({
         type: 'emitDebugEvent',
         eventType: 'adSkip.emitted',
@@ -1054,11 +1095,107 @@ describe('Playback Session Ad Skip Window effects', () => {
         reason: 'hls-ad-window',
         platform: 'hlsjs',
       },
+      {
+        type: 'showAdSkipUndo',
+        windowKey: 'rule-1:10.000-20.000',
+        restoreTimeSeconds: 10,
+        dismissAfterMs: 5000,
+      },
       expect.objectContaining({
         type: 'emitDebugEvent',
         eventType: 'adSkip.emitted',
       }),
     ]);
+  });
+
+  it('undo restores to window start, suppresses re-skip, and records confirmation', () => {
+    const skipped = reducePlaybackSession(loadAdWindows(), {
+      type: 'video.timeupdate',
+      nowMs: 10_000,
+      snapshot: { currentTime: 12 },
+    }).state;
+
+    const undone = reducePlaybackSession(skipped, {
+      type: 'user.undoAdSkip',
+      windowKey: 'rule-1:10.000-20.000',
+      nowMs: 10_500,
+    });
+
+    expect(undone.effects).toEqual([
+      {
+        type: 'restoreAdSkipWindow',
+        targetTime: 10,
+        windowKey: 'rule-1:10.000-20.000',
+      },
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'adSkip.undone',
+        details: expect.objectContaining({
+          windowKey: 'rule-1:10.000-20.000',
+          restoreTimeSeconds: 10,
+          confirmation: 'wrong',
+        }),
+      }),
+    ]);
+    expect(undone.state.recoverableAdSkip).toBeNull();
+    expect(undone.state.adSkipInFlightWindowKey).toBeNull();
+    expect(
+      undone.state.suppressedAdSkipWindowKeys.has('rule-1:10.000-20.000')
+    ).toBe(true);
+    expect(undone.state.lastUserSeekAtMs).toBe(10_500);
+
+    const insideAgain = reducePlaybackSession(undone.state, {
+      type: 'video.timeupdate',
+      nowMs: 15_000,
+      snapshot: { currentTime: 12 },
+    });
+    expect(insideAgain.effects).toEqual([]);
+  });
+
+  it('after undo, a manual seek forward is not immediately re-skipped', () => {
+    const skipped = reducePlaybackSession(loadAdWindows(), {
+      type: 'video.timeupdate',
+      nowMs: 10_000,
+      snapshot: { currentTime: 12 },
+    }).state;
+    const undone = reducePlaybackSession(skipped, {
+      type: 'user.undoAdSkip',
+      windowKey: 'rule-1:10.000-20.000',
+      nowMs: 10_500,
+    }).state;
+
+    // Explicit manual seek (not just timeupdate) stamps grace via undo's
+    // lastUserSeekAtMs; suppress also blocks after grace expires.
+    const seeking = reducePlaybackSession(undone, {
+      type: 'user.seekStarted',
+      nowMs: 10_600,
+    }).state;
+    const settled = reducePlaybackSession(seeking, {
+      type: 'user.seekSettled',
+      nowMs: 10_700,
+    }).state;
+    const duringGrace = reducePlaybackSession(settled, {
+      type: 'video.timeupdate',
+      nowMs: 11_000,
+      snapshot: { currentTime: 15 },
+    });
+    expect(duringGrace.effects).toEqual([]);
+  });
+
+  it('dismisses recoverable undo state when the toast expires', () => {
+    const skipped = reducePlaybackSession(loadAdWindows(), {
+      type: 'video.timeupdate',
+      nowMs: 10_000,
+      snapshot: { currentTime: 12 },
+    }).state;
+
+    const dismissed = reducePlaybackSession(skipped, {
+      type: 'adSkipUndo.dismissed',
+      windowKey: 'rule-1:10.000-20.000',
+    });
+
+    expect(dismissed.state.recoverableAdSkip).toBeNull();
+    expect(dismissed.effects).toEqual([]);
   });
 });
 
