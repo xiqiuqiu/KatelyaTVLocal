@@ -740,7 +740,13 @@ function PlayPageClient() {
     restoreTimeSeconds: number;
     dismissAfterMs: number;
   } | null>(null);
+  const [adSkipMarkFeedback, setAdSkipMarkFeedback] = useState<string | null>(
+    null
+  );
   const adSkipUndoDismissTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const adSkipMarkFeedbackTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
   const adSkipLoadGenerationRef = useRef(0);
@@ -751,7 +757,7 @@ function PlayPageClient() {
     url: string;
   } | null>(null);
   const adSkipUndoToastRef = useRef(adSkipUndoToast);
-  const adSkipControlsVisibleRef = useRef(true);
+  const adSkipMarkFeedbackRef = useRef(adSkipMarkFeedback);
   const handleMarkAdSkipRef = useRef<(() => void) | null>(null);
   const handleUndoAdSkipRef = useRef<(() => void) | null>(null);
 
@@ -762,19 +768,14 @@ function PlayPageClient() {
     }
   };
 
-  /** Sync mark control + undo layer inside ArtPlayer (fullscreen-safe). */
+  /** Sync mark control + undo/feedback layers inside ArtPlayer (fullscreen-safe). */
   const syncAdSkipPlayerChrome = () => {
     const art = artPlayerRef.current;
     if (!art) {
       return;
     }
-    const video = art.video as HTMLVideoElement | undefined;
     const undoToastVisible = Boolean(adSkipUndoToastRef.current);
-    const showMark = shouldShowMarkAdControl({
-      controlsVisible: adSkipControlsVisibleRef.current,
-      paused: Boolean(video?.paused),
-      undoToastVisible,
-    });
+    const showMark = shouldShowMarkAdControl({ undoToastVisible });
     const markEl = art.controls?.markAdSkip as HTMLElement | undefined;
     if (markEl) {
       markEl.style.display = showMark ? '' : 'none';
@@ -783,11 +784,42 @@ function PlayPageClient() {
     if (undoEl) {
       undoEl.style.display = undoToastVisible ? 'flex' : 'none';
     }
+    const feedbackEl = art.layers?.adSkipMarkFeedback as HTMLElement | undefined;
+    if (feedbackEl) {
+      const message = adSkipMarkFeedbackRef.current;
+      const label = feedbackEl.querySelector('[data-ad-skip-feedback]');
+      if (label) {
+        label.textContent = message || '';
+      }
+      feedbackEl.style.display = message ? 'flex' : 'none';
+    }
+  };
+
+  /** ArtPlayer notice is unreliable on iOS native HLS — keep a DOM fallback. */
+  const showAdSkipMarkFeedback = (message: string) => {
+    const art = artPlayerRef.current;
+    if (art?.notice) {
+      art.notice.show = message;
+    }
+    setAdSkipMarkFeedback(message);
+    if (adSkipMarkFeedbackTimerRef.current) {
+      clearTimeout(adSkipMarkFeedbackTimerRef.current);
+    }
+    adSkipMarkFeedbackTimerRef.current = setTimeout(() => {
+      setAdSkipMarkFeedback((current) =>
+        current === message ? null : current
+      );
+      adSkipMarkFeedbackTimerRef.current = null;
+    }, 2800);
   };
 
   useEffect(() => {
     return () => {
       clearAdSkipUndoDismissTimer();
+      if (adSkipMarkFeedbackTimerRef.current) {
+        clearTimeout(adSkipMarkFeedbackTimerRef.current);
+        adSkipMarkFeedbackTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -795,6 +827,11 @@ function PlayPageClient() {
     adSkipUndoToastRef.current = adSkipUndoToast;
     syncAdSkipPlayerChrome();
   }, [adSkipUndoToast]);
+
+  useEffect(() => {
+    adSkipMarkFeedbackRef.current = adSkipMarkFeedback;
+    syncAdSkipPlayerChrome();
+  }, [adSkipMarkFeedback]);
 
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
@@ -1245,9 +1282,7 @@ function PlayPageClient() {
     const playlist = latestMediaPlaylistRef.current;
     const clickTimeSeconds = video?.currentTime ?? currentPlayTimeRef.current;
     if (!playlist?.content || !Number.isFinite(clickTimeSeconds)) {
-      artPlayerRef.current &&
-        (artPlayerRef.current.notice.show =
-          '暂无法标记：播放列表尚未就绪');
+      showAdSkipMarkFeedback('暂无法标记：播放列表尚未就绪');
       emitPlaybackDebugLog('adSkip.mark-miss', '手动标记广告缺少播放列表', {
         clickTimeSeconds,
         hasPlaylist: Boolean(playlist?.content),
@@ -1261,9 +1296,7 @@ function PlayPageClient() {
       playlist.url
     );
     if (!snapped) {
-      artPlayerRef.current &&
-        (artPlayerRef.current.notice.show =
-          '当前位置不在可识别的广告结构块内');
+      showAdSkipMarkFeedback('当前位置不在可识别的广告结构块内');
       emitPlaybackDebugLog(
         'adSkip.mark-miss',
         '手动标记广告未命中结构块（弱信号）',
@@ -1287,6 +1320,7 @@ function PlayPageClient() {
       window: markedWindow,
     });
     persistAdSkipWindowConfirmation(markedWindow, 'confirm');
+    showAdSkipMarkFeedback('已标记并跳过广告');
   };
 
   useEffect(() => {
@@ -5444,7 +5478,7 @@ function PlayPageClient() {
               name: 'markAdSkip',
               position: 'right',
               index: 8,
-              html: '<span style="font-size:12px;line-height:1;white-space:nowrap;padding:0 2px">跳广告</span>',
+              html: '<span style="font-size:12px;line-height:1;white-space:nowrap;padding:6px 8px;display:inline-block;min-width:44px;text-align:center">跳广告</span>',
               tooltip: '标记广告并跳过',
               click: function () {
                 handleMarkAdSkipRef.current?.();
@@ -5512,7 +5546,7 @@ function PlayPageClient() {
               },
             },
           ],
-          // 可撤销广告跳过 toast：挂在 ArtPlayer 内部，全屏仍可见
+          // 可撤销广告跳过 / 标记反馈：挂在 ArtPlayer 内部，全屏仍可见
           layers: [
             {
               name: 'adSkipUndo',
@@ -5536,6 +5570,21 @@ function PlayPageClient() {
                 });
               },
             },
+            {
+              name: 'adSkipMarkFeedback',
+              html: '<div data-ad-skip-feedback role="status" style="border-radius:9999px;border:1px solid rgba(255,255,255,0.25);background:rgba(0,0,0,0.8);padding:8px 16px;font-size:14px;font-weight:500;color:#fff;backdrop-filter:blur(8px)"></div>',
+              style: {
+                display: 'none',
+                position: 'absolute',
+                left: '0',
+                right: '0',
+                bottom: '56px',
+                justifyContent: 'center',
+                alignItems: 'center',
+                pointerEvents: 'none',
+                zIndex: '50',
+              },
+            },
           ],
         });
 
@@ -5549,16 +5598,7 @@ function PlayPageClient() {
           syncAdSkipPlayerChrome();
         });
 
-        artPlayerRef.current.on('control', (state: boolean) => {
-          adSkipControlsVisibleRef.current = state;
-          syncAdSkipPlayerChrome();
-        });
-
-        artPlayerRef.current.on('video:pause', () => {
-          syncAdSkipPlayerChrome();
-        });
-
-        artPlayerRef.current.on('video:play', () => {
+        artPlayerRef.current.on('control', () => {
           syncAdSkipPlayerChrome();
         });
 
@@ -6194,6 +6234,17 @@ function PlayPageClient() {
                   onSettingModeChange={setIsSkipSettingMode}
                   onNextEpisode={handleNextEpisode}
                 />
+              )}
+
+              {adSkipMarkFeedback && (
+                <div className='pointer-events-none absolute inset-x-0 bottom-14 z-40 flex justify-center px-3 md:bottom-16'>
+                  <div
+                    className='rounded-full border border-white/25 bg-black/80 px-4 py-2 text-sm font-medium text-white shadow-ui-strong backdrop-blur'
+                    role='status'
+                  >
+                    {adSkipMarkFeedback}
+                  </div>
+                </div>
               )}
 
               {/* 换源加载蒙层 */}

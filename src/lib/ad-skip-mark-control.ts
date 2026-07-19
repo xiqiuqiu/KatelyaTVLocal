@@ -1,14 +1,13 @@
 /**
  * Visibility policy for the manual "mark ad and skip" control.
- * Keep the crowd-source entry discoverable without permanently covering video.
+ *
+ * The control lives inside ArtPlayer's control bar, which already hides with
+ * the bar. Do not gate on controlsVisible/paused — forcing display:none from
+ * a stale control event makes the button visible-but-dead (or missing) on iOS
+ * WebKit while neighboring ArtPlayer controls still work.
  */
 export function shouldShowMarkAdControl(input: {
-  controlsVisible: boolean;
-  paused: boolean;
   undoToastVisible: boolean;
 }): boolean {
-  if (input.undoToastVisible) {
-    return false;
-  }
-  return input.controlsVisible || input.paused;
+  return !input.undoToastVisible;
 }

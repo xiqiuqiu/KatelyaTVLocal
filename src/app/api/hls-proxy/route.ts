@@ -9,6 +9,10 @@ import {
   formatM3U8AdFilterDebugMessage,
   getM3U8AdFilterDebugInfo,
 } from '@/lib/hls-ad-filter';
+import {
+  isHlsMediaPlaylistContent,
+  selectPreferredHlsVariantUrl,
+} from '@/lib/hls-master-playlist';
 import type { HlsMediaSegmentMode } from '@/lib/hls-proxy-rewrite';
 import { rewritePlaylistContent } from '@/lib/hls-proxy-rewrite';
 import {
@@ -242,14 +246,52 @@ export async function GET(request: Request) {
       const playlistContent = await upstreamResponse.text();
 
       if (observeOnly) {
-        const adAnalysis = analyzeM3U8AdCandidates(playlistContent, targetUrl);
+        // iOS native HLS only observes via this path. Episode URLs are often
+        // masters; ad mark/skip need a media playlist timeline (#EXTINF).
+        let observationUrl = targetUrl;
+        let observationContent = playlistContent;
+        if (!isHlsMediaPlaylistContent(playlistContent)) {
+          const variantUrl = selectPreferredHlsVariantUrl(
+            playlistContent,
+            targetUrl
+          );
+          if (variantUrl) {
+            const variantValidation = validateProxyTargetUrl(variantUrl);
+            if (variantValidation.ok) {
+              const variantResponse = await fetchWithValidatedRedirects(
+                variantValidation.url.href,
+                {
+                  headers: buildUpstreamHeaders(
+                    request,
+                    variantValidation.url.href
+                  ),
+                }
+              );
+              if (
+                (variantResponse.ok || variantResponse.status === 206) &&
+                variantResponse.body
+              ) {
+                const variantContent = await variantResponse.text();
+                if (isHlsMediaPlaylistContent(variantContent)) {
+                  observationUrl = variantUrl;
+                  observationContent = variantContent;
+                }
+              }
+            }
+          }
+        }
+
+        const adAnalysis = analyzeM3U8AdCandidates(
+          observationContent,
+          observationUrl
+        );
         const response = NextResponse.json(
           {
             observeOnly: true,
             removed: false,
-            targetUrl,
+            targetUrl: observationUrl,
             // Client needs raw playlist to snap manual "mark ad" clicks (#37).
-            playlistContent,
+            playlistContent: observationContent,
             candidates: adAnalysis.candidates,
             summary: adAnalysis.summary,
             removedLineCount: adAnalysis.removedLineCount,

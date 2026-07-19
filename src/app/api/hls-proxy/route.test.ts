@@ -168,6 +168,69 @@ describe('hls proxy route', () => {
     expect(payload.summary.removedBlocks.length).toBeGreaterThan(0);
   });
 
+  /**
+   * iOS native HLS plays the episode URL directly and only learns ad windows
+   * via observeOnly. Episode URLs are often master playlists; analyzing the
+   * master alone yields no #EXTINF media timeline — so mark-ad + auto-skip
+   * both stay inert (Pad repro). observeOnly must resolve to a media playlist.
+   */
+  it('observeOnly resolves master playlists to media before ad analysis', async () => {
+    const masterPlaylist = [
+      '#EXTM3U',
+      '#EXT-X-STREAM-INF:BANDWIDTH=800000',
+      'low/index.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1600000',
+      'high/index.m3u8',
+    ].join('\n');
+
+    global.fetch = jest.fn().mockImplementation(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith('/show/index.m3u8')) {
+        return new MockResponse(masterPlaylist, {
+          status: 200,
+          headers: {
+            'content-type': 'application/vnd.apple.mpegurl',
+          },
+        }) as unknown as Response;
+      }
+      if (
+        url.endsWith('/show/high/index.m3u8') ||
+        url.endsWith('/show/low/index.m3u8')
+      ) {
+        return new MockResponse(playlistWithKnownAd, {
+          status: 200,
+          headers: {
+            'content-type': 'application/vnd.apple.mpegurl',
+          },
+        }) as unknown as Response;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const response = await GET(
+      new MockRequest(
+        'https://app.example.com/api/hls-proxy?observeOnly=1&url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8'
+      ) as unknown as Request
+    );
+
+    const payload = (await response.json()) as {
+      observeOnly: boolean;
+      targetUrl?: string;
+      playlistContent?: string;
+      candidates: unknown[];
+      summary: { candidateAdBlocks: number };
+    };
+
+    expect(payload.observeOnly).toBe(true);
+    expect(payload.targetUrl).toBe(
+      'https://media.example.com/show/high/index.m3u8'
+    );
+    expect(payload.playlistContent).toContain('#EXTINF');
+    expect(payload.playlistContent).toContain('ad-1.ts');
+    expect(payload.candidates.length).toBeGreaterThan(0);
+    expect(payload.summary.candidateAdBlocks).toBeGreaterThan(0);
+  });
+
   it('logs actual ad filtering results when high-confidence segments are removed', async () => {
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
 
