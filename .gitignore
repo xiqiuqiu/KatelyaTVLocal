@@ -4,6 +4,7 @@
 /node_modules
 /.pnp
 .pnp.js
+.pnpm-store/
 
 # testing
 /coverage
@@ -46,6 +47,11 @@ public/manifest.json
 
 # brainstorm / agent scratch
 .superpowers/
+.worktrees/
+
+# local tool caches / reports
+react-doctor-report.json
+.cache/
 
 # test artifacts
 .playwright-mcp/
