@@ -12,50 +12,106 @@ const item = (
 });
 
 describe('selectPlayRecommendations', () => {
-  it('prefers the matching Douban pool and excludes the current title', () => {
+  it('orders also-liked before genre fallback', () => {
     const result = selectPlayRecommendations({
-      excludeTitle: '当前播放',
-      preferCategory: 'tv',
-      movies: [item({ id: 'm1', title: '热门电影' })],
-      tvShows: [
-        item({ id: 't0', title: '当前播放' }),
-        item({ id: 't1', title: '热门剧集甲' }),
-        item({ id: 't2', title: '热门剧集乙' }),
+      alsoLiked: [item({ id: 'a1', title: '也喜欢甲' })],
+      genreFallback: [item({ id: 'g1', title: '同题材乙' })],
+    });
+
+    expect(result.map((entry) => entry.title)).toEqual(['也喜欢甲', '同题材乙']);
+  });
+
+  it('excludes the current title by normalized match', () => {
+    const result = selectPlayRecommendations({
+      alsoLiked: [
+        item({ id: 'a0', title: '庆余年' }),
+        item({ id: 'a1', title: '也喜欢甲' }),
       ],
-      varietyShows: [item({ id: 'v1', title: '热门综艺' })],
+      genreFallback: [item({ id: 'g1', title: '庆 余 年' })],
+      excludeTitle: '庆余年',
+    });
+
+    expect(result.map((entry) => entry.title)).toEqual(['也喜欢甲']);
+  });
+
+  it('excludes heavily-watched titles', () => {
+    const result = selectPlayRecommendations({
+      alsoLiked: [
+        item({ id: 'a1', title: '已看完的剧' }),
+        item({ id: 'a2', title: '新推荐' }),
+      ],
+      genreFallback: [],
+      watchedTitles: ['已看完的剧'],
+    });
+
+    expect(result.map((entry) => entry.title)).toEqual(['新推荐']);
+  });
+
+  it('does not exclude favorites (caller keeps them out of watchedTitles)', () => {
+    const result = selectPlayRecommendations({
+      alsoLiked: [item({ id: 'a1', title: '想重看的收藏' })],
+      genreFallback: [item({ id: 'g1', title: '同题材' })],
+      // Favorites must not be placed in watchedTitles by the caller.
+      watchedTitles: ['已看完的无关剧'],
+    });
+
+    expect(result.map((entry) => entry.title)).toEqual([
+      '想重看的收藏',
+      '同题材',
+    ]);
+  });
+
+  it('drops poster-less items', () => {
+    const result = selectPlayRecommendations({
+      alsoLiked: [
+        item({ id: 'a1', title: '无封面', poster: '  ' }),
+        item({ id: 'a2', title: '有封面' }),
+      ],
+      genreFallback: [],
+    });
+
+    expect(result.map((entry) => entry.title)).toEqual(['有封面']);
+  });
+
+  it('de-duplicates across tiers by Douban id and normalized title', () => {
+    const result = selectPlayRecommendations({
+      alsoLiked: [item({ id: 'same', title: '重复片' })],
+      genreFallback: [
+        item({ id: 'same', title: '重复片（别名）' }),
+        item({ id: 'g2', title: '重 复 片' }),
+        item({ id: 'g3', title: '另一部' }),
+      ],
+    });
+
+    expect(result.map((entry) => entry.title)).toEqual(['重复片', '另一部']);
+  });
+
+  it('respects limit while preserving relevance-first order', () => {
+    const result = selectPlayRecommendations({
+      alsoLiked: [
+        item({ id: 'a1', title: '也喜欢1' }),
+        item({ id: 'a2', title: '也喜欢2' }),
+      ],
+      genreFallback: [
+        item({ id: 'g1', title: '题材1' }),
+        item({ id: 'g2', title: '题材2' }),
+      ],
       limit: 3,
     });
 
-    expect(result.map((entry) => entry.item.title)).toEqual([
-      '热门剧集甲',
-      '热门剧集乙',
-      '热门电影',
+    expect(result.map((entry) => entry.title)).toEqual([
+      '也喜欢1',
+      '也喜欢2',
+      '题材1',
     ]);
-    expect(result.map((entry) => entry.type)).toEqual(['tv', 'tv', 'movie']);
   });
 
-  it('skips items without posters and does not reuse same-title sources as recommendations', () => {
-    const result = selectPlayRecommendations({
-      excludeTitle: '庆余年',
-      preferCategory: 'movie',
-      movies: [
-        item({
-          id: 'm0',
-          title: '庆余年',
-          poster: 'https://img.example/m0.jpg',
-        }),
-        item({ id: 'm1', title: '无封面', poster: '  ' }),
-        item({ id: 'm2', title: '有封面电影' }),
-      ],
-      tvShows: [],
-      varietyShows: [],
-    });
-
-    expect(result).toEqual([
-      {
-        item: expect.objectContaining({ id: 'm2', title: '有封面电影' }),
-        type: 'movie',
-      },
-    ]);
+  it('returns empty output for empty input', () => {
+    expect(
+      selectPlayRecommendations({
+        alsoLiked: [],
+        genreFallback: [],
+      })
+    ).toEqual([]);
   });
 });

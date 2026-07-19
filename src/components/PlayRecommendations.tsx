@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 
 import { getDoubanCategories } from '@/lib/douban.client';
-import type { PlayRecommendationCategory } from '@/lib/play-recommendations';
 import {
+  CATEGORY_TO_TYPE,
   type PlayRecommendation,
+  type PlayRecommendationCategory,
   selectPlayRecommendations,
 } from '@/lib/play-recommendations';
 import type { DoubanItem } from '@/lib/types';
@@ -22,8 +23,7 @@ interface PlayRecommendationsProps {
 }
 
 /**
- * “猜你喜欢” — Douban hot/category lists already used on home.
- * Not a personalized recommendation API; not the same-title source list.
+ * Play-page recommendation row (hot-list bridge until Related Recommendation wiring).
  */
 export default function PlayRecommendations({
   excludeTitle,
@@ -34,6 +34,7 @@ export default function PlayRecommendations({
   const [loading, setLoading] = useState(true);
   const cardWidthClass =
     'w-24 min-w-[96px] min-[440px]:w-36 min-[440px]:min-w-[140px] sm:w-44 sm:min-w-[180px]';
+  const cardType = CATEGORY_TO_TYPE[preferCategory];
 
   useEffect(() => {
     let cancelled = false;
@@ -60,14 +61,39 @@ export default function PlayRecommendations({
         const varietyShows: DoubanItem[] =
           varietyShowsData.code === 200 ? varietyShowsData.list : [];
 
+        // Temporary bridge: prefer the matching category pool, then fill.
+        // Preserve each item's pool type for VideoCard until T1b wires the endpoint.
+        const pools: Array<{
+          items: DoubanItem[];
+          type: PlayRecommendation['type'];
+        }> = [
+          { items: movies, type: 'movie' },
+          { items: tvShows, type: 'tv' },
+          { items: varietyShows, type: 'show' },
+        ];
+        const preferredType = cardType;
+        const ordered = [
+          ...pools.filter((pool) => pool.type === preferredType),
+          ...pools.filter((pool) => pool.type !== preferredType),
+        ];
+        const typeByKey = new Map<string, PlayRecommendation['type']>();
+        for (const pool of ordered) {
+          for (const entry of pool.items) {
+            const key = entry.id || entry.title;
+            if (!typeByKey.has(key)) typeByKey.set(key, pool.type);
+          }
+        }
+        const selected = selectPlayRecommendations({
+          alsoLiked: [],
+          genreFallback: ordered.flatMap((pool) => pool.items),
+          excludeTitle,
+        });
+
         setItems(
-          selectPlayRecommendations({
-            excludeTitle,
-            preferCategory,
-            movies,
-            tvShows,
-            varietyShows,
-          })
+          selected.map((item) => ({
+            item,
+            type: typeByKey.get(item.id || item.title) || cardType,
+          }))
         );
       } catch {
         if (!cancelled) {
@@ -85,7 +111,7 @@ export default function PlayRecommendations({
     return () => {
       cancelled = true;
     };
-  }, [excludeTitle, preferCategory]);
+  }, [cardType, excludeTitle, preferCategory]);
 
   if (!loading && items.length === 0) {
     return null;

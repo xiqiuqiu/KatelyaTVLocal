@@ -10,7 +10,7 @@ export type PlayRecommendation = {
 
 export type PlayRecommendationCategory = Exclude<SearchCategory, 'all'>;
 
-const CATEGORY_TO_TYPE: Record<
+export const CATEGORY_TO_TYPE: Record<
   PlayRecommendationCategory,
   Exclude<HomeHeroMediaType, ''>
 > = {
@@ -30,59 +30,52 @@ function hasPoster(item: DoubanItem): boolean {
   return Boolean(item.poster?.trim());
 }
 
-function isExcludedTitle(item: DoubanItem, excludeTitle?: string): boolean {
-  if (!excludeTitle?.trim()) return false;
-  return normalizeTitle(item.title) === normalizeTitle(excludeTitle);
-}
-
 /**
- * Builds a “猜你喜欢” row from already-fetched Douban hot lists.
- * Prefers the current title’s category pool, then fills from the others.
- * Excludes the playing title and poster-less items — never the same-title source list.
+ * Ranks Related Recommendation candidates for the play page.
+ * Also-liked first, then genre fallback; drops poster-less items; excludes the
+ * current title and heavily-watched titles; de-duplicates by Douban id /
+ * normalized title; caps at limit. Favorites are never excluded here — the
+ * caller must keep them out of `watchedTitles`.
  */
 export function selectPlayRecommendations({
+  alsoLiked,
+  genreFallback,
   excludeTitle,
-  preferCategory = 'movie',
-  movies,
-  tvShows,
-  varietyShows,
+  watchedTitles = [],
   limit = 12,
 }: {
+  alsoLiked: DoubanItem[];
+  genreFallback: DoubanItem[];
   excludeTitle?: string;
-  preferCategory?: PlayRecommendationCategory;
-  movies: DoubanItem[];
-  tvShows: DoubanItem[];
-  varietyShows: DoubanItem[];
+  watchedTitles?: string[];
   limit?: number;
-}): PlayRecommendation[] {
-  const pools: Array<{
-    items: DoubanItem[];
-    type: Exclude<HomeHeroMediaType, ''>;
-    category: PlayRecommendationCategory;
-  }> = [
-    { items: movies, type: 'movie', category: 'movie' },
-    { items: tvShows, type: 'tv', category: 'tv' },
-    { items: varietyShows, type: 'show', category: 'variety' },
-  ];
-
-  const preferredType = CATEGORY_TO_TYPE[preferCategory];
-  const ordered = [
-    ...pools.filter((pool) => pool.type === preferredType),
-    ...pools.filter((pool) => pool.type !== preferredType),
-  ];
-
-  const selected: PlayRecommendation[] = [];
-  const seen = new Set<string>();
-
-  for (const pool of ordered) {
-    for (const entry of pool.items) {
-      if (selected.length >= limit) return selected;
-      if (!hasPoster(entry) || isExcludedTitle(entry, excludeTitle)) continue;
-      const key = entry.id || normalizeTitle(entry.title);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      selected.push({ item: entry, type: pool.type });
+}): DoubanItem[] {
+  const excludedNormalized = new Set<string>();
+  if (excludeTitle?.trim()) {
+    excludedNormalized.add(normalizeTitle(excludeTitle));
+  }
+  for (const watched of watchedTitles) {
+    if (watched?.trim()) {
+      excludedNormalized.add(normalizeTitle(watched));
     }
+  }
+
+  const selected: DoubanItem[] = [];
+  const seenIds = new Set<string>();
+  const seenTitles = new Set<string>();
+
+  for (const entry of [...alsoLiked, ...genreFallback]) {
+    if (selected.length >= limit) break;
+    if (!hasPoster(entry)) continue;
+
+    const normalized = normalizeTitle(entry.title);
+    if (excludedNormalized.has(normalized)) continue;
+    if (entry.id && seenIds.has(entry.id)) continue;
+    if (seenTitles.has(normalized)) continue;
+
+    if (entry.id) seenIds.add(entry.id);
+    seenTitles.add(normalized);
+    selected.push(entry);
   }
 
   return selected;
