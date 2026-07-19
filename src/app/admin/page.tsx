@@ -50,7 +50,7 @@ import PageLayout from '@/components/PageLayout';
 
 function useRuntimeStorageType(): string | null {
   return useSyncExternalStore(
-    () => () => {},
+    () => () => undefined,
     () => window.RUNTIME_CONFIG?.STORAGE_TYPE ?? null,
     () => null
   );
@@ -58,7 +58,7 @@ function useRuntimeStorageType(): string | null {
 
 function useStableNow(): number {
   return useSyncExternalStore(
-    () => () => {},
+    () => () => undefined,
     () => Date.now(),
     () => 0
   );

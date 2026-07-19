@@ -112,36 +112,35 @@ export async function fetchWithValidatedRedirects(
 ): Promise<Response> {
   const maxRedirects = options?.maxRedirects ?? 2;
   let currentUrl = input;
-  let redirectCount = 0;
 
-  while (true) {
+  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
     const response = await fetch(currentUrl, {
       ...init,
       redirect: 'manual',
     });
 
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location');
-      if (!location) {
-        throw new ProxyRedirectError('Redirect response missing Location header');
-      }
-
-      redirectCount += 1;
-      if (redirectCount > maxRedirects) {
-        throw new ProxyRedirectError('Too many redirects');
-      }
-
-      const validation = validateProxyTargetUrl(location, currentUrl);
-      if (!validation.ok) {
-        throw new ProxyRedirectError(
-          `Blocked redirect target: ${validation.reason}`
-        );
-      }
-
-      currentUrl = validation.url.href;
-      continue;
+    if (response.status < 300 || response.status >= 400) {
+      return response;
     }
 
-    return response;
+    if (redirectCount === maxRedirects) {
+      throw new ProxyRedirectError('Too many redirects');
+    }
+
+    const location = response.headers.get('location');
+    if (!location) {
+      throw new ProxyRedirectError('Redirect response missing Location header');
+    }
+
+    const validation = validateProxyTargetUrl(location, currentUrl);
+    if (!validation.ok) {
+      throw new ProxyRedirectError(
+        `Blocked redirect target: ${validation.reason}`
+      );
+    }
+
+    currentUrl = validation.url.href;
   }
+
+  throw new ProxyRedirectError('Too many redirects');
 }

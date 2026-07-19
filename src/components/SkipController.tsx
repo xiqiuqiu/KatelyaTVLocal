@@ -644,8 +644,7 @@ export default function SkipController({
 
   // 订阅播放器 timeupdate：跳过检测走 ref，避免父组件每 tick setState
   // ArtPlayer 实例可能晚于 mount 就绪，需轮询后再 addEventListener；
-  // cleanup 中已配对 removeEventListener + clearInterval（scanner 无法跨嵌套识别）。
-  // eslint-disable-next-line react-doctor/effect-needs-cleanup -- paired removeEventListener in return
+  // cleanup 中已配对 removeEventListener + clearInterval。
   useEffect(() => {
     let video: HTMLVideoElement | null = null;
     let retryTimer: ReturnType<typeof setInterval> | undefined;
