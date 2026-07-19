@@ -133,7 +133,8 @@ function createSource(overrides: Partial<SearchResult> = {}): SearchResult {
 async function settlePlayPage() {
   await waitFor(() => {
     expect(global.fetch).toHaveBeenCalledWith(
-      '/api/detail?source=detail-source&id=detail-id'
+      '/api/detail?source=detail-source&id=detail-id',
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
   });
 

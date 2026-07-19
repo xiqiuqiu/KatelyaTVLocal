@@ -176,34 +176,43 @@ function SearchPageClient() {
   }, [searchModeParam]);
 
   useEffect(() => {
-    // 当搜索参数变化时更新搜索状态
     const query = searchParams.get('q');
-    if (query) {
-      fetchSearchResults(query);
-
-      // 保存到搜索历史 (事件监听会自动更新界面)
-      addSearchHistory(query);
-    } else {
+    if (!query) {
       setShowResults(false);
+      return;
     }
-  }, [searchParams]);
 
-  const fetchSearchResults = async (query: string) => {
-    try {
-      setIsLoading(true);
-      setResultCategory('all');
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query.trim())}`
-      );
-      const data = await response.json();
-      setSearchResults(sortSearchResultsByRanking(query, data.results));
-      setShowResults(true);
-    } catch (error) {
-      setSearchResults([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    const controller = new AbortController();
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setIsLoading(true);
+        setResultCategory('all');
+        const response = await fetch(
+          `/api/search?q=${encodeURIComponent(query.trim())}`,
+          { signal: controller.signal }
+        );
+        const data = await response.json();
+        if (cancelled) return;
+        setSearchResults(sortSearchResultsByRanking(query, data.results));
+        setShowResults(true);
+      } catch (error) {
+        if ((error as Error).name === 'AbortError') return;
+        if (!cancelled) setSearchResults([]);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+
+    // 保存到搜索历史 (事件监听会自动更新界面)
+    addSearchHistory(query);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [searchParams]);
 
   // 返回顶部功能
   const scrollToTop = () => {

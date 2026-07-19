@@ -191,4 +191,40 @@ describe('hls proxy route', () => {
 
     consoleSpy.mockRestore();
   });
+
+  it('returns 400 for blocked private target URLs', async () => {
+    const response = await GET(
+      new MockRequest(
+        'https://app.example.com/api/hls-proxy?url=http%3A%2F%2F127.0.0.1%2Findex.m3u8'
+      ) as unknown as Request
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Blocked host',
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects redirects to private hosts', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      new MockResponse(null, {
+        status: 302,
+        headers: {
+          Location: 'http://169.254.169.254/latest/meta-data/',
+        },
+      }) as unknown as Response
+    );
+
+    const response = await GET(
+      new MockRequest(
+        'https://app.example.com/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8'
+      ) as unknown as Request
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Blocked redirect target: Blocked host',
+    });
+  });
 });

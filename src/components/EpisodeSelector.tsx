@@ -24,13 +24,14 @@ import {
   createSourceStatus,
   getRememberedSourceStatusForSource,
   getSourceIdentityKey,
-  getSourceStatusDescription,
-  getSourceStatusLabel,
   getVideoResolutionFromM3u8,
   probeSourcePlayback,
   rememberSourceDomainPreference,
   rememberSourcePlaybackQuality,
 } from '@/lib/utils';
+
+import EpisodeSelectorEpisodes from '@/components/player/EpisodeSelectorEpisodes';
+import EpisodeSelectorSources from '@/components/player/EpisodeSelectorSources';
 
 interface EpisodeSelectorProps {
   /** 总集数 */
@@ -1041,58 +1042,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     }
   }, [activeTab, getAutoProbeCandidates, probeSourceDirectPlayback]);
 
-  // 分类标签容器和按钮的引用
-  const categoryContainerRef = useRef<HTMLDivElement>(null);
-  const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
-
-  // 自动滚动到当前分页标签
-  useEffect(() => {
-    if (categoryContainerRef.current && buttonRefs.current[currentPage]) {
-      const container = categoryContainerRef.current;
-      const button = buttonRefs.current[currentPage];
-
-      if (button) {
-        const containerRect = container.getBoundingClientRect();
-        const buttonRect = button.getBoundingClientRect();
-        const scrollLeft = container.scrollLeft;
-
-        if (buttonRect.left < containerRect.left) {
-          container.scrollTo({
-            left: scrollLeft - (containerRect.left - buttonRect.left) - 20,
-            behavior: 'smooth',
-          });
-        } else if (buttonRect.right > containerRect.right) {
-          container.scrollTo({
-            left: scrollLeft + (buttonRect.right - containerRect.right) + 20,
-            behavior: 'smooth',
-          });
-        }
-      }
-    }
-  }, [currentPage]);
-
-  // 生成分页标签 - 优化显示逻辑
-  const categories = Array.from({ length: pageCount }, (_, i) => {
-    const start = i * episodesPerPage + 1;
-    const end = Math.min(start + episodesPerPage - 1, totalEpisodes);
-
-    // 对于很大的数字，使用更紧凑的显示方式
-    if (start === end) {
-      return `${start}`;
-    } else if (start >= 1000 || end >= 1000) {
-      // 对于千位数以上，使用缩写形式
-      const formatNumber = (num: number) => {
-        if (num >= 1000) {
-          return `${Math.floor(num / 100) / 10}k`;
-        }
-        return num.toString();
-      };
-      return `${formatNumber(start)}-${formatNumber(end)}`;
-    } else {
-      return `${start}-${end}`;
-    }
-  });
-
   // 处理换源tab点击，只在点击时才搜索
   const handleSourceTabClick = () => {
     setActiveTab('sources');
@@ -1116,21 +1065,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     [handleSourceCardClick]
   );
 
-  const currentStart = currentPage * episodesPerPage + 1;
-  const currentEnd = Math.min(
-    currentStart + episodesPerPage - 1,
-    totalEpisodes
-  );
-  const stateActiveClass =
-    'border-[rgb(var(--ui-accent))] bg-[rgba(var(--ui-accent),0.1)] text-[rgb(var(--ui-text))] shadow-[inset_0_1px_0_rgba(var(--ui-text),0.08),0_8px_20px_rgba(0,0,0,0.18)]';
-  const stateIdleClass =
-    'border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] hover:border-[rgba(var(--ui-accent),0.45)] hover:bg-[rgba(var(--ui-surface-strong),0.82)] hover:text-[rgb(var(--ui-text))]';
-  const stateMutedClass =
-    'border-[rgb(var(--ui-border))] bg-[rgba(var(--ui-surface),0.7)] text-[rgb(var(--ui-text-muted))] opacity-60';
-  const currentChipClass =
-    'rounded-full bg-[rgb(var(--ui-border))] px-1.5 py-0.5 text-[9px] font-bold leading-none text-[rgb(var(--ui-text))] ring-1 ring-[rgba(var(--ui-text),0.1)]';
-  const metaChipClass =
-    'rounded-full bg-[rgb(var(--ui-border))] px-2 py-0.5 text-[11px] font-medium text-[rgb(var(--ui-text-muted))]';
   const currentEpisodeIndex = Math.max(0, value - 1);
   const sourceAvailabilityList = buildSourceAvailabilityList({
     sources: availableSources,
@@ -1185,302 +1119,34 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         </button>
       </div>
 
-      {/* 选集 Tab 内容 */}
       {activeTab === 'episodes' && (
-        <div className='flex min-h-0 flex-1 flex-col'>
-          {/* 分类标签 */}
-          <div className='mb-3 flex flex-shrink-0 items-center gap-2'>
-            <div className='relative min-w-0 flex-1 overflow-hidden rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-bg-elevated))]'>
-              {/* 滾動容器 */}
-              <div
-                className='snap-x snap-mandatory overflow-x-auto overflow-y-hidden scroll-smooth scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 hover:scrollbar-thumb-white/35 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 hover:[&::-webkit-scrollbar-thumb]:bg-white/35 [&::-webkit-scrollbar-track]:bg-transparent'
-                ref={categoryContainerRef}
-                style={{
-                  scrollbarWidth: 'thin',
-                  scrollbarColor: 'rgba(255,255,255,0.24) transparent',
-                  msOverflowStyle: 'none',
-                  WebkitOverflowScrolling: 'touch',
-                }}
-              >
-                <div className='flex min-w-max gap-1.5 px-1.5 py-1.5'>
-                  {categories.map((label, idx) => {
-                    const isActive = idx === currentPage;
-                    // 动态计算按钮宽度，根据标签长度和内容调整
-                    const getButtonWidth = (text: string) => {
-                      if (text.length <= 2) return 'w-12'; // 单个数字
-                      if (text.length <= 5) return 'w-16'; // 如 "1-10"
-                      if (text.length <= 8) return 'w-20'; // 如 "101-110"
-                      if (text.length <= 11) return 'w-24'; // 如 "1001-1010"
-                      return 'w-28'; // 更长的标签
-                    };
-
-                    const buttonWidth = isActive
-                      ? 'min-w-[78px]'
-                      : getButtonWidth(label);
-
-                    return (
-                      <button
-                        key={label}
-                        ref={(el) => {
-                          buttonRefs.current[idx] = el;
-                        }}
-                        onClick={() => handleCategoryClick(idx)}
-                        aria-current={isActive ? 'true' : undefined}
-                        className={`${buttonWidth} relative flex-shrink-0 whitespace-nowrap rounded-ui-sm border px-2.5 py-2 text-center text-xs font-semibold transition-all duration-200
-                          ${isActive ? stateActiveClass : stateIdleClass}
-                        `.trim()}
-                        title={`第 ${idx * episodesPerPage + 1}-${Math.min(
-                          (idx + 1) * episodesPerPage,
-                          totalEpisodes
-                        )} 集`}
-                      >
-                        <span className='relative z-10 flex items-center justify-center gap-1.5 truncate'>
-                          {isActive && (
-                            <span
-                              className={`flex-shrink-0 ${currentChipClass}`}
-                            >
-                              当前
-                            </span>
-                          )}
-                          <span className='truncate'>{label}</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-            {/* 向上/向下按钮 */}
-            <button
-              className='flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] transition-all duration-200 hover:border-[rgba(var(--ui-accent),0.45)] hover:bg-[rgba(var(--ui-surface-strong),0.82)] hover:text-[rgb(var(--ui-text))]'
-              aria-label='切换集数排序'
-              title={descending ? '切换为正序' : '切换为倒序'}
-              onClick={() => {
-                // 切换集数排序（正序/倒序）
-                setDescending((prev) => !prev);
-              }}
-            >
-              <svg
-                className='w-4 h-4'
-                fill='none'
-                stroke='currentColor'
-                viewBox='0 0 24 24'
-              >
-                <path
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                  strokeWidth='2'
-                  d='M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4'
-                />
-              </svg>
-            </button>
-          </div>
-
-          {/* 集数网格 */}
-          <div className='grid flex-1 grid-cols-[repeat(auto-fill,minmax(44px,1fr))] justify-center gap-2 overflow-y-auto pb-1 pr-0.5 sm:grid-cols-[repeat(auto-fill,minmax(48px,1fr))]'>
-            {(() => {
-              const len = currentEnd - currentStart + 1;
-              const episodes = Array.from({ length: len }, (_, i) =>
-                descending ? currentEnd - i : currentStart + i
-              );
-              return episodes;
-            })().map((episodeNumber) => {
-              const isActive = episodeNumber === value;
-              return (
-                <button
-                  key={episodeNumber}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleEpisodeClick(episodeNumber);
-                  }}
-                  className={`flex h-10 w-full cursor-pointer items-center justify-center rounded-ui-sm border text-sm font-medium transition-all duration-200
-                    ${
-                      isActive
-                        ? 'border border-[rgb(var(--ui-accent))] bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
-                        : stateIdleClass
-                    }`.trim()}
-                  type='button'
-                  aria-label={`第${episodeNumber}集`}
-                >
-                  {episodeNumber}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <EpisodeSelectorEpisodes
+          totalEpisodes={totalEpisodes}
+          episodesPerPage={episodesPerPage}
+          pageCount={pageCount}
+          value={value}
+          currentPage={currentPage}
+          descending={descending}
+          onCategoryClick={handleCategoryClick}
+          onToggleDescending={() => setDescending((prev) => !prev)}
+          onEpisodeClick={handleEpisodeClick}
+        />
       )}
 
-      {/* 换源 Tab 内容 */}
       {activeTab === 'sources' && (
-        <div className='mt-1 flex min-h-0 flex-1 flex-col'>
-          {sourceSearchLoading && (
-            <div className='flex items-center justify-center rounded-ui-md border border-white/10 bg-white/[0.035] py-8'>
-              <div className='h-7 w-7 animate-spin rounded-full border-2 border-white/15 border-b-[rgb(var(--ui-accent))]'></div>
-              <span className='ml-3 text-sm text-[rgb(var(--ui-text-muted))]'>
-                搜索中...
-              </span>
-            </div>
-          )}
-
-          {sourceSearchError && (
-            <div className='flex items-center justify-center rounded-ui-md border border-red-400/20 bg-red-500/10 py-8'>
-              <div className='text-center'>
-                <div className='mb-2 text-2xl text-red-300'>⚠️</div>
-                <p className='text-sm text-red-200'>{sourceSearchError}</p>
-              </div>
-            </div>
-          )}
-
-          {!sourceSearchLoading &&
-            !sourceSearchError &&
-            availableSources.length === 0 && (
-              <div className='flex items-center justify-center rounded-ui-md border border-white/10 bg-white/[0.035] py-8'>
-                <div className='text-center'>
-                  <div className='mb-2 text-2xl text-[rgb(var(--ui-text-muted))]'>
-                    📺
-                  </div>
-                  <p className='text-sm text-[rgb(var(--ui-text-muted))]'>
-                    暂无可用的换源
-                  </p>
-                </div>
-              </div>
-            )}
-
-          {!sourceSearchLoading &&
-            !sourceSearchError &&
-            availableSources.length > 0 && (
-              <div className='flex min-h-0 flex-1 flex-col'>
-                <div className='grid flex-1 grid-cols-1 gap-2 overflow-y-auto pb-3 pr-0.5 sm:grid-cols-2 2xl:grid-cols-1'>
-                  {sourceAvailabilityList.map((availability) => {
-                    const { source, sourceKey } = availability;
-                    const isCurrentSource = availability.isCurrent;
-                    const videoInfo = availability.measured;
-                    const effectiveSourceStatus = availability.effectiveStatus;
-                    const isClickable =
-                      availability.manualSwitch.mode !== 'blocked';
-                    const statusLabel = effectiveSourceStatus
-                      ? getSourceStatusLabel(effectiveSourceStatus)
-                      : '待检测';
-                    const qualityLabel =
-                      videoInfo &&
-                      !videoInfo.hasError &&
-                      videoInfo.quality !== '未知' &&
-                      videoInfo.quality !== '错误'
-                        ? videoInfo.quality
-                        : null;
-
-                    const statusClassName = (() => {
-                      if (!effectiveSourceStatus) {
-                        return 'bg-[rgb(var(--ui-border))] text-[rgb(var(--ui-text-muted))]';
-                      }
-
-                      switch (effectiveSourceStatus.kind) {
-                        case 'direct':
-                          return 'bg-[rgba(var(--ui-success),0.16)] text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]';
-                        case 'proxy':
-                          return 'bg-[rgba(var(--ui-accent),0.16)] text-[rgb(var(--ui-accent))] ring-1 ring-[rgba(var(--ui-accent),0.38)]';
-                        case 'playable':
-                          return 'bg-[rgba(var(--ui-accent-warm),0.16)] text-[rgb(var(--ui-accent-warm))] ring-1 ring-[rgba(var(--ui-accent-warm),0.38)]';
-                        case 'unavailable':
-                          return 'bg-[rgba(var(--ui-critical),0.16)] text-[rgb(var(--ui-critical))] ring-1 ring-[rgba(var(--ui-critical),0.38)]';
-                        case 'probing':
-                          return 'bg-[rgba(var(--ui-accent-warm),0.16)] text-[rgb(var(--ui-accent-warm))] ring-1 ring-[rgba(var(--ui-accent-warm),0.38)]';
-                        default:
-                          return 'bg-[rgb(var(--ui-border))] text-[rgb(var(--ui-text-muted))]';
-                      }
-                    })();
-
-                    const sourceStatusText = availability.episode.exists
-                      ? getSourceStatusDescription(
-                          effectiveSourceStatus,
-                          videoInfo
-                        )
-                      : availability.manualSwitch.reason;
-
-                    return (
-                      <button
-                        key={sourceKey}
-                        type='button'
-                        disabled={!isClickable}
-                        aria-current={isCurrentSource ? 'true' : undefined}
-                        aria-label={`${
-                          isCurrentSource ? '当前线路' : '切换线路'
-                        } ${source.source_name}`}
-                        title={`${source.title} · ${sourceStatusText}`}
-                        onClick={() => isClickable && handleSourceClick(source)}
-                        className={`group relative min-w-0 rounded-ui-md border px-3 py-3 text-left transition-all duration-200
-                          ${
-                            isCurrentSource
-                              ? `${stateActiveClass} cursor-default disabled:opacity-100`
-                              : isClickable
-                              ? stateIdleClass
-                              : `${stateMutedClass} cursor-not-allowed`
-                          }`.trim()}
-                      >
-                        <div className='flex min-w-0 items-start justify-between gap-2'>
-                          <div className='min-w-0'>
-                            <div className='flex items-center gap-2'>
-                              <span className='truncate text-sm font-semibold text-[rgb(var(--ui-text))]'>
-                                {source.source_name}
-                              </span>
-                              {isCurrentSource && (
-                                <span className={currentChipClass}>当前</span>
-                              )}
-                            </div>
-                            <p className='mt-1 truncate text-[11px] text-[rgb(var(--ui-text-muted))]'>
-                              {source.title}
-                            </p>
-                          </div>
-                          <span
-                            className={`${statusClassName} shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold`}
-                          >
-                            {statusLabel}
-                          </span>
-                        </div>
-
-                        <div className='mt-3 flex flex-wrap items-center gap-1.5'>
-                          {qualityLabel && (
-                            <span className='rounded-full bg-[rgba(var(--ui-success),0.16)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]'>
-                              {qualityLabel}
-                            </span>
-                          )}
-                          {source.episodes.length > 1 && (
-                            <span className={metaChipClass}>
-                              {source.episodes.length} 集
-                            </span>
-                          )}
-                          <span className={metaChipClass}>
-                            {isClickable ? '可切换' : '不可切换'}
-                          </span>
-                        </div>
-
-                        <p className='mt-2 truncate text-[11px] font-medium text-[rgb(var(--ui-text-muted))]'>
-                          {sourceStatusText}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className='flex-shrink-0 border-t border-white/10 pt-2'>
-                  <button
-                    onClick={() => {
-                      if (videoTitle) {
-                        router.push(
-                          `/search?q=${encodeURIComponent(videoTitle)}`
-                        );
-                      }
-                    }}
-                    className='w-full rounded-ui-sm px-3 py-2 text-center text-xs font-medium text-[rgb(var(--ui-text-muted))] transition-colors hover:bg-white/[0.06] hover:text-[rgb(var(--ui-text))]'
-                    type='button'
-                  >
-                    影片匹配有误？点击去搜索
-                  </button>
-                </div>
-              </div>
-            )}
-        </div>
+        <EpisodeSelectorSources
+          sourceSearchLoading={sourceSearchLoading}
+          sourceSearchError={sourceSearchError}
+          availableSourcesCount={availableSources.length}
+          sourceAvailabilityList={sourceAvailabilityList}
+          videoTitle={videoTitle}
+          onSourceClick={handleSourceClick}
+          onSearchMismatchClick={() => {
+            if (videoTitle) {
+              router.push(`/search?q=${encodeURIComponent(videoTitle)}`);
+            }
+          }}
+        />
       )}
     </div>
   );

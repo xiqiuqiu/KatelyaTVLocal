@@ -2,7 +2,7 @@
 
 'use client';
 
-import { AlertCircle, ArrowLeft, Heart, RefreshCw, Search } from 'lucide-react';
+import { AlertCircle, ArrowLeft, RefreshCw, Search } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useReducer, useRef, useState } from 'react';
 
@@ -18,15 +18,10 @@ import {
   resolveCastMediaUrl,
 } from '@/lib/cast';
 import {
-  deleteFavorite,
-  generateStorageKey,
   getAdSkipConfig,
   getAllPlayRecords,
-  isFavorited,
   recordAdSkipWindowConfirmation,
-  saveFavorite,
   savePlayRecordKeys,
-  subscribeToDataUpdates,
 } from '@/lib/db.client';
 import type { M3U8AdFilterDebugInfo } from '@/lib/hls-ad-filter';
 import {
@@ -166,9 +161,12 @@ import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
 import PlayDetailSection from '@/components/PlayDetailSection';
 import InitialLoadingOverlay from '@/components/player/InitialLoadingOverlay';
+import PlayFavoriteButton from '@/components/player/PlayFavoriteButton';
 import PlayerHeader from '@/components/player/PlayerHeader';
 import PlayerLoadingOverlay from '@/components/player/PlayerLoadingOverlay';
 import PlayerSidebar from '@/components/player/PlayerSidebar';
+import { usePlayFavorite } from '@/components/player/usePlayFavorite';
+import { usePlayProgressPersistOnUnload } from '@/components/player/usePlayProgressPersistOnUnload';
 import PlayRecommendations from '@/components/PlayRecommendations';
 import SkipController from '@/components/SkipController';
 import Surface from '@/components/ui/Surface';
@@ -432,9 +430,6 @@ function PlayPageClient() {
   const [errorKind, setErrorKind] = useState<PlaybackErrorKind>('generic');
   const [detail, setDetail] = useState<SearchResult | null>(null);
 
-  // 收藏状态
-  const [favorited, setFavorited] = useState(false);
-
   // 视频基本信息
   const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
   const [videoYear, setVideoYear] = useState(searchParams.get('year') || '');
@@ -472,15 +467,27 @@ function PlayPageClient() {
   const videoTitleRef = useRef(videoTitle);
   const videoYearRef = useRef(videoYear);
   const detailRef = useRef<SearchResult | null>(detail);
+  const { favorited, handleToggleFavorite } = usePlayFavorite(
+    currentSource,
+    currentId,
+    searchTitle,
+    {
+      currentSourceRef,
+      currentIdRef,
+      videoTitleRef,
+      detailRef,
+    }
+  );
   const currentEpisodeIndexRef = useRef(currentEpisodeIndex);
   const playbackModeRef = useRef<SourcePlaybackMode>('direct');
   const originalVideoUrlRef = useRef('');
   const videoUrlRef = useRef('');
-  const playbackAttemptReporterRef = useRef<PlaybackAttemptReporter>(
-    createPlaybackAttemptReporter({
+  const playbackAttemptReporterRef = useRef<PlaybackAttemptReporter>(null!);
+  if (playbackAttemptReporterRef.current == null) {
+    playbackAttemptReporterRef.current = createPlaybackAttemptReporter({
       enhancedReportingEnabled: isPlaybackAttemptEnhancedReportingEnabled(),
-    })
-  );
+    });
+  }
   const playbackDebugEnabledRef = useRef(false);
   const playbackAttemptChannelSkipEmittedRef = useRef(false);
   const playbackDebugLastCanplayRef =
@@ -489,7 +496,10 @@ function PlayPageClient() {
   const sourceSwitchSavePendingRef = useRef(false);
   const sourceDurationBeforeSwitchRef = useRef<number | null>(null);
   const sourceSwitchAutoPlayPendingRef = useRef(false);
-  const playbackPolicyLogKeysRef = useRef(new Set<string>());
+  const playbackPolicyLogKeysRef = useRef<Set<string>>(null!);
+  if (playbackPolicyLogKeysRef.current == null) {
+    playbackPolicyLogKeysRef.current = new Set<string>();
+  }
   const playbackPolicyRef = useRef<HlsPlaybackPolicyResult | null>(null);
   const [playbackDebugEnabled, setPlaybackDebugEnabled] = useState(false);
   const [playbackDebugCollapsed, setPlaybackDebugCollapsed] = useState(true);
@@ -604,15 +614,20 @@ function PlayPageClient() {
     Map<string, SourceSelectionScore>
   >(new Map());
   const availableSourcesRef = useRef<SearchResult[]>([]);
-  const precomputedVideoInfoRef = useRef<Map<string, SourceVideoInfo>>(
-    new Map()
-  );
-  const precomputedSourceStatusesRef = useRef<Map<string, SourceStatus>>(
-    new Map()
-  );
-  const sourceSelectionScoresRef = useRef<Map<string, SourceSelectionScore>>(
-    new Map()
-  );
+  const precomputedVideoInfoRef = useRef<Map<string, SourceVideoInfo>>(null!);
+  if (precomputedVideoInfoRef.current == null) {
+    precomputedVideoInfoRef.current = new Map();
+  }
+  const precomputedSourceStatusesRef = useRef<Map<string, SourceStatus>>(null!);
+  if (precomputedSourceStatusesRef.current == null) {
+    precomputedSourceStatusesRef.current = new Map();
+  }
+  const sourceSelectionScoresRef = useRef<
+    Map<string, SourceSelectionScore>
+  >(null!);
+  if (sourceSelectionScoresRef.current == null) {
+    sourceSelectionScoresRef.current = new Map();
+  }
   const playbackStartupStartedAtRef = useRef<number | null>(null);
   const startupFeedbackSentRef = useRef(false);
   const waitingRecoveryTimerRef = useRef<number | null>(null);
@@ -628,17 +643,24 @@ function PlayPageClient() {
   const progressiveSourceProbeTimerRef = useRef<number | null>(null);
   const progressiveSourceProbeInFlightRef = useRef(false);
   const progressiveSourceProbeStableStartedAtRef = useRef(0);
-  const progressiveSourceProbeAttemptedKeysRef = useRef<Set<string>>(new Set());
-  const autoRecoveredSourceKeysRef = useRef<Set<string>>(new Set());
+  const progressiveSourceProbeAttemptedKeysRef = useRef<Set<string>>(null!);
+  if (progressiveSourceProbeAttemptedKeysRef.current == null) {
+    progressiveSourceProbeAttemptedKeysRef.current = new Set();
+  }
+  const autoRecoveredSourceKeysRef = useRef<Set<string>>(null!);
+  if (autoRecoveredSourceKeysRef.current == null) {
+    autoRecoveredSourceKeysRef.current = new Set();
+  }
   const attemptedLedgerTitleKeyRef = useRef<string | null>(null);
-  const playbackSessionStateRef = useRef<PlaybackSessionState>(
-    createInitialPlaybackSessionState({
+  const playbackSessionStateRef = useRef<PlaybackSessionState>(null!);
+  if (playbackSessionStateRef.current == null) {
+    playbackSessionStateRef.current = createInitialPlaybackSessionState({
       badPoints:
         typeof window !== 'undefined'
           ? readPersistedPlaybackBadPoints(window.sessionStorage)
           : [],
-    })
-  );
+    });
+  }
   const systemSeekInFlightRef = useRef(false);
   const hlsAutoSourceSwitchSessionRef = useRef<number | null>(null);
   const hlsRecoveryStateRef = useRef({
@@ -688,9 +710,26 @@ function PlayPageClient() {
   const lastSaveTimeRef = useRef<number>(0);
   const lastSavedSnapshotRef = useRef<PlayRecordSaveSnapshot | null>(null);
 
-  // 播放器时间状态（用于跳过功能）
+  // 播放器时间：高频进度走 ref；React state 仅秒级刷新供调试 UI
   const [currentPlayTime, setCurrentPlayTime] = useState<number>(0);
+  const currentPlayTimeRef = useRef(0);
+  const lastPublishedPlaySecondRef = useRef(-1);
   const [videoDuration, setVideoDuration] = useState<number>(0);
+
+  const publishPlayTimeForUi = (currentTime: number) => {
+    currentPlayTimeRef.current = currentTime;
+    const publishedSecond = Math.floor(currentTime);
+    if (publishedSecond !== Math.floor(lastPublishedPlaySecondRef.current)) {
+      lastPublishedPlaySecondRef.current = currentTime;
+      setCurrentPlayTime(currentTime);
+    }
+  };
+
+  const resetPublishedPlayTime = () => {
+    currentPlayTimeRef.current = 0;
+    lastPublishedPlaySecondRef.current = -1;
+    setCurrentPlayTime(0);
+  };
 
   // 跳过设置状态
   const [isSkipSettingMode, setIsSkipSettingMode] = useState<boolean>(false);
@@ -1204,7 +1243,7 @@ function PlayPageClient() {
   const handleMarkAdSkip = () => {
     const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
     const playlist = latestMediaPlaylistRef.current;
-    const clickTimeSeconds = video?.currentTime ?? currentPlayTime;
+    const clickTimeSeconds = video?.currentTime ?? currentPlayTimeRef.current;
     if (!playlist?.content || !Number.isFinite(clickTimeSeconds)) {
       artPlayerRef.current &&
         (artPlayerRef.current.notice.show =
@@ -1250,8 +1289,10 @@ function PlayPageClient() {
     persistAdSkipWindowConfirmation(markedWindow, 'confirm');
   };
 
-  handleMarkAdSkipRef.current = handleMarkAdSkip;
-  handleUndoAdSkipRef.current = handleUndoAdSkip;
+  useEffect(() => {
+    handleMarkAdSkipRef.current = handleMarkAdSkip;
+    handleUndoAdSkipRef.current = handleUndoAdSkip;
+  });
 
   const syncPlaybackSessionSources = () => {
     const sources = availableSourcesRef.current;
@@ -2619,7 +2660,9 @@ function PlayPageClient() {
   };
 
   const updateVideoUrlRef = useRef(updateVideoUrl);
-  updateVideoUrlRef.current = updateVideoUrl;
+  useEffect(() => {
+    updateVideoUrlRef.current = updateVideoUrl;
+  });
 
   const trySwitchToNextAvailableSource = async (reason: string) => {
     const currentSessionId = hlsRecoveryStateRef.current.playbackSessionId;
@@ -3048,6 +3091,8 @@ function PlayPageClient() {
       }
       artPlayerRef.current = null;
     }
+
+    resetPublishedPlayTime();
   };
 
   const requestNativeRecoveryAutoplay = (
@@ -3934,13 +3979,18 @@ function PlayPageClient() {
 
   // 进入页面时直接获取全部源信息
   useEffect(() => {
+    let cancelled = false;
+    let readyTimer: ReturnType<typeof setTimeout> | null = null;
+    const controller = new AbortController();
+
     const fetchSourceDetail = async (
       source: string,
       id: string
     ): Promise<SearchResult[]> => {
       try {
         const detailResponse = await fetch(
-          `/api/detail?source=${source}&id=${id}`
+          `/api/detail?source=${source}&id=${id}`,
+          { signal: controller.signal }
         );
         if (!detailResponse.ok) {
           throw new Error('获取视频详情失败');
@@ -3948,10 +3998,15 @@ function PlayPageClient() {
         const detailData = (await detailResponse.json()) as SearchResult;
         return [detailData];
       } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          return [];
+        }
         console.error('获取视频详情失败:', err);
         return [];
       } finally {
-        setSourceSearchLoading(false);
+        if (!cancelled) {
+          setSourceSearchLoading(false);
+        }
       }
     };
     const fetchSourcesData = async (query: string): Promise<SearchResult[]> => {
@@ -3959,7 +4014,8 @@ function PlayPageClient() {
       try {
         setSourceSearchLoading(true);
         const response = await fetch(
-          `/api/search?q=${encodeURIComponent(query.trim())}`
+          `/api/search?q=${encodeURIComponent(query.trim())}`,
+          { signal: controller.signal }
         );
         if (!response.ok) {
           throw new Error('搜索失败');
@@ -3979,14 +4035,23 @@ function PlayPageClient() {
                 (searchType === 'movie' && result.episodes.length === 1)
               : true)
         );
-        setAvailableSources(results);
+        if (!cancelled) {
+          setAvailableSources(results);
+        }
         return results;
       } catch (err) {
-        setSourceSearchError(err instanceof Error ? err.message : '搜索失败');
-        setAvailableSources([]);
+        if (err instanceof Error && err.name === 'AbortError') {
+          return [];
+        }
+        if (!cancelled) {
+          setSourceSearchError(err instanceof Error ? err.message : '搜索失败');
+          setAvailableSources([]);
+        }
         return [];
       } finally {
-        setSourceSearchLoading(false);
+        if (!cancelled) {
+          setSourceSearchLoading(false);
+        }
       }
     };
 
@@ -4007,6 +4072,7 @@ function PlayPageClient() {
       );
 
       const searchResults = await fetchSourcesData(searchTitle || videoTitle);
+      if (cancelled) return;
       let detailResults: SearchResult[] = [];
       let historyRecord: PlaybackHistoryRecord | null = null;
 
@@ -4018,11 +4084,13 @@ function PlayPageClient() {
         )
       ) {
         detailResults = await fetchSourceDetail(currentSource, currentId);
+        if (cancelled) return;
       }
 
       if (currentSource && currentId) {
         try {
           const allRecords = await getAllPlayRecords();
+          if (cancelled) return;
           const contentKey = buildWatchProgressContentKey({
             title: searchTitle || videoTitle,
             year: videoYear,
@@ -4079,6 +4147,7 @@ function PlayPageClient() {
         });
 
         if (!recovery.detail) {
+          if (cancelled) return;
           setPlaybackError(
             recovery.error || '未找到匹配结果',
             isFromPlayRecordEntry ? 'history-expired' : 'not-found'
@@ -4095,6 +4164,7 @@ function PlayPageClient() {
       }
 
       if (!detailData || sourcesInfo.length === 0) {
+        if (cancelled) return;
         setPlaybackError(
           '未找到匹配结果',
           isFromPlayRecordEntry ? 'history-expired' : 'not-found'
@@ -4116,6 +4186,7 @@ function PlayPageClient() {
         if (target) {
           detailData = target;
         } else {
+          if (cancelled) return;
           setPlaybackError('未找到匹配结果', 'not-found');
           setLoading(false);
           return;
@@ -4134,6 +4205,7 @@ function PlayPageClient() {
         setLoadingMessage('正在优选最佳播放源...');
 
         detailData = await preferBestSource(sourcesInfo);
+        if (cancelled) return;
       } else {
         updateSourceSelectionScores(
           sourcesInfo,
@@ -4141,6 +4213,8 @@ function PlayPageClient() {
           precomputedVideoInfoRef.current
         );
       }
+
+      if (cancelled) return;
 
       setAvailableSources(sourcesInfo);
       console.log(detailData.source, detailData.id);
@@ -4199,12 +4273,18 @@ function PlayPageClient() {
       setLoadingMessage('准备就绪，即将开始播放...');
 
       // 短暂延迟让用户看到完成状态
-      setTimeout(() => {
-        setLoading(false);
+      readyTimer = setTimeout(() => {
+        if (!cancelled) setLoading(false);
       }, 1000);
     };
 
-    initAll();
+    void initAll();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (readyTimer) clearTimeout(readyTimer);
+    };
   }, []);
 
   // 处理换源
@@ -4669,31 +4749,12 @@ function PlayPageClient() {
     await executeSaveProgressEffects(result.effects, options);
   };
 
+  const requestSaveCurrentPlayProgressRef = useRef(requestSaveCurrentPlayProgress);
   useEffect(() => {
-    // 页面即将卸载时保存播放进度
-    const handleBeforeUnload = () => {
-      void requestSaveCurrentPlayProgress('beforeunload', { keepalive: true });
-    };
+    requestSaveCurrentPlayProgressRef.current = requestSaveCurrentPlayProgress;
+  });
 
-    // 页面可见性变化时保存播放进度
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        void requestSaveCurrentPlayProgress('visibility-hidden', {
-          keepalive: true,
-        });
-      }
-    };
-
-    // 添加事件监听器
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      // 清理事件监听器
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [currentEpisodeIndex, detail, artPlayerRef.current]);
+  usePlayProgressPersistOnUnload(requestSaveCurrentPlayProgressRef);
 
   // 清理定时器
   useEffect(() => {
@@ -4704,71 +4765,6 @@ function PlayPageClient() {
       clearSourceChangeTimeoutTimer();
     };
   }, []);
-
-  // ---------------------------------------------------------------------------
-  // 收藏相关
-  // ---------------------------------------------------------------------------
-  // 每当 source 或 id 变化时检查收藏状态
-  useEffect(() => {
-    if (!currentSource || !currentId) return;
-    (async () => {
-      try {
-        const fav = await isFavorited(currentSource, currentId);
-        setFavorited(fav);
-      } catch (err) {
-        console.error('检查收藏状态失败:', err);
-      }
-    })();
-  }, [currentSource, currentId]);
-
-  // 监听收藏数据更新事件
-  useEffect(() => {
-    if (!currentSource || !currentId) return;
-
-    const unsubscribe = subscribeToDataUpdates(
-      'favoritesUpdated',
-      (favorites: Record<string, any>) => {
-        const key = generateStorageKey(currentSource, currentId);
-        const isFav = !!favorites[key];
-        setFavorited(isFav);
-      }
-    );
-
-    return unsubscribe;
-  }, [currentSource, currentId]);
-
-  // 切换收藏
-  const handleToggleFavorite = async () => {
-    if (
-      !videoTitleRef.current ||
-      !detailRef.current ||
-      !currentSourceRef.current ||
-      !currentIdRef.current
-    )
-      return;
-
-    try {
-      if (favorited) {
-        // 如果已收藏，删除收藏
-        await deleteFavorite(currentSourceRef.current, currentIdRef.current);
-        setFavorited(false);
-      } else {
-        // 如果未收藏，添加收藏
-        await saveFavorite(currentSourceRef.current, currentIdRef.current, {
-          title: videoTitleRef.current,
-          source_name: detailRef.current?.source_name || '',
-          year: detailRef.current?.year,
-          cover: detailRef.current?.poster || '',
-          total_episodes: detailRef.current?.episodes.length || 1,
-          save_time: Date.now(),
-          search_title: searchTitle,
-        });
-        setFavorited(true);
-      }
-    } catch (err) {
-      console.error('切换收藏失败:', err);
-    }
-  };
 
   useEffect(() => {
     if (
@@ -5672,7 +5668,7 @@ function PlayPageClient() {
         // 监听播放时间更新（用于跳过功能）
         artPlayerRef.current.on('video:timeupdate', () => {
           const currentTime = artPlayerRef.current.currentTime || 0;
-          setCurrentPlayTime(currentTime);
+          publishPlayTimeForUi(currentTime);
           if (playbackPolicyRef.current?.runtime === 'native-hls') {
             markPlaybackHealthy(currentTime);
           } else {
@@ -6170,18 +6166,10 @@ function PlayPageClient() {
             .filter(Boolean)
             .join(' · ')}
           actions={
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleToggleFavorite();
-              }}
-              className='inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-[rgb(var(--ui-text))] transition hover:bg-white/10'
-              aria-label={favorited ? '取消收藏' : '收藏影片'}
-              type='button'
-            >
-              <FavoriteIcon filled={favorited} />
-              <span>{favorited ? '已收藏' : '收藏'}</span>
-            </button>
+            <PlayFavoriteButton
+              favorited={favorited}
+              onToggle={handleToggleFavorite}
+            />
           }
         />
 
@@ -6200,7 +6188,7 @@ function PlayPageClient() {
                   id={currentId}
                   title={videoTitle}
                   artPlayerRef={artPlayerRef}
-                  currentTime={currentPlayTime}
+                  playerBindingKey={videoUrl}
                   duration={videoDuration}
                   isSettingMode={isSkipSettingMode}
                   onSettingModeChange={setIsSkipSettingMode}
@@ -6362,31 +6350,6 @@ function PlayPageClient() {
     </PageLayout>
   );
 }
-
-// FavoriteIcon 组件
-const FavoriteIcon = ({ filled }: { filled: boolean }) => {
-  if (filled) {
-    return (
-      <svg
-        className='h-7 w-7 text-[rgb(var(--ui-critical))]'
-        viewBox='0 0 24 24'
-        xmlns='http://www.w3.org/2000/svg'
-      >
-        <path
-          d='M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'
-          fill='currentColor'
-          stroke='currentColor'
-          strokeWidth='2'
-          strokeLinecap='round'
-          strokeLinejoin='round'
-        />
-      </svg>
-    );
-  }
-  return (
-    <Heart className='h-7 w-7 stroke-[1] text-[rgb(var(--ui-text-muted))]' />
-  );
-};
 
 const PlayFallback = () => {
   return (

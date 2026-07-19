@@ -44,14 +44,10 @@ export default function AppShell({
   }, [isSidebarCollapsed]);
 
   const handleToggleSidebar = () => {
-    setIsSidebarCollapsed((current) => {
-      const next = !current;
-      if (typeof window !== 'undefined') {
-        window.__sidebarCollapsed = next;
-        window.localStorage.setItem('sidebarCollapsed', JSON.stringify(next));
-      }
-      return next;
-    });
+    const next = !isSidebarCollapsed;
+    window.__sidebarCollapsed = next;
+    window.localStorage.setItem('sidebarCollapsed', JSON.stringify(next));
+    setIsSidebarCollapsed(next);
   };
 
   return (

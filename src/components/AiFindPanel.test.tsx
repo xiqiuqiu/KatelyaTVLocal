@@ -11,6 +11,7 @@ import {
   getAiFindSavedRecord,
   listAiFindSavedRecords,
 } from '@/lib/ai-find/history-client';
+import { createAiFindRequestId } from '@/lib/ai-find/debug';
 import type { AiFindResponse } from '@/lib/ai-find/types';
 
 import AiFindPanel from './AiFindPanel';
@@ -25,7 +26,7 @@ jest.mock('@/lib/ai-find/debug', () => ({
   AI_FIND_DEBUG_HEADER: 'x-ai-find-debug',
   AI_FIND_DEBUG_RESPONSE_HEADER: 'x-ai-find-debug-enabled',
   AI_FIND_REQUEST_ID_HEADER: 'x-ai-find-request-id',
-  createAiFindRequestId: () => 'req_test',
+  createAiFindRequestId: jest.fn(() => 'req_test'),
   sanitizeAiFindDebugText: (value: string | null) => value || '',
 }));
 
@@ -128,10 +129,13 @@ describe('AiFindPanel', () => {
     deleteAiFindSavedRecord as jest.MockedFunction<
       typeof deleteAiFindSavedRecord
     >;
+  const mockedCreateAiFindRequestId =
+    createAiFindRequestId as jest.MockedFunction<typeof createAiFindRequestId>;
 
   beforeEach(() => {
     mockedListAiFindSavedRecords.mockResolvedValue([]);
     mockedGetAiFindSavedRecord.mockResolvedValue(null);
+    mockedCreateAiFindRequestId.mockReturnValue('req_test');
     (global as typeof globalThis & { fetch: jest.Mock }).fetch = jest.fn();
   });
 
@@ -349,5 +353,129 @@ describe('AiFindPanel', () => {
     expect(screen.getByPlaceholderText(/想看节奏快一点/)).toHaveValue(
       '鬼灭之刃'
     );
+  });
+
+  it('ignores a stale main submit when a newer submit finishes first', async () => {
+    mockedCreateAiFindRequestId
+      .mockReturnValueOnce('run_first')
+      .mockReturnValueOnce('run_second');
+
+    type MockFindResponse = {
+      ok: boolean;
+      status: number;
+      headers: ReturnType<typeof mockHeaders>;
+      json: () => Promise<unknown>;
+    };
+
+    let resolveFirstFind: ((value: MockFindResponse) => void) | undefined;
+    const firstFindPromise = new Promise<MockFindResponse>((resolve) => {
+      resolveFirstFind = resolve;
+    });
+
+    const fetchMock = jest.fn().mockImplementation(async (url: string) => {
+      if (url === '/api/ai/find') {
+        const callIndex = fetchMock.mock.calls.filter(
+          ([requestedUrl]) => requestedUrl === '/api/ai/find'
+        ).length;
+
+        if (callIndex === 1) {
+          return firstFindPromise;
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          headers: mockHeaders(),
+          json: async () => ({
+            answer: '第二次提交的结果',
+            candidateQueries: [
+              {
+                query: '第二次候选',
+                reason: '第二次提交',
+                confidence: 'high',
+                type: 'movie',
+              },
+            ],
+            groups: [],
+            suggestions: [],
+            toolTrace: [],
+            generatedAt: 1700000000000,
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        headers: mockHeaders(),
+        json: async () => ({
+          group: {
+            query: '第二次候选',
+            reason: '第二次提交',
+            confidence: 'high',
+            rawCount: 0,
+            groupedCount: 0,
+            groups: [],
+            notFound: true,
+          },
+          failed: false,
+        }),
+      };
+    });
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
+
+    await act(async () => {
+      render(<AiFindPanel />);
+    });
+
+    const form = screen
+      .getByPlaceholderText(/想看节奏快一点/)
+      .closest('form') as HTMLFormElement;
+
+    fireEvent.change(screen.getByPlaceholderText(/想看节奏快一点/), {
+      target: { value: '第一次查询' },
+    });
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '查找中' })).toBeDisabled();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(/想看节奏快一点/), {
+      target: { value: '第二次查询' },
+    });
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(screen.getByText('第二次提交的结果')).toBeInTheDocument();
+      expect(screen.getAllByText('第二次候选').length).toBeGreaterThan(0);
+    });
+
+    resolveFirstFind?.({
+      ok: true,
+      status: 200,
+      headers: mockHeaders(),
+      json: async () => ({
+        answer: '第一次提交的结果',
+        candidateQueries: [
+          {
+            query: '第一次候选',
+            reason: '第一次提交',
+            confidence: 'high',
+            type: 'movie',
+          },
+        ],
+        groups: [],
+        suggestions: [],
+        toolTrace: [],
+        generatedAt: 1700000000000,
+      }),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('第二次提交的结果')).toBeInTheDocument();
+      expect(screen.queryByText('第一次提交的结果')).not.toBeInTheDocument();
+      expect(screen.queryByText('第一次候选')).not.toBeInTheDocument();
+    });
   });
 });

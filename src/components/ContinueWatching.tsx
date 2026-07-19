@@ -41,6 +41,8 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
   };
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchPlayRecords = async () => {
       try {
         setLoading(true);
@@ -49,16 +51,20 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
         const allRecords = await getRecentPlayRecords(
           CONTINUE_WATCHING_RECORD_LIMIT
         );
+        if (cancelled) return;
         updatePlayRecords(allRecords);
       } catch (error) {
+        if (cancelled) return;
         console.error('获取播放记录失败:', error);
         setPlayRecords([]);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchPlayRecords();
+    void fetchPlayRecords();
 
     // 监听播放记录更新事件
     const unsubscribe = subscribeToDataUpdates(
@@ -68,7 +74,10 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
       }
     );
 
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   // 如果没有播放记录，则不渲染组件

@@ -10,6 +10,7 @@ import 'sweetalert2/dist/sweetalert2.min.css';
 import { getSessionSigningSecret } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { parseSessionCookieValue } from '@/lib/security/session';
+import { serializeForHtmlScript } from '@/lib/serialize-for-html-script';
 
 import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
@@ -114,7 +115,7 @@ export default async function RootLayout({
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.RUNTIME_CONFIG = ${JSON.stringify(runtimeConfig)};`,
+            __html: `window.RUNTIME_CONFIG = ${serializeForHtmlScript(runtimeConfig)};`,
           }}
         />
       </head>

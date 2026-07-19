@@ -27,6 +27,7 @@ export interface PlayRecord {
 
 // 片头片尾数据结构
 export interface SkipSegment {
+  id?: string; // 稳定标识，旧数据迁移后补齐
   start: number; // 开始时间（秒）
   end: number; // 结束时间（秒）
   type: 'opening' | 'ending'; // 片头或片尾

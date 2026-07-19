@@ -11,6 +11,11 @@ import {
 } from '@/lib/hls-ad-filter';
 import type { HlsMediaSegmentMode } from '@/lib/hls-proxy-rewrite';
 import { rewritePlaylistContent } from '@/lib/hls-proxy-rewrite';
+import {
+  ProxyRedirectError,
+  fetchWithValidatedRedirects,
+  validateProxyTargetUrl,
+} from '@/lib/proxy-url-policy';
 
 export const runtime = 'edge';
 
@@ -186,11 +191,22 @@ export async function GET(request: Request) {
     return addCorsHeaders(response);
   }
 
+  const urlValidation = validateProxyTargetUrl(targetUrl);
+  if (!urlValidation.ok) {
+    const response = NextResponse.json(
+      { error: urlValidation.reason },
+      { status: 400 }
+    );
+    return addCorsHeaders(response);
+  }
+
   try {
-    const upstreamResponse = await fetch(targetUrl, {
-      headers: buildUpstreamHeaders(request, targetUrl),
-      redirect: 'follow',
-    });
+    const upstreamResponse = await fetchWithValidatedRedirects(
+      urlValidation.url.href,
+      {
+        headers: buildUpstreamHeaders(request, urlValidation.url.href),
+      }
+    );
 
     if (!upstreamResponse.ok && upstreamResponse.status !== 206) {
       const response = NextResponse.json(
@@ -281,11 +297,12 @@ export async function GET(request: Request) {
 
     return addCorsHeaders(response);
   } catch (error) {
+    const status = error instanceof ProxyRedirectError ? 400 : 500;
     const response = NextResponse.json(
       {
         error: error instanceof Error ? error.message : 'Proxy request failed',
       },
-      { status: 500 }
+      { status }
     );
     return addCorsHeaders(response);
   }

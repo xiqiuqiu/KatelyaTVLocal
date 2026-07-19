@@ -118,4 +118,38 @@ describe('UserMenu', () => {
 
     expect(screen.queryByText('管理面板')).not.toBeInTheDocument();
   });
+
+  it('closes the account menu when pressing Escape', async () => {
+    render(<UserMenu />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+    expect(await screen.findByText('修改密码')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByText('修改密码')).not.toBeInTheDocument();
+  });
+
+  it('closes the account menu when clicking the dismiss overlay', async () => {
+    render(<UserMenu />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+    expect(await screen.findByText('修改密码')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭菜单' }));
+
+    expect(screen.queryByText('修改密码')).not.toBeInTheDocument();
+  });
+
+  it('closes the change password panel when pressing Escape', async () => {
+    render(<UserMenu />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+    fireEvent.click(await screen.findByText('修改密码'));
+    expect(await screen.findByText('确认修改')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByText('确认修改')).not.toBeInTheDocument();
+  });
 });

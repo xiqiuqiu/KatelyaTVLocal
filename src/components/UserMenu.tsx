@@ -117,6 +117,27 @@ export const UserMenu: React.FC = () => {
     setPasswordError('');
   };
 
+  useEffect(() => {
+    if (!isOpen && !isChangePasswordOpen) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      if (isChangePasswordOpen) {
+        handleCloseChangePassword();
+      } else if (isOpen) {
+        handleCloseMenu();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, isChangePasswordOpen]);
+
   const handleSubmitChangePassword = async () => {
     setPasswordError('');
 
@@ -193,7 +214,9 @@ export const UserMenu: React.FC = () => {
   const menuPanel = (
     <>
       {/* 背景遮罩 - 普通菜单无需模糊 */}
-      <div
+      <button
+        type='button'
+        aria-label='关闭菜单'
         className='fixed inset-0 z-[1000] bg-transparent'
         onClick={handleCloseMenu}
       />
@@ -278,7 +301,9 @@ export const UserMenu: React.FC = () => {
   const changePasswordPanel = (
     <>
       {/* 背景遮罩 */}
-      <div
+      <button
+        type='button'
+        aria-label='关闭修改密码'
         className='fixed inset-0 z-[1000] bg-black/70 backdrop-blur-md'
         onClick={handleCloseChangePassword}
       />
@@ -291,9 +316,10 @@ export const UserMenu: React.FC = () => {
             修改密码
           </h3>
           <button
+            type='button'
             onClick={handleCloseChangePassword}
             className='flex h-8 w-8 items-center justify-center rounded-full text-[rgb(var(--ui-text-muted))] transition-colors hover:bg-white/10 hover:text-[rgb(var(--ui-text))]'
-            aria-label='Close'
+            aria-label='关闭修改密码'
           >
             <X className='h-5 w-5' />
           </button>
@@ -303,10 +329,14 @@ export const UserMenu: React.FC = () => {
         <div className='space-y-4'>
           {/* 新密码输入 */}
           <div>
-            <label className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text))]'>
+            <label
+              htmlFor='user-menu-new-password'
+              className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text))]'
+            >
               新密码
             </label>
             <input
+              id='user-menu-new-password'
               type='password'
               className={inputClassName}
               placeholder='请输入新密码'
@@ -318,10 +348,14 @@ export const UserMenu: React.FC = () => {
 
           {/* 确认密码输入 */}
           <div>
-            <label className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text))]'>
+            <label
+              htmlFor='user-menu-confirm-password'
+              className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text))]'
+            >
               确认密码
             </label>
             <input
+              id='user-menu-confirm-password'
               type='password'
               className={inputClassName}
               placeholder='请再次输入新密码'

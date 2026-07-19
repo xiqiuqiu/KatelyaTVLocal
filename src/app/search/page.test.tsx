@@ -288,6 +288,42 @@ describe('SearchPage', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('passes AbortSignal to search fetch', async () => {
+    mockSearchParams = new URLSearchParams('q=test');
+    const fetchMock = jest.fn().mockResolvedValue({
+      json: async () => ({ results: [] }),
+    });
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
+
+    await act(async () => {
+      render(<SearchPage />);
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/search?q=test'),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+  });
+
+  it('aborts in-flight search fetch on unmount', async () => {
+    mockSearchParams = new URLSearchParams('q=test');
+    let capturedSignal: AbortSignal | undefined;
+    const fetchMock = jest.fn(
+      (_url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        capturedSignal = init?.signal ?? undefined;
+        return new Promise<Response>(() => undefined);
+      }
+    );
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
+
+    const { unmount } = render(<SearchPage />);
+    await act(async () => undefined);
+
+    expect(capturedSignal?.aborted).toBe(false);
+    unmount();
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
   it('keeps aggregate toggle meaning and shows an empty state for empty tabs', async () => {
     mockSearchParams = new URLSearchParams('q=庆余年');
     (global as typeof globalThis & { fetch: jest.Mock }).fetch = jest

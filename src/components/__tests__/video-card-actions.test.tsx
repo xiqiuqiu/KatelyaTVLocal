@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import * as dbClient from '@/lib/db.client';
 import type { SearchResult } from '@/lib/types';
@@ -338,6 +338,60 @@ describe('VideoCard', () => {
       );
     });
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it('ignores stale favorite status after source or id changes', async () => {
+    let resolveFirst!: (value: boolean) => void;
+    let resolveSecond!: (value: boolean) => void;
+
+    const isFavoritedMock = dbClient.isFavorited as jest.Mock;
+    isFavoritedMock
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveFirst = resolve;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveSecond = resolve;
+          })
+      );
+
+    const cardProps = {
+      title: '示例影片',
+      poster: 'https://example.com/poster.jpg',
+      episodes: 12,
+      source_name: '测试源',
+      year: '2026',
+      from: 'search' as const,
+    };
+
+    const { rerender } = render(
+      <VideoCard id='1' source='test' {...cardProps} />
+    );
+
+    rerender(<VideoCard id='2' source='test' {...cardProps} />);
+
+    await act(async () => {
+      resolveSecond(true);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      const favoriteButton = screen.getByRole('button', { name: '切换收藏' });
+      expect(favoriteButton.className).toContain('ui-critical');
+    });
+
+    await act(async () => {
+      resolveFirst(false);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('button', { name: '切换收藏' }).className).toContain(
+      'ui-critical'
+    );
   });
 
   it('requests optimized poster sizes and can prioritize first-screen cards', () => {

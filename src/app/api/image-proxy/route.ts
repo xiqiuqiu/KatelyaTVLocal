@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
+import {
+  ProxyRedirectError,
+  fetchWithValidatedRedirects,
+  validateProxyTargetUrl,
+} from '@/lib/proxy-url-policy';
 
 export const runtime = 'edge';
 
@@ -50,6 +55,15 @@ export async function GET(request: Request) {
     return addCorsHeaders(response);
   }
 
+  const urlValidation = validateProxyTargetUrl(imageUrl);
+  if (!urlValidation.ok) {
+    const response = NextResponse.json(
+      { error: urlValidation.reason },
+      { status: 400 }
+    );
+    return addCorsHeaders(response);
+  }
+
   try {
     const fetchInit: CloudflareImageFetchInit = {
       headers: {
@@ -71,7 +85,10 @@ export async function GET(request: Request) {
       };
     }
 
-    const imageResponse = await fetch(imageUrl, fetchInit);
+    const imageResponse = await fetchWithValidatedRedirects(
+      urlValidation.url.href,
+      fetchInit
+    );
 
     if (!imageResponse.ok) {
       const response = NextResponse.json(
@@ -109,6 +126,14 @@ export async function GET(request: Request) {
     });
     return addCorsHeaders(response);
   } catch (error) {
+    if (error instanceof ProxyRedirectError) {
+      const response = NextResponse.json(
+        { error: error.message },
+        { status: 400 }
+      );
+      return addCorsHeaders(response);
+    }
+
     const response = NextResponse.json(
       { error: 'Error fetching image' },
       { status: 500 }

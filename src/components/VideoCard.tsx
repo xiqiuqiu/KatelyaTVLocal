@@ -152,16 +152,21 @@ export default function VideoCard({
   useEffect(() => {
     if (from === 'douban' || !actualSource || !actualId) return;
 
+    let cancelled = false;
+
     const fetchFavoriteStatus = async () => {
       try {
         const nextFavorited = await isFavorited(actualSource, actualId);
+        if (cancelled) return;
         setFavorited(nextFavorited);
       } catch (err) {
-        throw new Error('检查收藏状态失败');
+        if (!cancelled) {
+          throw new Error('检查收藏状态失败');
+        }
       }
     };
 
-    fetchFavoriteStatus();
+    void fetchFavoriteStatus();
 
     const storageKey = generateStorageKey(actualSource, actualId);
     const unsubscribe = subscribeToDataUpdates(
@@ -171,7 +176,10 @@ export default function VideoCard({
       }
     );
 
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [from, actualSource, actualId]);
 
   const handleToggleFavorite = useCallback(

@@ -1,6 +1,6 @@
 # React improve-react plans
 
-Audit commit baseline: **ea3113d**. All plans status **TODO** until executed.
+Audit commit baseline: **ea3113d**. Execution branch: `improve-react/execute-001-plus` (HEAD at execution time may differ).
 
 These plans were produced by `/improve-react` for every vetted finding. Execute with any agent via `improve-react execute <plan>` or by following each file’s Steps literally.
 
@@ -34,27 +34,27 @@ These plans were produced by `/improve-react` for every vetted finding. Execute 
 
 | Plan | Status | Severity |
 |------|--------|----------|
-| 001-escape-runtime-config-json-in-html | TODO | HIGH |
-| 002-upgrade-next-rsc-security-line | TODO | HIGH |
-| 003-harden-image-proxy-redirects | TODO | HIGH |
-| 004-play-init-effect-abort-cleanup | TODO | HIGH |
-| 005-play-beforeunload-stable-deps | TODO | HIGH |
-| 006-skip-controller-pure-countdown-updater | TODO | HIGH |
-| 007-split-play-page-add-error-boundary | TODO | HIGH |
-| 008-harden-hls-proxy-redirects | TODO | MEDIUM |
-| 009-usermenu-accessible-dismiss-overlay | TODO | MEDIUM |
-| 010-skip-controller-a11y-labels | TODO | MEDIUM |
-| 011-play-ref-writes-outside-render | TODO | MEDIUM |
-| 012-appshell-pure-sidebar-toggle | TODO | MEDIUM |
-| 013-siteprovider-memo-context-value | TODO | MEDIUM |
-| 014-split-episode-selector-and-aifind | TODO | MEDIUM |
-| 015-admin-hydration-storage-branch | TODO | LOW |
-| 016-search-fetch-abort-race | TODO | HIGH |
-| 017-aifind-guard-main-request-race | TODO | HIGH |
-| 018-play-timeupdate-decouple-react-state | TODO | HIGH |
-| 019-play-lazy-ref-init | TODO | HIGH |
-| 020-skip-segments-stable-keys | TODO | MEDIUM |
-| 021-async-race-favorite-skip-continue | TODO | MEDIUM |
+| 001-escape-runtime-config-json-in-html | DONE | HIGH |
+| 002-upgrade-next-rsc-security-line | BLOCKED | HIGH |
+| 003-harden-image-proxy-redirects | DONE | HIGH |
+| 004-play-init-effect-abort-cleanup | DONE | HIGH |
+| 005-play-beforeunload-stable-deps | DONE | HIGH |
+| 006-skip-controller-pure-countdown-updater | DONE | HIGH |
+| 007-split-play-page-add-error-boundary | DONE | HIGH |
+| 008-harden-hls-proxy-redirects | DONE | MEDIUM |
+| 009-usermenu-accessible-dismiss-overlay | DONE | MEDIUM |
+| 010-skip-controller-a11y-labels | DONE | MEDIUM |
+| 011-play-ref-writes-outside-render | DONE | MEDIUM |
+| 012-appshell-pure-sidebar-toggle | DONE | MEDIUM |
+| 013-siteprovider-memo-context-value | DONE | MEDIUM |
+| 014-split-episode-selector-and-aifind | DONE | MEDIUM |
+| 015-admin-hydration-storage-branch | DONE | LOW |
+| 016-search-fetch-abort-race | DONE | HIGH |
+| 017-aifind-guard-main-request-race | DONE | HIGH |
+| 018-play-timeupdate-decouple-react-state | DONE | HIGH |
+| 019-play-lazy-ref-init | DONE | HIGH |
+| 020-skip-segments-stable-keys | DONE | MEDIUM |
+| 021-async-race-favorite-skip-continue | DONE | MEDIUM |
 
 ## Execution notes
 
@@ -62,3 +62,4 @@ These plans were produced by `/improve-react` for every vetted finding. Execute 
 - For rule-backed items, re-fetch canonical recipes if the codebase drifted: `npx react-doctor@latest rules explain <rule>`.
 - After each plan: `npx react-doctor@latest --scope changed` plus the plan’s Verification section.
 - `002` is intentionally last among security items that need product scheduling — it is still required to fully clear the RSC advisory finding.
+- **002 BLOCKED (2026-07-19):** Deploy path still uses `@cloudflare/next-on-pages` (Next 14 peer only; package deprecated). Patched Next ≥15.5.18 / 16.2.6 requires migrating to `@opennextjs/cloudflare` first (Node runtime, not Edge-only). Do not bump `next` in this branch without that adapter migration — treat as its own PR.

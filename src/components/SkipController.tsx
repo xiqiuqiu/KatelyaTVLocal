@@ -16,6 +16,8 @@ interface SkipControllerProps {
   id: string;
   title: string;
   artPlayerRef: React.MutableRefObject<any>;
+  /** Re-bind player listeners when the ArtPlayer instance is recreated. */
+  playerBindingKey?: string;
   currentTime?: number;
   duration?: number;
   isSettingMode?: boolean;
@@ -23,11 +25,40 @@ interface SkipControllerProps {
   onNextEpisode?: () => void; // 新增：跳转下一集的回调
 }
 
+function createSkipSegmentId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `skip-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function ensureSkipSegmentIds(segments: SkipSegment[]): SkipSegment[] {
+  return segments.map((segment) =>
+    segment.id ? segment : { ...segment, id: createSkipSegmentId() }
+  );
+}
+
+function migrateSkipConfig(
+  config: EpisodeSkipConfig | null
+): EpisodeSkipConfig | null {
+  if (!config?.segments?.length) {
+    return config;
+  }
+
+  const segments = ensureSkipSegmentIds(config.segments);
+  const migrated = segments.some(
+    (segment, index) => segment.id !== config.segments[index]?.id
+  );
+
+  return migrated ? { ...config, segments } : config;
+}
+
 export default function SkipController({
   source,
   id,
   title,
   artPlayerRef,
+  playerBindingKey,
   currentTime = 0,
   duration = 0,
   isSettingMode = false,
@@ -39,6 +70,7 @@ export default function SkipController({
   const [currentSkipSegment, setCurrentSkipSegment] =
     useState<SkipSegment | null>(null);
   const [newSegment, setNewSegment] = useState<Partial<SkipSegment>>({});
+  const [settingDisplayTime, setSettingDisplayTime] = useState(0);
 
   // 新增状态：批量设置模式 - 支持分:秒格式
   const [batchSettings, setBatchSettings] = useState({
@@ -55,6 +87,11 @@ export default function SkipController({
   const [isWarningMode, setIsWarningMode] = useState(false); // 新增：预告模式状态
   const [isDesktopPanelOpen, setIsDesktopPanelOpen] = useState(true); // 新增：桌面端面板展开状态
   const isCountdownPausedRef = useRef(isCountdownPaused); // 用于同步暂停状态
+  const countdownSecondsRef = useRef(countdownSeconds);
+  const showCountdownRef = useRef(showCountdown);
+  const isSettingModeRef = useRef(isSettingMode);
+  const checkSkipSegmentRef = useRef<(time: number) => void>(() => undefined);
+  const lastSettingDisplaySecondRef = useRef(-1);
 
   const lastSkipTimeRef = useRef<number>(0);
   const skipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -147,14 +184,25 @@ export default function SkipController({
     return `${seconds}秒后自动播放下一集`;
   }, []);
 
-  // 加载跳过配置
-  const loadSkipConfig = useCallback(async () => {
-    try {
-      const config = await getSkipConfig(source, id);
-      setSkipConfig(config);
-    } catch (err) {
-      console.error('加载跳过配置失败:', err);
-    }
+  // 初始化加载配置
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const config = await getSkipConfig(source, id);
+        if (cancelled) return;
+        setSkipConfig(migrateSkipConfig(config));
+      } catch (err) {
+        if (!cancelled) {
+          console.error('加载跳过配置失败:', err);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [source, id]);
 
   // 自动跳过逻辑
@@ -195,6 +243,7 @@ export default function SkipController({
 
       // 重置状态
       setShowCountdown(true);
+      countdownSecondsRef.current = seconds;
       setCountdownSeconds(seconds);
       setIsCountdownPaused(false); // 重置暂停状态
       setIsWarningMode(isWarning); // 设置预告模式
@@ -212,38 +261,37 @@ export default function SkipController({
         return;
       }
 
-      // 使用ref来获取最新的暂停状态，避免闭包问题
+      // 使用 ref 获取最新暂停状态；setState updater 仅返回数字，副作用在 interval 内执行
       countdownIntervalRef.current = setInterval(() => {
-        setCountdownSeconds((prev) => {
-          // 通过ref获取最新的暂停状态
-          if (isCountdownPausedRef.current) return prev;
+        if (isCountdownPausedRef.current) return;
 
-          if (prev <= 1) {
-            // 倒计时结束
-            countdownIntervalRef.current && clearInterval(countdownIntervalRef.current);
+        const next =
+          countdownSecondsRef.current <= 1 ? 0 : countdownSecondsRef.current - 1;
+        countdownSecondsRef.current = next;
+        setCountdownSeconds(next);
+
+        if (next <= 0) {
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current);
             countdownIntervalRef.current = null;
-            setShowCountdown(false);
-
-            if (targetTime && artPlayerRef.current) {
-              // 如果有目标时间，跳转到指定时间
-              artPlayerRef.current.currentTime = targetTime;
-            } else if (onNextEpisode) {
-              // 否则跳转下一集
-              console.log('SkipController: 准备调用 onNextEpisode 跳转到下一集');
-              try {
-                onNextEpisode();
-                console.log('SkipController: onNextEpisode 调用成功');
-              } catch (error) {
-                console.error('跳转下一集失败:', error);
-                setShowCountdown(false);
-              }
-            } else {
-              console.log('SkipController: onNextEpisode 回调函数不存在');
-            }
-            return 0;
           }
-          return prev - 1;
-        });
+          setShowCountdown(false);
+
+          if (targetTime && artPlayerRef.current) {
+            artPlayerRef.current.currentTime = targetTime;
+          } else if (onNextEpisode) {
+            console.log('SkipController: 准备调用 onNextEpisode 跳转到下一集');
+            try {
+              onNextEpisode();
+              console.log('SkipController: onNextEpisode 调用成功');
+            } catch (error) {
+              console.error('跳转下一集失败:', error);
+              setShowCountdown(false);
+            }
+          } else {
+            console.log('SkipController: onNextEpisode 回调函数不存在');
+          }
+        }
       }, 1000);
     },
     [onNextEpisode, artPlayerRef]
@@ -281,12 +329,12 @@ export default function SkipController({
         const warningTime = Math.max(0, actualStartTime - 5); // 提前5秒
 
         // 当到达警告时间且还未开始倒计时时，启动5秒倒计时
-        if (time >= warningTime && time < actualStartTime && !showCountdown) {
+        if (time >= warningTime && time < actualStartTime && !showCountdownRef.current) {
           console.log('SkipController: 启动片尾预告倒计时', {
             currentTime: time,
             warningTime,
             actualStartTime,
-            showCountdown
+            showCountdown: showCountdownRef.current,
           });
           startEndingCountdown(5, undefined, true); // 5秒倒计时，直接跳转下一集，预告模式
           break;
@@ -297,7 +345,6 @@ export default function SkipController({
       skipConfig,
       duration,
       onNextEpisode,
-      showCountdown,
       startEndingCountdown,
       activeEndingSegments,
       calculateActualStartTime,
@@ -401,6 +448,7 @@ export default function SkipController({
 
     try {
       const segment: SkipSegment = {
+        id: createSkipSegmentId(),
         start: newSegment.start,
         end: newSegment.end,
         type: newSegment.type as 'opening' | 'ending',
@@ -447,6 +495,7 @@ export default function SkipController({
       }
 
       segments.push({
+        id: createSkipSegmentId(),
         start,
         end,
         type: 'opening',
@@ -474,6 +523,7 @@ export default function SkipController({
       if (!batchSettings.endingEnd || batchSettings.endingEnd.trim() === '') {
         // 直接从指定时间跳转下一集
         segments.push({
+          id: createSkipSegmentId(),
           start: actualStartSeconds,
           end: duration, // 设置为视频总长度
           type: 'ending',
@@ -491,6 +541,7 @@ export default function SkipController({
         }
 
         segments.push({
+          id: createSkipSegmentId(),
           start: actualStartSeconds,
           end: actualEndSeconds,
           type: 'ending',
@@ -547,12 +598,12 @@ export default function SkipController({
 
   // 删除跳过片段
   const handleDeleteSegment = useCallback(
-    async (index: number) => {
+    async (segmentId: string) => {
       if (!skipConfig?.segments) return;
 
       try {
         const updatedSegments = skipConfig.segments.filter(
-          (_, i) => i !== index
+          (segment) => segment.id !== segmentId
         );
 
         if (updatedSegments.length === 0) {
@@ -586,34 +637,94 @@ export default function SkipController({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // 初始化加载配置
-  useEffect(() => {
-    loadSkipConfig();
-  }, [loadSkipConfig]);
 
-  // 监听播放时间变化
   useEffect(() => {
-    if (currentTime > 0) {
-      checkSkipSegment(currentTime);
+    checkSkipSegmentRef.current = checkSkipSegment;
+  }, [checkSkipSegment]);
+
+  // 订阅播放器 timeupdate：跳过检测走 ref，避免父组件每 tick setState
+  // ArtPlayer 实例可能晚于 mount 就绪，需轮询后再 addEventListener；
+  // cleanup 中已配对 removeEventListener + clearInterval（scanner 无法跨嵌套识别）。
+  // eslint-disable-next-line react-doctor/effect-needs-cleanup -- paired removeEventListener in return
+  useEffect(() => {
+    let video: HTMLVideoElement | null = null;
+    let retryTimer: ReturnType<typeof setInterval> | undefined;
+
+    const handleTimeUpdate = () => {
+      const art = artPlayerRef.current;
+      const time = art?.currentTime || video?.currentTime || 0;
+
+      if (duration > 0 && (time < 0 || time > duration)) {
+        setShowCountdown(false);
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
+        }
+        return;
+      }
+
+      if (time > 0) {
+        checkSkipSegmentRef.current(time);
+      }
+
+      if (isSettingModeRef.current) {
+        const displaySecond = Math.floor(time);
+        if (displaySecond !== lastSettingDisplaySecondRef.current) {
+          lastSettingDisplaySecondRef.current = displaySecond;
+          setSettingDisplayTime(time);
+        }
+      }
+    };
+
+    const tryAttach = () => {
+      if (video) {
+        return true;
+      }
+      const el = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+      if (!el) {
+        return false;
+      }
+      video = el;
+      video.addEventListener('timeupdate', handleTimeUpdate);
+      return true;
+    };
+
+    if (!tryAttach()) {
+      retryTimer = setInterval(() => {
+        if (tryAttach() && retryTimer) {
+          clearInterval(retryTimer);
+          retryTimer = undefined;
+        }
+      }, 200);
     }
-  }, [currentTime, checkSkipSegment]);
+
+    return () => {
+      if (retryTimer !== undefined) {
+        clearInterval(retryTimer);
+      }
+      if (video !== null) {
+        video.removeEventListener('timeupdate', handleTimeUpdate);
+      }
+    };
+  }, [artPlayerRef, playerBindingKey, duration, source, id]);
 
   // 同步暂停状态到ref
   useEffect(() => {
     isCountdownPausedRef.current = isCountdownPaused;
   }, [isCountdownPaused]);
 
-  // 添加播放时间变化监听，处理异常情况
   useEffect(() => {
-    if (currentTime < 0 || currentTime > duration) {
-      // 处理异常时间值
-      setShowCountdown(false);
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-      }
+    showCountdownRef.current = showCountdown;
+  }, [showCountdown]);
+
+  useEffect(() => {
+    isSettingModeRef.current = isSettingMode;
+    if (isSettingMode) {
+      const time = artPlayerRef.current?.currentTime ?? currentTime;
+      lastSettingDisplaySecondRef.current = Math.floor(time);
+      setSettingDisplayTime(time);
     }
-  }, [currentTime, duration]);
+  }, [isSettingMode, artPlayerRef, currentTime]);
 
   // 清理定时器 - 增强版
   useEffect(() => {
@@ -646,13 +757,16 @@ export default function SkipController({
             </div>
             <div className='flex items-center space-x-2'>
               <button
+                type='button'
                 onClick={() => setIsCountdownPaused(!isCountdownPaused)}
                 className='px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs transition-colors'
+                aria-label={isCountdownPaused ? '继续倒计时' : '暂停倒计时'}
                 title={isCountdownPaused ? '继续' : '暂停'}
               >
                 {isCountdownPaused ? '▶' : '⏸'}
               </button>
               <button
+                type='button'
                 onClick={() => {
                   setShowCountdown(false);
                   setIsCountdownPaused(false);
@@ -663,6 +777,7 @@ export default function SkipController({
                   }
                 }}
                 className='px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs transition-colors'
+                aria-label='取消倒计时'
               >
                 取消
               </button>
@@ -681,8 +796,10 @@ export default function SkipController({
                 : '检测到片尾'}
             </span>
             <button
+              type='button'
               onClick={handleSkip}
               className='px-3 py-1 bg-green-600 hover:bg-green-700 rounded text-sm font-medium transition-colors'
+              aria-label='跳过当前片段'
             >
               跳过
             </button>
@@ -705,6 +822,8 @@ export default function SkipController({
                 </p>
               </div>
               <button
+                type='button'
+                aria-label='关闭跳过设置'
                 onClick={() => {
                   onSettingModeChange?.(false);
                   setBatchSettings({
@@ -754,8 +873,12 @@ export default function SkipController({
                     </svg>
                   </div>
                   <div>
-                    <label className='flex items-center space-x-3 cursor-pointer'>
+                    <label
+                      htmlFor='skip-auto-skip'
+                      className='flex items-center space-x-3 cursor-pointer'
+                    >
                       <input
+                        id='skip-auto-skip'
                         type='checkbox'
                         checked={batchSettings.autoSkip}
                         onChange={(e) =>
@@ -791,8 +914,12 @@ export default function SkipController({
                     </svg>
                   </div>
                   <div>
-                    <label className='flex items-center space-x-3 cursor-pointer'>
+                    <label
+                      htmlFor='skip-auto-next-episode'
+                      className='flex items-center space-x-3 cursor-pointer'
+                    >
                       <input
+                        id='skip-auto-next-episode'
                         type='checkbox'
                         checked={batchSettings.autoNextEpisode}
                         onChange={(e) =>
@@ -837,11 +964,15 @@ export default function SkipController({
 
                 <div className='space-y-4'>
                   <div>
-                    <label className='block text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300'>
+                    <label
+                      htmlFor='skip-opening-start'
+                      className='block text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300'
+                    >
                       开始时间
                     </label>
                     <div className='relative'>
                       <input
+                        id='skip-opening-start'
                         type='text'
                         value={batchSettings.openingStart}
                         onChange={(e) =>
@@ -875,11 +1006,15 @@ export default function SkipController({
                   </div>
 
                   <div>
-                    <label className='block text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300'>
+                    <label
+                      htmlFor='skip-opening-end'
+                      className='block text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300'
+                    >
                       结束时间
                     </label>
                     <div className='relative'>
                       <input
+                        id='skip-opening-end'
                         type='text'
                         value={batchSettings.openingEnd}
                         onChange={(e) =>
@@ -932,11 +1067,15 @@ export default function SkipController({
 
                 <div className='space-y-4'>
                   <div>
-                    <label className='block text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300'>
+                    <label
+                      htmlFor='skip-ending-start'
+                      className='block text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300'
+                    >
                       剩余时间
                     </label>
                     <div className='relative'>
                       <input
+                        id='skip-ending-start'
                         type='text'
                         value={batchSettings.endingStart}
                         onChange={(e) =>
@@ -970,11 +1109,15 @@ export default function SkipController({
                   </div>
 
                   <div>
-                    <label className='block text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300'>
+                    <label
+                      htmlFor='skip-ending-end'
+                      className='block text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300'
+                    >
                       结束时间 - 可选（剩余时间）
                     </label>
                     <div className='relative'>
                       <input
+                        id='skip-ending-end'
                         type='text'
                         value={batchSettings.endingEnd}
                         onChange={(e) =>
@@ -1040,7 +1183,9 @@ export default function SkipController({
                       当前播放时间
                     </div>
                     <div className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
-                      {secondsToTime(currentTime)}
+                      {secondsToTime(
+                        isSettingMode ? settingDisplayTime : currentTime
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1093,6 +1238,7 @@ export default function SkipController({
             {/* 操作按钮 */}
             <div className='flex space-x-4 mt-8'>
               <button
+                type='button'
                 onClick={handleSaveBatchSettings}
                 className='flex-1 px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl'
               >
@@ -1114,6 +1260,7 @@ export default function SkipController({
                 </div>
               </button>
               <button
+                type='button'
                 onClick={() => {
                   onSettingModeChange?.(false);
                   setBatchSettings({
@@ -1156,10 +1303,14 @@ export default function SkipController({
               </summary>
               <div className='mt-4 space-y-4 pl-4 border-l-2 border-gray-200 dark:border-gray-600'>
                 <div>
-                  <label className='block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300'>
+                  <label
+                    htmlFor='skip-segment-type'
+                    className='block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300'
+                  >
                     类型
                   </label>
                   <select
+                    id='skip-segment-type'
                     value={newSegment.type || ''}
                     onChange={(e) =>
                       setNewSegment({
@@ -1177,10 +1328,14 @@ export default function SkipController({
 
                 <div className='grid grid-cols-2 gap-4'>
                   <div>
-                    <label className='block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300'>
+                    <label
+                      htmlFor='skip-segment-start'
+                      className='block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300'
+                    >
                       开始时间 (秒)
                     </label>
                     <input
+                      id='skip-segment-start'
                       type='number'
                       value={newSegment.start || ''}
                       onChange={(e) =>
@@ -1194,10 +1349,14 @@ export default function SkipController({
                   </div>
 
                   <div>
-                    <label className='block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300'>
+                    <label
+                      htmlFor='skip-segment-end'
+                      className='block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300'
+                    >
                       结束时间 (秒)
                     </label>
                     <input
+                      id='skip-segment-end'
                       type='number'
                       value={newSegment.end || ''}
                       onChange={(e) =>
@@ -1212,6 +1371,7 @@ export default function SkipController({
                 </div>
 
                 <button
+                  type='button'
                   onClick={handleSaveSegment}
                   className='px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium transition-colors'
                 >
@@ -1232,6 +1392,8 @@ export default function SkipController({
             {/* 移动端：底部浮动按钮 */}
             <div className='lg:hidden fixed bottom-20 right-4 z-[9998]'>
               <button
+                type='button'
+                aria-label='打开跳过配置面板'
                 onClick={() => {
                   const panel = document.getElementById('skip-segments-panel');
                   panel?.classList.toggle('hidden');
@@ -1266,14 +1428,17 @@ export default function SkipController({
             {/* 移动端：全屏面板 */}
             <div
               id='skip-segments-panel'
-              className='lg:hidden fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm hidden'
-              onClick={(e) => {
-                // 点击背景关闭面板
-                if (e.target === e.currentTarget) {
-                  e.currentTarget.classList.add('hidden');
-                }
-              }}
+              className='lg:hidden fixed inset-0 z-[9999] hidden'
             >
+              <button
+                type='button'
+                aria-label='关闭跳过面板'
+                className='absolute inset-0 bg-black/50 backdrop-blur-sm'
+                onClick={() => {
+                  const panel = document.getElementById('skip-segments-panel');
+                  panel?.classList.add('hidden');
+                }}
+              />
               <div className='absolute inset-x-0 bottom-0 bg-white dark:bg-gray-800 rounded-t-3xl shadow-2xl max-h-[80vh] overflow-hidden flex flex-col animate-slide-up'>
                 {/* 拖拽指示器 */}
                 <div className='flex justify-center pt-3 pb-2'>
@@ -1308,6 +1473,8 @@ export default function SkipController({
                     </div>
                   </div>
                   <button
+                    type='button'
+                    aria-label='关闭跳过面板'
                     onClick={() => {
                       const panel = document.getElementById('skip-segments-panel');
                       panel?.classList.add('hidden');
@@ -1332,9 +1499,9 @@ export default function SkipController({
 
                 {/* 片段列表 */}
                 <div className='flex-1 overflow-y-auto px-6 py-4 space-y-3'>
-                  {skipConfig.segments.map((segment, index) => (
+                  {skipConfig.segments.map((segment) => (
                     <div
-                      key={index}
+                      key={segment.id}
                       className='flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200'
                     >
                       <div className='flex items-center space-x-3 flex-1 min-w-0'>
@@ -1377,6 +1544,7 @@ export default function SkipController({
                         </div>
                       </div>
                       <button
+                        type='button'
                         onClick={() => {
                           // 添加触觉反馈
                           if ('vibrate' in navigator) {
@@ -1384,10 +1552,11 @@ export default function SkipController({
                           }
                           // 添加确认对话框
                           if (confirm('确定要删除这个跳过片段吗？')) {
-                            handleDeleteSegment(index);
+                            handleDeleteSegment(segment.id!);
                           }
                         }}
                         className='ml-3 p-3 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 flex-shrink-0'
+                        aria-label='删除跳过片段'
                         title='删除'
                       >
                         <svg
@@ -1411,6 +1580,7 @@ export default function SkipController({
                 {/* 底部操作按钮 */}
                 <div className='p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800'>
                   <button
+                    type='button'
                     onClick={() => {
                       onSettingModeChange?.(true);
                       const panel = document.getElementById('skip-segments-panel');
@@ -1444,6 +1614,8 @@ export default function SkipController({
               {/* 收起状态：只显示一个圆形按钮 */}
               {!isDesktopPanelOpen && (
                 <button
+                  type='button'
+                  aria-label='打开跳过配置面板'
                   onClick={() => setIsDesktopPanelOpen(true)}
                   className='w-14 h-14 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-full shadow-xl flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 animate-pulse'
                 >
@@ -1496,8 +1668,10 @@ export default function SkipController({
                           {skipConfig.segments.length} 个片段
                         </div>
                         <button
+                          type='button'
                           onClick={() => setIsDesktopPanelOpen(false)}
                           className='p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors'
+                          aria-label='收起跳过面板'
                           title='收起面板'
                         >
                           <svg
@@ -1518,9 +1692,9 @@ export default function SkipController({
                     </div>
 
                 <div className='space-y-3'>
-                  {skipConfig.segments.map((segment, index) => (
+                  {skipConfig.segments.map((segment) => (
                     <div
-                      key={index}
+                      key={segment.id}
                       className='group flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200'
                     >
                       <div className='flex items-center space-x-3 flex-1'>
@@ -1564,12 +1738,14 @@ export default function SkipController({
                         </div>
                       </div>
                       <button
+                        type='button'
                         onClick={() => {
                           if (confirm('确定要删除这个跳过片段吗？')) {
-                            handleDeleteSegment(index);
+                            handleDeleteSegment(segment.id!);
                           }
                         }}
                         className='opacity-0 group-hover:opacity-100 p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all duration-200 hover:scale-105 active:scale-95'
+                        aria-label='删除跳过片段'
                         title='删除'
                       >
                         <svg
@@ -1592,6 +1768,7 @@ export default function SkipController({
 
                 <div className='mt-4 pt-4 border-t border-gray-200 dark:border-gray-600'>
                   <button
+                    type='button'
                     onClick={() => onSettingModeChange?.(true)}
                     className='w-full px-4 py-3 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-xl font-semibold transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl'
                   >

@@ -33,7 +33,13 @@ import {
   Users,
   Video,
 } from 'lucide-react';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import Swal from 'sweetalert2';
 
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
@@ -41,6 +47,22 @@ import { getRuntimeCurrentUser } from '@/lib/auth';
 import { buildRegistrationInviteLink } from '@/lib/registration/invite-link';
 
 import PageLayout from '@/components/PageLayout';
+
+function useRuntimeStorageType(): string | null {
+  return useSyncExternalStore(
+    () => () => {},
+    () => window.RUNTIME_CONFIG?.STORAGE_TYPE ?? null,
+    () => null
+  );
+}
+
+function useStableNow(): number {
+  return useSyncExternalStore(
+    () => () => {},
+    () => Date.now(),
+    () => 0
+  );
+}
 
 // 统一弹窗方法（必须在首次使用前定义）
 const showError = (message: string) =>
@@ -211,13 +233,9 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
   // 当前登录用户名
   const currentUsername = getRuntimeCurrentUser()?.username || null;
 
-  // 检测存储类型是否为 d1
-  const isD1Storage =
-    typeof window !== 'undefined' &&
-    (window as any).RUNTIME_CONFIG?.STORAGE_TYPE === 'd1';
-  const isUpstashStorage =
-    typeof window !== 'undefined' &&
-    (window as any).RUNTIME_CONFIG?.STORAGE_TYPE === 'upstash';
+  const storageType = useRuntimeStorageType();
+  const isD1Storage = storageType === 'd1';
+  const isUpstashStorage = storageType === 'upstash';
 
   useEffect(() => {
     if (config?.UserConfig) {
@@ -704,6 +722,7 @@ const InviteConfig = () => {
   const [loading, setLoading] = useState(false);
   const [maxUses, setMaxUses] = useState(1);
   const [validDays, setValidDays] = useState(0);
+  const now = useStableNow();
 
   const fetchInvites = useCallback(async () => {
     try {
@@ -908,7 +927,7 @@ const InviteConfig = () => {
               invites.map((invite) => {
                 const exhausted = invite.usedCount >= invite.maxUses;
                 const expired =
-                  invite.expiresAt !== null && invite.expiresAt <= Date.now();
+                  invite.expiresAt !== null && invite.expiresAt <= now;
                 const active = !invite.disabled && !exhausted && !expired;
 
                 return (
@@ -967,6 +986,123 @@ const InviteConfig = () => {
         </table>
       </div>
     </div>
+  );
+};
+
+interface DraggableRowProps {
+  source: DataSource;
+  batchMode: boolean;
+  selectedSources: Set<string>;
+  onSelectSource: (key: string, checked: boolean) => void;
+  onToggleEnable: (key: string) => void;
+  onDelete: (key: string) => void;
+}
+
+const DraggableRow = ({
+  source,
+  batchMode,
+  selectedSources,
+  onSelectSource,
+  onToggleEnable,
+  onDelete,
+}: DraggableRowProps) => {
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id: source.key });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  } as React.CSSProperties;
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className='hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors select-none'
+    >
+      {/* 拖拽手柄 */}
+      <td
+        className='px-2 py-4 cursor-grab text-gray-400'
+        style={{ touchAction: 'none' }}
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical size={16} />
+      </td>
+
+      {/* 批量选择复选框 */}
+      {batchMode && (
+        <td className='px-4 py-4 whitespace-nowrap'>
+          <input
+            type='checkbox'
+            checked={selectedSources.has(source.key)}
+            onChange={(e) => onSelectSource(source.key, e.target.checked)}
+            disabled={source.from === 'config'} // 禁用示例源选择
+            className='w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 disabled:opacity-50'
+          />
+        </td>
+      )}
+      <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100'>
+        <div className="flex items-center space-x-2">
+          <span>{source.name}</span>
+          {source.from === 'config' && (
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              示例源
+            </span>
+          )}
+        </div>
+      </td>
+      <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100'>
+        {source.key}
+      </td>
+      <td
+        className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[12rem] truncate'
+        title={source.api}
+      >
+        {source.api}
+      </td>
+      <td
+        className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[8rem] truncate'
+        title={source.detail || '-'}
+      >
+        {source.detail || '-'}
+      </td>
+      <td className='px-6 py-4 whitespace-nowrap max-w-[1rem]'>
+        <span
+          className={`px-2 py-1 text-xs rounded-full ${
+            !source.disabled
+              ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300'
+              : 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-300'
+          }`}
+        >
+          {!source.disabled ? '启用中' : '已禁用'}
+        </span>
+      </td>
+      <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
+        <button
+          onClick={() => onToggleEnable(source.key)}
+          className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${
+            !source.disabled
+              ? 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60'
+              : 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/60'
+          } transition-colors`}
+        >
+          {!source.disabled ? '禁用' : '启用'}
+        </button>
+        {source.from !== 'config' ? (
+          <button
+            onClick={() => onDelete(source.key)}
+            className='inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-700/40 dark:hover:bg-gray-700/60 dark:text-gray-200 transition-colors'
+          >
+            删除
+          </button>
+        ) : (
+          <span className='inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400'>
+            不可删除
+          </span>
+        )}
+      </td>
+    </tr>
   );
 };
 
@@ -1366,108 +1502,6 @@ const VideoSourceConfig = ({
       });
   };
 
-  // 可拖拽行封装 (dnd-kit)
-  const DraggableRow = ({ source }: { source: DataSource }) => {
-    const { attributes, listeners, setNodeRef, transform, transition } =
-      useSortable({ id: source.key });
-
-    const style = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-    } as React.CSSProperties;
-
-    return (
-      <tr
-        ref={setNodeRef}
-        style={style}
-        className='hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors select-none'
-      >
-        {/* 拖拽手柄 */}
-        <td
-          className='px-2 py-4 cursor-grab text-gray-400'
-          style={{ touchAction: 'none' }}
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical size={16} />
-        </td>
-        
-        {/* 批量选择复选框 */}
-        {batchMode && (
-          <td className='px-4 py-4 whitespace-nowrap'>
-            <input
-              type='checkbox'
-              checked={selectedSources.has(source.key)}
-              onChange={(e) => handleSelectSource(source.key, e.target.checked)}
-              disabled={source.from === 'config'} // 禁用示例源选择
-              className='w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 disabled:opacity-50'
-            />
-          </td>
-        )}
-        <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100'>
-          <div className="flex items-center space-x-2">
-            <span>{source.name}</span>
-            {source.from === 'config' && (
-              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-                示例源
-              </span>
-            )}
-          </div>
-        </td>
-        <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100'>
-          {source.key}
-        </td>
-        <td
-          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[12rem] truncate'
-          title={source.api}
-        >
-          {source.api}
-        </td>
-        <td
-          className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[8rem] truncate'
-          title={source.detail || '-'}
-        >
-          {source.detail || '-'}
-        </td>
-        <td className='px-6 py-4 whitespace-nowrap max-w-[1rem]'>
-          <span
-            className={`px-2 py-1 text-xs rounded-full ${
-              !source.disabled
-                ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-300'
-                : 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-300'
-            }`}
-          >
-            {!source.disabled ? '启用中' : '已禁用'}
-          </span>
-        </td>
-        <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
-          <button
-            onClick={() => handleToggleEnable(source.key)}
-            className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${
-              !source.disabled
-                ? 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60'
-                : 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/60'
-            } transition-colors`}
-          >
-            {!source.disabled ? '禁用' : '启用'}
-          </button>
-          {source.from !== 'config' ? (
-            <button
-              onClick={() => handleDelete(source.key)}
-              className='inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-700/40 dark:hover:bg-gray-700/60 dark:text-gray-200 transition-colors'
-            >
-              删除
-            </button>
-          ) : (
-            <span className='inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400'>
-              不可删除
-            </span>
-          )}
-        </td>
-      </tr>
-    );
-  };
-
   if (!config) {
     return (
       <div className='text-center text-gray-500 dark:text-gray-400'>
@@ -1659,7 +1693,15 @@ const VideoSourceConfig = ({
             >
               <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
                 {sources.map((source) => (
-                  <DraggableRow key={source.key} source={source} />
+                  <DraggableRow
+                    key={source.key}
+                    source={source}
+                    batchMode={batchMode}
+                    selectedSources={selectedSources}
+                    onSelectSource={handleSelectSource}
+                    onToggleEnable={handleToggleEnable}
+                    onDelete={handleDelete}
+                  />
                 ))}
               </tbody>
             </SortableContext>
@@ -1696,13 +1738,9 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
   // 保存状态
   const [saving, setSaving] = useState(false);
 
-  // 检测存储类型是否为 d1 或 upstash
-  const isD1Storage =
-    typeof window !== 'undefined' &&
-    (window as any).RUNTIME_CONFIG?.STORAGE_TYPE === 'd1';
-  const isUpstashStorage =
-    typeof window !== 'undefined' &&
-    (window as any).RUNTIME_CONFIG?.STORAGE_TYPE === 'upstash';
+  const storageType = useRuntimeStorageType();
+  const isD1Storage = storageType === 'd1';
+  const isUpstashStorage = storageType === 'upstash';
 
   useEffect(() => {
     if (config?.SiteConfig) {
