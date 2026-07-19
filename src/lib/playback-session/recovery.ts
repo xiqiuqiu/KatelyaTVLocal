@@ -30,6 +30,14 @@ export const RECOVERY_R2_MAX_ATTEMPTS = 3;
  */
 export const HEALTHY_SUSTAINED_SECONDS = 1.5;
 /**
+ * A short healthy beat (HEALTHY_SUSTAINED_SECONDS) ends the Stall Episode but
+ * must NOT clear the carried escape budget: a stuttering source that recovers
+ * for ~1.5s between stalls would otherwise reset the ratchet guard every cycle
+ * and skip forward to the end. Only a genuinely long, continuous healthy run
+ * clears the budget (the playhead is really progressing again on this source).
+ */
+export const ESCAPE_BUDGET_RESET_HEALTHY_SECONDS = 30;
+/**
  * Playhead progress may legitimately exceed wall-clock slightly (timeupdate
  * batching). Anything beyond this is treated as an instant seek/escape jump,
  * not real playback, and does not count toward sustained recovery.
@@ -83,9 +91,13 @@ export interface HealthyProgressResult {
 }
 
 /**
- * Fold a healthy-progress tick into the continuous healthy run. Sustained
- * progress (tracking wall clock) ends the Stall Episode and clears the escape
- * budget; a brief post-escape blip only records the anchor and keeps both.
+ * Fold a healthy-progress tick into the continuous healthy run.
+ * - A long continuous run (ESCAPE_BUDGET_RESET_HEALTHY_SECONDS) ends the episode
+ *   AND clears the escape budget (the source is truly progressing again).
+ * - A short beat (HEALTHY_SUSTAINED_SECONDS) ends the episode but PRESERVES the
+ *   escape budget + healthy anchor, so a stuttering source cannot reset the
+ *   cross-episode ratchet guard every cycle and skip forward forever.
+ * - A brief post-escape blip only records the anchor.
  */
 export function applyHealthyProgress(
   state: PlaybackSessionState,
@@ -116,11 +128,17 @@ export function applyHealthyProgress(
     };
   }
 
-  if (advanced >= HEALTHY_SUSTAINED_SECONDS) {
+  if (advanced >= ESCAPE_BUDGET_RESET_HEALTHY_SECONDS) {
     return {
       state: resetEscapeBudget(state),
       episodeEnded: true,
     };
+  }
+
+  if (advanced >= HEALTHY_SUSTAINED_SECONDS) {
+    // End the episode, but keep the escape budget + anchor: the anchor lets a
+    // longer uninterrupted run eventually clear the budget above.
+    return { state, episodeEnded: true };
   }
 
   return { state, episodeEnded: false };
@@ -197,6 +215,27 @@ export function clearStallEpisode(
     escapeCount: 0,
     healthyProgressAnchorMs: null,
     healthyProgressAnchorTime: null,
+  };
+}
+
+/**
+ * End the Stall Episode on a short healthy beat WITHOUT wiping the escape
+ * budget or the healthy anchor. The budget must survive rapidly recurring
+ * episodes (the cross-episode ratchet guard); only a genuinely long healthy run
+ * (applyHealthyProgress) or a fresh start (user seek / source or episode change)
+ * clears it.
+ */
+export function endStallEpisodePreservingBudget(
+  state: PlaybackSessionState
+): PlaybackSessionState {
+  return {
+    ...state,
+    recoveryStage: 'idle',
+    stallEpisodeActive: false,
+    r0EnteredAtMs: null,
+    r1AttemptCount: 0,
+    r2AttemptCount: 0,
+    recoveryInFlight: null,
   };
 }
 
@@ -552,6 +591,7 @@ function advanceFromR0(
     snapshot,
     evidence,
     'r0-observe-elapsed',
+    nowMs,
     suppressSkipForward
   );
 }
@@ -577,7 +617,14 @@ function advanceFromR1(
     return emitR2(state, snapshot, nowMs, 'r1-exhausted-or-fault');
   }
 
-  return emitR1(state, snapshot, evidence, 'r1-retry', suppressSkipForward);
+  return emitR1(
+    state,
+    snapshot,
+    evidence,
+    'r1-retry',
+    nowMs,
+    suppressSkipForward
+  );
 }
 
 function advanceFromR2(
@@ -612,6 +659,7 @@ function emitR1(
   snapshot: VideoSnapshot,
   evidence: RecoveryRuntimeEvidence | null,
   reason: string,
+  nowMs: number,
   suppressSkipForward?: boolean
 ): RecoveryLadderResult {
   const attempt = state.r1AttemptCount + 1;
@@ -634,13 +682,90 @@ function emitR1(
   }
 
   const action = pickR1Action(evidence, attempt);
-  const nudge = planStallEscapeResume({
+  const escape = planStallEscapeResume({
     currentPlayTime: snapshot.currentTime,
     badPoints: state.badPoints,
     sourceKey: state.currentSourceKey,
     mode: 'same-source',
     preferExistingWithoutRewind: action !== 'nudge-playback',
   });
+
+  // A forward skip off a Bad Point can also happen at R1 — HLS.js via the
+  // nudge target, iOS native via `resume-playback` (the adapter seeks to this
+  // target). Charge it against the SAME escape budget as R2 so it cannot
+  // ratchet the playhead to the end across recurring Stall Episodes.
+  if (escape.action === 'skip-forward' && escape.resumeTime != null) {
+    if (
+      state.escapeCount >= MAX_ESCAPE_COUNT ||
+      state.escapeForwardSpanSeconds >= MAX_ESCAPE_FORWARD_SPAN_SECONDS
+    ) {
+      // Budget exhausted — stop skipping forward; let the caller evaluate R3.
+      return {
+        state: withStage(
+          { ...state, r1AttemptCount: attempt },
+          'R2',
+          null
+        ),
+        effects: [
+          {
+            type: 'emitDebugEvent',
+            eventType: 'recovery.stage.exhausted-same-source',
+            message: 'Escape budget exhausted at R1; evaluate R3',
+            details: {
+              reason,
+              stage: 'R1',
+              escapeCount: state.escapeCount,
+              escapeForwardSpanSeconds: Number(
+                state.escapeForwardSpanSeconds.toFixed(2)
+              ),
+            },
+          },
+        ],
+      };
+    }
+
+    const badPoints =
+      escape.recordBadPointAt != null
+        ? rememberPlaybackBadPoint(state.badPoints, {
+            sourceKey: state.currentSourceKey,
+            timeSeconds: escape.recordBadPointAt,
+            nowMs,
+          })
+        : state.badPoints;
+    const forwardSpan = Math.max(0, escape.resumeTime - snapshot.currentTime);
+
+    return {
+      state: withStage(
+        {
+          ...state,
+          r1AttemptCount: attempt,
+          badPoints,
+          badPointsByScope: persistBadPointsForScope(
+            state.badPointsByScope,
+            state.contentKey,
+            state.currentEpisodeIndex,
+            badPoints
+          ),
+          escapeCount: state.escapeCount + 1,
+          escapeForwardSpanSeconds: state.escapeForwardSpanSeconds + forwardSpan,
+          // Break the healthy run so a post-escape blip cannot look sustained.
+          healthyProgressAnchorMs: null,
+          healthyProgressAnchorTime: null,
+        },
+        'R1',
+        'R1'
+      ),
+      effects: [
+        {
+          type: 'sameSourceRecover',
+          stage: 'R1',
+          action,
+          targetTime: escape.resumeTime,
+          reason,
+        },
+      ],
+    };
+  }
 
   return {
     state: withStage(
@@ -656,7 +781,9 @@ function emitR1(
         type: 'sameSourceRecover',
         stage: 'R1',
         action,
-        targetTime: action === 'nudge-playback' ? nudge.resumeTime : null,
+        // nudge-playback may still rewind in place (targetTime < currentTime);
+        // resume/restart/recover do not move the playhead forward here.
+        targetTime: action === 'nudge-playback' ? escape.resumeTime : null,
         reason,
       },
     ],

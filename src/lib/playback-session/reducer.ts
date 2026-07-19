@@ -19,6 +19,7 @@ import {
   breakHealthyProgressContinuity,
   cancelRecoveryEpisode,
   clearStallEpisode,
+  endStallEpisodePreservingBudget,
   isHlsSustainedSoftStall,
   isRecoveryInFlightBlockingAdSkip,
   isResumePendingBlockingAdSkip,
@@ -574,9 +575,19 @@ export function reducePlaybackSession(
         };
       }
 
+      // A new source (e.g. an auto-recovery switch, which does not dispatch
+      // user.switchSource) starts on a fresh timeline: forget the carried
+      // escape budget so the new source is not immediately R3-capped.
+      const sourceChanged =
+        event.currentSourceKey !== state.currentSourceKey;
+      const rebased =
+        sourceChanged && !titleChanged && !episodeChanged
+          ? resetEscapeBudget(scoped)
+          : scoped;
+
       return {
         state: {
-          ...scoped,
+          ...rebased,
           sources: event.sources,
           currentSourceKey: event.currentSourceKey,
           currentEpisodeIndex: event.currentEpisodeIndex,
@@ -585,7 +596,7 @@ export function reducePlaybackSession(
           sourceScores: event.sourceScores || new Map(),
           measuredVideoInfo: event.measuredVideoInfo || new Map(),
           recoveredSourceKeys:
-            event.recoveredSourceKeys || scoped.recoveredSourceKeys,
+            event.recoveredSourceKeys || rebased.recoveredSourceKeys,
         },
         effects: [],
       };
@@ -1016,7 +1027,15 @@ export function reducePlaybackSession(
     }
 
     case 'recovery.progressHealthy': {
-      if (!state.stallEpisodeActive && state.recoveryStage === 'idle') {
+      // Keep folding healthy ticks while a Stall Episode is active OR while an
+      // escape budget is still charged — the latter lets a genuinely long
+      // healthy run clear the carried budget after the episode already ended.
+      if (
+        !state.stallEpisodeActive &&
+        state.recoveryStage === 'idle' &&
+        state.escapeCount === 0 &&
+        state.escapeForwardSpanSeconds === 0
+      ) {
         return { state, effects: [] };
       }
 
@@ -1034,8 +1053,17 @@ export function reducePlaybackSession(
         return { state: healthy.state, effects: [] };
       }
 
+      // Episode was already idle (only kept alive to decay the escape budget):
+      // just return the budget-adjusted state, no episode-ended effect.
+      if (!state.stallEpisodeActive && state.recoveryStage === 'idle') {
+        return { state: healthy.state, effects: [] };
+      }
+
+      // A short healthy beat ends the episode but PRESERVES the escape budget
+      // (cross-episode ratchet guard); a long run already cleared it above via
+      // applyHealthyProgress → resetEscapeBudget.
       return {
-        state: clearStallEpisode(
+        state: endStallEpisodePreservingBudget(
           setRecoveryResumeTime(
             {
               ...healthy.state,
