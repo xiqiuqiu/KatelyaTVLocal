@@ -161,4 +161,124 @@ describe('douban recommends route', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: '缺少必要参数: title' });
   });
+
+  it('populates alsoLiked from the subject page when doubanId is provided', async () => {
+    (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+      if (String(url).includes('/subject/1292052/')) {
+        return {
+          ok: true,
+          text: async () => `
+            <div class="recommendations-bd">
+              <dl>
+                <dt>
+                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">
+                    <img src="https://img.example/forrest.webp" alt="阿甘正传">
+                  </a>
+                </dt>
+                <dd>
+                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">阿甘正传</a>
+                  <span class="subject-rate">9.5</span>
+                </dd>
+              </dl>
+            </div>
+          `,
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          subjects: [
+            {
+              id: '100',
+              title: '同题材甲',
+              cover: 'https://img.example/100.jpg',
+              rate: '8.1',
+            },
+          ],
+        }),
+      };
+    });
+
+    const response = await GET(
+      new MockRequest(
+        'https://example.com/api/douban/recommends?title=%E8%82%96%E7%94%B3%E5%85%8B%E7%9A%84%E6%95%91%E8%B5%8E&class=%E5%89%A7%E6%83%85&type=movie&doubanId=1292052'
+      ) as unknown as Request
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      code: 200,
+      message: '获取成功',
+      alsoLiked: [
+        {
+          id: '1292720',
+          title: '阿甘正传',
+          poster: 'https://img.example/forrest.webp',
+          rate: '9.5',
+          year: '',
+        },
+      ],
+      genreFallback: [
+        {
+          id: '100',
+          title: '同题材甲',
+          poster: 'https://img.example/100.jpg',
+          rate: '8.1',
+          year: '',
+        },
+      ],
+    });
+    expect(response.headers.get('Cache-Control')).toBe(
+      'public, max-age=7200, s-maxage=7200'
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://movie.douban.com/subject/1292052/',
+      expect.any(Object)
+    );
+  });
+
+  it('degrades to genreFallback when the subject-page fetch fails', async () => {
+    (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+      if (String(url).includes('/subject/')) {
+        return { ok: false, status: 503, text: async () => 'unavailable' };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          subjects: [
+            {
+              id: '100',
+              title: '同题材甲',
+              cover: 'https://img.example/100.jpg',
+              rate: '8.1',
+            },
+          ],
+        }),
+      };
+    });
+
+    const response = await GET(
+      new MockRequest(
+        'https://example.com/api/douban/recommends?title=Foo&class=%E5%96%9C%E5%89%A7&type=movie&doubanId=999'
+      ) as unknown as Request
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      code: 200,
+      message: '获取成功',
+      alsoLiked: [],
+      genreFallback: [
+        {
+          id: '100',
+          title: '同题材甲',
+          poster: 'https://img.example/100.jpg',
+          rate: '8.1',
+          year: '',
+        },
+      ],
+    });
+  });
 });

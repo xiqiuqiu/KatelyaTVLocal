@@ -214,7 +214,8 @@ describe('PlayPage lower detail composition', () => {
           year: '2025',
         },
       ],
-    }
+    },
+    detailOverrides: Partial<SearchResult> = {}
   ) {
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
@@ -239,6 +240,7 @@ describe('PlayPage lower detail composition', () => {
               class: '剧情',
               type_name: '电视剧',
               desc: '这是一段剧情简介。',
+              ...detailOverrides,
             }),
         } as Response;
       }
@@ -320,5 +322,56 @@ describe('PlayPage lower detail composition', () => {
       expect(screen.queryByRole('region', { name: '相关推荐' })).toBeNull();
     });
     expect(screen.queryByRole('region', { name: '猜你喜欢' })).toBeNull();
+  });
+
+  it('forwards detail.douban_id and leads the row with also-liked items', async () => {
+    mockPlayPageFetch(
+      {
+        alsoLiked: [
+          {
+            id: 'also-1',
+            title: '也喜欢甲',
+            poster: 'https://img.example/also1.jpg',
+            rate: '9.0',
+            year: '2024',
+          },
+        ],
+        genreFallback: [
+          {
+            id: 'rec-1',
+            title: '推荐电影甲',
+            poster: 'https://img.example/rec1.jpg',
+            rate: '8.8',
+            year: '2025',
+          },
+        ],
+      },
+      { douban_id: 1292052 }
+    );
+
+    render(<PlayPage />);
+    await settlePlayPage();
+    jest.useRealTimers();
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/douban/recommends?')
+      );
+    });
+    const recommendsCall = (global.fetch as jest.Mock).mock.calls
+      .map(([input]) => String(input))
+      .find((url) => url.startsWith('/api/douban/recommends?'));
+    expect(recommendsCall).toContain('doubanId=1292052');
+
+    const recommendations = await screen.findByRole('region', {
+      name: '相关推荐',
+    });
+    expect(await within(recommendations).findByText('也喜欢甲')).toBeTruthy();
+    const alsoLikedIndex =
+      recommendations.textContent?.indexOf('也喜欢甲') ?? -1;
+    const genreIndex =
+      recommendations.textContent?.indexOf('推荐电影甲') ?? -1;
+    expect(alsoLikedIndex).toBeGreaterThanOrEqual(0);
+    expect(genreIndex).toBeGreaterThan(alsoLikedIndex);
   });
 });
