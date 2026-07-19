@@ -97,3 +97,7 @@ _Avoid_: treating one anonymous report as immediately authoritative for all user
 
 **Source Availability**:
 The system's current judgement of whether a candidate source can be shown, tried manually, or selected automatically during a Playback Session. Source Availability is derived from source status, playback evidence, remembered preferences, measured speed, and the current episode position. Source Availability is a decision model, not the probing or storage mechanism that gathers evidence.
+
+**Related Recommendation (相关推荐)**:
+The play-page row of same-kind titles derived from the title currently being watched — Douban "also-liked" for that title, with a genre-tag fallback drawn from its `vod_class`, excluding the current title and heavily-watched titles while keeping favorites. It is discovery-first (cards route through search to become playable and are not pre-verified) and never falls back to generic popularity; when no relevant items exist it shows nothing. Distinct from the home hot lists and from the same-title Source list.
+_Avoid_: 猜你喜欢 (as the label for this now content-based row); treating it as a personalized taste model; treating it as a guaranteed-playable list.
