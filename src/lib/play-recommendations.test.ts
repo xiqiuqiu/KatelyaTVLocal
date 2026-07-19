@@ -1,6 +1,24 @@
 import type { DoubanItem } from '@/lib/types';
 
-import { selectPlayRecommendations } from '@/lib/play-recommendations';
+import {
+  collectHeavilyWatchedTitles,
+  type HeavilyWatchedPlayRecord,
+  selectPlayRecommendations,
+} from '@/lib/play-recommendations';
+
+function playRecord(
+  overrides: Partial<HeavilyWatchedPlayRecord> &
+    Pick<HeavilyWatchedPlayRecord, 'title'>
+): HeavilyWatchedPlayRecord {
+  return {
+    index: 1,
+    total_episodes: 1,
+    play_time: 0,
+    total_time: 100,
+    search_title: overrides.title,
+    ...overrides,
+  };
+}
 
 const item = (
   overrides: Partial<DoubanItem> & Pick<DoubanItem, 'id' | 'title'>
@@ -113,5 +131,65 @@ describe('selectPlayRecommendations', () => {
         genreFallback: [],
       })
     ).toEqual([]);
+  });
+});
+
+describe('collectHeavilyWatchedTitles', () => {
+  it('includes titles with progress at or above 80%', () => {
+    const titles = collectHeavilyWatchedTitles({
+      a: playRecord({ title: '快看完', play_time: 80, total_time: 100 }),
+      b: playRecord({ title: '才开头', play_time: 20, total_time: 100 }),
+    });
+
+    expect(titles).toEqual(['快看完']);
+  });
+
+  it('includes multi-episode titles that reached the final episode', () => {
+    const titles = collectHeavilyWatchedTitles({
+      a: playRecord({
+        title: '完结剧',
+        index: 12,
+        total_episodes: 12,
+        play_time: 10,
+        total_time: 100,
+      }),
+      b: playRecord({
+        title: '追到一半',
+        index: 5,
+        total_episodes: 12,
+        play_time: 10,
+        total_time: 100,
+      }),
+    });
+
+    expect(titles).toEqual(['完结剧']);
+  });
+
+  it('prefers search_title when present for Douban-title matching', () => {
+    const titles = collectHeavilyWatchedTitles({
+      a: playRecord({
+        title: '源站标题',
+        search_title: '豆瓣标题',
+        play_time: 90,
+        total_time: 100,
+      }),
+    });
+
+    expect(titles).toEqual(['豆瓣标题']);
+  });
+
+  it('de-duplicates titles across records', () => {
+    const titles = collectHeavilyWatchedTitles({
+      a: playRecord({ title: '同名剧', play_time: 90, total_time: 100 }),
+      b: playRecord({
+        title: '同名剧',
+        index: 10,
+        total_episodes: 10,
+        play_time: 5,
+        total_time: 100,
+      }),
+    });
+
+    expect(titles).toEqual(['同名剧']);
   });
 });

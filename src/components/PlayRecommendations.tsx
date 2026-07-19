@@ -2,14 +2,15 @@
 
 import { useEffect, useState } from 'react';
 
-import { getDoubanCategories } from '@/lib/douban.client';
+import { getAllPlayRecords } from '@/lib/db.client';
+import { getDoubanRecommends } from '@/lib/douban.client';
 import {
   CATEGORY_TO_TYPE,
+  collectHeavilyWatchedTitles,
   type PlayRecommendation,
   type PlayRecommendationCategory,
   selectPlayRecommendations,
 } from '@/lib/play-recommendations';
-import type { DoubanItem } from '@/lib/types';
 
 import ScrollableRow from '@/components/ScrollableRow';
 import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
@@ -19,15 +20,28 @@ import VideoCard from '@/components/VideoCard';
 interface PlayRecommendationsProps {
   excludeTitle?: string;
   preferCategory?: PlayRecommendationCategory;
+  /** Current title `vod_class` / `detail.class` for genre-fallback candidates. */
+  vodClass?: string;
+  /** Current title Douban id when the source provides one (forward-compatible). */
+  doubanId?: number;
   className?: string;
 }
 
+function categoryToDoubanType(
+  category: PlayRecommendationCategory
+): 'movie' | 'tv' {
+  return category === 'movie' ? 'movie' : 'tv';
+}
+
 /**
- * Play-page recommendation row (hot-list bridge until Related Recommendation wiring).
+ * Play-page Related Recommendation row — content-based candidates from
+ * `/api/douban/recommends`, with client-side heavily-watched filtering.
  */
 export default function PlayRecommendations({
   excludeTitle,
   preferCategory = 'movie',
+  vodClass,
+  doubanId,
   className,
 }: PlayRecommendationsProps) {
   const [items, setItems] = useState<PlayRecommendation[]>([]);
@@ -40,61 +54,37 @@ export default function PlayRecommendations({
     let cancelled = false;
 
     const fetchRecommendations = async () => {
+      if (!excludeTitle?.trim()) {
+        if (!cancelled) {
+          setItems([]);
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
         setLoading(true);
-        const [moviesData, tvShowsData, varietyShowsData] = await Promise.all([
-          getDoubanCategories({
-            kind: 'movie',
-            category: '热门',
-            type: '全部',
+        const [recommends, playRecords] = await Promise.all([
+          getDoubanRecommends({
+            title: excludeTitle.trim(),
+            class: vodClass,
+            type: categoryToDoubanType(preferCategory),
+            doubanId,
           }),
-          getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
-          getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
+          getAllPlayRecords(),
         ]);
 
         if (cancelled) return;
 
-        const movies: DoubanItem[] =
-          moviesData.code === 200 ? moviesData.list : [];
-        const tvShows: DoubanItem[] =
-          tvShowsData.code === 200 ? tvShowsData.list : [];
-        const varietyShows: DoubanItem[] =
-          varietyShowsData.code === 200 ? varietyShowsData.list : [];
-
-        // Temporary bridge: prefer the matching category pool, then fill.
-        // Preserve each item's pool type for VideoCard until T1b wires the endpoint.
-        const pools: Array<{
-          items: DoubanItem[];
-          type: PlayRecommendation['type'];
-        }> = [
-          { items: movies, type: 'movie' },
-          { items: tvShows, type: 'tv' },
-          { items: varietyShows, type: 'show' },
-        ];
-        const preferredType = cardType;
-        const ordered = [
-          ...pools.filter((pool) => pool.type === preferredType),
-          ...pools.filter((pool) => pool.type !== preferredType),
-        ];
-        const typeByKey = new Map<string, PlayRecommendation['type']>();
-        for (const pool of ordered) {
-          for (const entry of pool.items) {
-            const key = entry.id || entry.title;
-            if (!typeByKey.has(key)) typeByKey.set(key, pool.type);
-          }
-        }
+        const watchedTitles = collectHeavilyWatchedTitles(playRecords);
         const selected = selectPlayRecommendations({
-          alsoLiked: [],
-          genreFallback: ordered.flatMap((pool) => pool.items),
+          alsoLiked: recommends.alsoLiked || [],
+          genreFallback: recommends.genreFallback || [],
           excludeTitle,
+          watchedTitles,
         });
 
-        setItems(
-          selected.map((item) => ({
-            item,
-            type: typeByKey.get(item.id || item.title) || cardType,
-          }))
-        );
+        setItems(selected.map((item) => ({ item, type: cardType })));
       } catch {
         if (!cancelled) {
           setItems([]);
@@ -111,7 +101,7 @@ export default function PlayRecommendations({
     return () => {
       cancelled = true;
     };
-  }, [cardType, excludeTitle, preferCategory]);
+  }, [cardType, doubanId, excludeTitle, preferCategory, vodClass]);
 
   if (!loading && items.length === 0) {
     return null;
@@ -119,10 +109,10 @@ export default function PlayRecommendations({
 
   return (
     <section
-      aria-label='猜你喜欢'
+      aria-label='相关推荐'
       className={`space-y-4 ${className || ''}`.trim()}
     >
-      <SectionHeader title='猜你喜欢' />
+      <SectionHeader title='相关推荐' />
       <ScrollableRow>
         {loading
           ? Array.from({ length: 6 }).map((_, index) => (

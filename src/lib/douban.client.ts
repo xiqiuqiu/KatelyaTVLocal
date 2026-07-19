@@ -146,3 +146,42 @@ export async function getDoubanCategories(
     return response.json();
   }
 }
+
+export type DoubanRecommendsClientResult = {
+  code: number;
+  message: string;
+  alsoLiked: DoubanItem[];
+  genreFallback: DoubanItem[];
+};
+
+export type DoubanRecommendsParams = {
+  title: string;
+  class?: string;
+  type?: 'movie' | 'tv';
+  doubanId?: number;
+};
+
+/**
+ * Play-page Related Recommendation candidates from the shared Douban endpoint.
+ * User-specific filtering stays on the client — this payload is CDN-cacheable.
+ */
+export async function getDoubanRecommends(
+  params: DoubanRecommendsParams
+): Promise<DoubanRecommendsClientResult> {
+  const search = new URLSearchParams();
+  search.set('title', params.title);
+  if (params.class?.trim()) {
+    search.set('class', params.class.trim());
+  }
+  search.set('type', params.type || 'movie');
+  if (params.doubanId && params.doubanId > 0) {
+    search.set('doubanId', String(params.doubanId));
+  }
+
+  const response = await fetch(`/api/douban/recommends?${search.toString()}`);
+  if (!response.ok) {
+    throw new Error('获取豆瓣推荐失败');
+  }
+
+  return response.json();
+}

@@ -28,27 +28,6 @@ jest.mock('@/lib/db.client', () => ({
   subscribeToDataUpdates: jest.fn(() => jest.fn()),
 }));
 
-jest.mock('@/lib/douban.client', () => ({
-  getDoubanCategories: jest.fn(async ({ kind }: { kind: string }) => {
-    if (kind === 'movie') {
-      return {
-        code: 200,
-        message: 'ok',
-        list: [
-          {
-            id: 'rec-1',
-            title: '推荐电影甲',
-            poster: 'https://img.example/rec1.jpg',
-            rate: '8.8',
-            year: '2025',
-          },
-        ],
-      };
-    }
-    return { code: 200, message: 'ok', list: [] };
-  }),
-}));
-
 jest.mock('@/components/PageLayout', () => ({
   __esModule: true,
   default: ({ children }: { children: ReactNode }) => (
@@ -221,12 +200,22 @@ describe('PlayPage lower detail composition', () => {
     typeof getAllPlayRecords
   >;
 
-  beforeEach(() => {
-    jest.useFakeTimers();
-    mockSearchParams = new URLSearchParams(
-      'source=detail-source&id=detail-id&title=%E8%AF%A6%E6%83%85%E5%BD%B1%E7%89%87'
-    );
-    mockedGetAllPlayRecords.mockResolvedValue({});
+  function mockPlayPageFetch(
+    recommends: {
+      alsoLiked?: Array<Record<string, string>>;
+      genreFallback?: Array<Record<string, string>>;
+    } = {
+      genreFallback: [
+        {
+          id: 'rec-1',
+          title: '推荐电影甲',
+          poster: 'https://img.example/rec1.jpg',
+          rate: '8.8',
+          year: '2025',
+        },
+      ],
+    }
+  ) {
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.startsWith('/api/playback-debug')) {
@@ -253,11 +242,31 @@ describe('PlayPage lower detail composition', () => {
             }),
         } as Response;
       }
+      if (url.startsWith('/api/douban/recommends')) {
+        return {
+          ok: true,
+          json: async () => ({
+            code: 200,
+            message: 'ok',
+            alsoLiked: recommends.alsoLiked ?? [],
+            genreFallback: recommends.genreFallback ?? [],
+          }),
+        } as Response;
+      }
       return {
         ok: true,
         json: async () => ({}),
       } as Response;
     });
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockSearchParams = new URLSearchParams(
+      'source=detail-source&id=detail-id&title=%E8%AF%A6%E6%83%85%E5%BD%B1%E7%89%87'
+    );
+    mockedGetAllPlayRecords.mockResolvedValue({});
+    mockPlayPageFetch();
   });
 
   afterEach(() => {
@@ -265,7 +274,7 @@ describe('PlayPage lower detail composition', () => {
     jest.clearAllMocks();
   });
 
-  it('shows Design Direction detail hierarchy and 猜你喜欢 below the side panel', async () => {
+  it('shows Design Direction detail hierarchy and 相关推荐 below the side panel', async () => {
     const { container } = render(<PlayPage />);
     await settlePlayPage();
     jest.useRealTimers();
@@ -286,17 +295,30 @@ describe('PlayPage lower detail composition', () => {
     expect(within(detail).getByText('这是一段剧情简介。')).toBeTruthy();
 
     const recommendations = await screen.findByRole('region', {
-      name: '猜你喜欢',
+      name: '相关推荐',
     });
     expect(
-      within(recommendations).getByRole('heading', { name: '猜你喜欢' })
+      within(recommendations).getByRole('heading', { name: '相关推荐' })
     ).toBeTruthy();
     expect(await within(recommendations).findByText('推荐电影甲')).toBeTruthy();
 
     const synopsisIndex =
       container.textContent?.indexOf('这是一段剧情简介。') ?? -1;
-    const recommendIndex = container.textContent?.indexOf('猜你喜欢') ?? -1;
+    const recommendIndex = container.textContent?.indexOf('相关推荐') ?? -1;
     expect(synopsisIndex).toBeGreaterThanOrEqual(0);
     expect(recommendIndex).toBeGreaterThan(synopsisIndex);
+  });
+
+  it('hides 相关推荐 when the recommends endpoint returns an empty list', async () => {
+    mockPlayPageFetch({ alsoLiked: [], genreFallback: [] });
+    render(<PlayPage />);
+    await settlePlayPage();
+    jest.useRealTimers();
+
+    expect(await screen.findByRole('region', { name: '影片详情' })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.queryByRole('region', { name: '相关推荐' })).toBeNull();
+    });
+    expect(screen.queryByRole('region', { name: '猜你喜欢' })).toBeNull();
   });
 });

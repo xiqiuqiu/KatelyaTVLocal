@@ -6345,7 +6345,7 @@ function PlayPageClient() {
           </PlayerSidebar>
         </div>
 
-        {/* 详情展示 + 猜你喜欢 */}
+        {/* 详情展示 + 相关推荐 */}
         <PlayDetailSection
           cover={videoCover || detail?.poster}
           detail={detail}
@@ -6353,8 +6353,10 @@ function PlayPageClient() {
           year={videoYear}
         />
         <PlayRecommendations
+          doubanId={detail?.douban_id}
           excludeTitle={videoTitle}
           preferCategory={detail ? classifySearchResult(detail) : 'movie'}
+          vodClass={detail?.class}
         />
       </div>
     </PageLayout>

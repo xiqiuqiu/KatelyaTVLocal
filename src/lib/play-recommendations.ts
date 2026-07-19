@@ -3,6 +3,19 @@ import type { DoubanItem } from '@/lib/types';
 
 import type { HomeHeroMediaType } from '@/lib/home-hero';
 
+/** Progress ratio at or above this counts as heavily watched. */
+export const HEAVILY_WATCHED_PROGRESS = 0.8;
+
+/** Minimal PlayRecord fields needed for heavily-watched exclusion. */
+export type HeavilyWatchedPlayRecord = {
+  title: string;
+  search_title?: string;
+  index: number;
+  total_episodes: number;
+  play_time: number;
+  total_time: number;
+};
+
 export type PlayRecommendation = {
   item: DoubanItem;
   type: Exclude<HomeHeroMediaType, ''>;
@@ -28,6 +41,45 @@ function normalizeTitle(value: string): string {
 
 function hasPoster(item: DoubanItem): boolean {
   return Boolean(item.poster?.trim());
+}
+
+function recordDisplayTitle(record: HeavilyWatchedPlayRecord): string {
+  return record.search_title?.trim() || record.title?.trim() || '';
+}
+
+function isHeavilyWatched(record: HeavilyWatchedPlayRecord): boolean {
+  if (
+    record.total_time > 0 &&
+    record.play_time / record.total_time >= HEAVILY_WATCHED_PROGRESS
+  ) {
+    return true;
+  }
+  // Reached the final episode of a series — treat as heavily watched even if
+  // the last episode's progress ratio is still low.
+  return record.total_episodes > 1 && record.index >= record.total_episodes;
+}
+
+/**
+ * Builds the heavily-watched exclusion titles from PlayRecord history.
+ * Favorites are intentionally not consulted — callers must not merge them in.
+ */
+export function collectHeavilyWatchedTitles(
+  records: Record<string, HeavilyWatchedPlayRecord>
+): string[] {
+  const titles: string[] = [];
+  const seen = new Set<string>();
+
+  for (const record of Object.values(records)) {
+    if (!isHeavilyWatched(record)) continue;
+    const title = recordDisplayTitle(record);
+    if (!title) continue;
+    const key = normalizeTitle(title);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    titles.push(title);
+  }
+
+  return titles;
 }
 
 /**
