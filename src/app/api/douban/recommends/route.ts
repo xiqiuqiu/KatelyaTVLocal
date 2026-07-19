@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { getCacheTime } from '@/lib/config';
-import { parseDoubanAlsoLiked } from '@/lib/douban-also-liked';
+import { parseDoubanRexxarRecommendations } from '@/lib/douban-also-liked';
 import { deriveDoubanGenreTag } from '@/lib/douban-genre-tag';
 import { parseDoubanSubjectSuggest } from '@/lib/douban-subject-suggest';
 import type { DoubanItem } from '@/lib/types';
@@ -66,8 +66,12 @@ async function fetchDoubanSubjects(
   }
 }
 
-async function fetchAlsoLiked(doubanId: number): Promise<DoubanItem[]> {
-  const target = `https://movie.douban.com/subject/${doubanId}/`;
+async function fetchAlsoLiked(
+  doubanId: number,
+  type: 'movie' | 'tv'
+): Promise<DoubanItem[]> {
+  // Rexxar JSON — subject HTML is challenge-walled for server fetchers.
+  const target = `https://m.douban.com/rexxar/api/v2/${type}/${doubanId}/recommendations`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
@@ -76,8 +80,8 @@ async function fetchAlsoLiked(doubanId: number): Promise<DoubanItem[]> {
       signal: controller.signal,
       headers: {
         ...DOUBAN_FETCH_HEADERS,
-        Accept:
-          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        Accept: 'application/json, text/plain, */*',
+        Origin: 'https://movie.douban.com',
       },
     });
 
@@ -85,8 +89,8 @@ async function fetchAlsoLiked(doubanId: number): Promise<DoubanItem[]> {
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
-    const html = await response.text();
-    return parseDoubanAlsoLiked(html);
+    const payload: unknown = await response.json();
+    return parseDoubanRexxarRecommendations(payload);
   } finally {
     clearTimeout(timeoutId);
   }
@@ -191,10 +195,13 @@ export async function GET(request: Request) {
       return cachedJson(emptyResult('无可推荐题材'));
     }
 
+    const mediaType = typeParam as 'movie' | 'tv';
     const [alsoLikedResult, genreResult] = await Promise.allSettled([
-      doubanId ? fetchAlsoLiked(doubanId) : Promise.resolve([] as DoubanItem[]),
+      doubanId
+        ? fetchAlsoLiked(doubanId, mediaType)
+        : Promise.resolve([] as DoubanItem[]),
       genreTag
-        ? fetchDoubanSubjects(typeParam as 'movie' | 'tv', genreTag, pageSize)
+        ? fetchDoubanSubjects(mediaType, genreTag, pageSize)
         : Promise.resolve([] as DoubanItem[]),
     ]);
 

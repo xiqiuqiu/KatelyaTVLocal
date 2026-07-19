@@ -1,8 +1,73 @@
 import type { DoubanItem } from '@/lib/types';
 
 /**
+ * Pure parser for Douban mobile rexxar 「recommendations」 JSON.
+ * No network — maps list entries into DoubanItem[].
+ *
+ * Preferred over subject-page HTML: movie.douban.com subject pages return a
+ * JS challenge shell to server-side fetchers, so `recommendations-bd` never
+ * appears. The rexxar endpoint stays JSON-accessible (same path categories use).
+ */
+export function parseDoubanRexxarRecommendations(
+  payload: unknown
+): DoubanItem[] {
+  if (!Array.isArray(payload)) return [];
+
+  const items: DoubanItem[] = [];
+
+  for (const entry of payload) {
+    if (!entry || typeof entry !== 'object') continue;
+
+    const raw = entry as {
+      id?: unknown;
+      title?: unknown;
+      pic?: { normal?: unknown; large?: unknown };
+      rating?: { value?: unknown };
+      card_subtitle?: unknown;
+    };
+
+    const id =
+      typeof raw.id === 'string' || typeof raw.id === 'number'
+        ? String(raw.id).trim()
+        : '';
+    const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+    const posterRaw =
+      (typeof raw.pic?.normal === 'string' && raw.pic.normal) ||
+      (typeof raw.pic?.large === 'string' && raw.pic.large) ||
+      '';
+    const poster = posterRaw.replace(/^http:/, 'https:');
+
+    if (!id || !/^\d+$/.test(id) || !title || !poster) continue;
+
+    const rateValue = raw.rating?.value;
+    const rate =
+      typeof rateValue === 'number' && Number.isFinite(rateValue)
+        ? rateValue.toFixed(1)
+        : typeof rateValue === 'string'
+          ? rateValue.trim()
+          : '';
+
+    const yearMatch =
+      typeof raw.card_subtitle === 'string'
+        ? raw.card_subtitle.match(/(\d{4})/)
+        : null;
+
+    items.push({
+      id,
+      title,
+      poster,
+      rate,
+      year: yearMatch?.[1] || '',
+    });
+  }
+
+  return items;
+}
+
+/**
  * Pure parser for Douban subject-page 「喜欢这部的人也喜欢」.
  * No network — scrapes the `recommendations-bd` block into DoubanItem[].
+ * Kept for fixture/regression coverage; live fetch uses rexxar (see above).
  */
 export function parseDoubanAlsoLiked(html: string): DoubanItem[] {
   const blockMatch = html.match(

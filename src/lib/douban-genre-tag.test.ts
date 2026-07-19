@@ -7,6 +7,12 @@ describe('deriveDoubanGenreTag', () => {
     expect(deriveDoubanGenreTag('科幻')).toBe('科幻');
   });
 
+  it('maps CMS variety labels Douban rejects as TV tags onto 综艺', () => {
+    expect(deriveDoubanGenreTag('真人秀')).toBe('综艺');
+    expect(deriveDoubanGenreTag('真人秀,韩国')).toBe('综艺');
+    expect(deriveDoubanGenreTag('脱口秀')).toBe('综艺');
+  });
+
   it('returns null when no usable genre tag can be derived', () => {
     expect(deriveDoubanGenreTag('')).toBeNull();
     expect(deriveDoubanGenreTag('   ')).toBeNull();

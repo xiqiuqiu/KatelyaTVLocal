@@ -174,26 +174,19 @@ describe('douban recommends route', () => {
     expect(await response.json()).toEqual({ error: '缺少必要参数: title' });
   });
 
-  it('populates alsoLiked from the subject page when doubanId is provided', async () => {
+  it('populates alsoLiked from rexxar recommendations when doubanId is provided', async () => {
     (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
-      if (String(url).includes('/subject/1292052/')) {
+      if (String(url).includes('/rexxar/api/v2/movie/1292052/recommendations')) {
         return {
           ok: true,
-          text: async () => `
-            <div class="recommendations-bd">
-              <dl>
-                <dt>
-                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">
-                    <img src="https://img.example/forrest.webp" alt="阿甘正传">
-                  </a>
-                </dt>
-                <dd>
-                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">阿甘正传</a>
-                  <span class="subject-rate">9.5</span>
-                </dd>
-              </dl>
-            </div>
-          `,
+          json: async () => [
+            {
+              id: '1292720',
+              title: '阿甘正传',
+              pic: { normal: 'https://img.example/forrest.webp' },
+              rating: { value: 9.5 },
+            },
+          ],
         };
       }
 
@@ -245,15 +238,90 @@ describe('douban recommends route', () => {
       'public, max-age=7200, s-maxage=7200'
     );
     expect(global.fetch).toHaveBeenCalledWith(
-      'https://movie.douban.com/subject/1292052/',
+      'https://m.douban.com/rexxar/api/v2/movie/1292052/recommendations',
       expect.any(Object)
     );
   });
 
-  it('degrades to genreFallback when the subject-page fetch fails', async () => {
+  it('maps 真人秀 onto 综艺 for genreFallback (production play-page repro)', async () => {
     (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
-      if (String(url).includes('/subject/')) {
-        return { ok: false, status: 503, text: async () => 'unavailable' };
+      if (String(url).includes('/rexxar/api/v2/tv/38397649/recommendations')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              id: '38433912',
+              title: '豆豆农场',
+              pic: { normal: 'https://img.example/doudou.webp' },
+              rating: { value: 8.4 },
+              card_subtitle: '2026 / 韩国 / 真人秀',
+            },
+          ],
+        };
+      }
+
+      if (String(url).includes('tag=%E7%BB%BC%E8%89%BA')) {
+        return {
+          ok: true,
+          json: async () => ({
+            subjects: [
+              {
+                id: '200',
+                title: '综艺兜底甲',
+                cover: 'https://img.example/200.jpg',
+                rate: '7.2',
+              },
+            ],
+          }),
+        };
+      }
+
+      return { ok: true, json: async () => ({ subjects: [] }) };
+    });
+
+    const response = await GET(
+      new MockRequest(
+        'https://example.com/api/douban/recommends?title=%E5%AD%A4%E5%8D%95%E5%8F%88%E7%81%BF%E7%83%82%E7%9A%84%E7%A5%9E%EF%BC%9A%E9%AC%BC%E6%80%AA%E5%8D%81%E5%91%A8%E5%B9%B4%E7%89%B9%E8%BE%91&class=%E7%9C%9F%E4%BA%BA%E7%A7%80&type=tv&doubanId=38397649'
+      ) as unknown as Request
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      code: 200,
+      message: '获取成功',
+      alsoLiked: [
+        {
+          id: '38433912',
+          title: '豆豆农场',
+          poster: 'https://img.example/doudou.webp',
+          rate: '8.4',
+          year: '2026',
+        },
+      ],
+      genreFallback: [
+        {
+          id: '200',
+          title: '综艺兜底甲',
+          poster: 'https://img.example/200.jpg',
+          rate: '7.2',
+          year: '',
+        },
+      ],
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('tag=%E7%BB%BC%E8%89%BA'),
+      expect.any(Object)
+    );
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('tag=%E7%9C%9F%E4%BA%BA%E7%A7%80'),
+      expect.any(Object)
+    );
+  });
+
+  it('degrades to genreFallback when the rexxar recommendations fetch fails', async () => {
+    (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+      if (String(url).includes('/rexxar/')) {
+        return { ok: false, status: 503, json: async () => ({}) };
       }
 
       return {
@@ -310,24 +378,17 @@ describe('douban recommends route', () => {
           ],
         };
       }
-      if (href.includes('/subject/1292052/')) {
+      if (href.includes('/rexxar/api/v2/movie/1292052/recommendations')) {
         return {
           ok: true,
-          text: async () => `
-            <div class="recommendations-bd">
-              <dl>
-                <dt>
-                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">
-                    <img src="https://img.example/forrest.webp" alt="阿甘正传">
-                  </a>
-                </dt>
-                <dd>
-                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">阿甘正传</a>
-                  <span class="subject-rate">9.5</span>
-                </dd>
-              </dl>
-            </div>
-          `,
+          json: async () => [
+            {
+              id: '1292720',
+              title: '阿甘正传',
+              pic: { normal: 'https://img.example/forrest.webp' },
+              rating: { value: 9.5 },
+            },
+          ],
         };
       }
       return {
@@ -381,31 +442,24 @@ describe('douban recommends route', () => {
       expect.any(Object)
     );
     expect(global.fetch).toHaveBeenCalledWith(
-      'https://movie.douban.com/subject/1292052/',
+      'https://m.douban.com/rexxar/api/v2/movie/1292052/recommendations',
       expect.any(Object)
     );
   });
 
   it('skips subject_suggest when doubanId is already provided', async () => {
     (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
-      if (String(url).includes('/subject/1292052/')) {
+      if (String(url).includes('/rexxar/api/v2/movie/1292052/recommendations')) {
         return {
           ok: true,
-          text: async () => `
-            <div class="recommendations-bd">
-              <dl>
-                <dt>
-                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">
-                    <img src="https://img.example/forrest.webp" alt="阿甘正传">
-                  </a>
-                </dt>
-                <dd>
-                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">阿甘正传</a>
-                  <span class="subject-rate">9.5</span>
-                </dd>
-              </dl>
-            </div>
-          `,
+          json: async () => [
+            {
+              id: '1292720',
+              title: '阿甘正传',
+              pic: { normal: 'https://img.example/forrest.webp' },
+              rating: { value: 9.5 },
+            },
+          ],
         };
       }
       return {
