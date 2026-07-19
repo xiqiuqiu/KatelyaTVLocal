@@ -3,6 +3,16 @@
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* 登录页在浏览器自动填充后仍保持深色表单视觉 */
+.login-input:-webkit-autofill,
+.login-input:-webkit-autofill:hover,
+.login-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: rgb(var(--ui-text));
+  caret-color: rgb(var(--ui-text));
+  box-shadow: 0 0 0 1000px rgb(var(--ui-bg)) inset;
+  transition: background-color 9999s ease-out 0s;
+}
+
 @keyframes pulse {
   0%,
   100% {

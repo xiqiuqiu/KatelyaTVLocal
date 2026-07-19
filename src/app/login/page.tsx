@@ -3,13 +3,13 @@
 export const runtime = 'edge';
 
 import {
-  ArrowRight,
-  Clapperboard,
+  Clock3,
   Eye,
   EyeOff,
   Hash,
-  KeyRound,
+  Layers3,
   Loader2,
+  LockKeyhole,
   ShieldCheck,
   UserRound,
 } from 'lucide-react';
@@ -20,7 +20,6 @@ import { Suspense, useEffect, useState } from 'react';
 import { getInviteCodeFromSearchParams } from '@/lib/registration/invite-link';
 
 import IOSCompatibility from '@/components/IOSCompatibility';
-import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 type AuthMode = 'login' | 'register';
@@ -56,8 +55,6 @@ function LoginPageClient() {
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
   const [registerInviteRequired, setRegisterInviteRequired] = useState(true);
   const [authMode, setAuthMode] = useState<AuthMode>('login');
-  const { siteName } = useSite();
-
   useEffect(() => {
     const inviteCodeFromUrl = getInviteCodeFromSearchParams(searchParams);
     if (inviteCodeFromUrl) {
@@ -214,271 +211,290 @@ function LoginPageClient() {
   return (
     <IOSCompatibility>
       <main className='relative min-h-screen overflow-hidden bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text))]'>
-        <div className='pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent_0%,rgb(255_255_255/0.055)_42%,transparent_68%)] opacity-70' />
-        <div className='pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgb(var(--ui-accent)/0.8),rgb(var(--ui-accent-warm)/0.58),transparent)]' />
-        <div className='pointer-events-none absolute inset-0 opacity-[0.18] [background-image:linear-gradient(rgb(var(--ui-border)/0.34)_1px,transparent_1px),linear-gradient(90deg,rgb(var(--ui-border)/0.26)_1px,transparent_1px)] [background-size:72px_72px]' />
+        <Image
+          src='/login-cinema-bg.png'
+          alt=''
+          fill
+          priority
+          sizes='100vw'
+          className='pointer-events-none object-cover object-center opacity-90'
+        />
+        <div className='pointer-events-none absolute inset-0 bg-[rgb(var(--ui-bg)/0.24)]' />
 
         <div className='absolute right-4 top-4 z-20 sm:right-6 sm:top-6'>
           <ThemeToggle />
         </div>
 
-        <div className='relative z-10 mx-auto grid min-h-screen w-full max-w-6xl items-center gap-8 px-4 py-24 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8'>
-          <section className='relative hidden min-h-[560px] overflow-hidden rounded-ui-lg border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg-elevated)/0.62)] shadow-ui-strong backdrop-blur-2xl lg:block'>
-            <div className='absolute inset-0 bg-[linear-gradient(135deg,rgb(var(--ui-accent)/0.2),transparent_34%,rgb(var(--ui-accent-warm)/0.12)_76%,transparent)]' />
-            <div className='absolute inset-x-8 top-8 flex items-center justify-between text-xs font-semibold text-[rgb(var(--ui-text-muted))]'>
-              <span>PRIVATE SCREENING</span>
-              <span>ACCESS GATE</span>
-            </div>
-            <div className='relative flex h-full flex-col justify-between p-10 pt-24'>
-              <div className='max-w-lg'>
-                <div className='mb-8 flex h-20 w-20 items-center justify-center rounded-ui-lg border border-[rgb(var(--ui-border)/0.8)] bg-[rgb(var(--ui-surface)/0.82)] shadow-ui-soft'>
+        <div className='relative z-10 mx-auto flex min-h-screen w-full max-w-[1660px] items-center px-4 py-20 sm:px-8 lg:w-[calc(77.5vw+80px)] lg:translate-y-7 lg:px-10'>
+          <div className='grid w-full overflow-hidden rounded-[28px] border border-[rgb(var(--ui-border)/0.9)] bg-[rgb(var(--ui-bg)/0.78)] shadow-[0_36px_110px_rgb(0_0_0/0.52)] backdrop-blur-xl lg:grid-cols-[1.07fr_0.93fr]'>
+            <section className='relative hidden min-h-[min(73vh,840px)] overflow-hidden border-r border-[rgb(var(--ui-border)/0.82)] lg:block'>
+              <Image
+                src='/login-cinema-bg.png'
+                alt=''
+                fill
+                priority
+                sizes='(min-width: 1024px) 52vw, 0px'
+                className='object-cover object-left opacity-90'
+              />
+              <div className='absolute inset-0 bg-[rgb(var(--ui-bg)/0.2)]' />
+
+              <div className='relative flex h-full flex-col items-center px-12 pb-16 pt-[168px] text-center'>
+                <div className='mb-9 flex h-28 w-28 items-center justify-center rounded-[28px] border border-[rgb(var(--ui-border)/0.9)] bg-[rgb(var(--ui-bg)/0.62)] shadow-[0_18px_50px_rgb(0_0_0/0.38)] backdrop-blur-xl'>
                   <Image
                     src='/logo.png'
                     alt=''
-                    width={56}
-                    height={56}
+                    width={72}
+                    height={72}
                     priority
-                    className='h-14 w-14 rounded-ui-sm object-cover'
+                    className='h-[72px] w-[72px] rounded-ui-md object-cover'
                   />
                 </div>
 
-                <p className='mb-4 text-sm font-semibold uppercase text-[rgb(var(--ui-accent-warm))]'>
-                  {siteName}
-                </p>
-                <h1 className='max-w-xl text-5xl font-semibold leading-tight text-[rgb(var(--ui-text))]'>
-                  {siteName}
+                <h1 className='text-[64px] font-bold leading-none tracking-[-0.045em] text-[rgb(var(--ui-text))]'>
+                  <span>Reel</span>
+                  <span className='text-[#67e8f9]'>Find</span>
                 </h1>
-                <p className='mt-5 max-w-md text-base leading-7 text-[rgb(var(--ui-text-muted))]'>
-                  进入你的私人影视空间，继续上次停下的片刻。
+                <p className='mt-5 text-xl tracking-wide text-[rgb(var(--ui-text-muted))]'>
+                  你的私人放映厅，随时续播。
                 </p>
-              </div>
 
-              <div className='grid grid-cols-3 gap-3'>
-                {[
-                  ['聚合', '片源'],
-                  ['继续', '观看'],
-                  ['私密', '访问'],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className='rounded-ui-sm border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-surface)/0.54)] p-4 shadow-ui-soft'
-                  >
-                    <p className='text-xs text-[rgb(var(--ui-text-muted))]'>
-                      {label}
-                    </p>
-                    <p className='mt-2 text-lg font-semibold text-[rgb(var(--ui-text))]'>
-                      {value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <div className='mx-auto w-full max-w-md lg:max-w-none'>
-            <div className='mb-6 flex items-center gap-4 lg:hidden'>
-              <div className='flex h-14 w-14 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border)/0.8)] bg-[rgb(var(--ui-surface)/0.8)] shadow-ui-soft'>
-                <Image
-                  src='/logo.png'
-                  alt=''
-                  width={40}
-                  height={40}
-                  priority
-                  className='h-10 w-10 rounded-ui-sm object-cover'
-                />
-              </div>
-              <div>
-                <p className='text-sm font-semibold text-[rgb(var(--ui-accent-warm))]'>
-                  {siteName}
-                </p>
-                <h1 className='text-2xl font-semibold text-[rgb(var(--ui-text))]'>
-                  {siteName}
-                </h1>
-              </div>
-            </div>
-
-            <div className='ui-shell-panel relative overflow-hidden rounded-ui-lg p-6 shadow-ui-strong sm:p-8'>
-              <div className='pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgb(var(--ui-accent)/0.78),transparent)]' />
-
-              <div className='mb-8 flex items-start justify-between gap-4'>
-                <div>
-                  <div className='mb-5 inline-flex items-center gap-2 rounded-ui-sm border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg-elevated)/0.68)] px-3 py-2 text-xs font-semibold text-[rgb(var(--ui-text-muted))]'>
-                    <ShieldCheck className='h-4 w-4 text-[rgb(var(--ui-success))]' />
-                    安全访问
-                  </div>
-                  <h2 className='text-2xl font-semibold text-[rgb(var(--ui-text))]'>
-                    登录
-                  </h2>
-                  <p className='mt-2 text-sm leading-6 text-[rgb(var(--ui-text-muted))]'>
-                    输入访问凭证后继续观看
-                  </p>
-                </div>
-
-                <div className='hidden h-12 w-12 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg-elevated)/0.68)] text-[rgb(var(--ui-accent))] sm:flex'>
-                  <Clapperboard className='h-6 w-6' />
-                </div>
-              </div>
-
-              {shouldAskUsername && enableRegister && (
-                <div className='mb-6 grid grid-cols-2 gap-1.5 rounded-ui-md border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg-elevated)/0.62)] p-1.5'>
+                <div className='mt-9 flex flex-wrap justify-center gap-3'>
                   {[
-                    ['login', '登录'],
-                    ['register', '注册'],
-                  ].map(([mode, label]) => (
-                    <button
-                      key={mode}
-                      type='button'
-                      aria-pressed={authMode === mode}
-                      onClick={() => {
-                        setError(null);
-                        setAuthMode(mode as AuthMode);
-                      }}
-                      className={`rounded-ui-sm px-4 py-2.5 text-sm font-semibold transition-all duration-200 ${
-                        authMode === mode
-                          ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
-                          : 'text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface))] hover:text-[rgb(var(--ui-text))]'
-                      }`}
+                    [Layers3, '聚合片源'],
+                    [Clock3, '观看进度'],
+                    [LockKeyhole, '私密访问'],
+                  ].map(([Icon, label]) => (
+                    <div
+                      key={label as string}
+                      className='inline-flex items-center gap-2.5 rounded-full border border-[rgb(var(--ui-border)/0.74)] bg-[rgb(var(--ui-bg)/0.42)] px-5 py-3 text-base text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md'
                     >
-                      {label}
-                    </button>
+                      <Icon className='h-[18px] w-[18px] text-[rgb(var(--ui-accent))]' />
+                      <span>{label as string}</span>
+                    </div>
                   ))}
                 </div>
-              )}
+              </div>
+            </section>
 
-              <form onSubmit={handleAuthSubmit} className='space-y-5'>
-                {shouldAskUsername && (
-                  <div>
-                    <label
-                      htmlFor='username'
-                      className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text-muted))]'
-                    >
-                      用户名
-                    </label>
-                    <div className='relative'>
-                      <UserRound className='pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
-                      <input
-                        id='username'
-                        type='text'
-                        autoComplete='username'
-                        className='block w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg-elevated)/0.76)] py-3 pl-12 pr-4 text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.34)] sm:text-base'
-                        placeholder='输入用户名'
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <label
-                    htmlFor='password'
-                    className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text-muted))]'
-                  >
-                    访问密码
-                  </label>
-                  <div className='relative'>
-                    <KeyRound className='pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
-                    <input
-                      id='password'
-                      type={showPassword ? 'text' : 'password'}
-                      autoComplete='current-password'
-                      className='block w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg-elevated)/0.76)] py-3 pl-12 pr-16 text-[rgb(var(--ui-text))] shadow-ui-soft selection:bg-[rgb(var(--ui-accent)/0.28)] selection:text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.34)] sm:text-base'
-                      placeholder='输入访问密码'
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+            <section
+              className={`flex min-h-[600px] items-start bg-[rgb(var(--ui-bg)/0.32)] px-5 pb-12 pt-12 sm:px-10 lg:min-h-[min(73vh,840px)] lg:px-16 xl:px-20 ${
+                authMode === 'register' ? 'lg:pt-8' : 'lg:pt-[74px]'
+              }`}
+            >
+              <div className='mx-auto w-full max-w-[560px]'>
+                <div className='mb-8 flex items-center gap-3 lg:hidden'>
+                  <div className='flex h-12 w-12 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border)/0.8)] bg-[rgb(var(--ui-surface)/0.74)] shadow-ui-soft'>
+                    <Image
+                      src='/logo.png'
+                      alt=''
+                      width={40}
+                      height={40}
+                      priority
+                      className='h-9 w-9 rounded-ui-sm object-cover'
                     />
-                    <button
-                      aria-label={showPassword ? '隐藏密码' : '显示密码'}
-                      className='absolute right-0 top-1/2 flex h-full w-16 -translate-y-1/2 items-center justify-center rounded-r-ui-sm text-[rgb(var(--ui-text-muted))] transition-colors duration-200 before:absolute before:inset-y-1 before:right-2 before:w-11 before:rounded-ui-sm before:border before:border-transparent before:bg-transparent before:transition-all before:duration-200 hover:text-[rgb(var(--ui-text))] hover:before:border-[rgb(var(--ui-border)/0.62)] hover:before:bg-[rgb(var(--ui-surface-strong)/0.44)] hover:before:shadow-ui-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.38)] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--ui-bg))]'
-                      onClick={() => setShowPassword((value) => !value)}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onMouseEnter={() => setShowPassword(true)}
-                      onMouseLeave={() => setShowPassword(false)}
-                      type='button'
-                    >
-                      {showPassword ? (
-                        <EyeOff className='relative h-5 w-5' />
-                      ) : (
-                        <Eye className='relative h-5 w-5' />
-                      )}
-                    </button>
+                  </div>
+                  <div>
+                    <p className='text-lg font-semibold'>ReelFind</p>
+                    <p className='mt-0.5 text-xs text-[rgb(var(--ui-text-muted))]'>
+                      私人放映厅
+                    </p>
                   </div>
                 </div>
 
-                {authMode === 'register' &&
-                  shouldAskUsername &&
-                  enableRegister && (
-                    <>
-                      {registerInviteRequired && (
-                        <div>
-                          <label
-                            htmlFor='inviteCode'
-                            className='mb-2 block text-sm font-medium text-[rgb(var(--ui-text-muted))]'
-                          >
-                            邀请码
-                          </label>
-                          <div className='relative'>
-                            <Hash className='pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
-                            <input
-                              id='inviteCode'
-                              type='text'
-                              autoComplete='off'
-                              className='block w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg-elevated)/0.76)] py-3 pl-12 pr-4 text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.34)] sm:text-base'
-                              placeholder='输入邀请码'
-                              value={inviteCode}
-                              onChange={(e) => setInviteCode(e.target.value)}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {turnstileSiteKey ? (
-                        <div id='register-turnstile' className='min-h-[65px]' />
-                      ) : (
-                        <p className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'>
-                          注册人机验证尚未配置，请稍后再试。
-                        </p>
-                      )}
-                    </>
-                  )}
-
-                {error && (
-                  <p
-                    role='alert'
-                    className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'
-                  >
-                    {error}
+                <div className={authMode === 'register' ? 'mb-4' : 'mb-7'}>
+                  <h2 className='text-[44px] font-semibold leading-tight tracking-tight text-[rgb(var(--ui-text))]'>
+                    {authMode === 'register' ? '创建账号' : '欢迎回来'}
+                  </h2>
+                  <p className='mt-2.5 text-base leading-7 text-[rgb(var(--ui-text-muted))]'>
+                    {authMode === 'register'
+                      ? '完成验证，加入你的私人放映厅'
+                      : '登录后继续你的观影旅程'}
                   </p>
+                </div>
+
+                {shouldAskUsername && enableRegister && (
+                  <div className='mb-8 grid grid-cols-2 gap-1 rounded-ui-md border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg)/0.34)] p-1'>
+                    {[
+                      ['login', '登录'],
+                      ['register', '注册'],
+                    ].map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type='button'
+                        aria-pressed={authMode === mode}
+                        onClick={() => {
+                          setError(null);
+                          setAuthMode(mode as AuthMode);
+                        }}
+                        className={`rounded-ui-sm px-4 py-3.5 text-base font-semibold transition-all duration-200 ${
+                          authMode === mode
+                            ? 'bg-[rgb(var(--ui-accent)/0.88)] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
+                            : 'text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface))] hover:text-[rgb(var(--ui-text))]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 )}
 
-                <button
-                  type='submit'
-                  disabled={
-                    authMode === 'register'
-                      ? !password ||
-                        !username ||
-                        loading ||
-                        !turnstileSiteKey ||
-                        !turnstileToken ||
-                        (registerInviteRequired && !inviteCode.trim())
-                      : !password || loading || (shouldAskUsername && !username)
+                <form
+                  onSubmit={handleAuthSubmit}
+                  className={
+                    authMode === 'register' ? 'space-y-4' : 'space-y-6'
                   }
-                  className='inline-flex min-h-12 w-full items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-3 text-base font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50'
                 >
-                  {loading ? (
-                    <>
-                      <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                      {authMode === 'register' ? '注册中...' : '登录中...'}
-                    </>
-                  ) : (
-                    <>
-                      {authMode === 'register' ? '创建账号' : '登录'}
-                      <ArrowRight className='ml-2 h-4 w-4' />
-                    </>
+                  {shouldAskUsername && (
+                    <div>
+                      <label
+                        htmlFor='username'
+                        className='mb-2.5 block text-base font-medium text-[rgb(var(--ui-text-muted))]'
+                      >
+                        用户名
+                      </label>
+                      <div className='relative'>
+                        <UserRound className='pointer-events-none absolute left-5 top-1/2 h-6 w-6 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
+                        <input
+                          id='username'
+                          type='text'
+                          autoComplete='username'
+                          className='login-input block min-h-[60px] w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg)/0.34)] py-4 pl-16 pr-5 text-lg text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted)/0.72)] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.28)]'
+                          placeholder='输入用户名'
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                        />
+                      </div>
+                    </div>
                   )}
-                </button>
-              </form>
-            </div>
+
+                  <div>
+                    <label
+                      htmlFor='password'
+                      className='mb-2.5 block text-base font-medium text-[rgb(var(--ui-text-muted))]'
+                    >
+                      访问密码
+                    </label>
+                    <div className='relative'>
+                      <LockKeyhole className='pointer-events-none absolute left-5 top-1/2 h-6 w-6 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
+                      <input
+                        id='password'
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete={
+                          authMode === 'register'
+                            ? 'new-password'
+                            : 'current-password'
+                        }
+                        className='login-input block min-h-[60px] w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg)/0.34)] py-4 pl-16 pr-16 text-lg text-[rgb(var(--ui-text))] shadow-ui-soft selection:bg-[rgb(var(--ui-accent)/0.28)] selection:text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted)/0.72)] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.28)]'
+                        placeholder='输入访问密码'
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                      />
+                      <button
+                        aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                        className='absolute right-0 top-1/2 flex h-full w-16 -translate-y-1/2 items-center justify-center rounded-r-ui-sm text-[rgb(var(--ui-text-muted))] transition-colors duration-200 before:absolute before:inset-y-1 before:right-2 before:w-11 before:rounded-ui-sm before:border before:border-transparent before:bg-transparent before:transition-all before:duration-200 hover:text-[rgb(var(--ui-text))] hover:before:border-[rgb(var(--ui-border)/0.62)] hover:before:bg-[rgb(var(--ui-surface-strong)/0.44)] hover:before:shadow-ui-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.38)] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--ui-bg))]'
+                        onClick={() => setShowPassword((value) => !value)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        type='button'
+                      >
+                        {showPassword ? (
+                          <EyeOff className='relative h-5 w-5' />
+                        ) : (
+                          <Eye className='relative h-5 w-5' />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {authMode === 'register' &&
+                    shouldAskUsername &&
+                    enableRegister && (
+                      <>
+                        {registerInviteRequired && (
+                          <div>
+                            <label
+                              htmlFor='inviteCode'
+                              className='mb-2.5 block text-base font-medium text-[rgb(var(--ui-text-muted))]'
+                            >
+                              邀请码
+                            </label>
+                            <div className='relative'>
+                              <Hash className='pointer-events-none absolute left-5 top-1/2 h-6 w-6 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
+                              <input
+                                id='inviteCode'
+                                type='text'
+                                autoComplete='off'
+                                className='login-input block min-h-[60px] w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg)/0.34)] py-4 pl-16 pr-5 text-lg text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted)/0.72)] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.28)]'
+                                placeholder='输入邀请码'
+                                value={inviteCode}
+                                onChange={(e) => setInviteCode(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {turnstileSiteKey ? (
+                          <div
+                            id='register-turnstile'
+                            className='flex min-h-[82px] items-center justify-center overflow-hidden rounded-ui-sm border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg)/0.34)] px-3 py-2'
+                          />
+                        ) : (
+                          <p className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'>
+                            注册人机验证尚未配置，请稍后再试。
+                          </p>
+                        )}
+                      </>
+                    )}
+
+                  {error && (
+                    <p
+                      role='alert'
+                      className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'
+                    >
+                      {error}
+                    </p>
+                  )}
+
+                  <button
+                    type='submit'
+                    disabled={
+                      authMode === 'register'
+                        ? !password ||
+                          !username ||
+                          loading ||
+                          !turnstileSiteKey ||
+                          !turnstileToken ||
+                          (registerInviteRequired && !inviteCode.trim())
+                        : !password ||
+                          loading ||
+                          (shouldAskUsername && !username)
+                    }
+                    className='inline-flex min-h-[60px] w-full items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-5 py-4 text-lg font-semibold text-[rgb(var(--ui-on-accent))] shadow-[0_14px_32px_rgb(var(--ui-accent)/0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-65 disabled:hover:translate-y-0'
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                        {authMode === 'register' ? '注册中...' : '登录中...'}
+                      </>
+                    ) : (
+                      <>
+                        {authMode === 'register'
+                          ? '创建 ReelFind 账号'
+                          : '进入 ReelFind'}
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                <div
+                  className={`flex items-center justify-center gap-2.5 text-sm text-[rgb(var(--ui-text-muted))] ${
+                    authMode === 'register' ? 'mt-4' : 'mt-8'
+                  }`}
+                >
+                  <ShieldCheck className='h-5 w-5 text-[rgb(var(--ui-success))]' />
+                  <span>凭证仅用于安全访问</span>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       </main>

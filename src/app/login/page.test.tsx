@@ -76,11 +76,28 @@ describe('LoginPage invite link', () => {
 
     await screen.findByRole('button', { name: '登录', pressed: true });
 
+    expect(
+      screen.getByRole('heading', { name: '欢迎回来' })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('访问密码')).toHaveAttribute(
+      'autocomplete',
+      'current-password'
+    );
     expect(screen.queryByLabelText('邀请码')).not.toBeInTheDocument();
     expect(document.getElementById('register-turnstile')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '注册' }));
 
+    expect(
+      await screen.findByRole('heading', { name: '创建账号' })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('访问密码')).toHaveAttribute(
+      'autocomplete',
+      'new-password'
+    );
+    expect(
+      screen.getByRole('button', { name: '创建 ReelFind 账号' })
+    ).toBeDisabled();
     expect(await screen.findByLabelText('邀请码')).toBeInTheDocument();
     expect(document.getElementById('register-turnstile')).not.toBeNull();
   });
