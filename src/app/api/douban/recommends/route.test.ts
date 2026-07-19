@@ -133,10 +133,15 @@ describe('douban recommends route', () => {
     );
   });
 
-  it('returns empty tiers when no genre tag can be derived', async () => {
+  it('returns empty tiers when subject_suggest finds nothing and no genre is usable', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => [],
+    });
+
     const response = await GET(
       new MockRequest(
-        'https://example.com/api/douban/recommends?title=Unknown&class='
+        'https://example.com/api/douban/recommends?title=UnknownObscureTitle&class='
       ) as unknown as Request
     );
 
@@ -147,7 +152,14 @@ describe('douban recommends route', () => {
       alsoLiked: [],
       genreFallback: [],
     });
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/j/subject_suggest?q='),
+      expect.any(Object)
+    );
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      expect.stringMatching(/\/subject\/\d+\//),
+      expect.any(Object)
+    );
     expect(response.headers.get('Cache-Control')).toContain('max-age=7200');
   });
 
@@ -280,5 +292,137 @@ describe('douban recommends route', () => {
         },
       ],
     });
+  });
+
+  it('resolves subject id via subject_suggest when doubanId is missing', async () => {
+    (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+      const href = String(url);
+      if (href.includes('/j/subject_suggest')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              title: '肖申克的救赎',
+              type: 'movie',
+              year: '1994',
+              id: '1292052',
+            },
+          ],
+        };
+      }
+      if (href.includes('/subject/1292052/')) {
+        return {
+          ok: true,
+          text: async () => `
+            <div class="recommendations-bd">
+              <dl>
+                <dt>
+                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">
+                    <img src="https://img.example/forrest.webp" alt="阿甘正传">
+                  </a>
+                </dt>
+                <dd>
+                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">阿甘正传</a>
+                  <span class="subject-rate">9.5</span>
+                </dd>
+              </dl>
+            </div>
+          `,
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          subjects: [
+            {
+              id: '100',
+              title: '同题材甲',
+              cover: 'https://img.example/100.jpg',
+              rate: '8.1',
+            },
+          ],
+        }),
+      };
+    });
+
+    const response = await GET(
+      new MockRequest(
+        'https://example.com/api/douban/recommends?title=%E8%82%96%E7%94%B3%E5%85%8B%E7%9A%84%E6%95%91%E8%B5%8E&class=%E5%89%A7%E6%83%85&type=movie'
+      ) as unknown as Request
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      code: 200,
+      message: '获取成功',
+      alsoLiked: [
+        {
+          id: '1292720',
+          title: '阿甘正传',
+          poster: 'https://img.example/forrest.webp',
+          rate: '9.5',
+          year: '',
+        },
+      ],
+      genreFallback: [
+        {
+          id: '100',
+          title: '同题材甲',
+          poster: 'https://img.example/100.jpg',
+          rate: '8.1',
+          year: '',
+        },
+      ],
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'https://movie.douban.com/j/subject_suggest?q='
+      ),
+      expect.any(Object)
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://movie.douban.com/subject/1292052/',
+      expect.any(Object)
+    );
+  });
+
+  it('skips subject_suggest when doubanId is already provided', async () => {
+    (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+      if (String(url).includes('/subject/1292052/')) {
+        return {
+          ok: true,
+          text: async () => `
+            <div class="recommendations-bd">
+              <dl>
+                <dt>
+                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">
+                    <img src="https://img.example/forrest.webp" alt="阿甘正传">
+                  </a>
+                </dt>
+                <dd>
+                  <a href="https://movie.douban.com/subject/1292720/?from=subject-page">阿甘正传</a>
+                  <span class="subject-rate">9.5</span>
+                </dd>
+              </dl>
+            </div>
+          `,
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ subjects: [] }),
+      };
+    });
+
+    await GET(
+      new MockRequest(
+        'https://example.com/api/douban/recommends?title=%E8%82%96%E7%94%B3%E5%85%8B%E7%9A%84%E6%95%91%E8%B5%8E&type=movie&doubanId=1292052'
+      ) as unknown as Request
+    );
+
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/j/subject_suggest'),
+      expect.any(Object)
+    );
   });
 });

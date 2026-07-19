@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getCacheTime } from '@/lib/config';
 import { parseDoubanAlsoLiked } from '@/lib/douban-also-liked';
 import { deriveDoubanGenreTag } from '@/lib/douban-genre-tag';
+import { parseDoubanSubjectSuggest } from '@/lib/douban-subject-suggest';
 import type { DoubanItem } from '@/lib/types';
 
 export const runtime = 'edge';
@@ -91,6 +92,37 @@ async function fetchAlsoLiked(doubanId: number): Promise<DoubanItem[]> {
   }
 }
 
+/**
+ * Cold-start: resolve a Douban subject id from the title via subject_suggest.
+ * Network/parse failures degrade to null (caller falls back to genre tier).
+ */
+async function resolveDoubanIdFromTitle(title: string): Promise<number | null> {
+  const target = `https://movie.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(target, {
+      signal: controller.signal,
+      headers: {
+        ...DOUBAN_FETCH_HEADERS,
+        Accept: 'application/json, text/plain, */*',
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload: unknown = await response.json();
+    return parsePositiveDoubanId(parseDoubanSubjectSuggest(payload));
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function emptyResult(message: string): DoubanRecommendsResult {
   return {
     code: 200,
@@ -124,7 +156,9 @@ export async function GET(request: Request) {
   const vodClass = searchParams.get('class');
   const typeParam = searchParams.get('type') || 'movie';
   const pageSize = parseInt(searchParams.get('pageSize') || '16', 10);
-  const doubanId = parsePositiveDoubanId(searchParams.get('doubanId'));
+  const providedDoubanId = parsePositiveDoubanId(
+    searchParams.get('doubanId')
+  );
 
   if (!title) {
     return NextResponse.json(
@@ -148,11 +182,15 @@ export async function GET(request: Request) {
   }
 
   const genreTag = deriveDoubanGenreTag(vodClass);
-  if (!genreTag && !doubanId) {
-    return cachedJson(emptyResult('无可推荐题材'));
-  }
 
   try {
+    const doubanId =
+      providedDoubanId ?? (await resolveDoubanIdFromTitle(title));
+
+    if (!genreTag && !doubanId) {
+      return cachedJson(emptyResult('无可推荐题材'));
+    }
+
     const [alsoLikedResult, genreResult] = await Promise.allSettled([
       doubanId ? fetchAlsoLiked(doubanId) : Promise.resolve([] as DoubanItem[]),
       genreTag
@@ -166,7 +204,7 @@ export async function GET(request: Request) {
       genreResult.status === 'fulfilled' ? genreResult.value : [];
 
     // Genre-only path: preserve previous hard failure when the sole tier fails.
-    // With doubanId, subject-page failure degrades to genre (or empty) instead.
+    // With a resolved subject id, subject-page failure degrades to genre (or empty).
     if (!doubanId && genreResult.status === 'rejected') {
       throw genreResult.reason;
     }
