@@ -283,6 +283,32 @@ export function shouldReportNativePlaybackFailureFeedback({
   return action === 'switch-source' || sourceRecoveryAttempts > 0;
 }
 
+/**
+ * After an Ad Skip Window seek, iOS native HLS often pauses and buffers.
+ * Without re-arming progress anchors + stall grace, the watchdog treats that
+ * wait as a stall and fires resume/skip-forward — a second seek that feels
+ * like stutter + progress jumping after the ad skip.
+ */
+export function planPostAdSkipPlaybackArming(input: {
+  targetTime: number;
+  nowMs: number;
+  playIntent: NativePlaybackIntent;
+  graceMs?: number;
+}): {
+  lastObservedTime: number;
+  lastProgressAt: number;
+  ignoreStallUntil: number;
+  shouldResumePlay: boolean;
+} {
+  const graceMs = input.graceMs ?? NATIVE_PLAY_RESUME_GRACE_MS;
+  return {
+    lastObservedTime: input.targetTime,
+    lastProgressAt: input.nowMs,
+    ignoreStallUntil: input.nowMs + graceMs,
+    shouldResumePlay: input.playIntent === 'playing',
+  };
+}
+
 export function getNativePlaybackNudgeTime({
   currentTime,
   bufferedRanges,

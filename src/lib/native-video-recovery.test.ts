@@ -7,6 +7,7 @@ import {
   NATIVE_HARD_STALL_THRESHOLD_MS,
   NATIVE_JITTER_WINDOW_MS,
   NATIVE_PLAY_RESUME_GRACE_MS,
+  planPostAdSkipPlaybackArming,
   shouldIgnoreNativeStall,
   shouldReportNativePlaybackFailureFeedback,
   shouldResetNativeRecoveryOnPause,
@@ -127,6 +128,51 @@ describe('shouldIgnoreNativeStall', () => {
         nowMs: 16_000,
         ignoreStallUntilMs: 15_000,
       })
+    ).toBe(false);
+  });
+});
+
+describe('planPostAdSkipPlaybackArming', () => {
+  it('without arming, a post-skip buffer wait is eligible for stall recovery (Pad repro)', () => {
+    // Symptom: ad skip seek → brief pause/buffer → watchdog skip-forward.
+    expect(
+      shouldIgnoreNativeStall({
+        playIntent: 'playing',
+        mediaSourceUnavailable: false,
+        nowMs: 100_000 + 3_000,
+        ignoreStallUntilMs: 0,
+      })
+    ).toBe(false);
+  });
+
+  it('arms grace so post-skip buffer wait is not treated as a stall', () => {
+    const nowMs = 100_000;
+    const arming = planPostAdSkipPlaybackArming({
+      targetTime: 120.35,
+      nowMs,
+      playIntent: 'playing',
+    });
+
+    expect(arming.lastObservedTime).toBe(120.35);
+    expect(arming.lastProgressAt).toBe(nowMs);
+    expect(arming.shouldResumePlay).toBe(true);
+    expect(
+      shouldIgnoreNativeStall({
+        playIntent: 'playing',
+        mediaSourceUnavailable: false,
+        nowMs: nowMs + 3_000,
+        ignoreStallUntilMs: arming.ignoreStallUntil,
+      })
+    ).toBe(true);
+  });
+
+  it('does not request resume when user intent is paused', () => {
+    expect(
+      planPostAdSkipPlaybackArming({
+        targetTime: 50,
+        nowMs: 1_000,
+        playIntent: 'paused',
+      }).shouldResumePlay
     ).toBe(false);
   });
 });

@@ -61,6 +61,7 @@ import {
   NATIVE_JITTER_WINDOW_MS,
   NATIVE_PLAY_RESUME_GRACE_MS,
   NATIVE_WATCHDOG_INTERVAL_MS,
+  planPostAdSkipPlaybackArming,
   shouldIgnoreNativeStall,
   shouldReportNativePlaybackFailureFeedback,
   shouldResetNativeRecoveryOnPause,
@@ -1095,6 +1096,63 @@ function PlayPageClient() {
       (window) => getHlsAdSkipWindowKey(window) === windowKey
     );
 
+  /**
+   * Ad-skip seek must re-arm native stall grace and resume play. Otherwise iOS
+   * treats post-seek buffering as a stall and fires a second skip-forward.
+   */
+  const applyAdSkipSystemSeek = (input: {
+    targetTime: number;
+    windowKey: string;
+    platform: string;
+    reason: 'skip' | 'restore';
+  }) => {
+    const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+    if (!video) {
+      return;
+    }
+    const fromTime = video.currentTime || 0;
+    const now = Date.now();
+    const nativeState = nativeRecoveryStateRef.current;
+    const arming = planPostAdSkipPlaybackArming({
+      targetTime: input.targetTime,
+      nowMs: now,
+      playIntent: nativeState.playIntent,
+    });
+
+    systemSeekInFlightRef.current = true;
+    video.currentTime = input.targetTime;
+
+    nativeState.lastObservedTime = arming.lastObservedTime;
+    nativeState.lastProgressAt = arming.lastProgressAt;
+    nativeState.ignoreStallUntil = arming.ignoreStallUntil;
+    nativeState.stallCount = 0;
+    nativeState.sourceRecoveryAttempts = 0;
+    hlsRecoveryStateRef.current.lastPlaybackTime = arming.lastObservedTime;
+    clearWaitingRecoveryTimer();
+
+    if (arming.shouldResumePlay) {
+      void video.play().catch(() => undefined);
+    }
+
+    emitPlaybackDebugLog(
+      input.reason === 'restore' ? 'adSkip.restored' : 'adSkip.completed',
+      input.reason === 'restore'
+        ? '已恢复广告跳过前的播放位置'
+        : '已通过 seek 跳过广告时间窗',
+      {
+        windowKey: input.windowKey,
+        fromTime: Number(fromTime.toFixed(2)),
+        targetTime: Number(input.targetTime.toFixed(2)),
+        platform: input.platform,
+        armedIgnoreStallUntil: arming.ignoreStallUntil,
+        resumedPlay: arming.shouldResumePlay,
+      },
+      {
+        playbackUrl: videoUrlRef.current,
+      }
+    );
+  };
+
   const persistAdSkipWindowConfirmation = (
     window: Pick<
       HlsAdSkipWindow,
@@ -1117,6 +1175,11 @@ function PlayPageClient() {
         ruleId: window.ruleId,
       },
       kind,
+    }).then((saved) => {
+      // D1 missing table / API failure previously failed silently — surface it.
+      if (!saved && kind === 'confirm') {
+        showAdSkipMarkFeedback('已跳过，但未能同步到全站（请稍后重试标记）');
+      }
     });
   };
 
@@ -1159,28 +1222,12 @@ function PlayPageClient() {
       },
       onSkipAdWindow: (effect) => {
         // 全平台统一：Ad Skip Window 一律通过 seek 跳过（退役物理删分片）。
-        const video = artPlayerRef.current?.video as
-          | HTMLVideoElement
-          | undefined;
-        if (!video) {
-          return;
-        }
-        const fromTime = video.currentTime || 0;
-        systemSeekInFlightRef.current = true;
-        video.currentTime = effect.targetTime;
-        emitPlaybackDebugLog(
-          'adSkip.completed',
-          '已通过 seek 跳过广告时间窗',
-          {
-            windowKey: effect.windowKey,
-            fromTime: Number(fromTime.toFixed(2)),
-            targetTime: Number(effect.targetTime.toFixed(2)),
-            platform: effect.platform,
-          },
-          {
-            playbackUrl: videoUrlRef.current,
-          }
-        );
+        applyAdSkipSystemSeek({
+          targetTime: effect.targetTime,
+          windowKey: effect.windowKey,
+          platform: effect.platform,
+          reason: 'skip',
+        });
       },
       onShowAdSkipUndo: (effect) => {
         clearAdSkipUndoDismissTimer();
@@ -1208,14 +1255,15 @@ function PlayPageClient() {
         }, effect.dismissAfterMs);
       },
       onRestoreAdSkipWindow: (effect) => {
-        const video = artPlayerRef.current?.video as
-          | HTMLVideoElement
-          | undefined;
-        if (!video) {
-          return;
-        }
-        systemSeekInFlightRef.current = true;
-        video.currentTime = effect.targetTime;
+        applyAdSkipSystemSeek({
+          targetTime: effect.targetTime,
+          windowKey: effect.windowKey,
+          platform:
+            playbackPolicyRef.current?.runtime === 'native-hls'
+              ? 'apple-native'
+              : 'hlsjs',
+          reason: 'restore',
+        });
         clearAdSkipUndoDismissTimer();
         setAdSkipUndoToast(null);
       },
@@ -3804,6 +3852,15 @@ function PlayPageClient() {
       if (systemSeekInFlightRef.current) {
         systemSeekInFlightRef.current = false;
         settleSystemRecoverySeekIfNeeded();
+        // iOS often stays paused after system seeks (ad-skip / recovery).
+        if (
+          nativeRecoveryStateRef.current.playIntent === 'playing' &&
+          video.paused
+        ) {
+          requestNativeRecoveryAutoplay(video, {
+            trigger: 'system-seek-settled',
+          });
+        }
         return;
       }
       const now = Date.now();
@@ -5430,6 +5487,12 @@ function PlayPageClient() {
                 if (systemSeekInFlightRef.current) {
                   systemSeekInFlightRef.current = false;
                   settleSystemRecoverySeekIfNeeded();
+                  if (
+                    nativeRecoveryStateRef.current.playIntent === 'playing' &&
+                    video.paused
+                  ) {
+                    void video.play().catch(() => undefined);
+                  }
                   return;
                 }
                 markHlsUserSeeked(video.currentTime || 0);
