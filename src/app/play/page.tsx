@@ -108,6 +108,7 @@ import {
 import {
   type PlaybackBadPoint,
   planStallEscapeResume,
+  purgeBadPointsOverlappingAdSkipWindow,
   readPersistedPlaybackBadPoints,
   rememberPlaybackBadPoint,
   writePersistedPlaybackBadPoints,
@@ -1097,8 +1098,9 @@ function PlayPageClient() {
     );
 
   /**
-   * Ad-skip seek must re-arm native stall grace and resume play. Otherwise iOS
-   * treats post-seek buffering as a stall and fires a second skip-forward.
+   * Ad-skip seek must re-arm native stall grace, purge ad-region Bad Points,
+   * and resume play. Otherwise iOS treats post-seek buffering as a stall and
+   * fires PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS (20s) — often twice (~40s).
    */
   const applyAdSkipSystemSeek = (input: {
     targetTime: number;
@@ -1118,6 +1120,28 @@ function PlayPageClient() {
       nowMs: now,
       playIntent: nativeState.playIntent,
     });
+    const skippedWindow = resolveAdSkipWindowByKey(input.windowKey);
+    let purgedBadPointCount = 0;
+
+    // iOS-only symptom, but purging ad-window Bad Points is safe on all runtimes.
+    if (input.reason === 'skip' && skippedWindow) {
+      const before = playbackSessionStateRef.current.badPoints;
+      const after = purgeBadPointsOverlappingAdSkipWindow(before, {
+        startTimeSeconds: skippedWindow.startTimeSeconds,
+        endTimeSeconds: skippedWindow.endTimeSeconds,
+        sourceKey: getCurrentSourceKey(),
+      });
+      purgedBadPointCount = before.length - after.length;
+      if (purgedBadPointCount > 0) {
+        playbackSessionStateRef.current = {
+          ...playbackSessionStateRef.current,
+          badPoints: after,
+        };
+        if (typeof window !== 'undefined') {
+          writePersistedPlaybackBadPoints(after, window.sessionStorage);
+        }
+      }
+    }
 
     systemSeekInFlightRef.current = true;
     video.currentTime = input.targetTime;
@@ -1127,6 +1151,8 @@ function PlayPageClient() {
     nativeState.ignoreStallUntil = arming.ignoreStallUntil;
     nativeState.stallCount = 0;
     nativeState.sourceRecoveryAttempts = 0;
+    nativeState.jitterEvents = [];
+    nativeState.jitterWindowCount = 0;
     hlsRecoveryStateRef.current.lastPlaybackTime = arming.lastObservedTime;
     clearWaitingRecoveryTimer();
 
@@ -1146,6 +1172,7 @@ function PlayPageClient() {
         platform: input.platform,
         armedIgnoreStallUntil: arming.ignoreStallUntil,
         resumedPlay: arming.shouldResumePlay,
+        purgedBadPointCount,
       },
       {
         playbackUrl: videoUrlRef.current,
@@ -1815,12 +1842,7 @@ function PlayPageClient() {
 
     const buffered = video.buffered;
     const currentTime = video.currentTime || 0;
-    const escape = planStallEscapeResume({
-      currentPlayTime: currentTime,
-      badPoints: playbackSessionStateRef.current.badPoints,
-      sourceKey: getCurrentSourceKey(),
-      mode: 'same-source',
-    });
+    const escape = planNativeStallEscapeResume(currentTime);
     if (escape.action === 'skip-forward' && escape.resumeTime != null) {
       if (escape.recordBadPointAt != null) {
         rememberCurrentPlaybackBadPoint(escape.recordBadPointAt);
@@ -3351,12 +3373,7 @@ function PlayPageClient() {
       ) {
         return;
       }
-      const escape = planStallEscapeResume({
-        currentPlayTime: stuckTime,
-        badPoints: playbackSessionStateRef.current.badPoints,
-        sourceKey: getCurrentSourceKey(),
-        mode: 'same-source',
-      });
+      const escape = planNativeStallEscapeResume(stuckTime);
       if (escape.action === 'skip-forward' && escape.resumeTime != null) {
         systemSeekInFlightRef.current = true;
         video.currentTime = escape.resumeTime;
@@ -3508,6 +3525,17 @@ function PlayPageClient() {
     }, NATIVE_FALSE_PLAYING_CHECK_DELAY_MS);
   };
 
+  const planNativeStallEscapeResume = (currentPlayTime: number) =>
+    planStallEscapeResume({
+      currentPlayTime,
+      badPoints: playbackSessionStateRef.current.badPoints,
+      sourceKey: getCurrentSourceKey(),
+      mode: 'same-source',
+      // Post-ad-skip grace: never stack +20s Bad Point escapes on iOS.
+      suppressSkipForward:
+        Date.now() < nativeRecoveryStateRef.current.ignoreStallUntil,
+    });
+
   const executeNativeLowFrequencyRecovery = (
     video: HTMLVideoElement,
     playbackUrl: string,
@@ -3518,6 +3546,17 @@ function PlayPageClient() {
     const state = nativeRecoveryStateRef.current;
     const now = Date.now();
     const legacyIsUserPaused = state.playIntent === 'paused';
+    if (
+      severity !== 'source-failed' &&
+      shouldIgnoreNativeStall({
+        playIntent: state.playIntent,
+        mediaSourceUnavailable: isNativeMediaSourceUnavailable(video),
+        nowMs: now,
+        ignoreStallUntilMs: state.ignoreStallUntil,
+      })
+    ) {
+      return false;
+    }
     if (
       !isSessionAutomaticEffectAllowed(
         severity === 'source-failed' || state.sourceRecoveryAttempts > 0
@@ -3701,12 +3740,7 @@ function PlayPageClient() {
       state.sourceRecoveryAttempts += 1;
       state.ignoreStallUntil = Date.now() + NATIVE_PLAY_RESUME_GRACE_MS;
       const stuckTime = video.currentTime || 0;
-      const escape = planStallEscapeResume({
-        currentPlayTime: stuckTime,
-        badPoints: playbackSessionStateRef.current.badPoints,
-        sourceKey: getCurrentSourceKey(),
-        mode: 'same-source',
-      });
+      const escape = planNativeStallEscapeResume(stuckTime);
       if (escape.recordBadPointAt != null) {
         rememberCurrentPlaybackBadPoint(escape.recordBadPointAt);
       }

@@ -37,6 +37,11 @@ export interface PlanStallEscapeResumeInput {
    * inside a known bad window (then skip forward). Avoids double rewind.
    */
   preferExistingWithoutRewind?: boolean;
+  /**
+   * When true, never emit skip-forward (used during post-ad-skip grace on iOS
+   * so Bad Point escape cannot stack +20s seeks after the ad jump).
+   */
+  suppressSkipForward?: boolean;
 }
 
 export interface StallEscapeResumePlan {
@@ -133,6 +138,39 @@ export function rememberPlaybackBadPoint(
   );
 }
 
+/**
+ * Drop Bad Points that sit inside (or within matchWindow of) an Ad Skip Window.
+ * iOS native HLS often records stalls while inside the ad; after the ad seek,
+ * those points still match and fire PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS
+ * (20s) — twice yields the ~40s Pad jump.
+ */
+export function purgeBadPointsOverlappingAdSkipWindow(
+  badPoints: readonly PlaybackBadPoint[],
+  input: {
+    startTimeSeconds: number;
+    endTimeSeconds: number;
+    sourceKey?: string | null;
+    matchWindowSeconds?: number;
+  }
+): PlaybackBadPoint[] {
+  if (!badPoints.length) {
+    return [];
+  }
+
+  const matchWindow =
+    input.matchWindowSeconds ?? PLAYBACK_BAD_POINT_MATCH_WINDOW_SECONDS;
+  const lo = input.startTimeSeconds - matchWindow;
+  const hi = input.endTimeSeconds + matchWindow;
+  const sourceKey = input.sourceKey ?? null;
+
+  return badPoints.filter((point) => {
+    if (sourceKey != null && point.sourceKey !== sourceKey) {
+      return true;
+    }
+    return point.timeSeconds < lo || point.timeSeconds > hi;
+  });
+}
+
 export function planStallEscapeResume(
   input: PlanStallEscapeResumeInput
 ): StallEscapeResumePlan {
@@ -161,6 +199,13 @@ export function planStallEscapeResume(
   });
 
   if (nearby) {
+    if (input.suppressSkipForward) {
+      return {
+        resumeTime: roundTime(currentPlayTime),
+        action: 'none',
+        recordBadPointAt: null,
+      };
+    }
     const anchor = Math.max(nearby.timeSeconds, currentPlayTime);
     return {
       resumeTime: roundTime(anchor + skipForwardSeconds),

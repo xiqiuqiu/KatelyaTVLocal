@@ -3,6 +3,7 @@ import {
   PLAYBACK_RESUME_REWIND_SECONDS,
   findNearbyPlaybackBadPoint,
   planStallEscapeResume,
+  purgeBadPointsOverlappingAdSkipWindow,
   rememberPlaybackBadPoint,
 } from '@/lib/playback-stuck-escape';
 import {
@@ -84,6 +85,91 @@ describe('playback stuck-point escape', () => {
         mode: 'same-source',
       })
     ).toBeNull();
+  });
+});
+
+describe('ad-skip then double bad-point skip-forward (iOS Pad ~40s jump)', () => {
+  it('two skip-forwards after an ad-skip landing accumulate ~40s (user symptom)', () => {
+    // Ad ends at 100; seek lands at 100.35. A stall bad-point was recorded
+    // inside the ad (or at landing). Each escape adds +20s.
+    const adSkipLanding = 100.35;
+    let badPoints = rememberPlaybackBadPoint([], {
+      sourceKey: 'ruyi-1',
+      timeSeconds: 95,
+      nowMs: 1_000,
+    });
+
+    const first = planStallEscapeResume({
+      currentPlayTime: adSkipLanding,
+      sourceKey: 'ruyi-1',
+      mode: 'same-source',
+      badPoints,
+    });
+    expect(first.action).toBe('skip-forward');
+    expect(first.resumeTime).toBe(
+      Number((adSkipLanding + PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS).toFixed(2))
+    );
+
+    badPoints = rememberPlaybackBadPoint(badPoints, {
+      sourceKey: 'ruyi-1',
+      timeSeconds: first.resumeTime!,
+      nowMs: 2_000,
+    });
+    const second = planStallEscapeResume({
+      currentPlayTime: first.resumeTime!,
+      sourceKey: 'ruyi-1',
+      mode: 'same-source',
+      badPoints,
+    });
+    expect(second.action).toBe('skip-forward');
+    expect(
+      Number(((second.resumeTime ?? 0) - adSkipLanding).toFixed(2))
+    ).toBe(PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS * 2);
+  });
+
+  it('suppressSkipForward blocks +20 escape during post-ad-skip grace', () => {
+    const badPoints = rememberPlaybackBadPoint([], {
+      sourceKey: 'ruyi-1',
+      timeSeconds: 95,
+      nowMs: 1_000,
+    });
+    const plan = planStallEscapeResume({
+      currentPlayTime: 100.35,
+      sourceKey: 'ruyi-1',
+      mode: 'same-source',
+      badPoints,
+      suppressSkipForward: true,
+    });
+    expect(plan.action).toBe('none');
+    expect(plan.resumeTime).toBe(100.35);
+  });
+
+  it('purging ad-window bad points stops the post-skip +20 escape', () => {
+    const adStart = 80;
+    const adEnd = 100;
+    const adSkipLanding = 100.35;
+    const badPoints = rememberPlaybackBadPoint([], {
+      sourceKey: 'ruyi-1',
+      timeSeconds: 95,
+      nowMs: 1_000,
+    });
+
+    const purged = purgeBadPointsOverlappingAdSkipWindow(badPoints, {
+      startTimeSeconds: adStart,
+      endTimeSeconds: adEnd,
+      sourceKey: 'ruyi-1',
+    });
+    expect(purged).toEqual([]);
+
+    const plan = planStallEscapeResume({
+      currentPlayTime: adSkipLanding,
+      sourceKey: 'ruyi-1',
+      mode: 'same-source',
+      badPoints: purged,
+    });
+    // No nearby bad point → rewind, not +20 skip-forward.
+    expect(plan.action).toBe('rewind');
+    expect(plan.resumeTime as number).toBeLessThan(adSkipLanding);
   });
 });
 
