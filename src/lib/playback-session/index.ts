@@ -20,7 +20,6 @@ export {
 export { allowsAutomaticEffect, getAutomaticEffectGate } from './intent';
 export {
   badPointScopeKey,
-  isHlsSustainedSoftStall,
   isRecoveryInFlightBlockingAdSkip,
   isResumePendingBlockingAdSkip,
   RECOVERY_R0_SOFT_OBSERVE_MS,

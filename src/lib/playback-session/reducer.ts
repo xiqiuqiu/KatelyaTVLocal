@@ -20,7 +20,6 @@ import {
   cancelRecoveryEpisode,
   clearStallEpisode,
   endStallEpisodePreservingBudget,
-  isHlsSustainedSoftStall,
   isRecoveryInFlightBlockingAdSkip,
   isResumePendingBlockingAdSkip,
   loadBadPointsForScope,
@@ -274,21 +273,29 @@ function handleStallCandidate(
   // A stall breaks any continuous healthy run.
   state = breakHealthyProgressContinuity(state);
 
+  // The post-switch settle window filters noisy soft callbacks only. A fatal
+  // media error or source-change timeout must still be able to leave a broken
+  // source immediately, while all user-intent gates remain in force.
+  const gateState =
+    options.hardFailure || options.forceR3Evaluation
+      ? { ...state, sourceSwitchSettledUntilMs: null }
+      : state;
   const sameSourceGate = allowsAutomaticEffect(
-    state,
+    gateState,
     'same-source-recovery',
     nowMs
   );
   const autoSwitchGate = allowsAutomaticEffect(
-    state,
+    gateState,
     'auto-source-switch',
     nowMs
   );
 
   if (!sameSourceGate && !autoSwitchGate) {
     const denied =
-      getAutomaticEffectGate(state, 'same-source-recovery', nowMs).deniedBy ||
-      getAutomaticEffectGate(state, 'auto-source-switch', nowMs).deniedBy ||
+      getAutomaticEffectGate(gateState, 'same-source-recovery', nowMs)
+        .deniedBy ||
+      getAutomaticEffectGate(gateState, 'auto-source-switch', nowMs).deniedBy ||
       'user-paused';
     return {
       state,
@@ -305,6 +312,8 @@ function handleStallCandidate(
       ],
     };
   }
+
+  state = gateState;
 
   if (
     options.forceR3Evaluation ||
@@ -1039,7 +1048,10 @@ export function reducePlaybackSession(
       };
 
     case 'sourceChange.completed':
-      if (event.attemptId !== state.currentSourceChangeAttemptId) {
+      if (
+        event.attemptId !== state.currentSourceChangeAttemptId ||
+        event.sourceKey !== state.sourceChangeSourceKey
+      ) {
         return { state, effects: [] };
       }
 
@@ -1050,6 +1062,9 @@ export function reducePlaybackSession(
           sourceChangeSourceKey: null,
           recoveryInFlight:
             state.recoveryInFlight === 'R3' ? 'resume' : state.recoveryInFlight,
+          sourceSwitchSettledUntilMs: event.automatic
+            ? event.nowMs + DEFAULT_SOURCE_SWITCH_SETTLE_MS
+            : state.sourceSwitchSettledUntilMs,
         },
         effects: [
           {
@@ -1195,13 +1210,10 @@ export function reducePlaybackSession(
     }
 
     case 'recovery.runtimeEvidence': {
-      const sustainedSoftStall = isHlsSustainedSoftStall(event.evidence);
       return handleStallCandidate(state, event.snapshot, event.nowMs, {
         evidence: event.evidence,
         hardFailure: Boolean(
-          event.evidence.hardFailure ||
-            event.evidence.hls?.fatal ||
-            sustainedSoftStall
+          event.evidence.hardFailure || event.evidence.hls?.fatal
         ),
         r3Reason: 'auto-recovery',
       });

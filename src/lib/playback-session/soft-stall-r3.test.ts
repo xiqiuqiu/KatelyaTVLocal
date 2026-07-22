@@ -1,4 +1,3 @@
-import { getHlsRecoveryPlan } from '@/lib/hls-recovery';
 import {
   createInitialPlaybackSessionState,
   reducePlaybackSession,
@@ -50,7 +49,7 @@ function loadPlayableAlts() {
  * Regression: sustained soft stuttering must reach R3 auto source-switch.
  * Root causes locked here:
  * 1) R2 effectSettled must not park on resume (blocks further escalation)
- * 2) HLS stallCount/window ≥5 must escalate like legacy getHlsRecoveryPlan
+ * 2) Sustained soft stalls must exhaust the shared R ladder before R3.
  */
 describe('soft-stall → R3 auto source-switch', () => {
   it('clears in-flight after a single R2 settle so soft stalls can continue', () => {
@@ -97,39 +96,131 @@ describe('soft-stall → R3 auto source-switch', () => {
     throw new Error('never reached R2');
   });
 
-  it('emits switchSource when HLS feeds the same non-fatal stall evidence legacy would switch on', () => {
-    const legacy = getHlsRecoveryPlan({
-      fatal: false,
-      errorType: 'mediaError',
-      errorDetails: 'bufferStalledError',
-      playbackMode: 'direct',
-      stallCount: 5,
-      stallWindowCount: 5,
-      networkRecoveryAttempts: 1,
-      mediaRecoveryAttempts: 1,
-      hasAlternativeSource: true,
-    });
-    expect(legacy.action).toBe('switch-source');
+  it('does not treat repeated callbacks from one soft stall as five independent stalls', () => {
+    let state = loadPlayableAlts();
+    const effects = [];
 
-    const result = reducePlaybackSession(loadPlayableAlts(), {
-      type: 'recovery.runtimeEvidence',
-      nowMs: 10_000,
-      snapshot: { currentTime: 120 },
-      evidence: {
-        platform: 'hlsjs',
-        stallCandidate: true,
-        hardFailure: false,
-        hls: {
-          stallCount: 5,
-          stallWindowCount: 5,
-          fatal: false,
-          errorType: 'mediaError',
+    for (let count = 1; count <= 5; count += 1) {
+      const result = reducePlaybackSession(state, {
+        type: 'recovery.runtimeEvidence',
+        nowMs: 10_000 + count * 300,
+        snapshot: { currentTime: 120 },
+        evidence: {
+          platform: 'hlsjs',
+          stallCandidate: true,
+          hardFailure: false,
+          hls: {
+            stallCount: count,
+            stallWindowCount: count,
+            fatal: false,
+            errorType: 'mediaError',
+          },
         },
-      },
+      });
+      state = result.state;
+      effects.push(...result.effects);
+    }
+
+    expect(effects.some((effect) => effect.type === 'switchSource')).toBe(
+      false
+    );
+    expect(state.recoveryStage).toBe('R0');
+  });
+
+  it('starts a settle window when an automatic source change completes', () => {
+    const started = reducePlaybackSession(loadPlayableAlts(), {
+      type: 'sourceChange.started',
+      attemptId: 1,
+      sourceKey: 'direct-5',
+    }).state;
+
+    const completed = reducePlaybackSession(started, {
+      type: 'sourceChange.completed',
+      attemptId: 1,
+      sourceKey: 'direct-5',
+      nowMs: 10_000,
+      automatic: true,
+    }).state;
+
+    expect(completed.sourceSwitchSettledUntilMs).toBe(12_000);
+    expect(
+      reducePlaybackSession(completed, {
+        type: 'recovery.runtimeEvidence',
+        nowMs: 10_100,
+        snapshot: { currentTime: 120 },
+        evidence: {
+          platform: 'hlsjs',
+          stallCandidate: true,
+          hardFailure: false,
+          hls: {
+            stallCount: 5,
+            stallWindowCount: 5,
+            fatal: false,
+          },
+        },
+      }).effects
+    ).toEqual([
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'intent.gate.denied',
+        details: expect.objectContaining({ deniedBy: 'source-switch-settle' }),
+      }),
+    ]);
+  });
+
+  it('ignores completion from a different source in the same attempt', () => {
+    const started = reducePlaybackSession(loadPlayableAlts(), {
+      type: 'sourceChange.started',
+      attemptId: 1,
+      sourceKey: 'direct-5',
+    }).state;
+
+    const completed = reducePlaybackSession(started, {
+      type: 'sourceChange.completed',
+      attemptId: 1,
+      sourceKey: 'proxy-4',
+      nowMs: 10_000,
+      automatic: true,
     });
 
-    expect(result.effects.some((e) => e.type === 'switchSource')).toBe(true);
-    expect(result.state.recoveryStage).toBe('R3');
+    expect(completed.state).toBe(started);
+    expect(completed.effects).toEqual([]);
+  });
+
+  it('does not add the automatic settle window to manual source changes', () => {
+    const started = reducePlaybackSession(loadPlayableAlts(), {
+      type: 'sourceChange.started',
+      attemptId: 1,
+      sourceKey: 'direct-5',
+    }).state;
+
+    const completed = reducePlaybackSession(started, {
+      type: 'sourceChange.completed',
+      attemptId: 1,
+      sourceKey: 'direct-5',
+      nowMs: 10_000,
+      automatic: false,
+    }).state;
+
+    expect(completed.sourceSwitchSettledUntilMs).toBeNull();
+  });
+
+  it('keeps fatal errors on the fast switch path during settle', () => {
+    const settling = {
+      ...loadPlayableAlts(),
+      sourceSwitchSettledUntilMs: 12_000,
+    };
+
+    const result = reducePlaybackSession(settling, {
+      type: 'video.error',
+      nowMs: 10_100,
+      snapshot: { currentTime: 120 },
+      errorCode: 3,
+    });
+
+    expect(
+      result.effects.some((effect) => effect.type === 'switchSource')
+    ).toBe(true);
   });
 
   it('eventually emits switchSource after soft waiting ladder with settles', () => {

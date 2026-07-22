@@ -198,7 +198,13 @@ export type PlaybackSessionEvent =
   | { type: 'adSkipUndo.dismissed'; windowKey: string }
   | { type: 'progressSave.requested'; reason: PlayRecordSaveReason }
   | { type: 'sourceChange.started'; attemptId: number; sourceKey: string }
-  | { type: 'sourceChange.completed'; attemptId: number; sourceKey: string }
+  | {
+      type: 'sourceChange.completed';
+      attemptId: number;
+      sourceKey: string;
+      nowMs: number;
+      automatic: boolean;
+    }
   | { type: 'recovery.switchFailed'; sourceKey: string }
   | {
       type: 'recovery.runtimeEvidence';

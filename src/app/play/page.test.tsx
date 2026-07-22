@@ -7,6 +7,29 @@ import type { SearchResult } from '@/lib/types';
 import PlayPage from '@/app/play/page';
 
 let mockSearchParams = new URLSearchParams();
+type MockSourceChangeHandler = (
+  source: string,
+  id: string,
+  title: string,
+  options?: {
+    autoRecovery?: boolean;
+    resumeTime?: number | null;
+    reason?: string;
+    autoPlayAfterReady?: boolean;
+  }
+) => Promise<boolean>;
+let mockSourceChangeHandler: MockSourceChangeHandler | undefined;
+let mockArtPlayerInstance:
+  | {
+      currentTime: number;
+      duration: number;
+      video: {
+        currentTime: number;
+        duration: number;
+      };
+    }
+  | undefined;
+const mockArtPlayerEventHandlers = new Map<string, () => void>();
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -66,11 +89,20 @@ jest.mock('@/components/SkipController', () => ({
 
 jest.mock('@/components/EpisodeSelector', () => ({
   __esModule: true,
-  default: ({ availableSources }: { availableSources: SearchResult[] }) => (
-    <div data-testid='episode-selector-sources'>
-      {availableSources.map((source) => source.source_name).join(',')}
-    </div>
-  ),
+  default: ({
+    availableSources,
+    onSourceChange,
+  }: {
+    availableSources: SearchResult[];
+    onSourceChange: MockSourceChangeHandler;
+  }) => {
+    mockSourceChangeHandler = onSourceChange;
+    return (
+      <div data-testid='episode-selector-sources'>
+        {availableSources.map((source) => source.source_name).join(',')}
+      </div>
+    );
+  },
 }));
 
 jest.mock('@/components/ScrollableRow', () => ({
@@ -85,13 +117,8 @@ jest.mock('@/components/VideoCard', () => ({
 
 jest.mock('artplayer', () => ({
   __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    currentTime: 0,
-    duration: 120,
-    on: jest.fn(),
-    pause: jest.fn(),
-    destroy: jest.fn(),
-    video: {
+  default: jest.fn().mockImplementation((options) => {
+    const video = {
       addEventListener: jest.fn(),
       removeEventListener: jest.fn(),
       canPlayType: jest.fn(() => ''),
@@ -105,17 +132,48 @@ jest.mock('artplayer', () => ({
       removeAttribute: jest.fn(),
       appendChild: jest.fn(),
       src: '',
-    },
-  })),
+    };
+    const player = {
+      currentTime: 0,
+      duration: 120,
+      on: jest.fn((event: string, handler: () => void) => {
+        mockArtPlayerEventHandlers.set(event, handler);
+      }),
+      pause: jest.fn(),
+      destroy: jest.fn(),
+      video,
+    };
+    Object.defineProperty(player, 'switch', {
+      set(value: string) {
+        options.customType?.m3u8?.(video as unknown as HTMLVideoElement, value);
+      },
+    });
+    mockArtPlayerInstance = player;
+    return player;
+  }),
 }));
 
-jest.mock('hls.js', () => ({
-  __esModule: true,
-  default: {
-    DefaultConfig: { loader: class TestHlsLoader {} },
-    isSupported: () => false,
-  },
-}));
+jest.mock('hls.js', () => {
+  class MockHls {
+    static DefaultConfig = { loader: class TestHlsLoader {} };
+    static Events = { ERROR: 'error', MANIFEST_PARSED: 'manifestParsed' };
+    static isSupported = () => false;
+
+    attachMedia = jest.fn();
+    destroy = jest.fn();
+    loadSource = jest.fn();
+    on = jest.fn((event: string, handler: () => void) => {
+      if (event === MockHls.Events.MANIFEST_PARSED) {
+        handler();
+      }
+    });
+  }
+
+  return {
+    __esModule: true,
+    default: MockHls,
+  };
+});
 
 function createSource(overrides: Partial<SearchResult> = {}): SearchResult {
   return {
@@ -318,7 +376,9 @@ describe('PlayPage lower detail composition', () => {
     await settlePlayPage();
     jest.useRealTimers();
 
-    expect(await screen.findByRole('region', { name: '影片详情' })).toBeTruthy();
+    expect(
+      await screen.findByRole('region', { name: '影片详情' })
+    ).toBeTruthy();
     await waitFor(() => {
       expect(screen.queryByRole('region', { name: '相关推荐' })).toBeNull();
     });
@@ -370,9 +430,122 @@ describe('PlayPage lower detail composition', () => {
     expect(await within(recommendations).findByText('也喜欢甲')).toBeTruthy();
     const alsoLikedIndex =
       recommendations.textContent?.indexOf('也喜欢甲') ?? -1;
-    const genreIndex =
-      recommendations.textContent?.indexOf('推荐电影甲') ?? -1;
+    const genreIndex = recommendations.textContent?.indexOf('推荐电影甲') ?? -1;
     expect(alsoLikedIndex).toBeGreaterThanOrEqual(0);
     expect(genreIndex).toBeGreaterThan(alsoLikedIndex);
+  });
+});
+
+describe('PlayPage automatic source-switch resume', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockSearchParams = new URLSearchParams(
+      'source=old&id=1&title=%E6%B5%8B%E8%AF%95'
+    );
+    mockSourceChangeHandler = undefined;
+    mockArtPlayerInstance = undefined;
+    mockArtPlayerEventHandlers.clear();
+    (
+      getAllPlayRecords as jest.MockedFunction<typeof getAllPlayRecords>
+    ).mockResolvedValue({});
+
+    const oldSource = createSource({
+      source: 'old',
+      id: '1',
+      title: '测试',
+      source_name: '旧源',
+      episodes: ['https://example.com/old.m3u8'],
+    });
+    const newSource = createSource({
+      source: 'new',
+      id: '2',
+      title: '测试',
+      source_name: '新源',
+      episodes: ['https://example.com/new.m3u8'],
+    });
+
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.startsWith('/api/playback-debug')) {
+        return {
+          ok: true,
+          json: async () => ({ enabled: false }),
+        } as Response;
+      }
+      if (url.startsWith('/api/detail')) {
+        return {
+          ok: true,
+          json: async () => oldSource,
+        } as Response;
+      }
+      if (url.startsWith('/api/search')) {
+        return {
+          ok: true,
+          json: async () => ({ results: [oldSource, newSource] }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({}),
+      } as Response;
+    });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  it('keeps the queued resume for the target source when the old source emits canplay', async () => {
+    render(<PlayPage />);
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/search?q=%E6%B5%8B%E8%AF%95',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('episode-selector-sources')).toHaveTextContent(
+        '旧源,新源'
+      );
+    });
+
+    expect(mockSourceChangeHandler).toBeDefined();
+    expect(mockArtPlayerInstance).toBeDefined();
+    if (!mockArtPlayerInstance) {
+      throw new Error('ArtPlayer mock was not initialized');
+    }
+    const player = mockArtPlayerInstance;
+    player.currentTime = 120;
+    player.video.currentTime = 120;
+
+    let switchPromise: Promise<boolean> | undefined;
+    act(() => {
+      switchPromise = mockSourceChangeHandler?.('new', '2', '测试', {
+        autoRecovery: true,
+        resumeTime: 115,
+        reason: '自动恢复测试',
+        autoPlayAfterReady: true,
+      });
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+    await act(async () => {
+      await switchPromise;
+    });
+
+    player.currentTime = 0;
+    player.video.currentTime = 0;
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+
+    expect(player.currentTime).toBe(115);
   });
 });

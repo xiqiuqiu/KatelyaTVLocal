@@ -376,6 +376,14 @@ function logDirectAdObserveDebug(
   return debugInfo;
 }
 
+function useLazyRef<T>(initializer: () => T): { current: T } {
+  const ref = useRef<T | null>(null);
+  if (ref.current === null) {
+    ref.current = initializer();
+  }
+  return ref as { current: T };
+}
+
 function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -444,12 +452,11 @@ function PlayPageClient() {
   const playbackModeRef = useRef<SourcePlaybackMode>('direct');
   const originalVideoUrlRef = useRef('');
   const videoUrlRef = useRef('');
-  const playbackAttemptReporterRef = useRef<PlaybackAttemptReporter>(null!);
-  if (playbackAttemptReporterRef.current == null) {
-    playbackAttemptReporterRef.current = createPlaybackAttemptReporter({
+  const playbackAttemptReporterRef = useLazyRef<PlaybackAttemptReporter>(() =>
+    createPlaybackAttemptReporter({
       enhancedReportingEnabled: isPlaybackAttemptEnhancedReportingEnabled(),
-    });
-  }
+    })
+  );
   const playbackDebugEnabledRef = useRef(false);
   const playbackAttemptChannelSkipEmittedRef = useRef(false);
   const playbackDebugLastCanplayRef =
@@ -458,10 +465,7 @@ function PlayPageClient() {
   const sourceSwitchSavePendingRef = useRef(false);
   const sourceDurationBeforeSwitchRef = useRef<number | null>(null);
   const sourceSwitchAutoPlayPendingRef = useRef(false);
-  const playbackPolicyLogKeysRef = useRef<Set<string>>(null!);
-  if (playbackPolicyLogKeysRef.current == null) {
-    playbackPolicyLogKeysRef.current = new Set<string>();
-  }
+  const playbackPolicyLogKeysRef = useLazyRef(() => new Set<string>());
   const playbackPolicyRef = useRef<HlsPlaybackPolicyResult | null>(null);
   const [playbackDebugEnabled, setPlaybackDebugEnabled] = useState(false);
   const [playbackDebugCollapsed, setPlaybackDebugCollapsed] = useState(true);
@@ -540,6 +544,15 @@ function PlayPageClient() {
 
   // 用于记录是否需要在播放器 ready 后跳转到指定进度
   const resumeTimeRef = useRef<number | null>(null);
+  const sourceChangeMediaAttemptRef = useRef<{
+    attemptId: number;
+    sourceKey: string;
+    expectedPlaybackUrl: string | null;
+    targetReady: boolean;
+    hls: Hls | null;
+    automatic: boolean;
+  } | null>(null);
+  const sourceSwitchAutomaticRef = useRef(false);
   // 上次使用的音量，默认 0.7
   const lastVolumeRef = useRef<number>(0.7);
 
@@ -576,20 +589,15 @@ function PlayPageClient() {
     Map<string, SourceSelectionScore>
   >(new Map());
   const availableSourcesRef = useRef<SearchResult[]>([]);
-  const precomputedVideoInfoRef = useRef<Map<string, SourceVideoInfo>>(null!);
-  if (precomputedVideoInfoRef.current == null) {
-    precomputedVideoInfoRef.current = new Map();
-  }
-  const precomputedSourceStatusesRef = useRef<Map<string, SourceStatus>>(null!);
-  if (precomputedSourceStatusesRef.current == null) {
-    precomputedSourceStatusesRef.current = new Map();
-  }
-  const sourceSelectionScoresRef = useRef<Map<string, SourceSelectionScore>>(
-    null!
+  const precomputedVideoInfoRef = useLazyRef(
+    () => new Map<string, SourceVideoInfo>()
   );
-  if (sourceSelectionScoresRef.current == null) {
-    sourceSelectionScoresRef.current = new Map();
-  }
+  const precomputedSourceStatusesRef = useLazyRef(
+    () => new Map<string, SourceStatus>()
+  );
+  const sourceSelectionScoresRef = useLazyRef(
+    () => new Map<string, SourceSelectionScore>()
+  );
   const playbackStartupStartedAtRef = useRef<number | null>(null);
   const startupFeedbackSentRef = useRef(false);
   const waitingRecoveryTimerRef = useRef<number | null>(null);
@@ -603,24 +611,19 @@ function PlayPageClient() {
   const progressiveSourceProbeTimerRef = useRef<number | null>(null);
   const progressiveSourceProbeInFlightRef = useRef(false);
   const progressiveSourceProbeStableStartedAtRef = useRef(0);
-  const progressiveSourceProbeAttemptedKeysRef = useRef<Set<string>>(null!);
-  if (progressiveSourceProbeAttemptedKeysRef.current == null) {
-    progressiveSourceProbeAttemptedKeysRef.current = new Set();
-  }
-  const autoRecoveredSourceKeysRef = useRef<Set<string>>(null!);
-  if (autoRecoveredSourceKeysRef.current == null) {
-    autoRecoveredSourceKeysRef.current = new Set();
-  }
+  const progressiveSourceProbeAttemptedKeysRef = useLazyRef(
+    () => new Set<string>()
+  );
+  const autoRecoveredSourceKeysRef = useLazyRef(() => new Set<string>());
   const attemptedLedgerTitleKeyRef = useRef<string | null>(null);
-  const playbackSessionStateRef = useRef<PlaybackSessionState>(null!);
-  if (playbackSessionStateRef.current == null) {
-    playbackSessionStateRef.current = createInitialPlaybackSessionState({
+  const playbackSessionStateRef = useLazyRef<PlaybackSessionState>(() =>
+    createInitialPlaybackSessionState({
       badPoints:
         typeof window !== 'undefined'
           ? readPersistedPlaybackBadPoints(window.sessionStorage)
           : [],
-    });
-  }
+    })
+  );
   const systemSeekInFlightRef = useRef(false);
   const hlsAutoSourceSwitchSessionRef = useRef<number | null>(null);
   const hlsRecoveryStateRef = useRef({
@@ -1358,11 +1361,13 @@ function PlayPageClient() {
     targetIndex,
     resumeTime,
     reason,
+    playbackUrl,
   }: {
     source: SearchResult;
     targetIndex: number;
     resumeTime: number | null;
     reason?: string;
+    playbackUrl?: string;
   }) {
     clearSourceChangeTimeoutTimer();
     if (typeof window === 'undefined') {
@@ -1382,6 +1387,16 @@ function PlayPageClient() {
     const timeoutAttemptId = sourceAttempt.sourceChangeAttemptId || 1;
     sourceChangeAttemptIdRef.current = timeoutAttemptId;
     const timeoutSourceKey = getSourceIdentityKey(source.source, source.id);
+    sourceChangeMediaAttemptRef.current = artPlayerRef.current
+      ? {
+          attemptId: timeoutAttemptId,
+          sourceKey: timeoutSourceKey,
+          expectedPlaybackUrl: playbackUrl || null,
+          targetReady: false,
+          hls: null,
+          automatic: sourceSwitchAutomaticRef.current,
+        }
+      : null;
     dispatchPlaybackSessionEvent({
       type: 'sourceChange.started',
       attemptId: timeoutAttemptId,
@@ -2651,6 +2666,7 @@ function PlayPageClient() {
         targetIndex: episodeIndex,
         resumeTime: resumeTimeRef.current,
         reason: '播放源起播超时',
+        playbackUrl: nextUrl,
       });
       videoUrlRef.current = nextUrl;
       playbackModeRef.current = playbackPolicy.mode;
@@ -3503,6 +3519,7 @@ function PlayPageClient() {
       sourceSwitchAutoPlayPendingRef.current = Boolean(
         options.autoPlayAfterReady
       );
+      sourceSwitchAutomaticRef.current = Boolean(options.autoRecovery);
       scheduleSourceChangeTimeout({
         source: newDetail,
         targetIndex,
@@ -4003,9 +4020,23 @@ function PlayPageClient() {
               });
 
               applyVideoElementPolicy(video);
+              video.hls = hls;
+              hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                const sourceChangeAttempt = sourceChangeMediaAttemptRef.current;
+                if (
+                  sourceChangeAttempt &&
+                  sourceChangeAttempt.attemptId ===
+                    sourceChangeAttemptIdRef.current &&
+                  sourceChangeAttempt.sourceKey === getCurrentSourceKey() &&
+                  sourceChangeAttempt.expectedPlaybackUrl === url &&
+                  video.hls === hls
+                ) {
+                  sourceChangeAttempt.targetReady = true;
+                  sourceChangeAttempt.hls = hls;
+                }
+              });
               hls.loadSource(url);
               hls.attachMedia(video);
-              video.hls = hls;
               const hlsSessionId =
                 hlsRecoveryStateRef.current.playbackSessionId;
               const hlsPlaybackUrl = url;
@@ -4678,13 +4709,44 @@ function PlayPageClient() {
 
         // 监听视频可播放事件，这时恢复播放进度更可靠
         artPlayerRef.current.on('video:canplay', () => {
+          const sourceChangeAttempt = sourceChangeMediaAttemptRef.current;
+          if (
+            sourceChangeAttempt &&
+            (!sourceChangeAttempt.targetReady ||
+              sourceChangeAttempt.hls !==
+                (artPlayerRef.current.video as HTMLVideoElement).hls ||
+              sourceChangeAttempt.attemptId !==
+                sourceChangeAttemptIdRef.current ||
+              sourceChangeAttempt.sourceKey !== getCurrentSourceKey())
+          ) {
+            emitPlaybackDebugLog(
+              'switch-source-canplay-ignored-stale',
+              '已忽略不属于当前换源尝试的 canplay',
+              {
+                attemptId: sourceChangeAttempt.attemptId,
+                currentAttemptId: sourceChangeAttemptIdRef.current,
+                sourceKey: sourceChangeAttempt.sourceKey,
+                currentSourceKey: getCurrentSourceKey(),
+                expectedPlaybackUrl: sourceChangeAttempt.expectedPlaybackUrl,
+                targetReady: sourceChangeAttempt.targetReady,
+              }
+            );
+            return;
+          }
+
           clearWaitingRecoveryTimer();
           clearSourceChangeTimeoutTimer();
           dispatchPlaybackSessionEvent({
             type: 'sourceChange.completed',
-            attemptId: sourceChangeAttemptIdRef.current,
-            sourceKey: getCurrentSourceKey(),
+            attemptId:
+              sourceChangeAttempt?.attemptId ??
+              sourceChangeAttemptIdRef.current,
+            sourceKey: sourceChangeAttempt?.sourceKey ?? getCurrentSourceKey(),
+            nowMs: Date.now(),
+            automatic: sourceChangeAttempt?.automatic ?? false,
           });
+          sourceChangeMediaAttemptRef.current = null;
+          sourceSwitchAutomaticRef.current = false;
           scheduleProgressiveSourceProbe();
           emitPlaybackDebugLog(
             'video-canplay',
