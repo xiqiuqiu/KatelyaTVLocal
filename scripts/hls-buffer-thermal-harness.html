@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HLS buffer thermal harness</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.16/dist/hls.min.js"></script>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        margin: 16px;
+        background: #111;
+        color: #eee;
+      }
+      video {
+        width: min(100%, 720px);
+        background: #000;
+      }
+      pre {
+        white-space: pre-wrap;
+        background: #1c1c1c;
+        padding: 12px;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>HLS buffer thermal harness</h1>
+    <p>
+      Query: <code>?profile=current|mobile-safe</code> —
+      <code>current</code> mirrors play page; <code>mobile-safe</code> is
+      tighter.
+    </p>
+    <video id="v" controls muted playsinline></video>
+    <pre id="log">starting…</pre>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const profile = params.get('profile') || 'current';
+      const src =
+        params.get('src') ||
+        'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+
+      const profiles = {
+        current: {
+          enableWorker: true,
+          lowLatencyMode: false,
+          maxBufferLength: 60,
+          backBufferLength: 90,
+          maxBufferSize: 90 * 1000 * 1000,
+        },
+        'mobile-safe': {
+          enableWorker: true,
+          lowLatencyMode: false,
+          maxBufferLength: 20,
+          backBufferLength: 20,
+          maxBufferSize: 30 * 1000 * 1000,
+        },
+      };
+
+      const cfg = profiles[profile] || profiles.current;
+      const video = document.getElementById('v');
+      const isAppleMobile =
+        /\b(iPad|iPhone|iPod)\b/i.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (isAppleMobile) {
+        video.disableRemotePlayback = true;
+        video.setAttribute('disableRemotePlayback', '');
+      }
+      const logEl = document.getElementById('log');
+      const samples = [];
+      const startedAt = performance.now();
+      let longTaskCount = 0;
+      let longTaskTotalMs = 0;
+      let rafJitterSum = 0;
+      let rafJitterCount = 0;
+      let lastRaf = performance.now();
+
+      if (typeof PerformanceObserver !== 'undefined') {
+        try {
+          const po = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+              longTaskCount += 1;
+              longTaskTotalMs += entry.duration;
+            }
+          });
+          po.observe({ type: 'longtask', buffered: true });
+        } catch {
+          /* unsupported */
+        }
+      }
+
+      function tickRaf(now) {
+        const dt = now - lastRaf;
+        // Ideal frame ~16.7ms; count excess as main-thread contention proxy
+        if (dt > 24) {
+          rafJitterSum += dt - 16.7;
+          rafJitterCount += 1;
+        }
+        lastRaf = now;
+        requestAnimationFrame(tickRaf);
+      }
+      requestAnimationFrame(tickRaf);
+
+      function mem() {
+        const m = performance.memory;
+        if (!m) return null;
+        return {
+          usedMB: +(m.usedJSHeapSize / 1048576).toFixed(2),
+          totalMB: +(m.totalJSHeapSize / 1048576).toFixed(2),
+          limitMB: +(m.jsHeapSizeLimit / 1048576).toFixed(2),
+        };
+      }
+
+      function networkTransferredMB() {
+        try {
+          const entries = performance.getEntriesByType('resource');
+          let bytes = 0;
+          for (const e of entries) {
+            bytes += e.transferSize || 0;
+          }
+          return +(bytes / 1048576).toFixed(2);
+        } catch {
+          return null;
+        }
+      }
+
+      function report(extra = {}) {
+        const elapsedSec = (performance.now() - startedAt) / 1000;
+        const payload = {
+          profile,
+          cfg,
+          src,
+          elapsedSec: +elapsedSec.toFixed(1),
+          currentTime: +(video.currentTime || 0).toFixed(2),
+          bufferedSec: (() => {
+            try {
+              if (!video.buffered.length) return 0;
+              return +(
+                video.buffered.end(video.buffered.length - 1) -
+                video.currentTime
+              ).toFixed(2);
+            } catch {
+              return null;
+            }
+          })(),
+          memory: mem(),
+          networkMB: networkTransferredMB(),
+          longTaskCount,
+          longTaskMsPerS: elapsedSec
+            ? +(longTaskTotalMs / elapsedSec).toFixed(2)
+            : 0,
+          rafJankEvents: rafJitterCount,
+          rafJankMsPerS: elapsedSec
+            ? +(rafJitterSum / elapsedSec).toFixed(2)
+            : 0,
+          samples: samples.length,
+          ...extra,
+        };
+        window.__THERMAL_HARNESS__ = payload;
+        logEl.textContent = JSON.stringify(payload, null, 2);
+        return payload;
+      }
+
+      if (!window.Hls || !Hls.isSupported()) {
+        report({ error: 'hls-unsupported' });
+      } else {
+        const hls = new Hls(cfg);
+        hls.loadSource(src);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => undefined);
+        });
+        setInterval(() => {
+          const m = mem();
+          if (m) samples.push({ t: performance.now() - startedAt, ...m });
+          report();
+        }, 2000);
+      }
+    </script>
+  </body>
+</html>

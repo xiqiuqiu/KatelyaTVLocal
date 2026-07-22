@@ -1,7 +1,7 @@
 # 002 — Upgrade Next.js off unpatched 14.x RSC line
 
-- **Status**: TODO
-- **Commit**: ea3113d
+- **Status**: BLOCKED — migrate from deprecated `@cloudflare/next-on-pages` first
+- **Commit**: 6e7374f
 - **Severity**: HIGH
 - **Category**: Security
 - **Rule**: react-doctor/no-vulnerable-react-server-components
@@ -9,11 +9,22 @@
 
 ## Problem
 
-Lock resolves `next@14.2.x`. React Doctor reports this release line is affected by React Server Components security advisories with **no patched 14.x**. Help text: upgrade to patched Next (e.g. 15.5.18 or 16.2.6).
+`package.json:43` allows Next 14 and `pnpm-lock.yaml:4447` currently resolves
+`next@14.2.35`. React Doctor 0.8.3 reports this unsupported release line is
+affected by React Server Components security advisories with **no patched
+14.x**.
+
+```json
+// package.json:43 — current
+"next": "^14.2.23"
+```
 
 ## Target
 
-Canonical fix: upgrade Next.js to a patched release line so the bundled RSC runtime includes the fix. Do not attempt to patch React alone while staying on unsupported 14.x.
+Canonical React Doctor fix: upgrade Next.js to a patched release line so the
+bundled RSC runtime includes the fix. React Doctor currently names 15.5.18 and
+16.2.6 as patched versions. Do not attempt to patch React alone while staying
+on unsupported 14.x.
 
 ```json
 // package.json — target direction (pin exact patched version after checking advisories)

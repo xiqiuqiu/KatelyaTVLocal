@@ -1,10 +1,23 @@
 # React improve-react plans
 
-Audit commit baseline: **ea3113d**. Execution branch: `improve-react/execute-001-plus` (HEAD at execution time may differ).
+Latest audit commit baseline: **6e7374f**. Earlier plans retain their historical
+execution context; plans 022–027 and refreshed plan 002 are based on this
+commit.
 
 These plans were produced by `/improve-react` for every vetted finding. Execute with any agent via `improve-react execute <plan>` or by following each file’s Steps literally.
 
-## Recommended order
+## Current selected batch
+
+| Order | Plan | Depends on | Notes |
+|------:|------|------------|-------|
+| 1 | [022](022-restrict-image-proxy-content-types.md) | — | Public same-origin active-content injection |
+| 2 | [023](023-validate-source-probe-targets.md) | Existing shared proxy URL policy | Authenticated SSRF / open redirects |
+| 3 | [024](024-fail-closed-cron-auth.md) | — | Public cron fail-open |
+| 4 | [025](025-protect-login-attempts.md) | D1 migration + Turnstile config | Brute-force protection |
+| 5 | [026](026-isolate-playback-debug-clock.md) | — | Hot playback render path |
+| 6 | [027](027-centralize-video-card-favorites.md) | — | Card-list subscription fan-out |
+
+## Historical execution order
 
 | Order | Plan | Depends on | Notes |
 |------:|------|------------|-------|
@@ -55,6 +68,12 @@ These plans were produced by `/improve-react` for every vetted finding. Execute 
 | 019-play-lazy-ref-init | DONE | HIGH |
 | 020-skip-segments-stable-keys | DONE | MEDIUM |
 | 021-async-race-favorite-skip-continue | DONE | MEDIUM |
+| 022-restrict-image-proxy-content-types | TODO | HIGH |
+| 023-validate-source-probe-targets | TODO | HIGH |
+| 024-fail-closed-cron-auth | TODO | HIGH |
+| 025-protect-login-attempts | TODO | HIGH |
+| 026-isolate-playback-debug-clock | TODO | MEDIUM |
+| 027-centralize-video-card-favorites | TODO | MEDIUM |
 
 ## Execution notes
 
@@ -63,3 +82,6 @@ These plans were produced by `/improve-react` for every vetted finding. Execute 
 - After each plan: `npx react-doctor@latest --scope changed` plus the plan’s Verification section.
 - `002` is intentionally last among security items that need product scheduling — it is still required to fully clear the RSC advisory finding.
 - **002 BLOCKED (2026-07-19):** Deploy path still uses `@cloudflare/next-on-pages` (Next 14 peer only; package deprecated). Patched Next ≥15.5.18 / 16.2.6 requires migrating to `@opennextjs/cloudflare` first (Node runtime, not Edge-only). Do not bump `next` in this branch without that adapter migration — treat as its own PR.
+- **2026-07-22 selection:** user selected all five HIGH security findings plus
+  playback debug-clock and VideoCard favorite-subscription performance work.
+  Plan 002 remains blocked; execute 022–025 before the performance plans.
