@@ -174,7 +174,7 @@ describe('EpisodeSelector playback sidebar controls', () => {
   });
 
   it('falls back to per-source probing when batch probing fails', async () => {
-    mockedFetchSourcePreferencesInBatches.mockRejectedValueOnce(
+    mockedFetchSourcePreferencesInBatches.mockRejectedValue(
       new Error('unauthorized')
     );
     mockedProbeSourcePlayback.mockResolvedValue({
@@ -205,13 +205,16 @@ describe('EpisodeSelector playback sidebar controls', () => {
       />
     );
 
+    // Preference-batch failure still fans out to per-source probes for the
+    // sources tab. Deep browser probes on tab open were removed to avoid
+    // fighting the active playback session.
     await waitFor(() => {
-      expect(mockedProbeSourcePlayback).toHaveBeenCalledWith(
-        'https://example.com/4.m3u8'
+      expect(mockedProbeSourcePlayback.mock.calls.length).toBeGreaterThanOrEqual(
+        4
       );
     });
-    expect(mockedProbeSourcePlayback.mock.calls.length).toBeGreaterThanOrEqual(
-      5
+    expect(mockedProbeSourcePlayback).toHaveBeenCalledWith(
+      'https://example.com/4.m3u8'
     );
   });
 

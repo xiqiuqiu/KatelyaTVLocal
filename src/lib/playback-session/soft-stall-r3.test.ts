@@ -226,6 +226,7 @@ describe('soft-stall → R3 auto source-switch', () => {
   it('eventually emits switchSource after soft waiting ladder with settles', () => {
     let state = loadPlayableAlts();
     let switched = false;
+    let switchResumeTime: number | null | undefined;
 
     for (let tick = 0; tick < 20; tick += 1) {
       const nowMs = 10_000 + tick * 3_000;
@@ -236,8 +237,10 @@ describe('soft-stall → R3 auto source-switch', () => {
       });
       state = result.state;
 
-      if (result.effects.some((e) => e.type === 'switchSource')) {
+      const switchEffect = result.effects.find((e) => e.type === 'switchSource');
+      if (switchEffect && switchEffect.type === 'switchSource') {
         switched = true;
+        switchResumeTime = switchEffect.resumeTime;
         break;
       }
 
@@ -254,5 +257,8 @@ describe('soft-stall → R3 auto source-switch', () => {
     }
 
     expect(switched).toBe(true);
+    // Session-layer R3 must carry a near-stuck resume point; page-layer canplay
+    // races are covered separately in play/page.test.tsx.
+    expect(switchResumeTime).toBeGreaterThan(100);
   });
 });

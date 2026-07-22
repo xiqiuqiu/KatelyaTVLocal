@@ -79,7 +79,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 }) => {
   const router = useRouter();
   const pageCount = Math.ceil(totalEpisodes / episodesPerPage);
-  const MAX_AUTO_PROBE_SOURCES = 3;
 
   // 存储每个源的视频信息
   const [videoInfoMap, setVideoInfoMap] = useState<
@@ -158,13 +157,31 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     []
   );
 
+  const hasBrowserRescueMetrics = useCallback(
+    (
+      videoInfo: SourceVideoInfo | null | undefined
+    ): videoInfo is SourceVideoInfo =>
+      Boolean(
+        videoInfo &&
+          !videoInfo.hasError &&
+          videoInfo.speedSource === 'browser' &&
+          !videoInfo.speedPending &&
+          typeof videoInfo.pingTime === 'number' &&
+          videoInfo.pingTime > 0
+      ),
+    []
+  );
+
   const createBackendRescuedStatus = useCallback(
     (
       previousStatus: SourceStatus | null | undefined,
       videoInfo: SourceVideoInfo
     ) =>
       createPlayableSourceStatus({
-        reason: '后端测速可用，可尝试播放',
+        reason:
+          videoInfo.speedSource === 'browser'
+            ? '本机测速可用，可尝试播放'
+            : '后端测速可用，可尝试播放',
         playbackMode: previousStatus?.playbackMode || 'direct',
         domain: previousStatus?.domain || null,
         measured: videoInfo,
@@ -185,13 +202,20 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       }
 
       const videoInfo = videoInfoMapRef.current.get(sourceKey);
-      if (!hasBackendRescueMetrics(videoInfo)) {
+      if (
+        !hasBackendRescueMetrics(videoInfo) &&
+        !hasBrowserRescueMetrics(videoInfo)
+      ) {
         return null;
       }
 
       return createBackendRescuedStatus(status, videoInfo);
     },
-    [createBackendRescuedStatus, hasBackendRescueMetrics]
+    [
+      createBackendRescuedStatus,
+      hasBackendRescueMetrics,
+      hasBrowserRescueMetrics,
+    ]
   );
 
   const canPreferenceResultRescueUnavailable = useCallback(
@@ -432,44 +456,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     },
     [getBackendRescuedStatus, value]
   );
-
-  const getAutoProbeCandidates = useCallback(() => {
-    return [...availableSources]
-      .sort((a, b) => {
-        const aKey = getSourceIdentityKey(a.source, a.id);
-        const bKey = getSourceIdentityKey(b.source, b.id);
-        const aStatus = sourceStatusMapRef.current.get(aKey);
-        const bStatus = sourceStatusMapRef.current.get(bKey);
-        const aIsCurrent =
-          a.source?.toString() === currentSource?.toString() &&
-          a.id?.toString() === currentId?.toString();
-        const bIsCurrent =
-          b.source?.toString() === currentSource?.toString() &&
-          b.id?.toString() === currentId?.toString();
-
-        const getPriority = (isCurrent: boolean, status?: SourceStatus) => {
-          if (isCurrent) return 0;
-          if (status?.kind === 'direct') return 1;
-          if (status?.kind === 'idle') return 2;
-          return 3;
-        };
-
-        return (
-          getPriority(aIsCurrent, aStatus) - getPriority(bIsCurrent, bStatus)
-        );
-      })
-      .filter((source) => {
-        const sourceKey = getSourceIdentityKey(source.source, source.id);
-        const status = sourceStatusMapRef.current.get(sourceKey);
-
-        if (attemptedSourcesRef.current.has(sourceKey)) {
-          return false;
-        }
-
-        return !status || status.kind === 'idle' || status.kind === 'direct';
-      })
-      .slice(0, MAX_AUTO_PROBE_SOURCES);
-  }, [availableSources, currentId, currentSource]);
 
   const handleSourceCardClick = useCallback(
     async (source: SearchResult) => {
@@ -989,14 +975,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     value,
   ]);
 
-  // 当换源Tab激活时，只对少量候选源做浏览器直连检测，避免控制台刷满错误
-  useEffect(() => {
-    if (activeTab === 'sources') {
-      getAutoProbeCandidates().forEach((source) => {
-        void probeSourceDirectPlayback(source);
-      });
-    }
-  }, [activeTab, getAutoProbeCandidates, probeSourceDirectPlayback]);
+  // 线路 Tab 不再一打开就对本机做 HLS 深测：会与正在播放的分片抢带宽，
+  // 容易把正常播放打成 soft-stall → R3 自动切源。状态以 preference / 播放页
+  // 渐进测速为准；用户点击卡片时仍走 probeSourceDirectPlayback。
 
   // 处理换源tab点击，只在点击时才搜索
   const handleSourceTabClick = () => {

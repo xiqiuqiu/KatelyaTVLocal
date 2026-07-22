@@ -551,6 +551,7 @@ function PlayPageClient() {
     targetReady: boolean;
     hls: Hls | null;
     automatic: boolean;
+    mediaFinalized?: boolean;
   } | null>(null);
   const sourceSwitchAutomaticRef = useRef(false);
   // 上次使用的音量，默认 0.7
@@ -2331,9 +2332,11 @@ function PlayPageClient() {
           lastError: reason,
           confidence: 'low',
         });
+        // Expected misses are common (CORS/timeout); keep them as soft probe
+        // observations so admin monitors do not treat them as playback errors.
         emitPlaybackDebugLog(
-          'progressive-source-probe-failed',
-          '候选源后台测速失败',
+          'progressive-source-probe-miss',
+          '候选源后台测速未通过，保持可尝试',
           {
             sourceKey,
             reason,
@@ -3525,6 +3528,9 @@ function PlayPageClient() {
         targetIndex,
         resumeTime: resumePlan.resumeTime,
         reason: options.reason,
+        // Prefer the direct episode URL as a hint; updateVideoUrl overwrites
+        // with the resolved playback-policy URL when the player reloads.
+        playbackUrl: newDetail.episodes?.[targetIndex] || undefined,
       });
 
       if (options.autoRecovery) {
@@ -3554,6 +3560,10 @@ function PlayPageClient() {
       setVideoTitle(newDetail.title || newTitle);
       setVideoYear(newDetail.year);
       setVideoCover(newDetail.poster);
+      // Keep identity refs in lockstep with the in-flight source change so
+      // MANIFEST_PARSED / canplay gates do not compare against the old source.
+      currentSourceRef.current = newSource;
+      currentIdRef.current = newId;
       setCurrentSource(newSource);
       setCurrentId(newId);
       setDetail(newDetail);
@@ -3956,6 +3966,225 @@ function PlayPageClient() {
         Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
         Artplayer.USE_RAF = true;
 
+        const finalizeSourceChangeMediaReady = (
+          trigger: 'canplay' | 'manifest'
+        ) => {
+          const player = artPlayerRef.current;
+          if (!player) {
+            return;
+          }
+
+          const sourceChangeAttempt = sourceChangeMediaAttemptRef.current;
+          if (sourceChangeAttempt) {
+            if (sourceChangeAttempt.mediaFinalized) {
+              return;
+            }
+            if (
+              !sourceChangeAttempt.targetReady ||
+              (sourceChangeAttempt.hls != null &&
+                sourceChangeAttempt.hls !==
+                  (player.video as HTMLVideoElement | undefined)?.hls) ||
+              sourceChangeAttempt.attemptId !==
+                sourceChangeAttemptIdRef.current ||
+              sourceChangeAttempt.sourceKey !== getCurrentSourceKey()
+            ) {
+              if (trigger === 'canplay') {
+                emitPlaybackDebugLog(
+                  'switch-source-canplay-ignored-stale',
+                  '已忽略不属于当前换源尝试的 canplay',
+                  {
+                    attemptId: sourceChangeAttempt.attemptId,
+                    currentAttemptId: sourceChangeAttemptIdRef.current,
+                    sourceKey: sourceChangeAttempt.sourceKey,
+                    currentSourceKey: getCurrentSourceKey(),
+                    expectedPlaybackUrl:
+                      sourceChangeAttempt.expectedPlaybackUrl,
+                    targetReady: sourceChangeAttempt.targetReady,
+                    trigger,
+                  }
+                );
+              }
+              return;
+            }
+            sourceChangeAttempt.mediaFinalized = true;
+          }
+
+          clearWaitingRecoveryTimer();
+          clearSourceChangeTimeoutTimer();
+          dispatchPlaybackSessionEvent({
+            type: 'sourceChange.completed',
+            attemptId:
+              sourceChangeAttempt?.attemptId ??
+              sourceChangeAttemptIdRef.current,
+            sourceKey:
+              sourceChangeAttempt?.sourceKey ?? getCurrentSourceKey(),
+            nowMs: Date.now(),
+            automatic: sourceChangeAttempt?.automatic ?? false,
+          });
+          sourceChangeMediaAttemptRef.current = null;
+          sourceSwitchAutomaticRef.current = false;
+          scheduleProgressiveSourceProbe();
+          emitPlaybackDebugLog(
+            'video-canplay',
+            trigger === 'manifest'
+              ? '目标源清单就绪，进入可播放恢复'
+              : '视频进入可播放状态',
+            {
+              duration: player.duration || 0,
+              trigger,
+            },
+            {
+              playbackUrl: player.video?.currentSrc || videoUrlRef.current,
+            }
+          );
+
+          if (resumeTimeRef.current && resumeTimeRef.current > 0) {
+            try {
+              const duration = player.duration || 0;
+              const livePlayhead = Number(
+                (player.currentTime || currentPlayTimeRef.current || 0).toFixed(
+                  2
+                )
+              );
+              const adapted = adaptWatchProgressPlayhead({
+                playTime: resumeTimeRef.current,
+                sourceTotalTime: sourceDurationBeforeSwitchRef.current,
+                targetTotalTime: duration,
+              });
+              const target = clampSourceSwitchResumeTime({
+                resumeTime: adapted,
+                duration,
+              });
+              if (
+                !shouldApplyQueuedResumeTime({
+                  queuedResumeTime: target,
+                  currentPlayTime: livePlayhead,
+                })
+              ) {
+                emitPlaybackDebugLog(
+                  'switch-source-resume-skipped-stale',
+                  '已跳过会回拉进度的过期恢复点',
+                  {
+                    queuedResumeTime: target,
+                    originalResumeTime: resumeTimeRef.current,
+                    livePlayhead,
+                    duration,
+                    sourceKey: getCurrentSourceKey(),
+                    trigger,
+                  },
+                  {
+                    playbackUrl: player.video?.currentSrc || videoUrlRef.current,
+                  }
+                );
+              } else {
+                player.currentTime = target;
+                console.log('成功恢复播放进度到:', resumeTimeRef.current);
+                emitPlaybackDebugLog(
+                  'switch-source-resume-applied',
+                  '已在新播放源应用恢复进度',
+                  {
+                    resumeTime: target,
+                    originalResumeTime: resumeTimeRef.current,
+                    duration,
+                    sourceKey: getCurrentSourceKey(),
+                    trigger,
+                  },
+                  {
+                    playbackUrl: player.video?.currentSrc || videoUrlRef.current,
+                  }
+                );
+              }
+            } catch (err) {
+              console.warn('恢复播放进度失败:', err);
+            }
+          }
+          resumeTimeRef.current = null;
+          if (
+            isPlaybackRecoverySessionAuthorityEnabled() &&
+            (playbackSessionStateRef.current.recoveryInFlight === 'resume' ||
+              playbackSessionStateRef.current.recoveryResumeTime != null)
+          ) {
+            dispatchPlaybackSessionEvent({
+              type: 'recovery.effectSettled',
+              kind: 'resume',
+              nowMs: Date.now(),
+            });
+          }
+
+          setTimeout(() => {
+            if (
+              Math.abs(player.volume - lastVolumeRef.current) > 0.01
+            ) {
+              player.volume = lastVolumeRef.current;
+            }
+            player.notice.show = '';
+          }, 0);
+
+          dispatchVideoPlaybackUi({ type: 'loading.end' });
+
+          const shouldAutoPlayAfterSourceSwitch =
+            sourceSwitchAutoPlayPendingRef.current;
+          sourceSwitchAutoPlayPendingRef.current = false;
+          const canplayVideo = player.video as HTMLVideoElement | undefined;
+          if (shouldAutoPlayAfterSourceSwitch) {
+            void canplayVideo?.play().catch(() => undefined);
+          }
+
+          if (sourceSwitchSavePendingRef.current) {
+            sourceSwitchSavePendingRef.current = false;
+            setTimeout(() => {
+              void requestSaveCurrentPlayProgress('resume-sync');
+            }, 0);
+          }
+
+          if (!startupFeedbackSentRef.current) {
+            startupFeedbackSentRef.current = true;
+            const currentVideoInfo = precomputedVideoInfoRef.current.get(
+              getCurrentSourceKey()
+            );
+            const startedAt = playbackStartupStartedAtRef.current;
+            const startupTimeMs =
+              startedAt && startedAt > 0 ? Date.now() - startedAt : undefined;
+            rememberCurrentSourcePlaybackQuality({
+              mode: 'direct',
+              startupTimeMs,
+              browserSpeedLabel:
+                currentVideoInfo &&
+                !currentVideoInfo.hasError &&
+                currentVideoInfo.loadSpeed !== '未知'
+                  ? currentVideoInfo.loadSpeed
+                  : undefined,
+              confidence: 'high',
+            });
+            void reportPlaybackFeedback({
+              sourceKey: getCurrentSourceKey(),
+              platform: getPlaybackProbePlatform(),
+              playbackDomain: getCurrentPlaybackDomain(),
+              title: videoTitleRef.current,
+              playbackMode: playbackModeRef.current,
+              startupSuccess: true,
+              startupTimeMs,
+              switchedToProxy: playbackModeRef.current === 'proxy',
+              browserQuality:
+                currentVideoInfo &&
+                !currentVideoInfo.hasError &&
+                currentVideoInfo.quality !== '未知'
+                  ? currentVideoInfo.quality
+                  : undefined,
+              browserPingMs:
+                currentVideoInfo && currentVideoInfo.pingTime > 0
+                  ? currentVideoInfo.pingTime
+                  : undefined,
+              browserSpeedLabel:
+                currentVideoInfo &&
+                !currentVideoInfo.hasError &&
+                currentVideoInfo.loadSpeed !== '未知'
+                  ? currentVideoInfo.loadSpeed
+                  : undefined,
+            });
+          }
+        };
+
         artPlayerRef.current = new Artplayer({
           container: artRef.current,
           url: videoUrl,
@@ -4023,16 +4252,31 @@ function PlayPageClient() {
               video.hls = hls;
               hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 const sourceChangeAttempt = sourceChangeMediaAttemptRef.current;
+                const expectedUrl = sourceChangeAttempt?.expectedPlaybackUrl;
+                const urlMatches =
+                  !expectedUrl ||
+                  expectedUrl === url ||
+                  expectedUrl === videoUrlRef.current;
                 if (
                   sourceChangeAttempt &&
                   sourceChangeAttempt.attemptId ===
                     sourceChangeAttemptIdRef.current &&
                   sourceChangeAttempt.sourceKey === getCurrentSourceKey() &&
-                  sourceChangeAttempt.expectedPlaybackUrl === url &&
+                  urlMatches &&
                   video.hls === hls
                 ) {
                   sourceChangeAttempt.targetReady = true;
                   sourceChangeAttempt.hls = hls;
+                  if (!sourceChangeAttempt.expectedPlaybackUrl) {
+                    sourceChangeAttempt.expectedPlaybackUrl = url;
+                  }
+                  // canplay may have already fired (and been ignored) before the
+                  // target manifest was ready; browsers often do not re-emit.
+                  // Finalize on the microtask so artPlayerRef is assigned after
+                  // `new Artplayer(...)` returns.
+                  queueMicrotask(() => {
+                    finalizeSourceChangeMediaReady('manifest');
+                  });
                 }
               });
               hls.loadSource(url);
@@ -4707,213 +4951,10 @@ function PlayPageClient() {
           }
         });
 
-        // 监听视频可播放事件，这时恢复播放进度更可靠
+        // 监听视频可播放事件；与 MANIFEST_PARSED 共用 finalize，避免早到的
+        // canplay 被 stale 门控丢掉后不再恢复进度。
         artPlayerRef.current.on('video:canplay', () => {
-          const sourceChangeAttempt = sourceChangeMediaAttemptRef.current;
-          if (
-            sourceChangeAttempt &&
-            (!sourceChangeAttempt.targetReady ||
-              sourceChangeAttempt.hls !==
-                (artPlayerRef.current.video as HTMLVideoElement).hls ||
-              sourceChangeAttempt.attemptId !==
-                sourceChangeAttemptIdRef.current ||
-              sourceChangeAttempt.sourceKey !== getCurrentSourceKey())
-          ) {
-            emitPlaybackDebugLog(
-              'switch-source-canplay-ignored-stale',
-              '已忽略不属于当前换源尝试的 canplay',
-              {
-                attemptId: sourceChangeAttempt.attemptId,
-                currentAttemptId: sourceChangeAttemptIdRef.current,
-                sourceKey: sourceChangeAttempt.sourceKey,
-                currentSourceKey: getCurrentSourceKey(),
-                expectedPlaybackUrl: sourceChangeAttempt.expectedPlaybackUrl,
-                targetReady: sourceChangeAttempt.targetReady,
-              }
-            );
-            return;
-          }
-
-          clearWaitingRecoveryTimer();
-          clearSourceChangeTimeoutTimer();
-          dispatchPlaybackSessionEvent({
-            type: 'sourceChange.completed',
-            attemptId:
-              sourceChangeAttempt?.attemptId ??
-              sourceChangeAttemptIdRef.current,
-            sourceKey: sourceChangeAttempt?.sourceKey ?? getCurrentSourceKey(),
-            nowMs: Date.now(),
-            automatic: sourceChangeAttempt?.automatic ?? false,
-          });
-          sourceChangeMediaAttemptRef.current = null;
-          sourceSwitchAutomaticRef.current = false;
-          scheduleProgressiveSourceProbe();
-          emitPlaybackDebugLog(
-            'video-canplay',
-            '视频进入可播放状态',
-            {
-              duration: artPlayerRef.current.duration || 0,
-            },
-            {
-              playbackUrl:
-                artPlayerRef.current?.video?.currentSrc || videoUrlRef.current,
-            }
-          );
-
-          // 若存在需要恢复的播放进度，则跳转
-          if (resumeTimeRef.current && resumeTimeRef.current > 0) {
-            try {
-              const duration = artPlayerRef.current.duration || 0;
-              const livePlayhead = Number(
-                (
-                  artPlayerRef.current.currentTime ||
-                  currentPlayTimeRef.current ||
-                  0
-                ).toFixed(2)
-              );
-              const adapted = adaptWatchProgressPlayhead({
-                playTime: resumeTimeRef.current,
-                sourceTotalTime: sourceDurationBeforeSwitchRef.current,
-                targetTotalTime: duration,
-              });
-              const target = clampSourceSwitchResumeTime({
-                resumeTime: adapted,
-                duration,
-              });
-              if (
-                !shouldApplyQueuedResumeTime({
-                  queuedResumeTime: target,
-                  currentPlayTime: livePlayhead,
-                })
-              ) {
-                emitPlaybackDebugLog(
-                  'switch-source-resume-skipped-stale',
-                  '已跳过会回拉进度的过期恢复点',
-                  {
-                    queuedResumeTime: target,
-                    originalResumeTime: resumeTimeRef.current,
-                    livePlayhead,
-                    duration,
-                    sourceKey: getCurrentSourceKey(),
-                  },
-                  {
-                    playbackUrl:
-                      artPlayerRef.current?.video?.currentSrc ||
-                      videoUrlRef.current,
-                  }
-                );
-              } else {
-                artPlayerRef.current.currentTime = target;
-                console.log('成功恢复播放进度到:', resumeTimeRef.current);
-                emitPlaybackDebugLog(
-                  'switch-source-resume-applied',
-                  '已在新播放源应用恢复进度',
-                  {
-                    resumeTime: target,
-                    originalResumeTime: resumeTimeRef.current,
-                    duration,
-                    sourceKey: getCurrentSourceKey(),
-                  },
-                  {
-                    playbackUrl:
-                      artPlayerRef.current?.video?.currentSrc ||
-                      videoUrlRef.current,
-                  }
-                );
-              }
-            } catch (err) {
-              console.warn('恢复播放进度失败:', err);
-            }
-          }
-          resumeTimeRef.current = null;
-          if (
-            isPlaybackRecoverySessionAuthorityEnabled() &&
-            (playbackSessionStateRef.current.recoveryInFlight === 'resume' ||
-              playbackSessionStateRef.current.recoveryResumeTime != null)
-          ) {
-            dispatchPlaybackSessionEvent({
-              type: 'recovery.effectSettled',
-              kind: 'resume',
-              nowMs: Date.now(),
-            });
-          }
-
-          setTimeout(() => {
-            if (
-              Math.abs(artPlayerRef.current.volume - lastVolumeRef.current) >
-              0.01
-            ) {
-              artPlayerRef.current.volume = lastVolumeRef.current;
-            }
-            artPlayerRef.current.notice.show = '';
-          }, 0);
-
-          // 隐藏换源加载状态
-          dispatchVideoPlaybackUi({ type: 'loading.end' });
-
-          const shouldAutoPlayAfterSourceSwitch =
-            sourceSwitchAutoPlayPendingRef.current;
-          sourceSwitchAutoPlayPendingRef.current = false;
-          const canplayVideo = artPlayerRef.current?.video as
-            | HTMLVideoElement
-            | undefined;
-          if (shouldAutoPlayAfterSourceSwitch) {
-            void canplayVideo?.play().catch(() => undefined);
-          }
-
-          if (sourceSwitchSavePendingRef.current) {
-            sourceSwitchSavePendingRef.current = false;
-            setTimeout(() => {
-              void requestSaveCurrentPlayProgress('resume-sync');
-            }, 0);
-          }
-
-          if (!startupFeedbackSentRef.current) {
-            startupFeedbackSentRef.current = true;
-            const currentVideoInfo = precomputedVideoInfoRef.current.get(
-              getCurrentSourceKey()
-            );
-            const startedAt = playbackStartupStartedAtRef.current;
-            const startupTimeMs =
-              startedAt && startedAt > 0 ? Date.now() - startedAt : undefined;
-            rememberCurrentSourcePlaybackQuality({
-              mode: 'direct',
-              startupTimeMs,
-              browserSpeedLabel:
-                currentVideoInfo &&
-                !currentVideoInfo.hasError &&
-                currentVideoInfo.loadSpeed !== '未知'
-                  ? currentVideoInfo.loadSpeed
-                  : undefined,
-              confidence: 'high',
-            });
-            void reportPlaybackFeedback({
-              sourceKey: getCurrentSourceKey(),
-              platform: getPlaybackProbePlatform(),
-              playbackDomain: getCurrentPlaybackDomain(),
-              title: videoTitleRef.current,
-              playbackMode: playbackModeRef.current,
-              startupSuccess: true,
-              startupTimeMs,
-              switchedToProxy: playbackModeRef.current === 'proxy',
-              browserQuality:
-                currentVideoInfo &&
-                !currentVideoInfo.hasError &&
-                currentVideoInfo.quality !== '未知'
-                  ? currentVideoInfo.quality
-                  : undefined,
-              browserPingMs:
-                currentVideoInfo && currentVideoInfo.pingTime > 0
-                  ? currentVideoInfo.pingTime
-                  : undefined,
-              browserSpeedLabel:
-                currentVideoInfo &&
-                !currentVideoInfo.hasError &&
-                currentVideoInfo.loadSpeed !== '未知'
-                  ? currentVideoInfo.loadSpeed
-                  : undefined,
-            });
-          }
+          finalizeSourceChangeMediaReady('canplay');
         });
 
         artPlayerRef.current.on('video:playing', () => {

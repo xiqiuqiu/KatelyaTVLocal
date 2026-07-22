@@ -150,6 +150,45 @@ describe('buildSourceAvailabilityList', () => {
       },
     });
   });
+
+  it('rescues an unavailable source when browser metrics show it is playable', () => {
+    const statuses = new Map<string, SourceStatus>([
+      [
+        'browser-1',
+        {
+          kind: 'unavailable',
+          reason: '该源近期在本机不可用',
+          fromMemory: true,
+        },
+      ],
+    ]);
+    const measured = new Map<string, SourceVideoInfo>([
+      [
+        'browser-1',
+        {
+          quality: '1080p',
+          loadSpeed: '2.1 MB/s',
+          pingTime: 180,
+          speedSource: 'browser',
+          speedPending: false,
+          hasError: false,
+        },
+      ],
+    ]);
+
+    const list = buildSourceAvailabilityList({
+      sources: [createSource('browser', '1')],
+      currentEpisodeIndex: 0,
+      statuses,
+      measured,
+    });
+
+    // Symptom lock: cards can show speed yet still render 不可用 when only
+    // browser metrics exist. Browser playable evidence must rescue too.
+    expect(list[0]?.availabilityKind).toBe('playable');
+    expect(list[0]?.manualSwitch.mode).toBe('switch-now');
+    expect(list[0]?.effectiveStatus?.kind).not.toBe('unavailable');
+  });
 });
 
 describe('selectRecoveryCandidate', () => {

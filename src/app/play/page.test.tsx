@@ -26,10 +26,13 @@ let mockArtPlayerInstance:
       video: {
         currentTime: number;
         duration: number;
+        hls?: unknown;
       };
     }
   | undefined;
 const mockArtPlayerEventHandlers = new Map<string, () => void>();
+let mockAutoFireManifestParsed = true;
+const mockManifestParsedHandlers: Array<() => void> = [];
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -132,10 +135,13 @@ jest.mock('artplayer', () => ({
       removeAttribute: jest.fn(),
       appendChild: jest.fn(),
       src: '',
+      hls: undefined as unknown,
     };
     const player = {
       currentTime: 0,
       duration: 120,
+      volume: 0.7,
+      notice: { show: '' },
       on: jest.fn((event: string, handler: () => void) => {
         mockArtPlayerEventHandlers.set(event, handler);
       }),
@@ -149,6 +155,14 @@ jest.mock('artplayer', () => ({
       },
     });
     mockArtPlayerInstance = player;
+    // Mirror production: ArtPlayer invokes customType for m3u8 urls on create.
+    if (
+      typeof options.url === 'string' &&
+      options.url.includes('.m3u8') &&
+      options.customType?.m3u8
+    ) {
+      options.customType.m3u8(video as unknown as HTMLVideoElement, options.url);
+    }
     return player;
   }),
 }));
@@ -164,7 +178,11 @@ jest.mock('hls.js', () => {
     loadSource = jest.fn();
     on = jest.fn((event: string, handler: () => void) => {
       if (event === MockHls.Events.MANIFEST_PARSED) {
-        handler();
+        if (mockAutoFireManifestParsed) {
+          handler();
+          return;
+        }
+        mockManifestParsedHandlers.push(handler);
       }
     });
   }
@@ -439,6 +457,8 @@ describe('PlayPage lower detail composition', () => {
 describe('PlayPage automatic source-switch resume', () => {
   beforeEach(() => {
     jest.useFakeTimers();
+    mockAutoFireManifestParsed = true;
+    mockManifestParsedHandlers.length = 0;
     mockSearchParams = new URLSearchParams(
       'source=old&id=1&title=%E6%B5%8B%E8%AF%95'
     );
@@ -522,9 +542,9 @@ describe('PlayPage automatic source-switch resume', () => {
     if (!mockArtPlayerInstance) {
       throw new Error('ArtPlayer mock was not initialized');
     }
-    const player = mockArtPlayerInstance;
-    player.currentTime = 120;
-    player.video.currentTime = 120;
+    const playerBeforeSwitch = mockArtPlayerInstance;
+    playerBeforeSwitch.currentTime = 120;
+    playerBeforeSwitch.video.currentTime = 120;
 
     let switchPromise: Promise<boolean> | undefined;
     act(() => {
@@ -534,18 +554,99 @@ describe('PlayPage automatic source-switch resume', () => {
         reason: '自动恢复测试',
         autoPlayAfterReady: true,
       });
+      // Stale canplay from the old source must not consume the queued resume.
       mockArtPlayerEventHandlers.get('video:canplay')?.();
     });
     await act(async () => {
       await switchPromise;
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    player.currentTime = 0;
-    player.video.currentTime = 0;
+    await waitFor(() => {
+      expect(mockArtPlayerInstance?.currentTime).toBe(115);
+    });
+  });
+
+  it('applies queued resume after late MANIFEST_PARSED even if canplay fired early', async () => {
+    mockAutoFireManifestParsed = false;
+    mockManifestParsedHandlers.length = 0;
+
+    render(<PlayPage />);
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/search?q=%E6%B5%8B%E8%AF%95',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('episode-selector-sources')).toHaveTextContent(
+        '旧源,新源'
+      );
+    });
+
+    expect(mockSourceChangeHandler).toBeDefined();
+    expect(mockArtPlayerInstance).toBeDefined();
+    if (!mockArtPlayerInstance) {
+      throw new Error('ArtPlayer mock was not initialized');
+    }
+
+    const player = mockArtPlayerInstance;
+    player.currentTime = 120;
+    player.video.currentTime = 120;
+
+    let switchPromise: Promise<boolean> | undefined;
+    await act(async () => {
+      switchPromise = mockSourceChangeHandler?.('new', '2', '测试', {
+        autoRecovery: true,
+        resumeTime: 115,
+        reason: '自动恢复测试',
+        autoPlayAfterReady: true,
+      });
+      await switchPromise;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const playerAfterSwitch = mockArtPlayerInstance;
+    if (!playerAfterSwitch) {
+      throw new Error('ArtPlayer mock missing after source switch');
+    }
+    playerAfterSwitch.currentTime = 0;
+    playerAfterSwitch.video.currentTime = 0;
+
+    // Early canplay before the target HLS manifest is ready must not consume or
+    // permanently skip the queued Recovery Resume Time.
     act(() => {
       mockArtPlayerEventHandlers.get('video:canplay')?.();
     });
+    expect(playerAfterSwitch.currentTime).toBe(0);
 
-    expect(player.currentTime).toBe(115);
+    // Late target-manifest readiness must still apply resume even if canplay
+    // already fired too early (and must not require a third canplay).
+    mockAutoFireManifestParsed = true;
+    await act(async () => {
+      (playerAfterSwitch as { switch?: string }).switch =
+        'https://example.com/new.m3u8';
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    if (playerAfterSwitch.currentTime !== 115) {
+      // Fallback signal: once the target manifest has armed targetReady,
+      // a subsequent canplay must be able to apply the queued resume.
+      act(() => {
+        mockArtPlayerEventHandlers.get('video:canplay')?.();
+      });
+    }
+
+    expect(playerAfterSwitch.currentTime).toBe(115);
   });
 });

@@ -199,6 +199,25 @@ describe('source status behavior', () => {
     ).toBe('该线路当前不可用');
   });
 
+  it('does not show speed metrics while the status badge remains unavailable', () => {
+    const status = {
+      kind: 'unavailable' as const,
+      reason: '该源近期在本机不可用',
+    };
+    const videoInfo = {
+      quality: '1080p',
+      loadSpeed: '2.1 MB/s',
+      pingTime: 180,
+      speedSource: 'browser' as const,
+      hasError: false,
+    };
+
+    expect(getSourceStatusLabel(status)).toBe('不可用');
+    expect(getSourceStatusDescription(status, videoInfo)).toBe(
+      '该线路当前不可用'
+    );
+  });
+
   it('falls back to the local probe endpoint when the external probe fails', async () => {
     window.RUNTIME_CONFIG = {
       SOURCE_PROBE: 'https://worker.example.com/api/source-probe?url=',

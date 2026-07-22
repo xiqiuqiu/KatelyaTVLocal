@@ -88,6 +88,17 @@ function hasBackendPlayableMetrics(info: SourceVideoInfo | undefined): boolean {
   );
 }
 
+function hasBrowserPlayableMetrics(info: SourceVideoInfo | undefined): boolean {
+  return Boolean(
+    info &&
+      !info.hasError &&
+      info.speedSource === 'browser' &&
+      !info.speedPending &&
+      typeof info.pingTime === 'number' &&
+      info.pingTime > 0
+  );
+}
+
 function getEffectiveStatus(
   status: SourceStatus | undefined,
   measured: SourceVideoInfo | undefined
@@ -96,6 +107,19 @@ function getEffectiveStatus(
     return {
       kind: 'playable',
       reason: '后端测速可用，可尝试播放',
+      playbackMode: status.playbackMode || 'direct',
+      domain: status.domain || null,
+      measured,
+      updatedAt: Math.max(status.updatedAt || 0, measured?.speedUpdatedAt || 0),
+      rankingSource: status.rankingSource,
+      rankScore: status.rankScore,
+    };
+  }
+
+  if (status?.kind === 'unavailable' && hasBrowserPlayableMetrics(measured)) {
+    return {
+      kind: 'playable',
+      reason: '本机测速可用，可尝试播放',
       playbackMode: status.playbackMode || 'direct',
       domain: status.domain || null,
       measured,
@@ -117,9 +141,13 @@ function getEvidenceKind(
   }
 
   if (status?.kind === 'playable') {
-    return hasBackendPlayableMetrics(measured)
-      ? 'backend-playable'
-      : 'probe-failed-but-tryable';
+    if (hasBackendPlayableMetrics(measured)) {
+      return 'backend-playable';
+    }
+    if (hasBrowserPlayableMetrics(measured)) {
+      return 'browser-direct';
+    }
+    return 'probe-failed-but-tryable';
   }
 
   if (status?.kind === 'probing') {

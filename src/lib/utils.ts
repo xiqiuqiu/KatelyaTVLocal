@@ -457,7 +457,14 @@ export function getSourceStatusDescription(
     return '正在检测当前线路';
   }
 
-  if (videoInfo && !videoInfo.hasError) {
+  // Keep badge/description consistent: never advertise speed under an
+  // unavailable/proxy status that the user cannot (or should not) treat as ready.
+  if (
+    videoInfo &&
+    !videoInfo.hasError &&
+    status?.kind !== 'unavailable' &&
+    status?.kind !== 'proxy'
+  ) {
     return `${formatSourceVideoInfoSpeed(videoInfo)} · ${videoInfo.pingTime}ms`;
   }
 

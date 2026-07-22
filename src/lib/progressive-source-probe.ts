@@ -117,10 +117,13 @@ export function selectProgressiveSourceProbeCandidates({
 
 export function createProgressiveSourceProbeFailureStatus({
   domain,
+  reason,
 }: ProgressiveSourceProbeFailureStatusInput): SourceStatus {
   return {
     kind: 'playable',
-    reason: '后台测速失败，可尝试播放',
+    reason: reason
+      ? `后台测速未通过（${reason}），可尝试播放`
+      : '后台测速未通过，可尝试播放',
     playbackMode: 'direct',
     domain,
     updatedAt: Date.now(),
