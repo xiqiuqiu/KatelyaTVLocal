@@ -178,6 +178,9 @@ import Surface from '@/components/ui/Surface';
 export const runtime = 'edge';
 
 const SOURCE_PREFERENCE_FAST_BUDGET_MS = 500;
+// 首源候选不可信（多为冷内容按原始顺序命中未探测源）时，再等待完整优选结果的上限，
+// 用充分的服务端排名/实时探测数据换取“首源不踩不可用源”，避免起播卡死后才慢慢自动切源。
+const SOURCE_PREFERENCE_MAX_BUDGET_MS = 3000;
 const SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS = 1800;
 const SOURCE_CHANGE_TIMEOUT_MS = 25000;
 const PROGRESSIVE_SOURCE_PROBE_STABLE_DELAY_MS = 10000;
@@ -2686,53 +2689,100 @@ function PlayPageClient() {
       };
     });
 
-    const preferencePromise = fetchSourcePreferencesInBatches(requestSources, {
-      allowLiveProbeFallback: false,
-    });
+    // 不再硬编码关闭实时探测：冷内容（D1 无该 source-id 数据）交给后端按
+    // SOURCE_RANKING_FALLBACK_TO_LIVE 决定是否实时探测兜底，避免仅凭原始顺序敲定首源。
+    const preferencePromise = fetchSourcePreferencesInBatches(requestSources);
     let preferenceSettled = false;
-    try {
-      const preferenceData = await Promise.race([
-        preferencePromise.then((data) => {
-          preferenceSettled = true;
-          return data;
-        }),
-        new Promise<null>((resolve) =>
-          window.setTimeout(resolve, SOURCE_PREFERENCE_FAST_BUDGET_MS, null)
-        ),
-      ]);
-
-      if (preferenceData) {
-        applyPreferenceResults(preferenceData);
-      }
-    } catch (error) {
-      preferenceSettled = true;
-      console.warn('快速线路优选读取失败，继续使用本地状态', error);
-    }
-
-    if (!preferenceSettled) {
-      void preferencePromise.then(applyPreferenceResults).catch((error) => {
-        console.warn('后台线路优选读取失败', error);
+    const settledPromise = preferencePromise
+      .then((data) => {
+        preferenceSettled = true;
+        return data;
+      })
+      .catch((error) => {
+        preferenceSettled = true;
+        console.warn('线路优选读取失败，继续使用本地状态', error);
+        return null;
       });
-    }
 
-    let selectionScores = commitSelectionState();
-    selectionScores = sourceSelectionScoresRef.current.size
-      ? sourceSelectionScoresRef.current
-      : selectionScores;
-    const finalSource = sortSourcesBySelectionScore(
-      sources,
-      selectionScores,
-      (source) => getSourceIdentityKey(source.source, source.id)
-    ).find((source) => {
+    const isSourceKindUsable = (source: SearchResult): boolean => {
       const status = statusMap.get(
         getSourceIdentityKey(source.source, source.id)
       );
-      return status?.kind !== 'unavailable';
-    });
+      return (
+        status?.kind === 'direct' ||
+        status?.kind === 'proxy' ||
+        status?.kind === 'playable'
+      );
+    };
+
+    const pickBestSource = (scores: Map<string, SourceSelectionScore>) => {
+      const ordered = sortSourcesBySelectionScore(
+        sources,
+        scores,
+        (source) => getSourceIdentityKey(source.source, source.id)
+      );
+      const available = ordered.find((source) => {
+        const status = statusMap.get(
+          getSourceIdentityKey(source.source, source.id)
+        );
+        return status?.kind !== 'unavailable';
+      });
+      return { ordered, available };
+    };
+
+    // 第一阶段：快速预算内拿到结果就用，命中热内容时保持秒开体验。
+    const fastData = await Promise.race([
+      settledPromise,
+      new Promise<null>((resolve) =>
+        window.setTimeout(resolve, SOURCE_PREFERENCE_FAST_BUDGET_MS, null)
+      ),
+    ]);
+    if (fastData) {
+      applyPreferenceResults(fastData);
+    }
+
+    // 第二阶段：若最优候选仍不可信（无任何 direct/proxy/playable 确认，
+    // 多见于冷内容按原始顺序命中未探测源），再等待完整结果，最多到扩展预算，
+    // 用真实探测数据换取“首源不踩不可用源”。
+    let bestPick = pickBestSource(commitSelectionState());
+    if (
+      !preferenceSettled &&
+      (!bestPick.available || !isSourceKindUsable(bestPick.available))
+    ) {
+      const extendedData = await Promise.race([
+        settledPromise,
+        new Promise<null>((resolve) =>
+          window.setTimeout(
+            resolve,
+            SOURCE_PREFERENCE_MAX_BUDGET_MS - SOURCE_PREFERENCE_FAST_BUDGET_MS,
+            null
+          )
+        ),
+      ]);
+      if (extendedData) {
+        applyPreferenceResults(extendedData);
+      }
+    }
+
+    // 若扩展预算内仍未落地，继续后台补齐（只刷新角标/评分）。
+    if (!preferenceSettled) {
+      void settledPromise.then((data) => {
+        if (data) {
+          applyPreferenceResults(data);
+        }
+      });
+    }
+
+    bestPick = pickBestSource(commitSelectionState());
+    // 兜底优先取评分最高源，而不是原始顺序第一个（后者可能恰是不可用源）。
+    const finalSource =
+      bestPick.available || bestPick.ordered[0] || sources[0];
 
     console.log('播放源优选结果:', {
       selected: finalSource?.source_name,
+      trustworthy: finalSource ? isSourceKindUsable(finalSource) : false,
       waitedMs: Date.now() - startedAt,
+      preferenceSettled,
       progressiveProbe: true,
     });
 
