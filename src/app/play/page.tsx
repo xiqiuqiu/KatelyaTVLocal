@@ -84,6 +84,7 @@ import {
   type PlaybackHistoryRecord,
   resolvePlaybackHistoryRecovery,
 } from '@/lib/playback-history-recovery';
+import { classifySeekingEvent } from '@/lib/playback-seek-intent';
 import {
   type PlaybackSessionEffect,
   type PlaybackSessionState,
@@ -103,6 +104,7 @@ import {
   clampSourceSwitchResumeTime,
   getSourceSwitchResumePlan,
   getSourceSwitchTargetEpisodeIndex,
+  shouldApplyQueuedResumeTime,
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
 import {
@@ -163,10 +165,10 @@ import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
 import PlayDetailSection from '@/components/PlayDetailSection';
 import InitialLoadingOverlay from '@/components/player/InitialLoadingOverlay';
-import PlayFavoriteButton from '@/components/player/PlayFavoriteButton';
 import PlayerHeader from '@/components/player/PlayerHeader';
 import PlayerLoadingOverlay from '@/components/player/PlayerLoadingOverlay';
 import PlayerSidebar from '@/components/player/PlayerSidebar';
+import PlayFavoriteButton from '@/components/player/PlayFavoriteButton';
 import { usePlayFavorite } from '@/components/player/usePlayFavorite';
 import { usePlayProgressPersistOnUnload } from '@/components/player/usePlayProgressPersistOnUnload';
 import PlayRecommendations from '@/components/PlayRecommendations';
@@ -1694,9 +1696,58 @@ function PlayPageClient() {
     state.manualInteractionUntil = now + HLS_MANUAL_INTERACTION_GRACE_MS;
   };
 
+  const resolveSeekIntentClassification = (seekTimeSeconds?: number) => {
+    const session = playbackSessionStateRef.current;
+    const now = Date.now();
+    const lastObserved =
+      nativeRecoveryStateRef.current.lastObservedTime ||
+      currentPlayTimeRef.current ||
+      0;
+    const seekDeltaSeconds =
+      typeof seekTimeSeconds === 'number' && Number.isFinite(seekTimeSeconds)
+        ? seekTimeSeconds - lastObserved
+        : null;
+    return classifySeekingEvent({
+      systemSeekInFlight: systemSeekInFlightRef.current,
+      recoveryInFlight: session.recoveryInFlight,
+      automaticRecoveryGraceActive:
+        nativeRecoveryStateRef.current.ignoreStallUntil > now ||
+        (session.sourceSwitchSettledUntilMs != null &&
+          now < session.sourceSwitchSettledUntilMs),
+      stallEpisodeActive: session.stallEpisodeActive,
+      escapeBudgetCharged:
+        session.escapeCount > 0 || session.escapeForwardSpanSeconds > 0,
+      seekDeltaSeconds,
+    });
+  };
+
   const markHlsUserSeeking = (currentTime?: number) => {
     const now = Date.now();
-    dispatchPlaybackSessionEvent({ type: 'user.seekStarted', nowMs: now });
+    const classification = resolveSeekIntentClassification(currentTime);
+    if (classification !== 'user') {
+      emitPlaybackDebugLog(
+        'intent.seek.ignored',
+        '已忽略非用户拖动的 seeking（避免清掉逃逸预算）',
+        {
+          classification,
+          currentTime:
+            typeof currentTime === 'number'
+              ? Number(currentTime.toFixed(2))
+              : null,
+        }
+      );
+      dispatchPlaybackSessionEvent({
+        type: 'user.seekStarted',
+        nowMs: now,
+        confirmedUserGesture: false,
+      });
+      return;
+    }
+    dispatchPlaybackSessionEvent({
+      type: 'user.seekStarted',
+      nowMs: now,
+      confirmedUserGesture: true,
+    });
     const state = hlsRecoveryStateRef.current;
     clearWaitingRecoveryTimer();
     state.userSeekingAt = now;
@@ -3322,8 +3373,9 @@ function PlayPageClient() {
     const stuckTime = Number((video.currentTime || 0).toFixed(2));
 
     // Session authority: jitter is evidence only — never a parallel seek commander.
+    // Do not pre-write Bad Points here; the Session R2 path records them when it
+    // actually escapes (adapter pre-write was amplifying +20s skips on iOS).
     if (resolveNativeJitterRouting() === 'session-tree') {
-      rememberCurrentPlaybackBadPoint(stuckTime);
       syncPlaybackSessionSources();
       dispatchPlaybackSessionEvent({
         type: 'recovery.runtimeEvidence',
@@ -3880,7 +3932,37 @@ function PlayPageClient() {
         return;
       }
       const now = Date.now();
-      dispatchPlaybackSessionEvent({ type: 'user.seekStarted', nowMs: now });
+      const seekTime = Number((video.currentTime || 0).toFixed(2));
+      const classification = resolveSeekIntentClassification(seekTime);
+      if (classification !== 'user') {
+        emitPlaybackDebugLog(
+          'intent.seek.ignored',
+          '已忽略原生非用户拖动的 seeking（避免清掉逃逸预算）',
+          {
+            classification,
+            seekTime,
+            lastObservedTime: Number(
+              (
+                nativeRecoveryStateRef.current.lastObservedTime ||
+                currentPlayTimeRef.current ||
+                0
+              ).toFixed(2)
+            ),
+            escapeCount: playbackSessionStateRef.current.escapeCount,
+          }
+        );
+        dispatchPlaybackSessionEvent({
+          type: 'user.seekStarted',
+          nowMs: now,
+          confirmedUserGesture: false,
+        });
+        return;
+      }
+      dispatchPlaybackSessionEvent({
+        type: 'user.seekStarted',
+        nowMs: now,
+        confirmedUserGesture: true,
+      });
     };
     const handleSeeked = () => {
       if (systemSeekInFlightRef.current) {
@@ -5851,6 +5933,13 @@ function PlayPageClient() {
           if (resumeTimeRef.current && resumeTimeRef.current > 0) {
             try {
               const duration = artPlayerRef.current.duration || 0;
+              const livePlayhead = Number(
+                (
+                  artPlayerRef.current.currentTime ||
+                  currentPlayTimeRef.current ||
+                  0
+                ).toFixed(2)
+              );
               const adapted = adaptWatchProgressPlayhead({
                 playTime: resumeTimeRef.current,
                 sourceTotalTime: sourceDurationBeforeSwitchRef.current,
@@ -5860,24 +5949,48 @@ function PlayPageClient() {
                 resumeTime: adapted,
                 duration,
               });
-              artPlayerRef.current.currentTime = target;
-              appliedResumeTime = target;
-              console.log('成功恢复播放进度到:', resumeTimeRef.current);
-              emitPlaybackDebugLog(
-                'switch-source-resume-applied',
-                '已在新播放源应用恢复进度',
-                {
-                  resumeTime: target,
-                  originalResumeTime: resumeTimeRef.current,
-                  duration,
-                  sourceKey: getCurrentSourceKey(),
-                },
-                {
-                  playbackUrl:
-                    artPlayerRef.current?.video?.currentSrc ||
-                    videoUrlRef.current,
-                }
-              );
+              if (
+                !shouldApplyQueuedResumeTime({
+                  queuedResumeTime: target,
+                  currentPlayTime: livePlayhead,
+                })
+              ) {
+                emitPlaybackDebugLog(
+                  'switch-source-resume-skipped-stale',
+                  '已跳过会回拉进度的过期恢复点',
+                  {
+                    queuedResumeTime: target,
+                    originalResumeTime: resumeTimeRef.current,
+                    livePlayhead,
+                    duration,
+                    sourceKey: getCurrentSourceKey(),
+                  },
+                  {
+                    playbackUrl:
+                      artPlayerRef.current?.video?.currentSrc ||
+                      videoUrlRef.current,
+                  }
+                );
+              } else {
+                artPlayerRef.current.currentTime = target;
+                appliedResumeTime = target;
+                console.log('成功恢复播放进度到:', resumeTimeRef.current);
+                emitPlaybackDebugLog(
+                  'switch-source-resume-applied',
+                  '已在新播放源应用恢复进度',
+                  {
+                    resumeTime: target,
+                    originalResumeTime: resumeTimeRef.current,
+                    duration,
+                    sourceKey: getCurrentSourceKey(),
+                  },
+                  {
+                    playbackUrl:
+                      artPlayerRef.current?.video?.currentSrc ||
+                      videoUrlRef.current,
+                  }
+                );
+              }
             } catch (err) {
               console.warn('恢复播放进度失败:', err);
             }

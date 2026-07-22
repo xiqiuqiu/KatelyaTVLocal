@@ -162,7 +162,16 @@ export type PlaybackSessionEvent =
     }
   | { type: 'user.play' }
   | { type: 'user.pause' }
-  | { type: 'user.seekStarted'; nowMs: number }
+  | {
+      type: 'user.seekStarted';
+      nowMs: number;
+      /**
+       * When false, the adapter classified the browser seeking event as
+       * ambiguous (iOS buffer repair) — do not stamp seeking Intent or clear
+       * the escape budget. Omitted/true keeps legacy confirmed-user behavior.
+       */
+      confirmedUserGesture?: boolean;
+    }
   | { type: 'user.seekSettled'; nowMs: number }
   | {
       type: 'user.switchSource';

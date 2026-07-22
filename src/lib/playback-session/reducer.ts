@@ -628,7 +628,48 @@ export function reducePlaybackSession(
         'user-paused'
       );
 
-    case 'user.seekStarted':
+    case 'user.seekStarted': {
+      // Ambiguous browser seeking (iOS buffer gaps) must not stamp Intent or
+      // wipe the escape budget — that re-opened +20s ratchet windows in prod.
+      if (event.confirmedUserGesture === false) {
+        return {
+          state,
+          effects: [
+            {
+              type: 'emitDebugEvent',
+              eventType: 'intent.seek.ignored',
+              message: 'Ignored unconfirmed seeking (ambiguous browser event)',
+              details: {
+                escapeCount: state.escapeCount,
+                stallEpisodeActive: state.stallEpisodeActive,
+                recoveryInFlight: state.recoveryInFlight,
+              },
+            },
+          ],
+        };
+      }
+
+      // Race: automatic R1/R2/resume seeks can emit browser seeking before the
+      // adapter marks systemSeekInFlight. Never treat that as a user scrub.
+      if (
+        state.recoveryInFlight === 'R1' ||
+        state.recoveryInFlight === 'R2' ||
+        state.recoveryInFlight === 'R3' ||
+        state.recoveryInFlight === 'resume'
+      ) {
+        return {
+          state,
+          effects: [
+            {
+              type: 'emitDebugEvent',
+              eventType: 'intent.seek.ignored',
+              message: 'Ignored seeking during automatic recovery',
+              details: { recoveryInFlight: state.recoveryInFlight },
+            },
+          ],
+        };
+      }
+
       // The user took control: forget the escape budget so their chosen
       // position starts fresh (no carried-over ratchet).
       return withIntentTransition(
@@ -646,6 +687,7 @@ export function reducePlaybackSession(
         },
         'seeking'
       );
+    }
 
     case 'user.seekSettled': {
       const resumeIntent =

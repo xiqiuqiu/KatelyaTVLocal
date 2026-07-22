@@ -1,8 +1,8 @@
 import {
-  PLAYBACK_RESUME_REWIND_SECONDS as DEFAULT_RESUME_REWIND_SECONDS,
-  planStallEscapeResume,
   type PlaybackBadPoint,
   type StallEscapeAction,
+  planStallEscapeResume,
+  PLAYBACK_RESUME_REWIND_SECONDS as DEFAULT_RESUME_REWIND_SECONDS,
 } from '@/lib/playback-stuck-escape';
 import { resolveRecoveryCandidateSource } from '@/lib/source-availability/authority';
 import { selectRecoveryCandidate } from '@/lib/source-availability/index';
@@ -175,6 +175,29 @@ export function clampSourceSwitchResumeTime({
   }
 
   return resumeTime;
+}
+
+/**
+ * Guard against applying a stale Recovery Resume Time that would yank the
+ * playhead backward. Prod 8bd17d7d: canplay reapplied 2241 while already at 2287
+ * after escape-budget exhaustion / same-source remount churn.
+ */
+export function shouldApplyQueuedResumeTime({
+  queuedResumeTime,
+  currentPlayTime,
+  maxBehindSeconds = DEFAULT_RESUME_REWIND_SECONDS,
+}: {
+  queuedResumeTime: number;
+  currentPlayTime: number;
+  maxBehindSeconds?: number;
+}): boolean {
+  if (!Number.isFinite(queuedResumeTime) || queuedResumeTime <= 0) {
+    return false;
+  }
+  if (!Number.isFinite(currentPlayTime) || currentPlayTime < 0) {
+    return true;
+  }
+  return currentPlayTime <= queuedResumeTime + maxBehindSeconds;
 }
 
 export function shouldIgnoreSourceChangeTimeout({

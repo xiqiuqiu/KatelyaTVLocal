@@ -455,12 +455,12 @@ describe('Playback Session automatic recovery', () => {
         native: {
           severity: 'soft-stall',
           isJitter: true,
-          jitterWindowCount: 2,
+          jitterWindowCount: 3,
         },
       },
     });
 
-    // Jitter ≥2 strengthens R2 on the shared tree — never a parallel commander.
+    // Jitter ≥ PREFER_R2_MIN_JITTER_WINDOWS strengthens R2 — never a parallel commander.
     expect(r0.effects.some((effect) => effect.type === 'switchSource')).toBe(
       false
     );
@@ -480,7 +480,7 @@ describe('Playback Session automatic recovery', () => {
               native: {
                 severity: 'soft-stall',
                 isJitter: true,
-                jitterWindowCount: 2,
+                jitterWindowCount: 3,
               },
             },
           })

@@ -23,9 +23,11 @@ export {
   isHlsSustainedSoftStall,
   isRecoveryInFlightBlockingAdSkip,
   isResumePendingBlockingAdSkip,
+  PREFER_R2_MIN_JITTER_WINDOWS,
   RECOVERY_R0_SOFT_OBSERVE_MS,
   RECOVERY_R1_MAX_ATTEMPTS,
   RECOVERY_R2_MAX_ATTEMPTS,
+  shouldPreferR2FromJitter,
 } from './recovery';
 export type {
   NativeJitterRoutingMode,

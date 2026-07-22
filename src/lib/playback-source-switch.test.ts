@@ -4,6 +4,7 @@ import {
   getNextRecoverySourceCandidate,
   getSourceSwitchResumePlan,
   getSourceSwitchTargetEpisodeIndex,
+  shouldApplyQueuedResumeTime,
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
 
@@ -242,6 +243,42 @@ describe('clampSourceSwitchResumeTime', () => {
         duration: 4,
       })
     ).toBe(0);
+  });
+});
+
+describe('shouldApplyQueuedResumeTime', () => {
+  it('applies a resume at or ahead of the current playhead', () => {
+    expect(
+      shouldApplyQueuedResumeTime({
+        queuedResumeTime: 2241,
+        currentPlayTime: 2241,
+      })
+    ).toBe(true);
+    expect(
+      shouldApplyQueuedResumeTime({
+        queuedResumeTime: 2300,
+        currentPlayTime: 2241,
+      })
+    ).toBe(true);
+  });
+
+  it('rejects a stale resume that would rewind past the live playhead (prod 8bd17d7d)', () => {
+    expect(
+      shouldApplyQueuedResumeTime({
+        queuedResumeTime: 2241.31,
+        currentPlayTime: 2287.65,
+      })
+    ).toBe(false);
+  });
+
+  it('still allows a small intentional rewind within the resume tolerance', () => {
+    expect(
+      shouldApplyQueuedResumeTime({
+        queuedResumeTime: 2240,
+        currentPlayTime: 2244,
+        maxBehindSeconds: 5,
+      })
+    ).toBe(true);
   });
 });
 

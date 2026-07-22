@@ -47,6 +47,12 @@ export const HEALTHY_PROGRESS_JUMP_TOLERANCE_SECONDS = 2;
 export const MAX_ESCAPE_FORWARD_SPAN_SECONDS = 60;
 /** Hard cap on skip-forward escapes before escalating (belt-and-suspenders). */
 export const MAX_ESCAPE_COUNT = 3;
+/**
+ * Native jitter must accumulate this many windows before strengthening a move
+ * straight into R2. Prod logs showed jitterWindowCount=2 still too eager on
+ * iOS buffer noise; require a stronger signal before skipping +20s.
+ */
+export const PREFER_R2_MIN_JITTER_WINDOWS = 3;
 
 export function resetEscapeBudget(
   state: PlaybackSessionState
@@ -352,11 +358,12 @@ function shouldAccelerateToR3(
   return false;
 }
 
-function shouldPreferR2FromJitter(
+export function shouldPreferR2FromJitter(
   evidence: RecoveryRuntimeEvidence | null
 ): boolean {
   return Boolean(
-    evidence?.native?.isJitter && (evidence.native.jitterWindowCount ?? 0) >= 2
+    evidence?.native?.isJitter &&
+      (evidence.native.jitterWindowCount ?? 0) >= PREFER_R2_MIN_JITTER_WINDOWS
   );
 }
 
