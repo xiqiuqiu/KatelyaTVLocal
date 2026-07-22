@@ -27,12 +27,17 @@ export const RECOVERY_R2_MAX_ATTEMPTS = 3;
  * has been *sustained* for this many seconds. A stuttering source that plays
  * for less than this between stalls keeps one Stall Episode alive, so the
  * ladder can escalate to R3 instead of looping same-source recovery forever.
+ *
+ * Must outlast {@link RECOVERY_R0_SOFT_OBSERVE_MS}: prod 209f363a (家业/iOS)
+ * showed ~1.5s healthy gaps ending R0 before the 2.5s observe window could
+ * escalate to R1, so the ladder thrashed at R0 forever.
  */
-export const HEALTHY_SUSTAINED_SECONDS = 1.5;
+export const HEALTHY_SUSTAINED_SECONDS =
+  RECOVERY_R0_SOFT_OBSERVE_MS / 1000 + 1;
 /**
  * A short healthy beat (HEALTHY_SUSTAINED_SECONDS) ends the Stall Episode but
  * must NOT clear the carried escape budget: a stuttering source that recovers
- * for ~1.5s between stalls would otherwise reset the ratchet guard every cycle
+ * briefly between stalls would otherwise reset the ratchet guard every cycle
  * and skip forward to the end. Only a genuinely long, continuous healthy run
  * clears the budget (the playhead is really progressing again on this source).
  */

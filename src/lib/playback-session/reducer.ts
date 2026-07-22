@@ -690,6 +690,27 @@ export function reducePlaybackSession(
     }
 
     case 'user.seekSettled': {
+      // Only a confirmed user seek (Intent === seeking) may settle into the
+      // seek-settled guard. iOS ambiguous seeking is ignored on seekStarted but
+      // still fires seeked — stamping seek-settled there blocked same-source
+      // recovery in prod 209f363a while playIntent stayed "playing".
+      if (state.playbackIntent !== 'seeking') {
+        return {
+          state,
+          effects: [
+            {
+              type: 'emitDebugEvent',
+              eventType: 'intent.seek.ignored',
+              message: 'Ignored seekSettled without an active user seek',
+              details: {
+                playbackIntent: state.playbackIntent,
+                escapeCount: state.escapeCount,
+              },
+            },
+          ],
+        };
+      }
+
       const resumeIntent =
         state.resumeIntentAfterSeek === 'user-paused'
           ? 'user-paused'

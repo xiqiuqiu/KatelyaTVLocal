@@ -3979,6 +3979,11 @@ function PlayPageClient() {
         }
         return;
       }
+      // Ambiguous iOS seeking is ignored on seekStarted; do not arm seek-settled
+      // from the matching seeked (prod 209f363a gated same-source recovery).
+      if (playbackSessionStateRef.current.playbackIntent !== 'seeking') {
+        return;
+      }
       const now = Date.now();
       dispatchPlaybackSessionEvent({ type: 'user.seekSettled', nowMs: now });
     };

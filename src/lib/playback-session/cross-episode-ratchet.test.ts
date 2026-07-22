@@ -153,7 +153,7 @@ describe('stutter that recovers between stalls must not ratchet across episodes'
         }
       }
 
-      // Choppy playback: a short healthy beat (> the 1.5s episode-end threshold
+      // Choppy playback: a short healthy beat (enough to end a Stall Episode
       // but well under the long budget-reset threshold), then it stalls again.
       for (let k = 0; k < 5; k += 1) {
         currentTime = Math.min(DURATION, currentTime + 0.5);
