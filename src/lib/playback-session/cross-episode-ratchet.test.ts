@@ -76,8 +76,8 @@ function findSameSourceRecover(
  * Root cause: the escape budget only guarded R2, and a ≥1.5s healthy beat
  * cleared the whole Stall Episode (and the budget) every cycle. On a stuttering
  * source that recovers for a beat between stalls, the FIRST recovery of each
- * fresh episode (R1 `resume-playback` on iOS native / `nudge-playback` on
- * HLS.js) skipped +20s off a Bad Point — uncounted — so the playhead ratcheted
+ * fresh episode (R1 `nudge-playback` on hls.js) skipped +20s off a Bad Point
+ * — uncounted — so the playhead ratcheted
  * to the end and never switched source.
  *
  * Fix: R1 forward skips are charged against the same escape budget as R2, and a
@@ -85,7 +85,7 @@ function findSameSourceRecover(
  * continuous healthy run, a user seek, or a source/episode change clears it).
  */
 describe('stutter that recovers between stalls must not ratchet across episodes', () => {
-  function runStutter(platform: 'apple-native' | 'hlsjs') {
+  function runStutter() {
     const DURATION = 1200;
     let state = seedStallProneTail(loadPlayableAlts(), DURATION);
     let currentTime = 300;
@@ -98,35 +98,11 @@ describe('stutter that recovers between stalls must not ratchet across episodes'
       let recovered = false;
       for (let w = 0; w < 12 && !recovered && !switched; w += 1) {
         now += 1500;
-        const stall =
-          platform === 'apple-native'
-            ? reducePlaybackSession(state, {
-                type: 'recovery.runtimeEvidence',
-                nowMs: now,
-                snapshot: {
-                  currentTime,
-                  duration: DURATION,
-                  readyState: 4,
-                  networkState: 2,
-                  paused: false,
-                  ended: false,
-                  playbackUrl: 'ep-3.m3u8',
-                },
-                evidence: {
-                  platform: 'apple-native',
-                  stallCandidate: true,
-                  native: {
-                    severity: 'soft-stall',
-                    isJitter: false,
-                    jitterWindowCount: 0,
-                  },
-                },
-              })
-            : reducePlaybackSession(state, {
-                type: 'video.waiting',
-                nowMs: now,
-                snapshot: { currentTime, duration: DURATION },
-              });
+        const stall = reducePlaybackSession(state, {
+          type: 'video.waiting',
+          nowMs: now,
+          snapshot: { currentTime, duration: DURATION },
+        });
         state = stall.state;
 
         if (stall.effects.some((e) => e.type === 'switchSource')) {
@@ -174,25 +150,14 @@ describe('stutter that recovers between stalls must not ratchet across episodes'
     return { currentTime, forwardJumps, totalForward, switched };
   }
 
-  it('bounds forward progress and escalates to a source switch (iOS native)', () => {
-    const { currentTime, forwardJumps, totalForward, switched } =
-      runStutter('apple-native');
-
-    expect(switched).toBe(true);
-    // A few Bad-Point skips are allowed, but the escape budget must cap them.
-    expect(forwardJumps.length).toBeLessThanOrEqual(MAX_ESCAPE_COUNT);
-    expect(totalForward).toBeLessThanOrEqual(MAX_ESCAPE_FORWARD_SPAN_SECONDS + 25);
-    // The playhead must never be ratcheted anywhere near the end of the video.
-    expect(currentTime).toBeLessThan(500);
-  });
-
   it('bounds forward progress and escalates to a source switch (HLS.js)', () => {
-    const { currentTime, forwardJumps, totalForward, switched } =
-      runStutter('hlsjs');
+    const { currentTime, forwardJumps, totalForward, switched } = runStutter();
 
     expect(switched).toBe(true);
     expect(forwardJumps.length).toBeLessThanOrEqual(MAX_ESCAPE_COUNT);
-    expect(totalForward).toBeLessThanOrEqual(MAX_ESCAPE_FORWARD_SPAN_SECONDS + 25);
+    expect(totalForward).toBeLessThanOrEqual(
+      MAX_ESCAPE_FORWARD_SPAN_SECONDS + 25
+    );
     expect(currentTime).toBeLessThan(500);
   });
 });

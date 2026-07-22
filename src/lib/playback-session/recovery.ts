@@ -32,8 +32,7 @@ export const RECOVERY_R2_MAX_ATTEMPTS = 3;
  * showed ~1.5s healthy gaps ending R0 before the 2.5s observe window could
  * escalate to R1, so the ladder thrashed at R0 forever.
  */
-export const HEALTHY_SUSTAINED_SECONDS =
-  RECOVERY_R0_SOFT_OBSERVE_MS / 1000 + 1;
+export const HEALTHY_SUSTAINED_SECONDS = RECOVERY_R0_SOFT_OBSERVE_MS / 1000 + 1;
 /**
  * A short healthy beat (HEALTHY_SUSTAINED_SECONDS) ends the Stall Episode but
  * must NOT clear the carried escape budget: a stuttering source that recovers
@@ -52,13 +51,6 @@ export const HEALTHY_PROGRESS_JUMP_TOLERANCE_SECONDS = 2;
 export const MAX_ESCAPE_FORWARD_SPAN_SECONDS = 60;
 /** Hard cap on skip-forward escapes before escalating (belt-and-suspenders). */
 export const MAX_ESCAPE_COUNT = 3;
-/**
- * Native jitter must accumulate this many windows before strengthening a move
- * straight into R2. Prod logs showed jitterWindowCount=2 still too eager on
- * iOS buffer noise; require a stronger signal before skipping +20s.
- */
-export const PREFER_R2_MIN_JITTER_WINDOWS = 3;
-
 export function resetEscapeBudget(
   state: PlaybackSessionState
 ): PlaybackSessionState {
@@ -118,8 +110,7 @@ export function applyHealthyProgress(
   const anchorMs = state.healthyProgressAnchorMs;
   const anchorTime = state.healthyProgressAnchorTime;
 
-  const wallElapsedSeconds =
-    anchorMs != null ? (nowMs - anchorMs) / 1000 : 0;
+  const wallElapsedSeconds = anchorMs != null ? (nowMs - anchorMs) / 1000 : 0;
   const advanced = anchorTime != null ? currentTime - anchorTime : 0;
   const continuous =
     anchorMs != null &&
@@ -298,9 +289,6 @@ function pickR1Action(
   evidence: RecoveryRuntimeEvidence | null,
   attempt: number
 ): SameSourceRecoverAction {
-  if (evidence?.platform === 'apple-native') {
-    return 'resume-playback';
-  }
   if (attempt <= 1) {
     return 'nudge-playback';
   }
@@ -348,12 +336,6 @@ function shouldAccelerateToR3(
   if (evidence.hardFailure) {
     return true;
   }
-  if (evidence.native?.severity === 'source-failed') {
-    return true;
-  }
-  if (evidence.native?.severity === 'hard-stall') {
-    return true;
-  }
   if (evidence.hls?.fatal) {
     return true;
   }
@@ -361,15 +343,6 @@ function shouldAccelerateToR3(
     return true;
   }
   return false;
-}
-
-export function shouldPreferR2FromJitter(
-  evidence: RecoveryRuntimeEvidence | null
-): boolean {
-  return Boolean(
-    evidence?.native?.isJitter &&
-      (evidence.native.jitterWindowCount ?? 0) >= PREFER_R2_MIN_JITTER_WINDOWS
-  );
 }
 
 function planR2Escape(
@@ -456,8 +429,8 @@ export function advanceRecoveryLadder(
   const evidence = input.evidence || null;
   const hardFailure = Boolean(input.hardFailure || evidence?.hardFailure);
   const accelerate = shouldAccelerateToR3(evidence, hardFailure);
-  const preferR2 = shouldPreferR2FromJitter(evidence);
-  const suppressSkipForward = Boolean(input.suppressSkipForward) && !hardFailure;
+  const suppressSkipForward =
+    Boolean(input.suppressSkipForward) && !hardFailure;
 
   // Enter / keep Stall Episode at R0 when Intent-eligible stall arrives.
   if (!state.stallEpisodeActive || state.recoveryStage === 'idle') {
@@ -471,7 +444,7 @@ export function advanceRecoveryLadder(
       recoveryInFlight: null,
     };
 
-    if (!accelerate && !input.forceR3Evaluation && !preferR2) {
+    if (!accelerate && !input.forceR3Evaluation) {
       return {
         state: next,
         effects: [
@@ -492,7 +465,6 @@ export function advanceRecoveryLadder(
       input.nowMs,
       evidence,
       accelerate,
-      preferR2,
       input.forceR3Evaluation,
       suppressSkipForward
     );
@@ -518,7 +490,6 @@ export function advanceRecoveryLadder(
       input.nowMs,
       evidence,
       accelerate,
-      preferR2,
       input.forceR3Evaluation,
       suppressSkipForward
     );
@@ -531,7 +502,6 @@ export function advanceRecoveryLadder(
       input.nowMs,
       evidence,
       accelerate,
-      preferR2,
       suppressSkipForward
     );
   }
@@ -554,13 +524,12 @@ function advanceFromR0(
   nowMs: number,
   evidence: RecoveryRuntimeEvidence | null,
   accelerate: boolean,
-  preferR2: boolean,
   forceR3?: boolean,
   suppressSkipForward?: boolean
 ): RecoveryLadderResult {
   const elapsed = state.r0EnteredAtMs != null ? nowMs - state.r0EnteredAtMs : 0;
   const observeDone =
-    accelerate || forceR3 || preferR2 || elapsed >= RECOVERY_R0_SOFT_OBSERVE_MS;
+    accelerate || forceR3 || elapsed >= RECOVERY_R0_SOFT_OBSERVE_MS;
 
   if (!observeDone) {
     return { state, effects: [] };
@@ -578,10 +547,9 @@ function advanceFromR0(
   const faultShortcut =
     !suppressSkipForward && isPlayheadInKnownFault(state, snapshot);
 
-  // Prefer R2 when jitter strengthens escape, or playhead already in fault band.
-  if (preferR2 || faultShortcut || (accelerate && !forceR3)) {
-    // Hard failure shortens R0/R1: try R2 once then let caller escalate R3.
-    if (accelerate && !preferR2 && !faultShortcut) {
+  if (faultShortcut || (accelerate && !forceR3)) {
+    // Hard failure shortens R0/R1 to the R2 boundary before R3 evaluation.
+    if (accelerate && !faultShortcut) {
       // Skip soft R1 catalog — go evaluate R3 at caller.
       return {
         state: withStage(state, 'R2', null),
@@ -614,14 +582,12 @@ function advanceFromR1(
   nowMs: number,
   evidence: RecoveryRuntimeEvidence | null,
   accelerate: boolean,
-  preferR2: boolean,
   suppressSkipForward?: boolean
 ): RecoveryLadderResult {
   const faultShortcut =
     !suppressSkipForward && isPlayheadInKnownFault(state, snapshot);
 
   if (
-    preferR2 ||
     faultShortcut ||
     state.r1AttemptCount >= RECOVERY_R1_MAX_ATTEMPTS ||
     accelerate
@@ -713,11 +679,7 @@ function emitR1(
     ) {
       // Budget exhausted — stop skipping forward; let the caller evaluate R3.
       return {
-        state: withStage(
-          { ...state, r1AttemptCount: attempt },
-          'R2',
-          null
-        ),
+        state: withStage({ ...state, r1AttemptCount: attempt }, 'R2', null),
         effects: [
           {
             type: 'emitDebugEvent',
@@ -759,7 +721,8 @@ function emitR1(
             badPoints
           ),
           escapeCount: state.escapeCount + 1,
-          escapeForwardSpanSeconds: state.escapeForwardSpanSeconds + forwardSpan,
+          escapeForwardSpanSeconds:
+            state.escapeForwardSpanSeconds + forwardSpan,
           // Break the healthy run so a post-escape blip cannot look sustained.
           healthyProgressAnchorMs: null,
           healthyProgressAnchorTime: null,
@@ -816,7 +779,11 @@ function emitR2(
     state.escapeForwardSpanSeconds >= MAX_ESCAPE_FORWARD_SPAN_SECONDS
   ) {
     return {
-      state: withStage({ ...state, r2AttemptCount: state.r2AttemptCount + 1 }, 'R2', null),
+      state: withStage(
+        { ...state, r2AttemptCount: state.r2AttemptCount + 1 },
+        'R2',
+        null
+      ),
       effects: [
         {
           type: 'emitDebugEvent',

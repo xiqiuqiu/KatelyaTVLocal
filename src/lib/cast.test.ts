@@ -80,6 +80,34 @@ describe('cast playback provider selection', () => {
     expect(result.status).toBe('connected');
   });
 
+  it('keeps remote playback disabled for the Apple MMS runtime', async () => {
+    const showPicker = jest.fn();
+    const prompt = jest.fn();
+    const video = document.createElement('video') as HTMLVideoElement & {
+      webkitShowPlaybackTargetPicker: () => void;
+      remote: { prompt: () => Promise<void> };
+    };
+    video.webkitShowPlaybackTargetPicker = showPicker;
+    Object.defineProperty(video, 'remote', {
+      configurable: true,
+      value: { prompt },
+    });
+
+    const result = await requestCastPlayback({
+      video,
+      disableRemotePlayback: true,
+      media: {
+        title: '测试影片',
+        directUrl: 'https://media.example.com/video.m3u8',
+      },
+    });
+
+    expect(video.disableRemotePlayback).toBe(true);
+    expect(showPicker).not.toHaveBeenCalled();
+    expect(prompt).not.toHaveBeenCalled();
+    expect(result.status).toBe('unsupported');
+  });
+
   it('falls back to Remote Playback when Google Cast is unavailable', async () => {
     const prompt = jest.fn().mockResolvedValue(undefined);
     const video = document.createElement('video') as HTMLVideoElement & {

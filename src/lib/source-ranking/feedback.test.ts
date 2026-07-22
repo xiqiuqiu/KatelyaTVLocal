@@ -10,6 +10,7 @@ describe('source ranking feedback', () => {
       { DB: { prepare } },
       {
         sourceKey: 'mdzy',
+        platform: 'apple-hlsjs',
         playbackDomain: 'play.modujx13.com',
         title: '庆余年',
         playbackMode: 'proxy',
@@ -30,6 +31,7 @@ describe('source ranking feedback', () => {
     expect(bind).toHaveBeenCalledWith(
       expect.any(String),
       'mdzy',
+      'apple-hlsjs',
       'play.modujx13.com',
       '庆余年',
       'proxy',

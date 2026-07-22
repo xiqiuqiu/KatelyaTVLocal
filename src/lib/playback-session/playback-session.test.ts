@@ -444,57 +444,6 @@ describe('Playback Session automatic recovery', () => {
     expect(back.badPoints).toEqual(withPoint.badPoints);
   });
 
-  it('routes native jitter evidence into the same R tree (strengthens R2, no parallel switch)', () => {
-    const r0 = reducePlaybackSession(loadPlayableAlts(), {
-      type: 'recovery.runtimeEvidence',
-      nowMs: 10_000,
-      snapshot: { currentTime: 200 },
-      evidence: {
-        platform: 'apple-native',
-        stallCandidate: true,
-        native: {
-          severity: 'soft-stall',
-          isJitter: true,
-          jitterWindowCount: 3,
-        },
-      },
-    });
-
-    // Jitter ≥ PREFER_R2_MIN_JITTER_WINDOWS strengthens R2 — never a parallel commander.
-    expect(r0.effects.some((effect) => effect.type === 'switchSource')).toBe(
-      false
-    );
-    expect(
-      r0.state.recoveryStage === 'R2' || r0.state.recoveryStage === 'R0'
-    ).toBe(true);
-
-    const afterObserve =
-      r0.state.recoveryStage === 'R0'
-        ? reducePlaybackSession(r0.state, {
-            type: 'recovery.runtimeEvidence',
-            nowMs: 12_600,
-            snapshot: { currentTime: 200 },
-            evidence: {
-              platform: 'apple-native',
-              stallCandidate: true,
-              native: {
-                severity: 'soft-stall',
-                isJitter: true,
-                jitterWindowCount: 3,
-              },
-            },
-          })
-        : r0;
-
-    expect(afterObserve.state.recoveryStage).toBe('R2');
-    expect(
-      afterObserve.effects.some((effect) => effect.type === 'sameSourceRecover')
-    ).toBe(true);
-    expect(
-      afterObserve.effects.some((effect) => effect.type === 'switchSource')
-    ).toBe(false);
-  });
-
   it('switches via R3 hard-failure path using Availability + Session attempted', () => {
     const state = loadPlayableAlts();
 
@@ -825,7 +774,7 @@ describe('Playback Session Ad Skip Window effects', () => {
     const result = reducePlaybackSession(loaded, {
       type: 'video.timeupdate',
       nowMs: 10_000,
-      platform: 'apple-native',
+      platform: 'apple-hlsjs',
       snapshot: { currentTime: 12 },
     });
 
@@ -835,7 +784,7 @@ describe('Playback Session Ad Skip Window effects', () => {
         targetTime: 20.35,
         windowKey: 'rule-1:10.000-20.000',
         reason: 'hls-ad-window',
-        platform: 'apple-native',
+        platform: 'apple-hlsjs',
       },
       {
         type: 'showAdSkipUndo',
@@ -1455,17 +1404,17 @@ describe('Playback Session Ad Skip Window effects', () => {
     const withPersisted = reducePlaybackSession(
       createInitialPlaybackSessionState(),
       {
-      type: 'adSkipWindows.loaded',
-      windows: [
-        {
-          startTimeSeconds: 10,
-          endTimeSeconds: 20,
-          ruleId: 'user-mark',
-          confidence: 'high',
-          action: 'filter',
-          origin: 'persisted',
-        },
-      ],
+        type: 'adSkipWindows.loaded',
+        windows: [
+          {
+            startTimeSeconds: 10,
+            endTimeSeconds: 20,
+            ruleId: 'user-mark',
+            confidence: 'high',
+            action: 'filter',
+            origin: 'persisted',
+          },
+        ],
       }
     ).state;
 
@@ -1620,8 +1569,8 @@ describe('Playback Session progress-save effects', () => {
 });
 
 // 预重构验收：全平台统一到 seek 式 Ad Skip Window。分析器高置信候选与
-// 已知规则命中作为冷启动种子被载入为 Ad Skip Window，桌面/安卓（hls.js）
-// 与 iOS 原生 HLS 均经由 reducer 的 adSkipWindows.loaded + skipAdWindow 以
+// 已知规则命中作为冷启动种子被载入为 Ad Skip Window，桌面、安卓与
+// Apple MMS hls.js 均经由 reducer 的 adSkipWindows.loaded + skipAdWindow 以
 // seek 跳过，而非物理删除广告分片。
 describe('Unified cold-start seed → seek Ad Skip Window (pre-refactor #35)', () => {
   const contentSegments = [
@@ -1696,7 +1645,7 @@ describe('Unified cold-start seed → seek Ad Skip Window (pre-refactor #35)', (
     return { windows, state: loaded.state };
   }
 
-  it.each(['hlsjs', 'apple-native'] as const)(
+  it.each(['hlsjs', 'apple-hlsjs'] as const)(
     'loads analyzer high-confidence candidates as seed windows and seeks past them on %s',
     (platform) => {
       const { windows, state } = loadSeedWindowsFrom(
@@ -1748,7 +1697,7 @@ describe('Unified cold-start seed → seek Ad Skip Window (pre-refactor #35)', (
       }),
     ]);
 
-    for (const platform of ['hlsjs', 'apple-native'] as const) {
+    for (const platform of ['hlsjs', 'apple-hlsjs'] as const) {
       const result = reducePlaybackSession(state, {
         type: 'video.timeupdate',
         nowMs: 10_000,

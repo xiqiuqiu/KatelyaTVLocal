@@ -1,23 +1,10 @@
 import type { PlaybackSessionEffect } from '@/lib/playback-session';
-import { resolveNativeJitterRouting } from '@/lib/playback-session';
 import {
   applySameSourceRecoverAction,
   executePlaybackSessionEffects,
 } from '@/lib/playback-session/adapter-effects';
 
 describe('Playback Session recovery adapter mapping', () => {
-  const originalFlag =
-    process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY;
-
-  afterEach(() => {
-    if (originalFlag === undefined) {
-      delete process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY;
-    } else {
-      process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY =
-        originalFlag;
-    }
-  });
-
   it('maps sameSourceRecover actions without inventing escalation', () => {
     const calls: string[] = [];
     applySameSourceRecoverAction('escape-bad-point', 120, {
@@ -62,8 +49,7 @@ describe('Playback Session recovery adapter mapping', () => {
       onSameSourceRecover: (effect) => seen.push(effect.action),
       onApplyRecoveryResume: (effect) =>
         seen.push(`resume:${effect.resumeTime}`),
-      onShowAdSkipUndo: (effect) =>
-        seen.push(`undo-toast:${effect.windowKey}`),
+      onShowAdSkipUndo: (effect) => seen.push(`undo-toast:${effect.windowKey}`),
       onRestoreAdSkipWindow: (effect) =>
         seen.push(`restore:${effect.targetTime}`),
     });
@@ -74,13 +60,5 @@ describe('Playback Session recovery adapter mapping', () => {
       'undo-toast:rule-1:10.000-20.000',
       'restore:10',
     ]);
-  });
-
-  it('maps Native jitter routing from the paired recovery authority flag', () => {
-    process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY = 'true';
-    expect(resolveNativeJitterRouting()).toBe('session-tree');
-
-    process.env.NEXT_PUBLIC_PLAYBACK_RECOVERY_SESSION_AUTHORITY = 'false';
-    expect(resolveNativeJitterRouting()).toBe('legacy-parallel');
   });
 });

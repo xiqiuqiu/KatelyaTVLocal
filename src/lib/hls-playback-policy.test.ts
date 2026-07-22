@@ -1,5 +1,5 @@
 import {
-  detectAppleNativeHlsEnvironment,
+  detectAppleDevice,
   detectPlaybackProbePlatform,
   resolveHlsPlaybackPolicy,
 } from './hls-playback-policy';
@@ -11,32 +11,17 @@ describe('resolveHlsPlaybackPolicy', () => {
   const adFilteringProxyUrl =
     '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8&segmentMode=direct';
 
-  it('uses stable direct playback with native skip on iPad Chrome because proxy playlists can stall Apple HLS', () => {
+  it('uses hls.js through MMS with remote playback disabled on capable Apple devices', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
       adFilteringProxyUrl,
       rememberedPlaybackMode: 'direct',
-      isAppleNativeHlsEnvironment: true,
-    });
-
-    expect(result.mode).toBe('direct');
-    expect(result.url).toBe(directUrl);
-    expect(result.runtime).toBe('native-hls');
-    expect(result.playlistFilter).toBe('skip');
-    expect(result.segmentMode).toBe('direct');
-    expect(result.recoveryProfile).toBe('native-video');
-    expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('apple-native-hls-ios-skip');
-  });
-
-  it('keeps direct-first playback and unifies Android/desktop hls.js on the seek-based ad skip path', () => {
-    const result = resolveHlsPlaybackPolicy({
-      directUrl,
-      proxyUrl,
-      adFilteringProxyUrl,
-      rememberedPlaybackMode: 'direct',
-      isAppleNativeHlsEnvironment: false,
+      appleCapabilities: {
+        isAppleDevice: true,
+        hasManagedMediaSource: true,
+        hlsJsSupported: true,
+      },
     });
 
     expect(result.mode).toBe('direct');
@@ -45,6 +30,33 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.playlistFilter).toBe('skip');
     expect(result.segmentMode).toBe('direct');
     expect(result.recoveryProfile).toBe('hlsjs');
+    expect(result.deviceUnsupported).toBe(false);
+    expect(result.disableRemotePlayback).toBe(true);
+    expect(result.forcedProxyForAdFiltering).toBe(false);
+    expect(result.reason).toBe('direct-preferred');
+  });
+
+  it('keeps direct-first playback and unifies Android/desktop hls.js on the seek-based ad skip path', () => {
+    const result = resolveHlsPlaybackPolicy({
+      directUrl,
+      proxyUrl,
+      adFilteringProxyUrl,
+      rememberedPlaybackMode: 'direct',
+      appleCapabilities: {
+        isAppleDevice: false,
+        hasManagedMediaSource: false,
+        hlsJsSupported: true,
+      },
+    });
+
+    expect(result.mode).toBe('direct');
+    expect(result.url).toBe(directUrl);
+    expect(result.runtime).toBe('hlsjs');
+    expect(result.playlistFilter).toBe('skip');
+    expect(result.segmentMode).toBe('direct');
+    expect(result.recoveryProfile).toBe('hlsjs');
+    expect(result.deviceUnsupported).toBe(false);
+    expect(result.disableRemotePlayback).toBe(false);
     expect(result.forcedProxyForAdFiltering).toBe(false);
     expect(result.reason).toBe('direct-preferred');
   });
@@ -55,7 +67,11 @@ describe('resolveHlsPlaybackPolicy', () => {
       proxyUrl,
       adFilteringProxyUrl,
       rememberedPlaybackMode: 'proxy',
-      isAppleNativeHlsEnvironment: false,
+      appleCapabilities: {
+        isAppleDevice: false,
+        hasManagedMediaSource: false,
+        hlsJsSupported: true,
+      },
     });
 
     expect(result.mode).toBe('direct');
@@ -68,23 +84,27 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.reason).toBe('direct-preferred');
   });
 
-  it('ignores remembered proxy playback on iOS and keeps native direct playback', () => {
+  it('ignores remembered proxy playback on supported Apple devices and keeps hls.js direct playback', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
       proxyUrl,
       adFilteringProxyUrl,
       rememberedPlaybackMode: 'proxy',
-      isAppleNativeHlsEnvironment: true,
+      appleCapabilities: {
+        isAppleDevice: true,
+        hasManagedMediaSource: true,
+        hlsJsSupported: true,
+      },
     });
 
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
-    expect(result.runtime).toBe('native-hls');
+    expect(result.runtime).toBe('hlsjs');
     expect(result.playlistFilter).toBe('skip');
     expect(result.segmentMode).toBe('direct');
-    expect(result.recoveryProfile).toBe('native-video');
+    expect(result.recoveryProfile).toBe('hlsjs');
     expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('apple-native-hls-ios-skip');
+    expect(result.reason).toBe('direct-preferred');
   });
 
   it('falls back to direct playback when proxy filtering is unavailable', () => {
@@ -92,21 +112,52 @@ describe('resolveHlsPlaybackPolicy', () => {
       directUrl,
       proxyUrl: null,
       rememberedPlaybackMode: 'direct',
-      isAppleNativeHlsEnvironment: true,
+      appleCapabilities: {
+        isAppleDevice: true,
+        hasManagedMediaSource: true,
+        hlsJsSupported: true,
+      },
     });
 
     expect(result.mode).toBe('direct');
     expect(result.url).toBe(directUrl);
     expect(result.playlistFilter).toBe('skip');
     expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('apple-native-hls-ios-skip');
+    expect(result.reason).toBe('direct-preferred');
+  });
+
+  it.each([
+    {
+      name: 'ManagedMediaSource is unavailable',
+      hasManagedMediaSource: false,
+      hlsJsSupported: false,
+    },
+    {
+      name: 'hls.js does not support the available media source',
+      hasManagedMediaSource: true,
+      hlsJsSupported: false,
+    },
+  ])('marks Apple device unsupported when $name', (capability) => {
+    const result = resolveHlsPlaybackPolicy({
+      directUrl,
+      appleCapabilities: {
+        isAppleDevice: true,
+        ...capability,
+      },
+    });
+
+    expect(result.runtime).toBe('hlsjs');
+    expect(result.recoveryProfile).toBe('hlsjs');
+    expect(result.deviceUnsupported).toBe(true);
+    expect(result.disableRemotePlayback).toBe(true);
+    expect(result.reason).toBe('device-unsupported');
   });
 });
 
-describe('detectAppleNativeHlsEnvironment', () => {
-  it('treats iPad Chrome as an Apple native HLS environment', () => {
+describe('detectAppleDevice', () => {
+  it('treats iPad Chrome as an Apple device', () => {
     expect(
-      detectAppleNativeHlsEnvironment({
+      detectAppleDevice({
         userAgent:
           'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/125.0.0.0 Mobile/15E148 Safari/604.1',
         platform: 'iPad',
@@ -115,9 +166,9 @@ describe('detectAppleNativeHlsEnvironment', () => {
     ).toBe(true);
   });
 
-  it('does not treat Android Chrome as an Apple native HLS environment', () => {
+  it('does not treat Android Chrome as an Apple device', () => {
     expect(
-      detectAppleNativeHlsEnvironment({
+      detectAppleDevice({
         userAgent:
           'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
         platform: 'Linux armv8l',
@@ -126,9 +177,9 @@ describe('detectAppleNativeHlsEnvironment', () => {
     ).toBe(false);
   });
 
-  it('treats iPhone Safari as an Apple native HLS environment', () => {
+  it('treats iPhone Safari as an Apple device', () => {
     expect(
-      detectAppleNativeHlsEnvironment({
+      detectAppleDevice({
         userAgent:
           'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
         platform: 'iPhone',
@@ -137,9 +188,9 @@ describe('detectAppleNativeHlsEnvironment', () => {
     ).toBe(true);
   });
 
-  it('treats iPod Touch as an Apple native HLS environment', () => {
+  it('treats iPod Touch as an Apple device', () => {
     expect(
-      detectAppleNativeHlsEnvironment({
+      detectAppleDevice({
         userAgent:
           'Mozilla/5.0 (iPod touch; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
         platform: 'iPhone',
@@ -148,9 +199,9 @@ describe('detectAppleNativeHlsEnvironment', () => {
     ).toBe(true);
   });
 
-  it('treats MacIntel with multiple touch points as an Apple native HLS environment (M-series iPad via desktop UA)', () => {
+  it('treats MacIntel with multiple touch points as an Apple device (M-series iPad via desktop UA)', () => {
     expect(
-      detectAppleNativeHlsEnvironment({
+      detectAppleDevice({
         userAgent:
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
         platform: 'MacIntel',
@@ -161,7 +212,7 @@ describe('detectAppleNativeHlsEnvironment', () => {
 
   it('prefers userAgentData platform for iPad desktop UA detection', () => {
     expect(
-      detectAppleNativeHlsEnvironment({
+      detectAppleDevice({
         userAgent:
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
         platform: '',
@@ -171,9 +222,9 @@ describe('detectAppleNativeHlsEnvironment', () => {
     ).toBe(true);
   });
 
-  it('does not treat a standard Mac desktop (no touch) as an Apple native HLS environment', () => {
+  it('does not treat a standard Mac desktop (no touch) as an Apple device', () => {
     expect(
-      detectAppleNativeHlsEnvironment({
+      detectAppleDevice({
         userAgent:
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
         platform: 'MacIntel',
@@ -182,9 +233,9 @@ describe('detectAppleNativeHlsEnvironment', () => {
     ).toBe(false);
   });
 
-  it('does not treat a Mac with exactly 1 touch point as an Apple native HLS environment', () => {
+  it('does not treat a Mac with exactly 1 touch point as an Apple device', () => {
     expect(
-      detectAppleNativeHlsEnvironment({
+      detectAppleDevice({
         userAgent:
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
         platform: 'MacIntel',
@@ -193,28 +244,19 @@ describe('detectAppleNativeHlsEnvironment', () => {
     ).toBe(false);
   });
 
-  it('returns true immediately when hasWebKitPointConversion is set (legacy detection path)', () => {
-    expect(
-      detectAppleNativeHlsEnvironment({
-        hasWebKitPointConversion: true,
-      })
-    ).toBe(true);
-  });
-
   it('does not crash and returns false when all inputs are null or undefined', () => {
     expect(
-      detectAppleNativeHlsEnvironment({
+      detectAppleDevice({
         userAgent: null,
         platform: null,
         maxTouchPoints: null,
-        hasWebKitPointConversion: false,
       })
     ).toBe(false);
   });
 });
 
 describe('detectPlaybackProbePlatform', () => {
-  it('classifies iPad Chrome as apple native probing', () => {
+  it('classifies iPad Chrome as Apple hls.js probing', () => {
     expect(
       detectPlaybackProbePlatform({
         userAgent:
@@ -222,7 +264,7 @@ describe('detectPlaybackProbePlatform', () => {
         platform: 'iPad',
         maxTouchPoints: 5,
       })
-    ).toBe('apple-native');
+    ).toBe('apple-hlsjs');
   });
 
   it('classifies Android Chrome separately from desktop hls.js browsers', () => {
@@ -256,7 +298,11 @@ describe('resolveHlsPlaybackPolicy — legacy proxy preference', () => {
       directUrl,
       proxyUrl: null,
       rememberedPlaybackMode: 'proxy',
-      isAppleNativeHlsEnvironment: false,
+      appleCapabilities: {
+        isAppleDevice: false,
+        hasManagedMediaSource: false,
+        hlsJsSupported: true,
+      },
     });
 
     expect(result.mode).toBe('direct');

@@ -278,6 +278,7 @@ export interface SourcePreferenceResponse {
 
 export interface PlaybackFeedbackInput {
   sourceKey: string;
+  platform?: 'apple-hlsjs' | 'android-hlsjs' | 'desktop-hlsjs';
   playbackDomain?: string | null;
   title?: string;
   playbackMode: SourcePlaybackMode;

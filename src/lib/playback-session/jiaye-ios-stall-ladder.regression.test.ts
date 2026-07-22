@@ -14,7 +14,8 @@ import type {
 import type { SearchResult, SourceStatus } from '@/lib/types';
 
 /**
- * Regression for prod session 209f363a (家业 ep41, iPhone native-hls):
+ * Historical regression for prod session 209f363a (家业 ep41, now covered by
+ * the shared hls.js Session ladder):
  * 1) R0 thrash — ~1.5s healthy gaps end Stall Episodes before R0 observe (2.5s)
  *    can escalate to R1.
  * 2) Ambiguous iOS seeking is ignored on seekStarted, but a bare seekSettled
@@ -121,7 +122,7 @@ describe('家业 iOS stall ladder (prod 209f363a)', () => {
     }).state;
     expect(state.playbackIntent).toBe('playing');
 
-    // Native seeked still fires — must NOT arm seek-settled guards.
+    // A browser seeked event still fires — must NOT arm seek-settled guards.
     state = reducePlaybackSession(state, {
       type: 'user.seekSettled',
       nowMs: now + 50,

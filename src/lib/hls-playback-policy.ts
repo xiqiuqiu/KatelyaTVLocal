@@ -1,6 +1,6 @@
 import type { SourcePlaybackMode } from './types';
 
-export type HlsPlaybackRuntime = 'hlsjs' | 'native-hls';
+export type HlsPlaybackRuntime = 'hlsjs';
 /**
  * 广告处理已统一为单一 seek 式 Ad Skip Window 路径（ADR 0004）：
  * 所有运行时均以 `skip` 表示“喂入时间窗后由 reducer 经 seek 跳过”，
@@ -8,22 +8,25 @@ export type HlsPlaybackRuntime = 'hlsjs' | 'native-hls';
  */
 export type HlsPlaylistFilterMode = 'skip' | 'none';
 export type HlsSegmentMode = 'direct' | 'proxy';
-export type HlsRecoveryProfile = 'hlsjs' | 'native-video';
+export type HlsRecoveryProfile = 'hlsjs';
 export type PlaybackProbePlatform =
-  | 'apple-native'
+  | 'apple-hlsjs'
   | 'android-hlsjs'
   | 'desktop-hlsjs';
 
-export type HlsPlaybackPolicyReason =
-  | 'apple-native-hls-ios-skip'
-  | 'direct-preferred';
+export type HlsPlaybackPolicyReason = 'direct-preferred' | 'device-unsupported';
 
-export interface AppleNativeHlsDetectionInput {
+export interface AppleDeviceDetectionInput {
   userAgent?: string | null;
   platform?: string | null;
   userAgentDataPlatform?: string | null;
   maxTouchPoints?: number | null;
-  hasWebKitPointConversion?: boolean;
+}
+
+export interface ApplePlaybackCapabilities {
+  isAppleDevice: boolean;
+  hasManagedMediaSource: boolean;
+  hlsJsSupported: boolean;
 }
 
 export interface HlsPlaybackPolicyInput {
@@ -31,7 +34,7 @@ export interface HlsPlaybackPolicyInput {
   proxyUrl?: string | null;
   adFilteringProxyUrl?: string | null;
   rememberedPlaybackMode?: SourcePlaybackMode | null;
-  isAppleNativeHlsEnvironment: boolean;
+  appleCapabilities: ApplePlaybackCapabilities;
 }
 
 export interface HlsPlaybackPolicyResult {
@@ -43,19 +46,16 @@ export interface HlsPlaybackPolicyResult {
   recoveryProfile: HlsRecoveryProfile;
   reason: HlsPlaybackPolicyReason;
   forcedProxyForAdFiltering: boolean;
+  deviceUnsupported: boolean;
+  disableRemotePlayback: boolean;
 }
 
-export function detectAppleNativeHlsEnvironment({
+export function detectAppleDevice({
   userAgent,
   platform,
   userAgentDataPlatform,
   maxTouchPoints,
-  hasWebKitPointConversion,
-}: AppleNativeHlsDetectionInput): boolean {
-  if (hasWebKitPointConversion) {
-    return true;
-  }
-
+}: AppleDeviceDetectionInput): boolean {
   const normalizedUserAgent = userAgent || '';
   const normalizedPlatform = userAgentDataPlatform || platform || '';
 
@@ -71,10 +71,10 @@ export function detectAppleNativeHlsEnvironment({
 }
 
 export function detectPlaybackProbePlatform(
-  input: AppleNativeHlsDetectionInput
+  input: AppleDeviceDetectionInput
 ): PlaybackProbePlatform {
-  if (detectAppleNativeHlsEnvironment(input)) {
-    return 'apple-native';
+  if (detectAppleDevice(input)) {
+    return 'apple-hlsjs';
   }
 
   if (/\bAndroid\b/i.test(input.userAgent || '')) {
@@ -86,36 +86,23 @@ export function detectPlaybackProbePlatform(
 
 export function resolveHlsPlaybackPolicy({
   directUrl,
-  isAppleNativeHlsEnvironment,
+  appleCapabilities,
 }: HlsPlaybackPolicyInput): HlsPlaybackPolicyResult {
-  const runtime: HlsPlaybackRuntime = isAppleNativeHlsEnvironment
-    ? 'native-hls'
-    : 'hlsjs';
-  const recoveryProfile: HlsRecoveryProfile = isAppleNativeHlsEnvironment
-    ? 'native-video'
-    : 'hlsjs';
-
-  if (isAppleNativeHlsEnvironment) {
-    return {
-      mode: 'direct',
-      url: directUrl,
-      runtime,
-      playlistFilter: 'skip',
-      segmentMode: 'direct',
-      recoveryProfile,
-      reason: 'apple-native-hls-ios-skip',
-      forcedProxyForAdFiltering: false,
-    };
-  }
+  const deviceUnsupported =
+    appleCapabilities.isAppleDevice &&
+    (!appleCapabilities.hasManagedMediaSource ||
+      !appleCapabilities.hlsJsSupported);
 
   return {
     mode: 'direct',
     url: directUrl,
-    runtime,
+    runtime: 'hlsjs',
     playlistFilter: 'skip',
     segmentMode: 'direct',
-    recoveryProfile,
-    reason: 'direct-preferred',
+    recoveryProfile: 'hlsjs',
+    reason: deviceUnsupported ? 'device-unsupported' : 'direct-preferred',
     forcedProxyForAdFiltering: false,
+    deviceUnsupported,
+    disableRemotePlayback: appleCapabilities.isAppleDevice,
   };
 }

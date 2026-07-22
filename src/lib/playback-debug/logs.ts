@@ -4,7 +4,7 @@ import {
   summarizeUserAgent,
 } from '@/lib/playback-attempt';
 
-export type PlaybackDebugRuntime = 'hlsjs' | 'native-hls' | string;
+export type PlaybackDebugRuntime = 'hlsjs' | string;
 export type PlaybackDebugPlaylistFilter =
   | 'client-filter'
   | 'proxy-filter'
@@ -13,7 +13,7 @@ export type PlaybackDebugPlaylistFilter =
   | 'proxy-observe'
   | string;
 export type PlaybackDebugSegmentMode = 'direct' | 'proxy' | string;
-export type PlaybackDebugRecoveryProfile = 'hlsjs' | 'native-video' | string;
+export type PlaybackDebugRecoveryProfile = 'hlsjs' | string;
 
 export interface PlaybackDebugLogInput {
   sessionId: string;
@@ -116,19 +116,19 @@ function createLogId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  return `playback-debug-${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2)}`;
+  return `playback-debug-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function normalizeInput(input: PlaybackDebugLogInput) {
   const sanitizedUrl = sanitizePlaybackEvidenceUrl(input.playbackUrl);
   const baseDetails =
-    input.details && typeof input.details === 'object' && !Array.isArray(input.details)
+    input.details &&
+    typeof input.details === 'object' &&
+    !Array.isArray(input.details)
       ? sanitizeEvidenceDetails(input.details as Record<string, unknown>)
       : input.details == null
-        ? undefined
-        : { value: input.details };
+      ? undefined
+      : { value: input.details };
 
   const details = {
     ...(baseDetails || {}),

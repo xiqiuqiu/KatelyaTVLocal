@@ -5,7 +5,6 @@
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-import { detectPlaybackProbePlatform } from '@/lib/hls-playback-policy';
 import { buildSourceAvailabilityList } from '@/lib/source-availability/index';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import { buildVideoInfoFromPreferenceResult } from '@/lib/source-preference-video-info';
@@ -144,36 +143,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       sourceStatusMapRef.current.get(sourceKey) ||
       precomputedSourceStatuses?.get(sourceKey),
     [precomputedSourceStatuses]
-  );
-
-  const getPlaybackProbePlatform = useCallback(
-    () =>
-      detectPlaybackProbePlatform({
-        userAgent:
-          typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
-        platform:
-          typeof navigator !== 'undefined' ? navigator.platform : undefined,
-        userAgentDataPlatform:
-          typeof navigator !== 'undefined'
-            ? (
-                navigator as Navigator & {
-                  userAgentData?: { platform?: string };
-                }
-              ).userAgentData?.platform
-            : undefined,
-        maxTouchPoints:
-          typeof navigator !== 'undefined'
-            ? navigator.maxTouchPoints
-            : undefined,
-        hasWebKitPointConversion:
-          typeof window !== 'undefined' &&
-          typeof (
-            window as Window & {
-              webkitConvertPointFromNodeToPage?: unknown;
-            }
-          ).webkitConvertPointFromNodeToPage === 'function',
-      }),
-    []
   );
 
   const hasBackendRescueMetrics = useCallback(
@@ -381,19 +350,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         return unavailableStatus;
       }
 
-      if (getPlaybackProbePlatform() === 'apple-native') {
-        const directStatus = createSourceStatus('direct', {
-          reason: '后端检测通过，可尝试播放',
-          playbackMode: 'direct',
-          domain: serverProbeResult.domain || rememberedStatus?.domain || null,
-        });
-        setSourceStatusMap((prev) =>
-          new Map(prev).set(sourceKey, directStatus)
-        );
-        rememberSourceDomainPreference(directStatus.domain || null, 'direct');
-        return directStatus;
-      }
-
       // 标记为已尝试
       setAttemptedSources((prev) => new Set(prev).add(sourceKey));
       setSourceStatusMap((prev) => {
@@ -474,7 +430,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         return playableStatus;
       }
     },
-    [getBackendRescuedStatus, getPlaybackProbePlatform, value]
+    [getBackendRescuedStatus, value]
   );
 
   const getAutoProbeCandidates = useCallback(() => {

@@ -63,7 +63,7 @@ export interface BadPointScope {
 
 /** Adapter-only media/runtime summaries — never carry private escalation plans. */
 export interface RecoveryRuntimeEvidence {
-  platform: 'apple-native' | 'hlsjs';
+  platform: 'apple-hlsjs' | 'hlsjs';
   stallCandidate?: boolean;
   /** Hard failure may shorten R0/R1; still requires Intent for R3. */
   hardFailure?: boolean;
@@ -73,11 +73,6 @@ export interface RecoveryRuntimeEvidence {
     stallWindowCount?: number;
     fatal?: boolean;
     errorType?: string | null;
-  };
-  native?: {
-    severity: 'observe' | 'soft-stall' | 'hard-stall' | 'source-failed';
-    isJitter: boolean;
-    jitterWindowCount: number;
   };
 }
 
@@ -193,7 +188,7 @@ export type PlaybackSessionEvent =
       type: 'user.markAdSkip';
       window: HlsAdSkipWindow;
       nowMs: number;
-      platform?: 'apple-native' | 'hlsjs';
+      platform?: 'apple-hlsjs' | 'hlsjs';
     }
   | {
       type: 'user.undoAdSkip';
@@ -227,7 +222,7 @@ export type PlaybackSessionEvent =
       type: 'video.timeupdate';
       snapshot: VideoSnapshot;
       nowMs: number;
-      platform?: 'apple-native' | 'hlsjs';
+      platform?: 'apple-hlsjs' | 'hlsjs';
     }
   | { type: 'video.stalled'; snapshot: VideoSnapshot; nowMs: number }
   | {
@@ -269,7 +264,7 @@ export type PlaybackSessionEffect =
       targetTime: number;
       windowKey: string;
       reason: 'hls-ad-window';
-      platform: 'apple-native' | 'hlsjs';
+      platform: 'apple-hlsjs' | 'hlsjs';
     }
   | {
       type: 'showAdSkipUndo';

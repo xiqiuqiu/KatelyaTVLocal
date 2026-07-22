@@ -28,6 +28,34 @@ export interface HlsRecoveryPlan {
   reason: string;
 }
 
+export function getHlsPlaybackNudgeTime(input: {
+  currentTime: number;
+  bufferedRanges: Array<{ start: number; end: number }>;
+}): number | null {
+  for (const { start, end } of input.bufferedRanges) {
+    if (end <= start) {
+      continue;
+    }
+    if (input.currentTime >= start - 0.5 && input.currentTime <= end + 0.5) {
+      const nudgedTime = Math.min(end - 0.1, input.currentTime + 0.35);
+      if (
+        nudgedTime > input.currentTime + 0.01 &&
+        nudgedTime >= start &&
+        nudgedTime <= end
+      ) {
+        return Number(nudgedTime.toFixed(2));
+      }
+    }
+    if (input.currentTime < start && start - input.currentTime < 1.5) {
+      const nudgedTime = Math.min(start + 0.05, end - 0.05);
+      if (nudgedTime >= start && nudgedTime <= end) {
+        return Number(nudgedTime.toFixed(2));
+      }
+    }
+  }
+  return null;
+}
+
 /** Soft-stall count at which recovery should switch source (legacy + Session). */
 export const HLS_SUSTAINED_STALL_SWITCH_THRESHOLD = 5;
 
@@ -122,7 +150,8 @@ export function getHlsRecoveryProgressUpdate({
       lastProgressTime: previousProgressTime,
       lastProgressAt,
       healthyWindowStartedAt: healthyWindowStartedAt || now,
-      healthyWindowStartedTime: healthyWindowStartedTime || previousProgressTime,
+      healthyWindowStartedTime:
+        healthyWindowStartedTime || previousProgressTime,
     };
   }
 

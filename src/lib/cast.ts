@@ -37,6 +37,7 @@ interface CastPlaybackOptions {
   video: HTMLVideoElement | null | undefined;
   media: CastMediaInfo;
   onNotice?: (message: string) => void;
+  disableRemotePlayback?: boolean;
 }
 
 export const castControlIcon =
@@ -299,6 +300,7 @@ export async function requestCastPlayback({
   video,
   media,
   onNotice,
+  disableRemotePlayback = false,
 }: CastPlaybackOptions): Promise<CastPlaybackResult> {
   if (!video) {
     return {
@@ -307,10 +309,17 @@ export async function requestCastPlayback({
     };
   }
 
-  video.disableRemotePlayback = false;
-  video.removeAttribute('disableRemotePlayback');
+  video.disableRemotePlayback = disableRemotePlayback;
+  if (disableRemotePlayback) {
+    video.setAttribute('disableRemotePlayback', '');
+  } else {
+    video.removeAttribute('disableRemotePlayback');
+  }
 
-  if (typeof video.webkitShowPlaybackTargetPicker === 'function') {
+  if (
+    !disableRemotePlayback &&
+    typeof video.webkitShowPlaybackTargetPicker === 'function'
+  ) {
     video.webkitShowPlaybackTargetPicker();
     return {
       provider: 'airplay',
@@ -333,6 +342,10 @@ export async function requestCastPlayback({
     onNotice
   );
   if (googleCastResult.status !== 'unsupported') {
+    return googleCastResult;
+  }
+
+  if (disableRemotePlayback) {
     return googleCastResult;
   }
 

@@ -12,9 +12,7 @@ interface D1DatabaseLike {
 
 type RuntimeSource = Record<string, unknown>;
 
-function getSourceRankingDatabase(
-  env?: RuntimeSource
-): D1DatabaseLike | null {
+function getSourceRankingDatabase(env?: RuntimeSource): D1DatabaseLike | null {
   const source = env || (process.env as unknown as RuntimeSource);
   const dbBinding = source.DB;
 
@@ -50,12 +48,13 @@ export async function savePlaybackFeedback(
   await dbBinding
     .prepare(
       `INSERT INTO playback_feedback_events
-       (id, source_key, playback_domain, title, playback_mode, startup_success, startup_time_ms, switched_to_proxy, browser_quality, browser_ping_ms, browser_speed_label, session_error, recorded_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, source_key, platform, playback_domain, title, playback_mode, startup_success, startup_time_ms, switched_to_proxy, browser_quality, browser_ping_ms, browser_speed_label, session_error, recorded_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       createFeedbackId(),
       input.sourceKey,
+      input.platform || null,
       input.playbackDomain || null,
       input.title || null,
       input.playbackMode,

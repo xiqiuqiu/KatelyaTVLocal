@@ -75,9 +75,13 @@ _Avoid_: parallel per-runtime resume clocks; carrying a raw stuck timestamp insi
 The cross-session authoritative record of where the user left off for one episode of one title. Its identity is `(contentKey, episodeIndex)`; `source` and `id` are resume-route preferences on that record, not the progress identity. Same-episode source changes keep one shared progress identity and adapt time onto the new route; episode changes seal the previous episode's progress as its own record.
 _Avoid_: using `source+id` alone as the logical progress identity; one mutable record that overwrites episode index and drops prior-episode progress; equating Watch Progress with Recovery Resume Time
 
-**Native Recovery Decision Tree**:
-The single decision path that consumes all iOS Native recovery evidence — including watchdog stall severity and jitter — and emits Playback Recovery Stage actions. Jitter may strengthen a move into bad-point escape, but must not bypass Intent gates or run as a parallel seek/switch commander beside the watchdog path.
-_Avoid_: native-jitter-skip-forward side effects that never enter the shared recovery decision
+**Apple MMS Runtime**:
+The single playback runtime on Apple mobile devices (iPhone/iPad): hls.js running via `ManagedMediaSource` on iOS/iPadOS 17.1+ (`'ManagedMediaSource' in window` and `Hls.isSupported()`), converged with Android on one engine and one Playback Recovery Stage. It is the only iPhone/iPad runtime — there is no native HLS fallback and no kill-switch; devices without MMS (iOS ≤ 16, iPhone X/8 and earlier) cannot play and land on a `device-unsupported` error prompting an upgrade. Requires `disableRemotePlayback = true`, so AirPlay is not available. Tagged `apple-hlsjs` in telemetry. See ADR 0006.
+_Avoid_: reintroducing a native-HLS runtime as a co-equal or fallback engine; a separate Apple recovery ladder; treating AirPlay as still supported
+
+**Native Recovery Decision Tree** _(retired — see ADR 0006)_:
+Formerly the single decision path that consumed all iOS Native recovery evidence (watchdog stall severity and jitter) and emitted Playback Recovery Stage actions. Retired when the native HLS runtime was removed and Apple moved to the Apple MMS Runtime; iOS stall/error evidence now flows through the hls.js adapter into the shared Playback Recovery Stage, with no runtime-private ladder.
+_Avoid_: resurrecting native watchdog/jitter/severity logic as a parallel commander beside the hls.js recovery path
 
 **Ad Skip Window**:
 A time range on one playable source's episode timeline that the system may bypass automatically during a Playback Session because it is judged to be advertising rather than content. Its identity is `(source, id, episodeIndex)` plus the time range, anchored on the logical episode timeline so it survives segment URL or host rotation, and it persists and is shared across users within one deployment. Distinct from ordinary seeking (a user navigation) and from Recovery Resume Time (progress recovery).

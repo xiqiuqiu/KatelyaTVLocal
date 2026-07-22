@@ -53,8 +53,9 @@ jest.mock(
 );
 
 describe('admin playback debug route', () => {
-  const mockedIsAdminRequest =
-    isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
+  const mockedIsAdminRequest = isAdminRequest as jest.MockedFunction<
+    typeof isAdminRequest
+  >;
   const mockedGetConfig = getConfig as jest.MockedFunction<typeof getConfig>;
   const mockedListPlaybackDebugLogs =
     listPlaybackDebugLogs as jest.MockedFunction<typeof listPlaybackDebugLogs>;
@@ -75,15 +76,15 @@ describe('admin playback debug route', () => {
       {
         id: 'log-1',
         sessionId: 'session-1',
-        eventType: 'native-stall',
+        eventType: 'hls-stall',
         sourceKey: 'ruyi:38961',
         playbackUrl: 'https://example.com/video.m3u8',
         playbackDomain: 'example.com',
         title: '鬼泣',
-        runtime: 'native-hls',
-        playlistFilter: 'proxy-observe',
+        runtime: 'hlsjs',
+        playlistFilter: 'skip',
         segmentMode: 'direct',
-        recoveryProfile: 'native-video',
+        recoveryProfile: 'hlsjs',
         currentTime: 438.2,
         duration: null,
         readyState: 2,
@@ -130,7 +131,7 @@ describe('admin playback debug route', () => {
       logs: [
         expect.objectContaining({
           id: 'log-1',
-          eventType: 'native-stall',
+          eventType: 'hls-stall',
           currentTime: 438.2,
         }),
       ],

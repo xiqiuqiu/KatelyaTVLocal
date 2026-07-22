@@ -578,8 +578,7 @@ export function reducePlaybackSession(
       // A new source (e.g. an auto-recovery switch, which does not dispatch
       // user.switchSource) starts on a fresh timeline: forget the carried
       // escape budget so the new source is not immediately R3-capped.
-      const sourceChanged =
-        event.currentSourceKey !== state.currentSourceKey;
+      const sourceChanged = event.currentSourceKey !== state.currentSourceKey;
       const rebased =
         sourceChanged && !titleChanged && !episodeChanged
           ? resetEscapeBudget(scoped)
@@ -831,14 +830,18 @@ export function reducePlaybackSession(
       const loadedRangeKeys = new Set(
         loadedWindows.map(
           (window) =>
-            `${window.startTimeSeconds.toFixed(3)}-${window.endTimeSeconds.toFixed(3)}`
+            `${window.startTimeSeconds.toFixed(
+              3
+            )}-${window.endTimeSeconds.toFixed(3)}`
         )
       );
       const preservedSessionWindows = state.adSkipWindows.filter(
         (window) =>
           (window.origin === 'user-mark' || window.origin === 'persisted') &&
           !loadedRangeKeys.has(
-            `${window.startTimeSeconds.toFixed(3)}-${window.endTimeSeconds.toFixed(3)}`
+            `${window.startTimeSeconds.toFixed(
+              3
+            )}-${window.endTimeSeconds.toFixed(3)}`
           )
       );
       const mergedWindows = [...loadedWindows, ...preservedSessionWindows];
@@ -1197,7 +1200,6 @@ export function reducePlaybackSession(
         evidence: event.evidence,
         hardFailure: Boolean(
           event.evidence.hardFailure ||
-            event.evidence.native?.severity === 'source-failed' ||
             event.evidence.hls?.fatal ||
             sustainedSoftStall
         ),
