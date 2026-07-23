@@ -2,8 +2,56 @@ import {
   getHlsRecoveryGuardPlaybackUrl,
   getHlsRecoveryPlan,
   getHlsRecoveryProgressUpdate,
+  isCollapsedMediaTimeline,
+  resolveHlsRestartLoadPosition,
+  resolveRememberedPlayhead,
   shouldTriggerHlsWaitingRecovery,
 } from '@/lib/hls-recovery';
+
+describe('media timeline collapse (鬼谜东宫 iPad)', () => {
+  it('detects readyState 0 + null duration as a collapsed timeline', () => {
+    expect(
+      isCollapsedMediaTimeline({ readyState: 0, duration: null })
+    ).toBe(true);
+  });
+
+  it('keeps the remembered playhead when live media reports 0', () => {
+    // Export session 0a38d627: heartbeat at 2315.04, then R0 with currentTime 0.
+    expect(
+      resolveRememberedPlayhead({
+        liveCurrentTime: 0,
+        rememberedPlayhead: 2315.04,
+      })
+    ).toBeCloseTo(2315.04, 5);
+  });
+
+  it('does not restart-load from 0 after a healthy mid-episode playhead', () => {
+    const startPosition = resolveHlsRestartLoadPosition({
+      liveCurrentTime: 0,
+      rememberedPlayhead: 2315.04,
+    });
+
+    expect(startPosition).toBeGreaterThan(2300);
+  });
+
+  it('still uses the live playhead when it looks like mid-playback', () => {
+    expect(
+      resolveHlsRestartLoadPosition({
+        liveCurrentTime: 120.5,
+        rememberedPlayhead: 118,
+      })
+    ).toBeCloseTo(119.5, 5);
+  });
+
+  it('does not let a collapsed scrub (live 0) wipe a mid-episode remembered playhead', () => {
+    // User dragged the bar while media was dead; seeking reported 0:00.
+    const kept = resolveRememberedPlayhead({
+      liveCurrentTime: 0,
+      rememberedPlayhead: 2315.04,
+    });
+    expect(kept).toBeCloseTo(2315.04, 5);
+  });
+});
 
 describe('getHlsRecoveryPlan', () => {
   it('nudges playback first when a non-fatal stall happens', () => {

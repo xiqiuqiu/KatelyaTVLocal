@@ -28,6 +28,66 @@ export interface HlsRecoveryPlan {
   reason: string;
 }
 
+function toFinitePlayhead(value: number | null | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * True when the media element has lost a usable timeline (common on Apple MMS
+ * after detach / failed recover): readyState below HAVE_CURRENT_DATA, or an
+ * explicit non-positive/null duration.
+ */
+export function isCollapsedMediaTimeline(input: {
+  readyState?: number | null;
+  duration?: number | null;
+}): boolean {
+  const noReadyData = input.readyState != null && input.readyState < 2;
+  if (noReadyData) {
+    return true;
+  }
+  if (input.duration === null) {
+    return true;
+  }
+  if (typeof input.duration === 'number') {
+    return !Number.isFinite(input.duration) || input.duration <= 0;
+  }
+  return false;
+}
+
+/**
+ * Prefer a remembered mid-episode playhead when live media has collapsed to
+ * currentTime≈0. Used by restart-load, stall-window resets, and playhead refs
+ * so a scrub on a dead element cannot wipe Continuous Viewing state.
+ *
+ * Prod signal (鬼谜东宫 / iPad apple-hlsjs, export 2026-07-23):
+ * progressSave at 2315.04 → recovery.stage.entered with currentTime 0,
+ * duration null, readyState 0; scrubbing then showed 0:00 with no effect.
+ */
+export function resolveRememberedPlayhead(input: {
+  liveCurrentTime: number | null | undefined;
+  rememberedPlayhead?: number | null | undefined;
+}): number {
+  const live = toFinitePlayhead(input.liveCurrentTime);
+  const remembered = toFinitePlayhead(input.rememberedPlayhead);
+  if (live > 1) {
+    return live;
+  }
+  if (remembered > 1) {
+    return remembered;
+  }
+  return live;
+}
+
+/**
+ * Position passed to `hls.startLoad` during same-source restart-load.
+ */
+export function resolveHlsRestartLoadPosition(input: {
+  liveCurrentTime: number | null | undefined;
+  rememberedPlayhead?: number | null | undefined;
+}): number {
+  return Math.max(0, resolveRememberedPlayhead(input) - 1);
+}
+
 export function getHlsPlaybackNudgeTime(input: {
   currentTime: number;
   bufferedRanges: Array<{ start: number; end: number }>;

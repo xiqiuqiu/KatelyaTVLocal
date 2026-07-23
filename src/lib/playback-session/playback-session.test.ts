@@ -303,6 +303,41 @@ describe('Playback Session automatic recovery', () => {
     ).toBe(false);
   });
 
+  it('uses restart-load with remembered playhead when media timeline collapsed', () => {
+    // 鬼谜东宫 iPad: R0 arrived with currentTime 0 / duration null / readyState 0
+    // while the session still knew the mid-episode playhead (~2315).
+    const r0 = reducePlaybackSession(loadPlayableAlts(), {
+      type: 'video.waiting',
+      nowMs: 10_000,
+      snapshot: {
+        currentTime: 2315.04,
+        duration: null,
+        readyState: 0,
+      },
+    }).state;
+
+    const result = reducePlaybackSession(r0, {
+      type: 'video.waiting',
+      nowMs: 12_600,
+      snapshot: {
+        currentTime: 2315.04,
+        duration: null,
+        readyState: 0,
+      },
+    });
+
+    expect(result.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'sameSourceRecover',
+          stage: 'R1',
+          action: 'restart-load',
+          targetTime: 2315.04,
+        }),
+      ])
+    );
+  });
+
   it('escalates to R2 escape when playhead is inside a known fault interval', () => {
     const withBadPoint = {
       ...loadPlayableAlts(),

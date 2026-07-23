@@ -1,3 +1,4 @@
+import { isCollapsedMediaTimeline } from '@/lib/hls-recovery';
 import {
   findNearbyPlaybackBadPoint,
   planStallEscapeResume,
@@ -297,8 +298,20 @@ export interface RecoveryLadderResult {
 
 function pickR1Action(
   evidence: RecoveryRuntimeEvidence | null,
-  attempt: number
+  attempt: number,
+  snapshot?: VideoSnapshot
 ): SameSourceRecoverAction {
+  // Nudge/seek cannot restore a detached timeline (readyState 0 / duration null).
+  // Jump straight to restart-load at the remembered playhead instead.
+  if (
+    snapshot &&
+    isCollapsedMediaTimeline({
+      readyState: snapshot.readyState,
+      duration: snapshot.duration,
+    })
+  ) {
+    return 'restart-load';
+  }
   if (attempt <= 1) {
     return 'nudge-playback';
   }
@@ -647,14 +660,14 @@ function emitR1(
           type: 'sameSourceRecover',
           stage: 'R1',
           action: 'restart-load',
-          targetTime: null,
+          targetTime: snapshot.currentTime,
           reason: `${reason}-in-place`,
         },
       ],
     };
   }
 
-  const action = pickR1Action(evidence, attempt);
+  const action = pickR1Action(evidence, attempt, snapshot);
   const escape = planStallEscapeResume({
     currentPlayTime: snapshot.currentTime,
     badPoints: state.badPoints,
@@ -763,9 +776,15 @@ function emitR1(
         type: 'sameSourceRecover',
         stage: 'R1',
         action,
-        // nudge-playback may still rewind in place (targetTime < currentTime);
-        // resume/restart/recover do not move the playhead forward here.
-        targetTime: action === 'nudge-playback' ? escape.resumeTime : null,
+        // nudge-playback may still rewind in place (targetTime < currentTime).
+        // restart-load carries the remembered playhead so startLoad does not
+        // resume from 0 after a collapsed media element (readyState 0).
+        targetTime:
+          action === 'nudge-playback'
+            ? escape.resumeTime
+            : action === 'restart-load'
+              ? snapshot.currentTime
+              : null,
         reason,
       },
     ],

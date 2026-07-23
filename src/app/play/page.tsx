@@ -46,6 +46,9 @@ import {
   getHlsRecoveryGuardPlaybackUrl,
   getHlsRecoveryPlan,
   getHlsRecoveryProgressUpdate,
+  isCollapsedMediaTimeline,
+  resolveHlsRestartLoadPosition,
+  resolveRememberedPlayhead,
   shouldTriggerHlsWaitingRecovery,
 } from '@/lib/hls-recovery';
 import { stopVideoElementLoading } from '@/lib/media-cleanup';
@@ -684,7 +687,10 @@ function PlayPageClient() {
   const [videoDuration, setVideoDuration] = useState<number>(0);
 
   const publishPlayTimeForUi = (currentTime: number) => {
-    currentPlayTimeRef.current = currentTime;
+    currentPlayTimeRef.current = resolveRememberedPlayhead({
+      liveCurrentTime: currentTime,
+      rememberedPlayhead: currentPlayTimeRef.current,
+    });
   };
 
   const resetPublishedPlayTime = () => {
@@ -935,6 +941,12 @@ function PlayPageClient() {
     return nextBadPoints;
   };
 
+  const getRememberedPlayheadSeconds = () =>
+    Math.max(
+      currentPlayTimeRef.current || 0,
+      hlsRecoveryStateRef.current.lastPlaybackTime || 0
+    );
+
   const getCurrentVideoSnapshot = (): VideoSnapshot => {
     const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
     const liveTime =
@@ -942,24 +954,21 @@ function PlayPageClient() {
         ? video.currentTime
         : artPlayerRef.current?.currentTime || 0;
     // Same-source reload/remount can briefly report 0; keep the last known
-    // mid-playback playhead so R3 auto-switch does not seed from the start.
-    const rememberedPlayhead = Math.max(
-      currentPlayTimeRef.current || 0,
-      hlsRecoveryStateRef.current.lastPlaybackTime || 0
-    );
-    const currentTime =
-      Number.isFinite(liveTime) && liveTime > 1
-        ? liveTime
-        : rememberedPlayhead > 1
-          ? rememberedPlayhead
-          : liveTime || 0;
+    // mid-playback playhead so R3 auto-switch / restart-load do not seed from 0.
+    const currentTime = resolveRememberedPlayhead({
+      liveCurrentTime: liveTime,
+      rememberedPlayhead: getRememberedPlayheadSeconds(),
+    });
     const hlsController =
       (artPlayerRef.current?.video as { hls?: unknown } | undefined)?.hls ||
       artPlayerRef.current?.hls ||
       null;
     return {
       currentTime,
-      duration: typeof video?.duration === 'number' ? video.duration : null,
+      duration:
+        typeof video?.duration === 'number' && Number.isFinite(video.duration)
+          ? video.duration
+          : null,
       readyState:
         typeof video?.readyState === 'number' ? video.readyState : null,
       networkState:
@@ -1078,7 +1087,12 @@ function PlayPageClient() {
       },
       restartLoad: () => {
         hlsRecoveryStateRef.current.networkRecoveryAttempts += 1;
-        hls?.startLoad?.(Math.max(0, (video?.currentTime || 0) - 1));
+        const startPosition = resolveHlsRestartLoadPosition({
+          liveCurrentTime: video?.currentTime,
+          rememberedPlayhead:
+            effect.targetTime ?? getRememberedPlayheadSeconds(),
+        });
+        hls?.startLoad?.(startPosition);
         void video?.play().catch(() => undefined);
       },
       recoverMedia: () => {
@@ -1754,6 +1768,37 @@ function PlayPageClient() {
 
   const markHlsUserSeeking = (currentTime?: number) => {
     const now = Date.now();
+    const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+    const collapsed = isCollapsedMediaTimeline({
+      readyState: video?.readyState ?? null,
+      duration:
+        typeof video?.duration === 'number' && Number.isFinite(video.duration)
+          ? video.duration
+          : video
+            ? null
+            : undefined,
+    });
+    // Dead timeline scrub always paints 0:00 and must not cancel recovery or
+    // wipe the remembered mid-episode playhead (鬼谜东宫 iPad export).
+    if (collapsed && (currentTime == null || currentTime <= 1)) {
+      emitPlaybackDebugLog(
+        'intent.seek.ignored',
+        '已忽略塌缩时间轴上的无效拖动',
+        {
+          currentTime:
+            typeof currentTime === 'number'
+              ? Number(currentTime.toFixed(2))
+              : null,
+          readyState: video?.readyState ?? null,
+          duration:
+            typeof video?.duration === 'number' && Number.isFinite(video.duration)
+              ? video.duration
+              : null,
+          rememberedPlayhead: Number(getRememberedPlayheadSeconds().toFixed(2)),
+        }
+      );
+      return;
+    }
     const classification = resolveSeekIntentClassification(currentTime);
     if (classification !== 'user') {
       emitPlaybackDebugLog(
@@ -1785,18 +1830,43 @@ function PlayPageClient() {
     state.isSeeking = true;
     state.manualInteractionUntil = now + HLS_MANUAL_INTERACTION_GRACE_MS;
     state.seekBufferGraceUntil = now + HLS_SEEK_BUFFER_GRACE_MS;
-    resetHlsStallWindow('user-seeking', currentTime);
+    resetHlsStallWindow(
+      'user-seeking',
+      resolveRememberedPlayhead({
+        liveCurrentTime: currentTime,
+        rememberedPlayhead: getRememberedPlayheadSeconds(),
+      })
+    );
   };
 
   const markHlsUserSeeked = (currentTime?: number) => {
     const now = Date.now();
+    const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+    const collapsed = isCollapsedMediaTimeline({
+      readyState: video?.readyState ?? null,
+      duration:
+        typeof video?.duration === 'number' && Number.isFinite(video.duration)
+          ? video.duration
+          : video
+            ? null
+            : undefined,
+    });
+    if (collapsed && (currentTime == null || currentTime <= 1)) {
+      return;
+    }
     dispatchPlaybackSessionEvent({ type: 'user.seekSettled', nowMs: now });
     const state = hlsRecoveryStateRef.current;
     clearWaitingRecoveryTimer();
     state.isSeeking = false;
     state.manualInteractionUntil = now + HLS_MANUAL_INTERACTION_GRACE_MS;
     state.seekBufferGraceUntil = now + HLS_SEEK_BUFFER_GRACE_MS;
-    resetHlsStallWindow('user-seeked', currentTime);
+    resetHlsStallWindow(
+      'user-seeked',
+      resolveRememberedPlayhead({
+        liveCurrentTime: currentTime,
+        rememberedPlayhead: getRememberedPlayheadSeconds(),
+      })
+    );
   };
 
   const isSessionAutomaticEffectAllowed = (
@@ -1823,10 +1893,14 @@ function PlayPageClient() {
     state.lastRecoveryAction = 'ignore';
     state.lastRecoveryActionAt = 0;
     if (typeof currentTime === 'number') {
-      state.lastPlaybackTime = currentTime;
+      const playhead = resolveRememberedPlayhead({
+        liveCurrentTime: currentTime,
+        rememberedPlayhead: state.lastPlaybackTime,
+      });
+      state.lastPlaybackTime = playhead;
       state.lastProgressAt = Date.now();
       state.healthyWindowStartedAt = state.lastProgressAt;
-      state.healthyWindowStartedTime = currentTime;
+      state.healthyWindowStartedTime = playhead;
       state.lastHealthyProgressAt = state.lastProgressAt;
     }
 
@@ -4550,7 +4624,12 @@ function PlayPageClient() {
                     console.warn(`${reason}，尝试微调播放位置`);
                     const nudged = tryNudgePlayback(video);
                     if (!nudged) {
-                      hls.startLoad(Math.max(0, video.currentTime - 1));
+                      hls.startLoad(
+                        resolveHlsRestartLoadPosition({
+                          liveCurrentTime: video.currentTime,
+                          rememberedPlayhead: getRememberedPlayheadSeconds(),
+                        })
+                      );
                     }
                     void video.play().catch(() => undefined);
                     return true;
@@ -4558,7 +4637,12 @@ function PlayPageClient() {
                   case 'restart-load':
                     console.warn(`${reason}，尝试重新拉取分片`);
                     hlsRecoveryStateRef.current.networkRecoveryAttempts += 1;
-                    hls.startLoad(Math.max(0, video.currentTime - 1));
+                    hls.startLoad(
+                      resolveHlsRestartLoadPosition({
+                        liveCurrentTime: video.currentTime,
+                        rememberedPlayhead: getRememberedPlayheadSeconds(),
+                      })
+                    );
                     void video.play().catch(() => undefined);
                     return true;
                   case 'recover-media':
