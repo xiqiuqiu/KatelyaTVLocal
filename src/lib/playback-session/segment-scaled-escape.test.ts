@@ -2,14 +2,14 @@ import {
   createInitialPlaybackSessionState,
   reducePlaybackSession,
 } from '@/lib/playback-session';
-import {
-  PLAYBACK_EDGE_REWIND_SECONDS,
-  PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS,
-} from '@/lib/playback-stuck-escape';
 import type {
   PlaybackSessionEffect,
   PlaybackSessionState,
 } from '@/lib/playback-session/types';
+import {
+  PLAYBACK_EDGE_REWIND_SECONDS,
+  PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS,
+} from '@/lib/playback-stuck-escape';
 import type { SearchResult, SourceStatus } from '@/lib/types';
 
 function createSource(
@@ -93,7 +93,7 @@ describe('Segment-Scaled Escape and Recovery Disclosure (#48)', () => {
   it('forward escape distance tracks provided playlist segment duration', () => {
     const stuckAt = 120;
     const segmentDuration = 4;
-    let state = withKnownFault(loadPlayableAlts(), stuckAt);
+    const state = withKnownFault(loadPlayableAlts(), stuckAt);
 
     const r0 = reducePlaybackSession(state, {
       type: 'video.waiting',
@@ -131,7 +131,7 @@ describe('Segment-Scaled Escape and Recovery Disclosure (#48)', () => {
 
   it('uses mid-segment fallback when playlist duration is missing', () => {
     const stuckAt = 200;
-    let state = withKnownFault(loadPlayableAlts(), stuckAt);
+    const state = withKnownFault(loadPlayableAlts(), stuckAt);
 
     const r0 = reducePlaybackSession(state, {
       type: 'video.waiting',
