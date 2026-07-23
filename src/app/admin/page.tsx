@@ -2292,9 +2292,26 @@ const stringifyDebugDetails = (details: unknown) => {
   }
 };
 
+const formatPlaybackDebugLogsForExport = (
+  logs: PlaybackDebugLogEntry[],
+  enabled: boolean | undefined
+) => {
+  return JSON.stringify(
+    {
+      exportedAt: new Date().toISOString(),
+      enabled: Boolean(enabled),
+      count: logs.length,
+      logs,
+    },
+    null,
+    2
+  );
+};
+
 const PlaybackDebugLogs = () => {
   const [data, setData] = useState<PlaybackDebugLogResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchLogs = useCallback(async () => {
@@ -2326,6 +2343,23 @@ const PlaybackDebugLogs = () => {
 
   const logs = data?.logs || [];
 
+  const handleCopyLogs = async () => {
+    if (logs.length === 0 || copying) {
+      return;
+    }
+
+    try {
+      setCopying(true);
+      const text = formatPlaybackDebugLogsForExport(logs, data?.enabled);
+      await navigator.clipboard.writeText(text);
+      showSuccess(`已复制 ${logs.length} 条播放调试日志`);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : '复制日志失败');
+    } finally {
+      setCopying(false);
+    }
+  };
+
   return (
     <div className='space-y-4'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
@@ -2346,14 +2380,24 @@ const PlaybackDebugLogs = () => {
             这里只展示最近 100 条管理员播放调试日志。
           </p>
         </div>
-        <button
-          type='button'
-          onClick={() => void fetchLogs()}
-          disabled={loading}
-          className='rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400'
-        >
-          {loading ? '读取中…' : '刷新日志'}
-        </button>
+        <div className='flex flex-wrap items-center gap-2'>
+          <button
+            type='button'
+            onClick={() => void handleCopyLogs()}
+            disabled={loading || copying || logs.length === 0}
+            className='rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
+          >
+            {copying ? '复制中…' : '复制日志'}
+          </button>
+          <button
+            type='button'
+            onClick={() => void fetchLogs()}
+            disabled={loading}
+            className='rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400'
+          >
+            {loading ? '读取中…' : '刷新日志'}
+          </button>
+        </div>
       </div>
 
       {error && (
