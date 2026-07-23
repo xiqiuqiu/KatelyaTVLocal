@@ -47,20 +47,36 @@ _Avoid_: treating source preference probes that never start playback as Source A
 The single authoritative record, for the current Playback Session, of whether the user wants playback to continue, pause, scrub the timeline, or change source or episode. Playback Intent is stamped only by explicit user gestures; ambiguous media pause or stall events are not user intent.
 _Avoid_: playIntent, userPausedAt, pauseReason (as parallel authorities)
 
+**Continuous Viewing**:
+The primary user-facing goal for playback experience work: keep the watch going with as few interruptions as possible. Controllability constrains silent automation but is not the primary axis for mid-stall recovery work.
+_Avoid_: treating chrome polish as Continuous Viewing; trading away undo on expectation-changing recovery
+
 **Playback Recovery Stage**:
 The shared business-level escalation ladder for handling non-user stalls inside a Playback Session: observe (R0), same-source in-place recovery (R1), bad-point escape (R2), then automatic source switch (R3). R1 and R2 are both same-source recovery; R3 is automatic source switch. Every stage above observe may run only when Playback Intent allows automatic behavior. Runtime adapters may differ in how they detect stall candidates, but must not invent a private escalation ladder.
 _Avoid_: separate HLS-only or Native-only recovery authorities; treating seek/buffer pauses as stalls
 
 **Stall Episode**:
-One continuous non-user stall incident inside a Playback Session, starting at the first Intent-eligible stall candidate and ending on healthy progress, user cancellation, episode/title change, session end, or an actual automatic source switch. Brief playing that does not meet the healthy-progress threshold does not start a new Stall Episode.
-_Avoid_: counting seek-guard or user-paused waiting as a Stall Episode
+One continuous non-user stall incident inside a Playback Session, starting at the first Intent-eligible stall candidate and ending on healthy progress, user cancellation, episode/title change, session end, or an actual automatic source switch. Brief playing that does not meet the healthy-progress threshold does not start a new Stall Episode. Explicit user pause, scrub, or manual source switch cancels in-flight automatic recovery for that episode; manual source switch ends the Stall Episode and starts a user-chosen Source Attempt.
+_Avoid_: counting seek-guard or user-paused waiting as a Stall Episode; continuing automatic recovery after Playback Intent shows the user has taken over
+
+**Recovery Disclosure**:
+Whether and how a Playback Recovery Stage action is shown to the user. Self-healing same-source recovery (R0–R1 and a single Segment-Scaled Escape) stays silent by default; expectation-changing actions — automatic source switch (R3) and recovery exhaustion — must be disclosed on the player surface. R3 disclosure shares the recoverable short-bar pattern with Ad Skip undo but is heavier and longer-lived, and the source list must always reflect the current source.
+_Avoid_: toast spam for brief stalls; silent automatic source switch; full-page error routes that leave the play page
+
+**In-Player Failure State**:
+The user-facing hard-stop when recovery is exhausted: a blocking error layer on the video surface while remaining on the play page, offering retry, manual source switch, or leave.
+_Avoid_: navigating away from the play page; soft-freezing on the last frame without a clear failure affordance
 
 **Bad Point**:
 A remembered fault anchor for a playable source timeline inside a Playback Session, identified by `(sourceKey, anchorTimeSeconds)`. Each Bad Point projects to a Known Fault Interval used to plan resume times so recovery does not land back inside the same failure band.
 _Avoid_: treating every transient waiting event as a Bad Point; using rewind into a Known Fault Interval as recovery
 
+**Segment-Scaled Escape**:
+The R2 bad-point escape: advance approximately one nearby media segment on the playable source timeline (from the playlist when known; otherwise a typical mid-segment fallback), not a fixed multi-tens-of-seconds jump. Within one Stall Episode, only one forward Segment-Scaled Escape is attempted before automatic source switch. A small edge rewind may precede it to clear a segment boundary and does not consume that forward quota.
+_Avoid_: fixed +20s skip as the default escape quantum; unlimited forward ratcheting on the same source; treating edge rewind as a second forward escape
+
 **Known Fault Interval**:
-The time range projected from a Bad Point — roughly `[anchor - matchWindow, escapeEnd)` — that automatic recovery must not choose as a resume landing. Overlapping failures on the same source merge into one Bad Point by expanding `escapeEnd` rather than creating near-duplicate anchors.
+The time range projected from a Bad Point — roughly `[anchor - matchWindow, escapeEnd)` — that automatic recovery must not choose as a resume landing. `escapeEnd` follows Segment-Scaled Escape, not a fixed large jump. Overlapping failures on the same source merge into one Bad Point by expanding `escapeEnd` rather than creating near-duplicate anchors.
 _Avoid_: resume loops that repeatedly seek into a previously failed band
 
 **Bad Point Scope**:

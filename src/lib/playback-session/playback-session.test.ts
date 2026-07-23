@@ -461,13 +461,13 @@ describe('Playback Session automatic recovery', () => {
           sourceKey: 'direct-5',
           source: state.sources[4],
           episodeIndex: 2,
-          resumeTime: 433.12,
+          resumeTime: 436.62,
           reason: 'auto-recovery',
         },
       ])
     );
     expect(result.state.recoveryStage).toBe('R3');
-    expect(result.state.recoveryResumeTime).toBe(433.12);
+    expect(result.state.recoveryResumeTime).toBe(436.62);
     expect(result.state.recoveredSourceKeys.has('current-1')).toBe(true);
     expect(result.state.recoveredSourceKeys.has('direct-5')).toBe(true);
   });
@@ -576,7 +576,7 @@ describe('Playback Session automatic recovery', () => {
           sourceKey: 'direct-5',
           source: state.sources[4],
           episodeIndex: 2,
-          resumeTime: 433.12,
+          resumeTime: 436.62,
           reason: 'auto-recovery',
         },
       ])
@@ -628,7 +628,7 @@ describe('Playback Session automatic recovery', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: 'switchSource',
-          resumeTime: 433.12,
+          resumeTime: 436.62,
         }),
       ])
     );
@@ -715,7 +715,7 @@ describe('Playback Session automatic recovery', () => {
           sourceKey: 'direct-5',
           source: state.sources[4],
           episodeIndex: 2,
-          resumeTime: 433.12,
+          resumeTime: 436.62,
           reason: 'source-timeout',
         },
       ])

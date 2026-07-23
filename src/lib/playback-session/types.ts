@@ -50,6 +50,12 @@ export interface VideoSnapshot {
   paused?: boolean | null;
   ended?: boolean | null;
   playbackUrl?: string | null;
+  /**
+   * Nearby playlist media segment duration (`#EXTINF`) for Segment-Scaled
+   * Escape. When missing, recovery uses the mid-segment fallback and marks
+   * telemetry `scale: 'fallback'` (ADR 0007).
+   */
+  nearbySegmentDurationSeconds?: number | null;
 }
 
 export interface PlaybackSessionSourceScore {
@@ -103,6 +109,16 @@ export interface PlaybackSessionState {
     windowKey: string;
     restoreTimeSeconds: number;
     skippedAtMs: number;
+  } | null;
+  /**
+   * Active recoverable automatic source switch (R3) while the disclosure bar
+   * is visible — same recoverable short-bar language as Ad Skip undo, but
+   * heavier / longer-lived (ADR 0007).
+   */
+  recoverableAutoSourceSwitch: {
+    previousSourceKey: string;
+    currentSourceKey: string;
+    switchedAtMs: number;
   } | null;
   /** Recovery Resume Time — sole Session authority for planned playhead. */
   recoveryResumeTime: number | null;
@@ -196,6 +212,15 @@ export type PlaybackSessionEvent =
       nowMs: number;
     }
   | { type: 'adSkipUndo.dismissed'; windowKey: string }
+  | {
+      type: 'user.undoAutoSourceSwitch';
+      previousSourceKey: string;
+      nowMs: number;
+    }
+  | {
+      type: 'autoSourceSwitchUndo.dismissed';
+      previousSourceKey: string;
+    }
   | { type: 'progressSave.requested'; reason: PlayRecordSaveReason }
   | { type: 'sourceChange.started'; attemptId: number; sourceKey: string }
   | {
@@ -277,6 +302,22 @@ export type PlaybackSessionEffect =
       windowKey: string;
       restoreTimeSeconds: number;
       dismissAfterMs: number;
+    }
+  | {
+      type: 'showAutoSourceSwitchUndo';
+      previousSourceKey: string;
+      currentSourceKey: string;
+      dismissAfterMs: number;
+    }
+  | {
+      type: 'restoreAutoSourceSwitch';
+      sourceKey: string;
+      resumeTime: number | null;
+    }
+  | {
+      type: 'showInPlayerFailure';
+      reason: 'recovery-exhausted';
+      actions: Array<'retry' | 'switch-source' | 'leave'>;
     }
   | {
       type: 'restoreAdSkipWindow';

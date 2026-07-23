@@ -38,6 +38,17 @@ describe('Playback Session recovery adapter mapping', () => {
         dismissAfterMs: 5000,
       },
       {
+        type: 'showAutoSourceSwitchUndo',
+        previousSourceKey: 'current-1',
+        currentSourceKey: 'direct-5',
+        dismissAfterMs: 12_000,
+      },
+      {
+        type: 'showInPlayerFailure',
+        reason: 'recovery-exhausted',
+        actions: ['retry', 'switch-source', 'leave'],
+      },
+      {
         type: 'restoreAdSkipWindow',
         targetTime: 10,
         windowKey: 'rule-1:10.000-20.000',
@@ -50,6 +61,9 @@ describe('Playback Session recovery adapter mapping', () => {
       onApplyRecoveryResume: (effect) =>
         seen.push(`resume:${effect.resumeTime}`),
       onShowAdSkipUndo: (effect) => seen.push(`undo-toast:${effect.windowKey}`),
+      onShowAutoSourceSwitchUndo: (effect) =>
+        seen.push(`auto-switch-undo:${effect.previousSourceKey}`),
+      onShowInPlayerFailure: (effect) => seen.push(`failure:${effect.reason}`),
       onRestoreAdSkipWindow: (effect) =>
         seen.push(`restore:${effect.targetTime}`),
     });
@@ -58,6 +72,8 @@ describe('Playback Session recovery adapter mapping', () => {
       'resume:42',
       'nudge-playback',
       'undo-toast:rule-1:10.000-20.000',
+      'auto-switch-undo:current-1',
+      'failure:recovery-exhausted',
       'restore:10',
     ]);
   });

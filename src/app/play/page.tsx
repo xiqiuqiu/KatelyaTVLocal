@@ -39,6 +39,7 @@ import {
   detectPlaybackProbePlatform,
   resolveHlsPlaybackPolicy,
 } from '@/lib/hls-playback-policy';
+import { getNearbyHlsSegmentDurationSeconds } from '@/lib/hls-nearby-segment-duration';
 import {
   type HlsRecoveryAction,
   getHlsPlaybackNudgeTime,
@@ -688,10 +689,23 @@ function PlayPageClient() {
     restoreTimeSeconds: number;
     dismissAfterMs: number;
   } | null>(null);
+  /** R3 Recovery Disclosure bar — longer-lived than Ad Skip undo (#48). */
+  const [autoSourceSwitchUndoToast, setAutoSourceSwitchUndoToast] = useState<{
+    previousSourceKey: string;
+    currentSourceKey: string;
+    dismissAfterMs: number;
+  } | null>(null);
+  /** In-Player Failure State when the recovery ladder is exhausted (#48). */
+  const [inPlayerFailure, setInPlayerFailure] = useState<{
+    reason: 'recovery-exhausted';
+  } | null>(null);
   const [adSkipMarkFeedback, setAdSkipMarkFeedback] = useState<string | null>(
     null
   );
   const adSkipUndoDismissTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const autoSourceSwitchUndoDismissTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
   const adSkipMarkFeedbackTimerRef = useRef<ReturnType<
@@ -705,14 +719,23 @@ function PlayPageClient() {
     url: string;
   } | null>(null);
   const adSkipUndoToastRef = useRef(adSkipUndoToast);
+  const autoSourceSwitchUndoToastRef = useRef(autoSourceSwitchUndoToast);
   const adSkipMarkFeedbackRef = useRef(adSkipMarkFeedback);
   const handleMarkAdSkipRef = useRef<(() => void) | null>(null);
   const handleUndoAdSkipRef = useRef<(() => void) | null>(null);
+  const handleUndoAutoSourceSwitchRef = useRef<(() => void) | null>(null);
 
   const clearAdSkipUndoDismissTimer = () => {
     if (adSkipUndoDismissTimerRef.current) {
       clearTimeout(adSkipUndoDismissTimerRef.current);
       adSkipUndoDismissTimerRef.current = null;
+    }
+  };
+
+  const clearAutoSourceSwitchUndoDismissTimer = () => {
+    if (autoSourceSwitchUndoDismissTimerRef.current) {
+      clearTimeout(autoSourceSwitchUndoDismissTimerRef.current);
+      autoSourceSwitchUndoDismissTimerRef.current = null;
     }
   };
 
@@ -723,6 +746,9 @@ function PlayPageClient() {
       return;
     }
     const undoToastVisible = Boolean(adSkipUndoToastRef.current);
+    const autoSwitchUndoVisible = Boolean(
+      autoSourceSwitchUndoToastRef.current
+    );
     const showMark = shouldShowMarkAdControl({ undoToastVisible });
     const markEl = art.controls?.markAdSkip as HTMLElement | undefined;
     if (markEl) {
@@ -731,6 +757,12 @@ function PlayPageClient() {
     const undoEl = art.layers?.adSkipUndo as HTMLElement | undefined;
     if (undoEl) {
       undoEl.style.display = undoToastVisible ? 'flex' : 'none';
+    }
+    const autoSwitchUndoEl = art.layers?.autoSourceSwitchUndo as
+      | HTMLElement
+      | undefined;
+    if (autoSwitchUndoEl) {
+      autoSwitchUndoEl.style.display = autoSwitchUndoVisible ? 'flex' : 'none';
     }
     const feedbackEl = art.layers?.adSkipMarkFeedback as
       | HTMLElement
@@ -766,6 +798,7 @@ function PlayPageClient() {
   useEffect(() => {
     return () => {
       clearAdSkipUndoDismissTimer();
+      clearAutoSourceSwitchUndoDismissTimer();
       if (adSkipMarkFeedbackTimerRef.current) {
         clearTimeout(adSkipMarkFeedbackTimerRef.current);
         adSkipMarkFeedbackTimerRef.current = null;
@@ -777,6 +810,11 @@ function PlayPageClient() {
     adSkipUndoToastRef.current = adSkipUndoToast;
     syncAdSkipPlayerChrome();
   }, [adSkipUndoToast]);
+
+  useEffect(() => {
+    autoSourceSwitchUndoToastRef.current = autoSourceSwitchUndoToast;
+    syncAdSkipPlayerChrome();
+  }, [autoSourceSwitchUndoToast]);
 
   useEffect(() => {
     adSkipMarkFeedbackRef.current = adSkipMarkFeedback;
@@ -888,11 +926,16 @@ function PlayPageClient() {
 
   const getCurrentVideoSnapshot = (): VideoSnapshot => {
     const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+    const currentTime =
+      typeof video?.currentTime === 'number'
+        ? video.currentTime
+        : artPlayerRef.current?.currentTime || 0;
+    const hlsController =
+      (artPlayerRef.current?.video as { hls?: unknown } | undefined)?.hls ||
+      artPlayerRef.current?.hls ||
+      null;
     return {
-      currentTime:
-        typeof video?.currentTime === 'number'
-          ? video.currentTime
-          : artPlayerRef.current?.currentTime || 0,
+      currentTime,
       duration: typeof video?.duration === 'number' ? video.duration : null,
       readyState:
         typeof video?.readyState === 'number' ? video.readyState : null,
@@ -902,6 +945,12 @@ function PlayPageClient() {
       ended: typeof video?.ended === 'boolean' ? video.ended : null,
       playbackUrl:
         video?.currentSrc || video?.src || videoUrlRef.current || null,
+      nearbySegmentDurationSeconds: getNearbyHlsSegmentDurationSeconds(
+        hlsController as Parameters<
+          typeof getNearbyHlsSegmentDurationSeconds
+        >[0],
+        currentTime
+      ),
     };
   };
 
@@ -1220,12 +1269,67 @@ function PlayPageClient() {
         clearAdSkipUndoDismissTimer();
         setAdSkipUndoToast(null);
       },
+      onShowAutoSourceSwitchUndo: (effect) => {
+        clearAutoSourceSwitchUndoDismissTimer();
+        setInPlayerFailure(null);
+        setAutoSourceSwitchUndoToast({
+          previousSourceKey: effect.previousSourceKey,
+          currentSourceKey: effect.currentSourceKey,
+          dismissAfterMs: effect.dismissAfterMs,
+        });
+        autoSourceSwitchUndoDismissTimerRef.current = setTimeout(() => {
+          setAutoSourceSwitchUndoToast((current) =>
+            current?.previousSourceKey === effect.previousSourceKey
+              ? null
+              : current
+          );
+          autoSourceSwitchUndoDismissTimerRef.current = null;
+          dispatchPlaybackSessionEvent({
+            type: 'autoSourceSwitchUndo.dismissed',
+            previousSourceKey: effect.previousSourceKey,
+          });
+        }, effect.dismissAfterMs);
+      },
+      onRestoreAutoSourceSwitch: (effect) => {
+        clearAutoSourceSwitchUndoDismissTimer();
+        setAutoSourceSwitchUndoToast(null);
+        const previous = availableSourcesRef.current.find(
+          (source) =>
+            `${source.source}-${source.id}` === effect.sourceKey
+        );
+        if (!previous) {
+          return;
+        }
+        if (effect.resumeTime != null) {
+          resumeTimeRef.current = effect.resumeTime;
+        }
+        void handleSourceChange(
+          previous.source,
+          previous.id,
+          previous.title,
+          {
+            autoRecovery: false,
+            resumeTime: effect.resumeTime,
+            reason: '撤销自动切源',
+            autoPlayAfterReady: true,
+          }
+        );
+      },
+      onShowInPlayerFailure: () => {
+        clearAutoSourceSwitchUndoDismissTimer();
+        setAutoSourceSwitchUndoToast(null);
+        setInPlayerFailure({ reason: 'recovery-exhausted' });
+      },
     });
 
     // Windows reload / undo / toast dismiss clear Session recoverable — drop UI.
     if (!result.state.recoverableAdSkip) {
       clearAdSkipUndoDismissTimer();
       setAdSkipUndoToast((current) => (current ? null : current));
+    }
+    if (!result.state.recoverableAutoSourceSwitch) {
+      clearAutoSourceSwitchUndoDismissTimer();
+      setAutoSourceSwitchUndoToast((current) => (current ? null : current));
     }
 
     return result;
@@ -1278,6 +1382,17 @@ function PlayPageClient() {
     }
   };
 
+  const handleUndoAutoSourceSwitch = () => {
+    if (!autoSourceSwitchUndoToast) {
+      return;
+    }
+    dispatchPlaybackSessionEvent({
+      type: 'user.undoAutoSourceSwitch',
+      previousSourceKey: autoSourceSwitchUndoToast.previousSourceKey,
+      nowMs: Date.now(),
+    });
+  };
+
   const handleMarkAdSkip = () => {
     const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
     const playlist = latestMediaPlaylistRef.current;
@@ -1324,6 +1439,7 @@ function PlayPageClient() {
   useEffect(() => {
     handleMarkAdSkipRef.current = handleMarkAdSkip;
     handleUndoAdSkipRef.current = handleUndoAdSkip;
+    handleUndoAutoSourceSwitchRef.current = handleUndoAutoSourceSwitch;
   });
 
   const syncPlaybackSessionSources = () => {
@@ -4486,14 +4602,7 @@ function PlayPageClient() {
                   const sessionResult = dispatchPlaybackSessionEvent({
                     type: 'recovery.runtimeEvidence',
                     nowMs: now,
-                    snapshot: {
-                      currentTime: Number((video.currentTime || 0).toFixed(2)),
-                      readyState: video.readyState,
-                      networkState: video.networkState,
-                      paused: video.paused,
-                      ended: video.ended,
-                      playbackUrl: video.currentSrc || videoUrlRef.current,
-                    },
+                    snapshot: getCurrentVideoSnapshot(),
                     evidence: {
                       platform: getPlaybackRuntimePlatform(),
                       stallCandidate: true,
@@ -4928,6 +5037,28 @@ function PlayPageClient() {
               },
             },
             {
+              name: 'autoSourceSwitchUndo',
+              html: '<button type="button" aria-label="撤销自动切换播放源" style="pointer-events:auto;border-radius:12px;border:1px solid rgba(255,255,255,0.35);background:rgba(0,0,0,0.88);padding:10px 18px;font-size:15px;font-weight:600;color:#fff;backdrop-filter:blur(10px);cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,0.35)">已自动切换线路 · 点此撤销</button>',
+              style: {
+                display: 'none',
+                position: 'absolute',
+                left: '0',
+                right: '0',
+                bottom: '64px',
+                justifyContent: 'center',
+                alignItems: 'center',
+                pointerEvents: 'none',
+                zIndex: '55',
+              },
+              mounted: function (element: HTMLElement) {
+                const button = element.querySelector('button');
+                button?.addEventListener('click', (event) => {
+                  event.stopPropagation();
+                  handleUndoAutoSourceSwitchRef.current?.();
+                });
+              },
+            },
+            {
               name: 'adSkipMarkFeedback',
               html: '<div data-ad-skip-feedback role="status" style="border-radius:9999px;border:1px solid rgba(255,255,255,0.25);background:rgba(0,0,0,0.8);padding:8px 16px;font-size:14px;font-weight:500;color:#fff;backdrop-filter:blur(8px)"></div>',
               style: {
@@ -5302,6 +5433,52 @@ function PlayPageClient() {
                     role='status'
                   >
                     {adSkipMarkFeedback}
+                  </div>
+                </div>
+              )}
+
+              {/* In-Player Failure State：恢复阶梯耗尽，仍留在播放页 (#48) */}
+              {inPlayerFailure && (
+                <div className='absolute inset-0 z-40 flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm'>
+                  <div className='w-full max-w-sm rounded-ui-md border border-white/15 bg-black/90 p-5 text-center text-white shadow-ui-strong'>
+                    <p className='text-xs font-semibold uppercase tracking-[0.22em] text-amber-200/90'>
+                      播放中断
+                    </p>
+                    <h3 className='mt-2 text-lg font-semibold'>
+                      当前线路无法继续恢复
+                    </h3>
+                    <p className='mt-2 text-sm leading-6 text-white/70'>
+                      可以重试当前线路、手动切换其他源，或离开播放页。
+                    </p>
+                    <div className='mt-5 grid gap-2'>
+                      <button
+                        type='button'
+                        onClick={() => {
+                          setInPlayerFailure(null);
+                          window.location.reload();
+                        }}
+                        className='inline-flex min-h-11 items-center justify-center rounded-ui-md bg-white px-4 text-sm font-semibold text-black transition hover:bg-white/90'
+                      >
+                        重试
+                      </button>
+                      <button
+                        type='button'
+                        onClick={() => {
+                          setInPlayerFailure(null);
+                          setIsEpisodeSelectorCollapsed(false);
+                        }}
+                        className='inline-flex min-h-11 items-center justify-center rounded-ui-md border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15'
+                      >
+                        手动换源
+                      </button>
+                      <button
+                        type='button'
+                        onClick={() => router.back()}
+                        className='inline-flex min-h-11 items-center justify-center rounded-ui-md px-4 text-sm font-semibold text-white/80 transition hover:text-white'
+                      >
+                        离开
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

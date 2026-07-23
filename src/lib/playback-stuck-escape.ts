@@ -1,22 +1,41 @@
 /**
  * Stall escape: record bad playhead points and skip past them on retry.
  *
- * First hit near a freeze rewinds slightly (avoid the same segment edge).
- * Later hits in the same window skip forward so refresh/source-switch/recovery
- * can actually get past the stuck point instead of looping on T-5.
+ * First hit near a freeze applies a small edge rewind (clear the segment
+ * boundary). Later hits in the same Known Fault Interval use Segment-Scaled
+ * Escape — roughly one nearby media segment — so refresh/source-switch/recovery
+ * can get past the stuck point without burning tens of seconds of plot
+ * (ADR 0007 / #48).
  */
 
-export const PLAYBACK_RESUME_REWIND_SECONDS = 5;
-export const PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS = 20;
+/** Small boundary correction before a forward Segment-Scaled Escape. */
+export const PLAYBACK_EDGE_REWIND_SECONDS = 1.5;
+/**
+ * Typical mid-segment fallback when playlist `#EXTINF` is unavailable.
+ * Distinct from playlist-true escapes in telemetry (`scale: 'fallback'`).
+ */
+export const PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS = 7;
 export const PLAYBACK_BAD_POINT_MATCH_WINDOW_SECONDS = 10;
 
+/** @deprecated Prefer {@link PLAYBACK_EDGE_REWIND_SECONDS}. */
+export const PLAYBACK_RESUME_REWIND_SECONDS = PLAYBACK_EDGE_REWIND_SECONDS;
+/** @deprecated Prefer {@link PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS}. */
+export const PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS =
+  PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS;
+
 export type StallEscapeAction = 'rewind' | 'skip-forward' | 'none';
+export type StallEscapeScale = 'playlist' | 'fallback';
 
 export interface PlaybackBadPoint {
   sourceKey: string | null;
   timeSeconds: number;
   hitCount: number;
   updatedAtMs: number;
+  /**
+   * Exclusive end of the Known Fault Interval projected from this Bad Point.
+   * Expanded when overlapping failures merge on the same source.
+   */
+  escapeEndSeconds?: number;
 }
 
 export interface PlanStallEscapeResumeInput {
@@ -31,6 +50,12 @@ export interface PlanStallEscapeResumeInput {
   mode?: 'same-source' | 'cross-source';
   rewindSeconds?: number;
   skipForwardSeconds?: number;
+  /**
+   * Nearby playlist media segment duration (`#EXTINF`). When finite and
+   * positive, drives Segment-Scaled Escape; otherwise the mid-segment fallback
+   * is used (unless `skipForwardSeconds` is explicitly provided).
+   */
+  nearbySegmentDurationSeconds?: number | null;
   matchWindowSeconds?: number;
   /**
    * When true, an already-planned resume target is kept as-is unless it sits
@@ -39,7 +64,7 @@ export interface PlanStallEscapeResumeInput {
   preferExistingWithoutRewind?: boolean;
   /**
    * When true, never emit skip-forward (used during post-ad-skip grace on iOS
-   * so Bad Point escape cannot stack +20s seeks after the ad jump).
+   * so Bad Point escape cannot stack seeks after the ad jump).
    */
   suppressSkipForward?: boolean;
 }
@@ -49,6 +74,30 @@ export interface StallEscapeResumePlan {
   action: StallEscapeAction;
   /** Caller should persist this time as a bad point when non-null. */
   recordBadPointAt: number | null;
+  /** Telemetry: playlist-true vs mid-segment fallback for forward escapes. */
+  escapeScale: StallEscapeScale | null;
+  /** Seconds used for the forward escape quantum (null for rewind/none). */
+  escapeSpanSeconds: number | null;
+}
+
+export function resolveSegmentScaledEscapeSeconds(
+  nearbySegmentDurationSeconds?: number | null
+): { seconds: number; scale: StallEscapeScale } {
+  if (
+    typeof nearbySegmentDurationSeconds === 'number' &&
+    Number.isFinite(nearbySegmentDurationSeconds) &&
+    nearbySegmentDurationSeconds > 0.25 &&
+    nearbySegmentDurationSeconds <= 30
+  ) {
+    return {
+      seconds: Number(nearbySegmentDurationSeconds.toFixed(2)),
+      scale: 'playlist',
+    };
+  }
+  return {
+    seconds: PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS,
+    scale: 'fallback',
+  };
 }
 
 function roundTime(value: number): number {
@@ -81,13 +130,28 @@ export function findNearbyPlaybackBadPoint(
       continue;
     }
 
+    const intervalEnd = point.escapeEndSeconds ?? point.timeSeconds;
+    const inKnownFaultInterval =
+      input.timeSeconds >= point.timeSeconds - matchWindow &&
+      input.timeSeconds < intervalEnd + 0.01;
     const distance = Math.abs(point.timeSeconds - input.timeSeconds);
-    if (distance > matchWindow || distance >= bestDistance) {
+    if (!inKnownFaultInterval && distance > matchWindow) {
+      continue;
+    }
+    if (distance >= bestDistance && !inKnownFaultInterval) {
+      continue;
+    }
+    // Prefer the closest anchor; when inside an interval, prefer the one that
+    // covers the playhead even if the anchor is slightly farther.
+    const rank = inKnownFaultInterval
+      ? Math.min(distance, Math.abs(intervalEnd - input.timeSeconds))
+      : distance;
+    if (rank >= bestDistance && best != null) {
       continue;
     }
 
     best = point;
-    bestDistance = distance;
+    bestDistance = rank;
   }
 
   return best;
@@ -100,6 +164,8 @@ export function rememberPlaybackBadPoint(
     timeSeconds: number;
     nowMs: number;
     matchWindowSeconds?: number;
+    /** Expand the Known Fault Interval exclusive end when merging. */
+    escapeEndSeconds?: number;
   }
 ): PlaybackBadPoint[] {
   if (!Number.isFinite(input.timeSeconds) || input.timeSeconds <= 1) {
@@ -107,6 +173,11 @@ export function rememberPlaybackBadPoint(
   }
 
   const timeSeconds = roundTime(input.timeSeconds);
+  const escapeEndSeconds =
+    typeof input.escapeEndSeconds === 'number' &&
+    Number.isFinite(input.escapeEndSeconds)
+      ? roundTime(Math.max(input.escapeEndSeconds, timeSeconds))
+      : undefined;
   const existing = findNearbyPlaybackBadPoint(badPoints, {
     timeSeconds,
     sourceKey: input.sourceKey,
@@ -122,27 +193,34 @@ export function rememberPlaybackBadPoint(
         timeSeconds,
         hitCount: 1,
         updatedAtMs: input.nowMs,
+        ...(escapeEndSeconds != null ? { escapeEndSeconds } : {}),
       },
     ];
   }
 
-  return badPoints.map((point) =>
-    point === existing
-      ? {
-          ...point,
-          timeSeconds,
-          hitCount: point.hitCount + 1,
-          updatedAtMs: input.nowMs,
-        }
-      : point
-  );
+  return badPoints.map((point) => {
+    if (point !== existing) {
+      return point;
+    }
+    const mergedEscapeEnd = Math.max(
+      point.escapeEndSeconds ?? point.timeSeconds,
+      escapeEndSeconds ?? timeSeconds,
+      timeSeconds
+    );
+    return {
+      ...point,
+      timeSeconds: Math.min(point.timeSeconds, timeSeconds),
+      hitCount: point.hitCount + 1,
+      updatedAtMs: input.nowMs,
+      escapeEndSeconds: roundTime(mergedEscapeEnd),
+    };
+  });
 }
 
 /**
  * Drop Bad Points that sit inside (or within matchWindow of) an Ad Skip Window.
- * iOS native HLS often records stalls while inside the ad; after the ad seek,
- * those points still match and fire PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS
- * (20s) — twice yields the ~40s Pad jump.
+ * Stalls recorded inside the ad must not fire Segment-Scaled Escape after the
+ * ad seek (previously a fixed +20s stack that yielded ~40s jumps).
  */
 export function purgeBadPointsOverlappingAdSkipWindow(
   badPoints: readonly PlaybackBadPoint[],
@@ -180,12 +258,21 @@ export function planStallEscapeResume(
       resumeTime: null,
       action: 'none',
       recordBadPointAt: null,
+      escapeScale: null,
+      escapeSpanSeconds: null,
     };
   }
 
-  const rewindSeconds = input.rewindSeconds ?? PLAYBACK_RESUME_REWIND_SECONDS;
-  const skipForwardSeconds =
-    input.skipForwardSeconds ?? PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS;
+  const rewindSeconds = input.rewindSeconds ?? PLAYBACK_EDGE_REWIND_SECONDS;
+  const resolvedSkip =
+    typeof input.skipForwardSeconds === 'number' &&
+    Number.isFinite(input.skipForwardSeconds)
+      ? {
+          seconds: input.skipForwardSeconds,
+          scale: 'fallback' as StallEscapeScale,
+        }
+      : resolveSegmentScaledEscapeSeconds(input.nearbySegmentDurationSeconds);
+  const skipForwardSeconds = resolvedSkip.seconds;
   const matchWindowSeconds =
     input.matchWindowSeconds ?? PLAYBACK_BAD_POINT_MATCH_WINDOW_SECONDS;
   const mode = input.mode ?? 'same-source';
@@ -204,13 +291,40 @@ export function planStallEscapeResume(
         resumeTime: roundTime(currentPlayTime),
         action: 'none',
         recordBadPointAt: null,
+        escapeScale: null,
+        escapeSpanSeconds: null,
       };
     }
-    const anchor = Math.max(nearby.timeSeconds, currentPlayTime);
+
+    const projectedEscapeEnd =
+      typeof nearby.escapeEndSeconds === 'number' &&
+      Number.isFinite(nearby.escapeEndSeconds) &&
+      nearby.escapeEndSeconds > nearby.timeSeconds + 0.01
+        ? nearby.escapeEndSeconds
+        : null;
+    // Still inside a prior Known Fault Interval → land on its escapeEnd.
+    // Otherwise advance one Segment-Scaled Escape quantum past the hazard.
+    let resumeTime: number;
+    if (
+      projectedEscapeEnd != null &&
+      currentPlayTime + 0.01 < projectedEscapeEnd
+    ) {
+      resumeTime = roundTime(projectedEscapeEnd);
+    } else {
+      const anchor = Math.max(
+        nearby.timeSeconds,
+        currentPlayTime,
+        projectedEscapeEnd ?? 0
+      );
+      resumeTime = roundTime(anchor + skipForwardSeconds);
+    }
+
     return {
-      resumeTime: roundTime(anchor + skipForwardSeconds),
+      resumeTime,
       action: 'skip-forward',
       recordBadPointAt: roundTime(currentPlayTime),
+      escapeScale: resolvedSkip.scale,
+      escapeSpanSeconds: skipForwardSeconds,
     };
   }
 
@@ -219,6 +333,8 @@ export function planStallEscapeResume(
       resumeTime: roundTime(currentPlayTime),
       action: 'none',
       recordBadPointAt: null,
+      escapeScale: null,
+      escapeSpanSeconds: null,
     };
   }
 
@@ -226,6 +342,8 @@ export function planStallEscapeResume(
     resumeTime: roundTime(Math.max(0, currentPlayTime - rewindSeconds)),
     action: 'rewind',
     recordBadPointAt: roundTime(currentPlayTime),
+    escapeScale: null,
+    escapeSpanSeconds: null,
   };
 }
 

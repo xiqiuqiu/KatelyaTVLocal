@@ -1,6 +1,6 @@
 import {
-  PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS,
-  PLAYBACK_RESUME_REWIND_SECONDS,
+  PLAYBACK_EDGE_REWIND_SECONDS,
+  PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS,
   findNearbyPlaybackBadPoint,
   planStallEscapeResume,
   purgeBadPointsOverlappingAdSkipWindow,
@@ -24,10 +24,12 @@ describe('playback stuck-point escape', () => {
 
     expect(plan).toEqual({
       resumeTime: Number(
-        (STUCK_AT_SECONDS - PLAYBACK_RESUME_REWIND_SECONDS).toFixed(2)
+        (STUCK_AT_SECONDS - PLAYBACK_EDGE_REWIND_SECONDS).toFixed(2)
       ),
       action: 'rewind',
       recordBadPointAt: STUCK_AT_SECONDS,
+      escapeScale: null,
+      escapeSpanSeconds: null,
     });
   });
 
@@ -43,14 +45,37 @@ describe('playback stuck-point escape', () => {
       sourceKey: 'source-a',
       mode: 'same-source',
       badPoints,
+      nearbySegmentDurationSeconds: 4,
+    });
+
+    expect(plan.action).toBe('skip-forward');
+    expect(plan.resumeTime).toBe(Number((STUCK_AT_SECONDS + 4).toFixed(2)));
+    expect(plan.escapeScale).toBe('playlist');
+  });
+
+  it('falls back to mid-segment duration when playlist duration is missing', () => {
+    const badPoints = rememberPlaybackBadPoint([], {
+      sourceKey: 'source-a',
+      timeSeconds: STUCK_AT_SECONDS,
+      nowMs: 1_000,
+    });
+
+    const plan = planStallEscapeResume({
+      currentPlayTime: STUCK_AT_SECONDS,
+      sourceKey: 'source-a',
+      mode: 'same-source',
+      badPoints,
     });
 
     expect(plan.action).toBe('skip-forward');
     expect(plan.resumeTime).toBe(
       Number(
-        (STUCK_AT_SECONDS + PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS).toFixed(2)
+        (STUCK_AT_SECONDS + PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS).toFixed(
+          2
+        )
       )
     );
+    expect(plan.escapeScale).toBe('fallback');
   });
 
   it('cross-source recovery skips a session stuck clock time instead of rewinding into it', () => {
@@ -88,15 +113,16 @@ describe('playback stuck-point escape', () => {
   });
 });
 
-describe('ad-skip then double bad-point skip-forward (iOS Pad ~40s jump)', () => {
-  it('two skip-forwards after an ad-skip landing accumulate ~40s (user symptom)', () => {
-    // Ad ends at 100; seek lands at 100.35. A stall bad-point was recorded
-    // inside the ad (or at landing). Each escape adds +20s.
+describe('ad-skip then bad-point Segment-Scaled Escape (iOS Pad jump)', () => {
+  it('skip-forward inside a Known Fault Interval lands on escapeEnd, then advances one segment', () => {
+    // Ad ends at 100; seek lands at 100.35 inside a prior interval [95, 102).
     const adSkipLanding = 100.35;
+    const priorEscapeEnd = 95 + PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS;
     let badPoints = rememberPlaybackBadPoint([], {
       sourceKey: 'ruyi-1',
       timeSeconds: 95,
       nowMs: 1_000,
+      escapeEndSeconds: priorEscapeEnd,
     });
 
     const first = planStallEscapeResume({
@@ -106,14 +132,14 @@ describe('ad-skip then double bad-point skip-forward (iOS Pad ~40s jump)', () =>
       badPoints,
     });
     expect(first.action).toBe('skip-forward');
-    expect(first.resumeTime).toBe(
-      Number((adSkipLanding + PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS).toFixed(2))
-    );
+    // Still inside the interval → jump to its escapeEnd (not another +segment).
+    expect(first.resumeTime).toBe(priorEscapeEnd);
 
     badPoints = rememberPlaybackBadPoint(badPoints, {
       sourceKey: 'ruyi-1',
       timeSeconds: first.resumeTime!,
       nowMs: 2_000,
+      escapeEndSeconds: first.resumeTime!,
     });
     const second = planStallEscapeResume({
       currentPlayTime: first.resumeTime!,
@@ -122,12 +148,14 @@ describe('ad-skip then double bad-point skip-forward (iOS Pad ~40s jump)', () =>
       badPoints,
     });
     expect(second.action).toBe('skip-forward');
-    expect(
-      Number(((second.resumeTime ?? 0) - adSkipLanding).toFixed(2))
-    ).toBe(PLAYBACK_BAD_POINT_SKIP_FORWARD_SECONDS * 2);
+    expect(second.resumeTime).toBe(
+      Number(
+        (priorEscapeEnd + PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS).toFixed(2)
+      )
+    );
   });
 
-  it('suppressSkipForward blocks +20 escape during post-ad-skip grace', () => {
+  it('suppressSkipForward blocks Segment-Scaled Escape during post-ad-skip grace', () => {
     const badPoints = rememberPlaybackBadPoint([], {
       sourceKey: 'ruyi-1',
       timeSeconds: 95,
@@ -144,7 +172,7 @@ describe('ad-skip then double bad-point skip-forward (iOS Pad ~40s jump)', () =>
     expect(plan.resumeTime).toBe(100.35);
   });
 
-  it('purging ad-window bad points stops the post-skip +20 escape', () => {
+  it('purging ad-window bad points stops the post-skip Segment-Scaled Escape', () => {
     const adStart = 80;
     const adEnd = 100;
     const adSkipLanding = 100.35;
@@ -167,7 +195,7 @@ describe('ad-skip then double bad-point skip-forward (iOS Pad ~40s jump)', () =>
       mode: 'same-source',
       badPoints: purged,
     });
-    // No nearby bad point → rewind, not +20 skip-forward.
+    // No nearby bad point → edge rewind, not skip-forward.
     expect(plan.action).toBe('rewind');
     expect(plan.resumeTime as number).toBeLessThan(adSkipLanding);
   });
@@ -255,12 +283,12 @@ describe('playback stuck-point escape (user symptom feedback loop)', () => {
 
     expect(plan.resumeTime as number).toBeGreaterThan(STUCK_AT_SECONDS);
     expect(plan.resumeTime as number).toBeGreaterThanOrEqual(
-      scrubbedPastStuck - PLAYBACK_RESUME_REWIND_SECONDS - 0.01
+      scrubbedPastStuck - PLAYBACK_EDGE_REWIND_SECONDS - 0.01
     );
   });
 
   it('does not double-rewind an already planned resume target', () => {
-    const alreadyRewound = STUCK_AT_SECONDS - PLAYBACK_RESUME_REWIND_SECONDS;
+    const alreadyRewound = STUCK_AT_SECONDS - PLAYBACK_EDGE_REWIND_SECONDS;
 
     const plan = getSourceSwitchResumePlan({
       currentEpisodeIndex: 2,

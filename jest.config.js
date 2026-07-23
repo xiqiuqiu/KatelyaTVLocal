@@ -16,6 +16,9 @@ const customJestConfig = {
 
   testEnvironment: 'jest-environment-jsdom',
 
+  // Local git worktrees must not be collected as part of the main suite.
+  testPathIgnorePatterns: ['/node_modules/', '/.worktrees/', '/.next/'],
+
   /**
    * Absolute imports and Module Path Aliases
    */

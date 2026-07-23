@@ -18,8 +18,17 @@ import type {
 export const RECOVERY_R0_SOFT_OBSERVE_MS = 2500;
 /** R1 attempts per Stall Episode / episode. */
 export const RECOVERY_R1_MAX_ATTEMPTS = 3;
-/** R2 escape attempts before evaluating R3. */
+/**
+ * Total R2 attempts (edge rewind + forward escapes) before evaluating R3.
+ * Safety valve only — the primary ladder is one forward Segment-Scaled Escape
+ * per Stall Episode ({@link STALL_EPISODE_MAX_FORWARD_ESCAPES}).
+ */
 export const RECOVERY_R2_MAX_ATTEMPTS = 3;
+/**
+ * Forward Segment-Scaled Escapes allowed inside one Stall Episode before
+ * automatic source switch (ADR 0007). Edge rewind does not consume this.
+ */
+export const STALL_EPISODE_MAX_FORWARD_ESCAPES = 1;
 
 /**
  * A Stall Episode ends (and R1/R2 counters reset) only once healthy playback
@@ -244,8 +253,10 @@ export function cancelRecoveryEpisode(
   state: PlaybackSessionState
 ): PlaybackSessionState {
   // Cancel clears R counters / in-flight / stall episode — never erases bad points.
+  // Also drops R3 undo disclosure: Playback Intent has taken over (ADR 0007).
   return {
     ...clearStallEpisode(state),
+    recoverableAutoSourceSwitch: null,
     // Keep recoveryResumeTime if already planned? Spec: cancel aborts in-flight
     // S2/S3; planned resume for a cancelled switch should clear.
     recoveryResumeTime:
@@ -324,14 +335,22 @@ function planR2Escape(
   state: PlaybackSessionState;
   targetTime: number;
   badPoints: PlaybackSessionState['badPoints'];
+  action: 'rewind' | 'skip-forward';
+  escapeScale: 'playlist' | 'fallback' | null;
+  escapeSpanSeconds: number | null;
 } | null {
   const escape = planStallEscapeResume({
     currentPlayTime: snapshot.currentTime,
     badPoints: state.badPoints,
     sourceKey: state.currentSourceKey,
     mode: 'same-source',
+    nearbySegmentDurationSeconds: snapshot.nearbySegmentDurationSeconds,
   });
-  if (escape.resumeTime == null || escape.action === 'none') {
+  if (
+    escape.resumeTime == null ||
+    escape.action === 'none' ||
+    (escape.action !== 'rewind' && escape.action !== 'skip-forward')
+  ) {
     return null;
   }
 
@@ -341,6 +360,8 @@ function planR2Escape(
           sourceKey: state.currentSourceKey,
           timeSeconds: escape.recordBadPointAt,
           nowMs,
+          escapeEndSeconds:
+            escape.action === 'skip-forward' ? escape.resumeTime : undefined,
         })
       : state.badPoints;
 
@@ -360,6 +381,9 @@ function planR2Escape(
     ),
     targetTime: escape.resumeTime,
     badPoints,
+    action: escape.action,
+    escapeScale: escape.escapeScale,
+    escapeSpanSeconds: escape.escapeSpanSeconds,
   };
 }
 
@@ -637,14 +661,15 @@ function emitR1(
     sourceKey: state.currentSourceKey,
     mode: 'same-source',
     preferExistingWithoutRewind: action !== 'nudge-playback',
+    nearbySegmentDurationSeconds: snapshot.nearbySegmentDurationSeconds,
   });
 
   // A forward skip off a Bad Point can also happen at R1 — HLS.js via the
-  // nudge target, iOS native via `resume-playback` (the adapter seeks to this
-  // target). Charge it against the SAME escape budget as R2 so it cannot
-  // ratchet the playhead to the end across recurring Stall Episodes.
+  // nudge target. Charge it against the SAME forward-escape quota as R2 so it
+  // cannot ratchet the playhead across recurring Stall Episodes.
   if (escape.action === 'skip-forward' && escape.resumeTime != null) {
     if (
+      state.escapeCount >= STALL_EPISODE_MAX_FORWARD_ESCAPES ||
       state.escapeCount >= MAX_ESCAPE_COUNT ||
       state.escapeForwardSpanSeconds >= MAX_ESCAPE_FORWARD_SPAN_SECONDS
     ) {
@@ -675,6 +700,7 @@ function emitR1(
             sourceKey: state.currentSourceKey,
             timeSeconds: escape.recordBadPointAt,
             nowMs,
+            escapeEndSeconds: escape.resumeTime,
           })
         : state.badPoints;
     const forwardSpan = Math.max(0, escape.resumeTime - snapshot.currentTime);
@@ -709,6 +735,16 @@ function emitR1(
           targetTime: escape.resumeTime,
           reason,
         },
+        {
+          type: 'emitDebugEvent',
+          eventType: 'recovery.escape.scaled',
+          message: 'Segment-Scaled Escape applied at R1',
+          details: {
+            scale: escape.escapeScale,
+            segmentDurationSeconds: escape.escapeSpanSeconds,
+            stage: 'R1',
+          },
+        },
       ],
     };
   }
@@ -742,10 +778,10 @@ function emitR2(
   nowMs: number,
   reason: string
 ): RecoveryLadderResult {
-  // Escape budget: never ratchet the playhead to the end of the video. Once
-  // we have skipped forward too many times / too far since the last user
-  // action or sustained recovery, stop escaping and let the caller evaluate R3.
+  // Primary ladder (ADR 0007): one forward Segment-Scaled Escape per Stall
+  // Episode, then R3. Safety-valve caps remain as a backstop across episodes.
   if (
+    state.escapeCount >= STALL_EPISODE_MAX_FORWARD_ESCAPES ||
     state.escapeCount >= MAX_ESCAPE_COUNT ||
     state.escapeForwardSpanSeconds >= MAX_ESCAPE_FORWARD_SPAN_SECONDS
   ) {
@@ -794,22 +830,49 @@ function emitR2(
     };
   }
 
+  // Forward quota already used — do not emit another same-source jump.
+  if (
+    planned.action === 'skip-forward' &&
+    state.escapeCount >= STALL_EPISODE_MAX_FORWARD_ESCAPES
+  ) {
+    return {
+      state: withStage(
+        { ...state, r2AttemptCount: state.r2AttemptCount + 1 },
+        'R2',
+        null
+      ),
+      effects: [
+        {
+          type: 'emitDebugEvent',
+          eventType: 'recovery.stage.exhausted-same-source',
+          message: 'Forward Segment-Scaled Escape already used; evaluate R3',
+          details: { reason, escapeCount: state.escapeCount },
+        },
+      ],
+    };
+  }
+
   const attempt = state.r2AttemptCount + 1;
   const rememberedBadPoint =
     planned.badPoints !== state.badPoints && planned.badPoints.length > 0
       ? planned.badPoints[planned.badPoints.length - 1]
       : null;
 
-  // Charge only forward skips against the escape budget, and break the healthy
-  // run so a post-escape blip cannot immediately look like sustained recovery.
-  const forwardSpan = Math.max(0, planned.targetTime - snapshot.currentTime);
+  // Charge only forward Segment-Scaled Escapes against the quota. Edge rewind
+  // clears a segment boundary without consuming the one-forward-escape slot.
+  const isForward = planned.action === 'skip-forward';
+  const forwardSpan = isForward
+    ? Math.max(0, planned.targetTime - snapshot.currentTime)
+    : 0;
 
   return {
     state: withStage(
       {
         ...planned.state,
         r2AttemptCount: attempt,
-        escapeCount: planned.state.escapeCount + 1,
+        escapeCount: isForward
+          ? planned.state.escapeCount + 1
+          : planned.state.escapeCount,
         escapeForwardSpanSeconds:
           planned.state.escapeForwardSpanSeconds + forwardSpan,
         healthyProgressAnchorMs: null,
@@ -826,6 +889,20 @@ function emitR2(
         targetTime: planned.targetTime,
         reason,
       },
+      ...(isForward && planned.escapeScale
+        ? [
+            {
+              type: 'emitDebugEvent' as const,
+              eventType: 'recovery.escape.scaled',
+              message: 'Segment-Scaled Escape applied at R2',
+              details: {
+                scale: planned.escapeScale,
+                segmentDurationSeconds: planned.escapeSpanSeconds,
+                stage: 'R2',
+              },
+            },
+          ]
+        : []),
       ...(rememberedBadPoint
         ? [
             {

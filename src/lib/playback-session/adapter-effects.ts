@@ -51,6 +51,15 @@ export interface PlaybackSessionEffectSink {
   onShowAdSkipUndo?: (
     effect: Extract<PlaybackSessionEffect, { type: 'showAdSkipUndo' }>
   ) => void;
+  onShowAutoSourceSwitchUndo?: (
+    effect: Extract<PlaybackSessionEffect, { type: 'showAutoSourceSwitchUndo' }>
+  ) => void;
+  onRestoreAutoSourceSwitch?: (
+    effect: Extract<PlaybackSessionEffect, { type: 'restoreAutoSourceSwitch' }>
+  ) => void;
+  onShowInPlayerFailure?: (
+    effect: Extract<PlaybackSessionEffect, { type: 'showInPlayerFailure' }>
+  ) => void;
   onRestoreAdSkipWindow?: (
     effect: Extract<PlaybackSessionEffect, { type: 'restoreAdSkipWindow' }>
   ) => void;
@@ -83,6 +92,15 @@ export function executePlaybackSessionEffects(
         break;
       case 'showAdSkipUndo':
         sink.onShowAdSkipUndo?.(effect);
+        break;
+      case 'showAutoSourceSwitchUndo':
+        sink.onShowAutoSourceSwitchUndo?.(effect);
+        break;
+      case 'restoreAutoSourceSwitch':
+        sink.onRestoreAutoSourceSwitch?.(effect);
+        break;
+      case 'showInPlayerFailure':
+        sink.onShowInPlayerFailure?.(effect);
         break;
       case 'restoreAdSkipWindow':
         sink.onRestoreAdSkipWindow?.(effect);

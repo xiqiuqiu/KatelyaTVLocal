@@ -42,6 +42,8 @@ const DEFAULT_SEEK_SETTLED_SHORT_GUARD_MS = 4000;
 const DEFAULT_SEEK_SETTLED_LONG_GUARD_MS = 10_000;
 const DEFAULT_SOURCE_SWITCH_SETTLE_MS = 2000;
 const AD_SKIP_UNDO_DISMISS_MS = 5000;
+/** R3 disclosure bar — heavier / longer-lived than Ad Skip undo (ADR 0007). */
+const AUTO_SOURCE_SWITCH_UNDO_DISMISS_MS = 12_000;
 
 export function createInitialPlaybackSessionState(
   input: Partial<PlaybackSessionState> = {}
@@ -64,6 +66,7 @@ export function createInitialPlaybackSessionState(
     adSkipInFlightWindowKey: null,
     suppressedAdSkipWindowKeys: new Set(),
     recoverableAdSkip: null,
+    recoverableAutoSourceSwitch: null,
     recoveryStage: 'idle',
     stallEpisodeActive: false,
     r0EnteredAtMs: null,
@@ -145,7 +148,10 @@ function createRecoverySwitchEffect(
   snapshot: VideoSnapshot,
   reason: 'auto-recovery' | 'source-timeout',
   nowMs: number
-): { state: PlaybackSessionState; effect: PlaybackSessionEffect } | null {
+): {
+  state: PlaybackSessionState;
+  effect: Extract<PlaybackSessionEffect, { type: 'switchSource' }>;
+} | null {
   const selected = selectRecoveryCandidate({
     sources: state.sources,
     currentSourceKey: state.currentSourceKey,
@@ -172,6 +178,7 @@ function createRecoverySwitchEffect(
     badPoints: state.badPoints,
     sourceKey: state.currentSourceKey,
     mode: 'cross-source',
+    nearbySegmentDurationSeconds: snapshot.nearbySegmentDurationSeconds,
   });
   const resumeTime = escape.resumeTime;
   const badPoints =
@@ -180,6 +187,8 @@ function createRecoverySwitchEffect(
           sourceKey: state.currentSourceKey,
           timeSeconds: escape.recordBadPointAt,
           nowMs,
+          escapeEndSeconds:
+            escape.action === 'skip-forward' ? resumeTime ?? undefined : undefined,
         })
       : state.badPoints;
   const nextRecoveredSourceKeys = new Set(state.recoveredSourceKeys);
@@ -237,8 +246,14 @@ function tryEmitR3(
         recoveryStage: 'exhausted',
         stallEpisodeActive: false,
         recoveryInFlight: null,
+        recoverableAutoSourceSwitch: null,
       },
       effects: [
+        {
+          type: 'showInPlayerFailure',
+          reason: 'recovery-exhausted',
+          actions: ['retry', 'switch-source', 'leave'],
+        },
         {
           type: 'emitDebugEvent',
           eventType: 'recovery-exhausted',
@@ -249,13 +264,34 @@ function tryEmitR3(
     };
   }
 
+  const previousSourceKey = state.currentSourceKey;
   const cancelled = cancelInFlightAdSkip(recovery.state, 'recovery-in-flight');
+  const disclosureEffects: PlaybackSessionEffect[] =
+    previousSourceKey && previousSourceKey !== recovery.effect.sourceKey
+      ? [
+          {
+            type: 'showAutoSourceSwitchUndo',
+            previousSourceKey,
+            currentSourceKey: recovery.effect.sourceKey,
+            dismissAfterMs: AUTO_SOURCE_SWITCH_UNDO_DISMISS_MS,
+          },
+        ]
+      : [];
+
   return {
     state: {
       ...recovery.state,
       adSkipInFlightWindowKey: cancelled.state.adSkipInFlightWindowKey,
+      recoverableAutoSourceSwitch:
+        previousSourceKey && previousSourceKey !== recovery.effect.sourceKey
+          ? {
+              previousSourceKey,
+              currentSourceKey: recovery.effect.sourceKey,
+              switchedAtMs: nowMs,
+            }
+          : null,
     },
-    effects: [...cancelled.effects, recovery.effect],
+    effects: [...cancelled.effects, recovery.effect, ...disclosureEffects],
   };
 }
 
@@ -458,7 +494,11 @@ function withIntentTransition(
   const recoveryCancelled =
     cancelReason === 'user-paused' || cancelReason === 'seeking'
       ? cancelRecoveryEpisode(cancelled.state)
-      : cancelled.state;
+      : {
+          ...cancelled.state,
+          // Manual source/episode switch ends the Stall Episode disclosure too.
+          recoverableAutoSourceSwitch: null,
+        };
 
   // Pause/seek cancel must not erase bad points. Episode/source switch already
   // applied scope rules on nextState — do not overwrite those.
@@ -494,6 +534,7 @@ function pickRecoveryCancelFields(
   | 'recoveryInFlight'
   | 'recoveryResumeTime'
   | 'pendingResumeTime'
+  | 'recoverableAutoSourceSwitch'
 > {
   return {
     recoveryStage: cancelled.recoveryStage,
@@ -506,6 +547,7 @@ function pickRecoveryCancelFields(
       cancelled.recoveryResumeTime ?? nextState.recoveryResumeTime,
     pendingResumeTime:
       cancelled.pendingResumeTime ?? nextState.pendingResumeTime,
+    recoverableAutoSourceSwitch: cancelled.recoverableAutoSourceSwitch,
   };
 }
 
@@ -1013,6 +1055,75 @@ export function reducePlaybackSession(
         state: {
           ...state,
           recoverableAdSkip: null,
+        },
+        effects: [],
+      };
+    }
+
+    case 'user.undoAutoSourceSwitch': {
+      const pending = state.recoverableAutoSourceSwitch;
+      if (
+        !pending ||
+        pending.previousSourceKey !== event.previousSourceKey
+      ) {
+        return { state, effects: [] };
+      }
+
+      const previous = state.sources.find(
+        (source) => getSourceKey(source) === pending.previousSourceKey
+      );
+      if (!previous) {
+        return {
+          state: { ...state, recoverableAutoSourceSwitch: null },
+          effects: [],
+        };
+      }
+
+      // Undo ends the automatic switch disclosure and returns to the prior
+      // source as a user-chosen Source Attempt (ends the Stall Episode).
+      const cleared = clearStallEpisode({
+        ...state,
+        recoverableAutoSourceSwitch: null,
+        currentSourceKey: pending.previousSourceKey,
+        recoveredSourceKeys: new Set(
+          Array.from(state.recoveredSourceKeys).filter(
+            (key) => key !== pending.previousSourceKey
+          )
+        ),
+      });
+
+      return {
+        state: cleared,
+        effects: [
+          {
+            type: 'restoreAutoSourceSwitch',
+            sourceKey: pending.previousSourceKey,
+            resumeTime: state.recoveryResumeTime,
+          },
+          {
+            type: 'emitDebugEvent',
+            eventType: 'recovery.autoSourceSwitch.undone',
+            message: 'Automatic source switch undone',
+            details: {
+              previousSourceKey: pending.previousSourceKey,
+              fromSourceKey: pending.currentSourceKey,
+            },
+          },
+        ],
+      };
+    }
+
+    case 'autoSourceSwitchUndo.dismissed': {
+      if (
+        state.recoverableAutoSourceSwitch?.previousSourceKey !==
+        event.previousSourceKey
+      ) {
+        return { state, effects: [] };
+      }
+      return {
+        state: {
+          ...state,
+          recoverableAutoSourceSwitch: null,
         },
         effects: [],
       };

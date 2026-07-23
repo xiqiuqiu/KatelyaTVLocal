@@ -18,7 +18,7 @@ describe('getSourceSwitchResumePlan', () => {
         existingResumeTime: null,
       })
     ).toEqual({
-      resumeTime: 433.6,
+      resumeTime: 437.1,
       saveAfterCanPlay: true,
       action: 'rewind',
       recordBadPointAt: 438.6,
@@ -64,7 +64,7 @@ describe('getSourceSwitchResumePlan', () => {
         existingResumeTime: 120,
       })
     ).toMatchObject({
-      resumeTime: 433.6,
+      resumeTime: 437.1,
       saveAfterCanPlay: true,
       action: 'rewind',
     });
@@ -182,7 +182,7 @@ describe('getSourceSwitchTargetEpisodeIndex', () => {
 
 describe('getAutoRecoveryResumeTime', () => {
   it('moves automatic recovery before the same bad segment boundary', () => {
-    expect(getAutoRecoveryResumeTime(438.123)).toBe(433.12);
+    expect(getAutoRecoveryResumeTime(438.123)).toBe(436.62);
   });
 
   it('does not queue a recovery resume point before playback has meaningfully started', () => {

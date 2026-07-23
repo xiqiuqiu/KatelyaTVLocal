@@ -65,6 +65,7 @@ interface AutoRecoveryResumeInput {
   sourceKey?: string | null;
   mode?: 'same-source' | 'cross-source';
   skipForwardSeconds?: number;
+  nearbySegmentDurationSeconds?: number | null;
   matchWindowSeconds?: number;
 }
 
@@ -84,6 +85,12 @@ interface SourceChangeTimeoutInput {
 }
 
 export const PLAYBACK_RESUME_REWIND_SECONDS = DEFAULT_RESUME_REWIND_SECONDS;
+/**
+ * How far behind the live playhead a queued Recovery Resume Time may still be
+ * applied. Independent of edge-rewind size (ADR 0007 shrunk rewind to ~1.5s;
+ * this guard must still tolerate a few seconds of switch/canplay skew).
+ */
+export const QUEUED_RESUME_MAX_BEHIND_SECONDS = 5;
 
 function getRecoverySourcePriority(
   statusKind?: RecoverySourceStatusKind | null
@@ -143,6 +150,7 @@ export function getAutoRecoveryResumePlan(
     sourceKey: input.sourceKey,
     mode: input.mode ?? 'cross-source',
     skipForwardSeconds: input.skipForwardSeconds,
+    nearbySegmentDurationSeconds: input.nearbySegmentDurationSeconds,
     matchWindowSeconds: input.matchWindowSeconds,
   });
 }
@@ -185,7 +193,7 @@ export function clampSourceSwitchResumeTime({
 export function shouldApplyQueuedResumeTime({
   queuedResumeTime,
   currentPlayTime,
-  maxBehindSeconds = DEFAULT_RESUME_REWIND_SECONDS,
+  maxBehindSeconds = QUEUED_RESUME_MAX_BEHIND_SECONDS,
 }: {
   queuedResumeTime: number;
   currentPlayTime: number;
