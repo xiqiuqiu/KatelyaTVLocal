@@ -379,6 +379,14 @@ function useLazyRef<T>(initializer: () => T): { current: T } {
 function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const playIdentityKey = [
+    searchParams.get('source') || '',
+    searchParams.get('id') || '',
+    searchParams.get('stitle') || '',
+    searchParams.get('title') || '',
+    searchParams.get('stype') || '',
+    searchParams.get('prefer') || '',
+  ].join('\0');
 
   // -----------------------------------------------------------------------------
   // 状态变量（State）
@@ -393,23 +401,33 @@ function PlayPageClient() {
   const [detail, setDetail] = useState<SearchResult | null>(null);
 
   // 视频基本信息
-  const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
-  const [videoYear, setVideoYear] = useState(searchParams.get('year') || '');
+  const [videoTitle, setVideoTitle] = useState(
+    () => searchParams.get('title') || ''
+  );
+  const [videoYear, setVideoYear] = useState(
+    () => searchParams.get('year') || ''
+  );
   const [videoCover, setVideoCover] = useState('');
   // 当前源和ID
   const [currentSource, setCurrentSource] = useState(
-    searchParams.get('source') || ''
+    () => searchParams.get('source') || ''
   );
-  const [currentId, setCurrentId] = useState(searchParams.get('id') || '');
+  const [currentId, setCurrentId] = useState(
+    () => searchParams.get('id') || ''
+  );
 
   // 搜索所需信息
-  const [searchTitle] = useState(searchParams.get('stitle') || '');
-  const [searchType] = useState(searchParams.get('stype') || '');
+  const [searchTitle, setSearchTitle] = useState(
+    () => searchParams.get('stitle') || ''
+  );
+  const [searchType, setSearchType] = useState(
+    () => searchParams.get('stype') || ''
+  );
   const isFromPlayRecordEntry = searchParams.get('from') === 'playrecord';
 
   // 是否需要优选
   const [needPrefer, setNeedPrefer] = useState(
-    searchParams.get('prefer') === 'true'
+    () => searchParams.get('prefer') === 'true'
   );
   const needPreferRef = useRef(needPrefer);
   useEffect(() => {
@@ -3092,6 +3110,28 @@ function PlayPageClient() {
     let readyTimer: ReturnType<typeof setTimeout> | null = null;
     const controller = new AbortController();
 
+    const urlSource = searchParams.get('source') || '';
+    const urlId = searchParams.get('id') || '';
+    const urlTitle = searchParams.get('title') || '';
+    const urlYear = searchParams.get('year') || '';
+    const urlSearchTitle = searchParams.get('stitle') || '';
+    const urlSearchType = searchParams.get('stype') || '';
+    const urlNeedPrefer = searchParams.get('prefer') === 'true';
+    const urlFromPlayRecord = searchParams.get('from') === 'playrecord';
+
+    setCurrentSource(urlSource);
+    setCurrentId(urlId);
+    setVideoTitle(urlTitle);
+    setVideoYear(urlYear);
+    setSearchTitle(urlSearchTitle);
+    setSearchType(urlSearchType);
+    setNeedPrefer(urlNeedPrefer);
+    currentSourceRef.current = urlSource;
+    currentIdRef.current = urlId;
+    videoTitleRef.current = urlTitle;
+    videoYearRef.current = urlYear;
+    needPreferRef.current = urlNeedPrefer;
+
     const fetchSourceDetail = async (
       source: string,
       id: string
@@ -3139,9 +3179,9 @@ function PlayPageClient() {
             (videoYearRef.current
               ? result.year.toLowerCase() === videoYearRef.current.toLowerCase()
               : true) &&
-            (searchType
-              ? (searchType === 'tv' && result.episodes.length > 1) ||
-                (searchType === 'movie' && result.episodes.length === 1)
+            (urlSearchType
+              ? (urlSearchType === 'tv' && result.episodes.length > 1) ||
+                (urlSearchType === 'movie' && result.episodes.length === 1)
               : true)
         );
         if (!cancelled) {
@@ -3165,7 +3205,7 @@ function PlayPageClient() {
     };
 
     const initAll = async () => {
-      if (!currentSource && !currentId && !videoTitle && !searchTitle) {
+      if (!urlSource && !urlId && !urlTitle && !urlSearchTitle) {
         setPlaybackError('缺少必要参数', 'missing-params');
         setLoading(false);
         return;
@@ -3175,34 +3215,34 @@ function PlayPageClient() {
       setPrecomputedVideoInfo(new Map());
       setPrecomputedSourceStatuses(new Map());
       setSourceSelectionScores(new Map());
-      setLoadingStage(currentSource && currentId ? 'fetching' : 'searching');
+      setLoadingStage(urlSource && urlId ? 'fetching' : 'searching');
       setLoadingMessage(
-        currentSource && currentId ? '正在获取视频详情...' : '正在搜索播放源...'
+        urlSource && urlId ? '正在获取视频详情...' : '正在搜索播放源...'
       );
 
-      const searchResults = await fetchSourcesData(searchTitle || videoTitle);
+      const searchResults = await fetchSourcesData(urlSearchTitle || urlTitle);
       if (cancelled) return;
       let detailResults: SearchResult[] = [];
       let historyRecord: PlaybackHistoryRecord | null = null;
 
       if (
-        currentSource &&
-        currentId &&
+        urlSource &&
+        urlId &&
         !searchResults.some(
-          (source) => source.source === currentSource && source.id === currentId
+          (source) => source.source === urlSource && source.id === urlId
         )
       ) {
-        detailResults = await fetchSourceDetail(currentSource, currentId);
+        detailResults = await fetchSourceDetail(urlSource, urlId);
         if (cancelled) return;
       }
 
-      if (currentSource && currentId) {
+      if (urlSource && urlId) {
         try {
           const allRecords = await getAllPlayRecords();
           if (cancelled) return;
           const contentKey = buildWatchProgressContentKey({
-            title: searchTitle || videoTitle,
-            year: videoYear,
+            title: urlSearchTitle || urlTitle,
+            year: urlYear,
           });
           const latest = planLatestWatchProgressForContent({
             contentKey,
@@ -3210,7 +3250,7 @@ function PlayPageClient() {
               string,
               import('@/lib/types').PlayRecord
             >,
-            legacyRoute: { source: currentSource, id: currentId },
+            legacyRoute: { source: urlSource, id: urlId },
             authorityMode: getWatchProgressAuthorityMode(),
           });
 
@@ -3234,7 +3274,7 @@ function PlayPageClient() {
       let restoredEpisodeIndex: number | null = null;
       let restoredResumeTime: number | null = null;
 
-      if (currentSource && currentId) {
+      if (urlSource && urlId) {
         const urlEpisodeParam = searchParams.get('episode');
         const urlEpisodeIndex =
           urlEpisodeParam == null || urlEpisodeParam === ''
@@ -3242,16 +3282,16 @@ function PlayPageClient() {
             : Math.max(0, Number.parseInt(urlEpisodeParam, 10) - 1);
 
         const recovery = resolvePlaybackHistoryRecovery({
-          currentSource,
-          currentId,
+          currentSource: urlSource,
+          currentId: urlId,
           searchResults,
           detailResults,
-          isFromPlayRecord: isFromPlayRecordEntry,
+          isFromPlayRecord: urlFromPlayRecord,
           historyRecord,
           urlEpisodeIndex,
           contentKey: buildWatchProgressContentKey({
-            title: searchTitle || videoTitle,
-            year: videoYear,
+            title: urlSearchTitle || urlTitle,
+            year: urlYear,
           }),
         });
 
@@ -3259,7 +3299,7 @@ function PlayPageClient() {
           if (cancelled) return;
           setPlaybackError(
             recovery.error || '未找到匹配结果',
-            isFromPlayRecordEntry ? 'history-expired' : 'not-found'
+            urlFromPlayRecord ? 'history-expired' : 'not-found'
           );
           setLoading(false);
           return;
@@ -3276,7 +3316,7 @@ function PlayPageClient() {
         if (cancelled) return;
         setPlaybackError(
           '未找到匹配结果',
-          isFromPlayRecordEntry ? 'history-expired' : 'not-found'
+          urlFromPlayRecord ? 'history-expired' : 'not-found'
         );
         setLoading(false);
         return;
@@ -3284,13 +3324,13 @@ function PlayPageClient() {
 
       // 指定源和id且无需优选
       if (
-        currentSource &&
-        currentId &&
+        urlSource &&
+        urlId &&
         !needPreferRef.current &&
         !fellBackFromHistory
       ) {
         const target = sourcesInfo.find(
-          (source) => source.source === currentSource && source.id === currentId
+          (source) => source.source === urlSource && source.id === urlId
         );
         if (target) {
           detailData = target;
@@ -3304,8 +3344,8 @@ function PlayPageClient() {
 
       // 未指定源和 id 或需要优选，且开启优选开关
       if (
-        (!currentSource ||
-          !currentId ||
+        (!urlSource ||
+          !urlId ||
           needPreferRef.current ||
           fellBackFromHistory) &&
         optimizationEnabled
@@ -3393,7 +3433,7 @@ function PlayPageClient() {
       controller.abort();
       if (readyTimer) clearTimeout(readyTimer);
     };
-  }, []);
+  }, [playIdentityKey]);
 
   // 处理换源
   const handleSourceChange = async (
