@@ -9,6 +9,14 @@ import {
 
 export const runtime = 'edge';
 
+const ALLOWED_IMAGE_CONTENT_TYPES = new Set([
+  'image/avif',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
+
 type CloudflareImageFetchInit = RequestInit & {
   cf?: {
     image?: {
@@ -98,7 +106,16 @@ export async function GET(request: Request) {
       return addCorsHeaders(response);
     }
 
-    const contentType = imageResponse.headers.get('content-type');
+    const contentType =
+      imageResponse.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() ||
+      '';
+    if (!ALLOWED_IMAGE_CONTENT_TYPES.has(contentType)) {
+      const response = NextResponse.json(
+        { error: 'Unsupported image content type' },
+        { status: 415 }
+      );
+      return addCorsHeaders(response);
+    }
 
     if (!imageResponse.body) {
       const response = NextResponse.json(
@@ -109,10 +126,10 @@ export async function GET(request: Request) {
     }
 
     // 创建响应头
-    const headers = new Headers();
-    if (contentType) {
-      headers.set('Content-Type', contentType);
-    }
+    const headers = new Headers({
+      'Content-Type': contentType,
+      'X-Content-Type-Options': 'nosniff',
+    });
 
     // 设置缓存头（可选）
     headers.set('Cache-Control', 'public, max-age=15720000, s-maxage=15720000'); // 缓存半年

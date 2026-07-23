@@ -91,14 +91,14 @@ CRON_API_TOKEN=
 - `SOURCE_RANKING_FALLBACK_TO_LIVE`: D1 没结果时是否回退到实时探测，建议始终保留 `true`
 - `SOURCE_RANKING_CRON_ENABLED`: 控制定时体检是否启用
 - `SOURCE_RANKING_HAS_D1`: 仅用于本地或测试环境，手动把运行时标记为“已具备 D1 绑定”。生产环境不要依赖它，正常应以真实 `DB` 绑定为准
-- `CRON_API_TOKEN`: 可选。给 `/api/cron` 增加一个额外令牌，单独的定时 worker 可以带着它来触发任务
+- `CRON_API_TOKEN`: 启用 cron 时必填。用于保护 `/api/cron`，触发方需携带 `x-cron-token` 或 `Authorization: Bearer <token>`
 
 补充说明：
 
 - `.env` 或 `.env.local` 里不需要也不能直接写出 `DB`
 - `DB` 是 Cloudflare 注入的绑定对象，来源应当是 Pages 绑定或 `wrangler.toml`
 - 当前代码已经优先读取 Cloudflare 请求上下文里的 `DB`，不是只看本地环境变量
-- 如果设置了 `CRON_API_TOKEN`，调用 `/api/cron` 时需要带 `x-cron-token` 或 `Authorization: Bearer <token>`
+- 启用 cron 时必须配置 `CRON_API_TOKEN`，Pages 和 cron worker 两边使用同一个值
 
 ## D1 不可用时的行为
 
@@ -128,6 +128,6 @@ CRON_API_TOKEN=
 - `SOURCE_RANKING_FALLBACK_TO_LIVE=true`
 - Pages 侧已打开 `SOURCE_RANKING_CRON_ENABLED=true`
 - 单独的 cron worker 已部署，并指向 `https://你的域名/api/cron`
-- 如果启用了 `CRON_API_TOKEN`，Pages 和 cron worker 两边已经配置成同一个值
+- 启用 cron 时，Pages 和 cron worker 两边已经配置同一个 `CRON_API_TOKEN`
 - Cron 频率设置为每天 1 到 2 次
 - 首次启用后，即使 D1 为空，也不会阻断原有播放流程

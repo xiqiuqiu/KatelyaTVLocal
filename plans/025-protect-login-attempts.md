@@ -1,6 +1,6 @@
 # 025 — Enforce Turnstile and distributed login throttling
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 6e7374f
 - **Severity**: HIGH
 - **Category**: Security

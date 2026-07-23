@@ -43,8 +43,22 @@ describe('cron auth helpers', () => {
     ).toBe('bearer-token');
   });
 
-  it('allows requests when no cron token is configured', () => {
-    expect(isAuthorizedCronRequest(createRequest({}), {})).toBe(true);
+  it('denies requests when no cron token is configured', () => {
+    expect(isAuthorizedCronRequest(createRequest({}), {})).toBe(false);
+  });
+
+  it('denies requests when configured cron token is blank', () => {
+    expect(
+      isAuthorizedCronRequest(createRequest({}), { CRON_API_TOKEN: '   ' })
+    ).toBe(false);
+  });
+
+  it('denies requests when request token is absent', () => {
+    expect(
+      isAuthorizedCronRequest(createRequest({}), {
+        CRON_API_TOKEN: 'secret-token',
+      })
+    ).toBe(false);
   });
 
   it('rejects requests with a wrong token', () => {

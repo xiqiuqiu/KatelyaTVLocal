@@ -6,7 +6,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { parsePlayRecordKey } from '@/lib/play-record-key';
-import { isAuthorizedCronRequest } from '@/lib/source-ranking/cron-auth';
+import {
+  isAuthorizedCronRequest,
+  readCronApiToken,
+} from '@/lib/source-ranking/cron-auth';
 import {
   runLowFrequencySourceRankingCheck,
   SourceRankingSchedulerEnvLike,
@@ -58,6 +61,12 @@ export async function GET(request: NextRequest) {
     resolveSourceRankingEnv() || (process.env as unknown as RuntimeSource);
 
   if (!isAuthorizedCronRequest(request, rankingEnv)) {
+    if (!readCronApiToken(rankingEnv)) {
+      console.error('Cron API rejected: CRON_API_TOKEN is not configured');
+    } else {
+      console.error('Cron API rejected: unauthorized request');
+    }
+
     return NextResponse.json(
       {
         success: false,

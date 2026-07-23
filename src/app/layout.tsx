@@ -105,6 +105,7 @@ export default async function RootLayout({
     SOURCE_RANKING_ENABLED:
       process.env.NEXT_PUBLIC_SOURCE_RANKING_ENABLED === 'true',
     TURNSTILE_SITE_KEY: turnstileSiteKey,
+    LOGIN_TURNSTILE_REQUIRED: process.env.LOGIN_TURNSTILE_REQUIRED === 'true',
     REGISTER_INVITE_REQUIRED: registerInviteRequired,
     CURRENT_USER: currentUser,
   };
@@ -115,7 +116,9 @@ export default async function RootLayout({
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.RUNTIME_CONFIG = ${serializeForHtmlScript(runtimeConfig)};`,
+            __html: `window.RUNTIME_CONFIG = ${serializeForHtmlScript(
+              runtimeConfig
+            )};`,
           }}
         />
       </head>

@@ -1,6 +1,6 @@
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
-import { verifyTurnstileToken } from '@/lib/turnstile';
+import { recordLoginResult, validateLoginSecurity } from '@/lib/login/security';
 
 class MockHeaders {
   private readonly values = new Map<string, string>();
@@ -87,19 +87,24 @@ jest.mock('@/lib/security/session', () => ({
 
 jest.mock('@/lib/turnstile', () => ({
   getClientIp: jest.fn(() => '203.0.113.10'),
-  verifyTurnstileToken: jest.fn(),
 }));
 
-describe('login route without Turnstile protection', () => {
+jest.mock('@/lib/login/security', () => ({
+  validateLoginSecurity: jest.fn(),
+  recordLoginResult: jest.fn(),
+}));
+
+describe('login route security', () => {
   const mockedGetConfig = getConfig as jest.MockedFunction<typeof getConfig>;
   const mockedDb = db as jest.Mocked<typeof db>;
-  const mockedVerifyTurnstileToken =
-    verifyTurnstileToken as jest.MockedFunction<typeof verifyTurnstileToken>;
+  const mockedValidateLoginSecurity =
+    validateLoginSecurity as jest.MockedFunction<typeof validateLoginSecurity>;
+  const mockedRecordLoginResult = recordLoginResult as jest.MockedFunction<
+    typeof recordLoginResult
+  >;
 
   beforeAll(() => {
     process.env.NEXT_PUBLIC_STORAGE_TYPE = 'd1';
-    process.env.LOGIN_TURNSTILE_REQUIRED = 'true';
-    process.env.TURNSTILE_SECRET_KEY = 'secret';
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     ({ POST } = require('@/app/api/login/route'));
   });
@@ -112,24 +117,30 @@ describe('login route without Turnstile protection', () => {
       },
     } as unknown as Awaited<ReturnType<typeof getConfig>>);
     mockedDb.verifyUser.mockResolvedValue(true);
-    mockedVerifyTurnstileToken.mockResolvedValue({ ok: true, status: 200 });
+    mockedValidateLoginSecurity.mockResolvedValue({
+      ok: true,
+      status: 200,
+      attemptKey: 'attempt-key',
+    });
+    mockedRecordLoginResult.mockResolvedValue();
   });
 
   afterEach(() => {
+    delete process.env.USERNAME;
+    delete process.env.PASSWORD;
     jest.clearAllMocks();
   });
 
   afterAll(() => {
     delete process.env.NEXT_PUBLIC_STORAGE_TYPE;
-    delete process.env.LOGIN_TURNSTILE_REQUIRED;
-    delete process.env.TURNSTILE_SECRET_KEY;
+    delete process.env.PASSWORD;
   });
 
-  it('allows login without Turnstile when Turnstile verification would fail', async () => {
-    mockedVerifyTurnstileToken.mockResolvedValue({
+  it('returns a required Turnstile failure before password verification', async () => {
+    mockedValidateLoginSecurity.mockResolvedValue({
       ok: false,
       status: 400,
-      error: 'Turnstile failed',
+      error: '请先完成人机验证',
     });
 
     const response = await POST(
@@ -146,13 +157,21 @@ describe('login route without Turnstile protection', () => {
       })
     );
 
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true });
-    expect(mockedVerifyTurnstileToken).not.toHaveBeenCalled();
-    expect(mockedDb.verifyUser).toHaveBeenCalledWith('alice', 'password123');
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: '请先完成人机验证',
+    });
+    expect(mockedValidateLoginSecurity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: 'alice',
+        turnstileToken: undefined,
+        ip: '203.0.113.10',
+      })
+    );
+    expect(mockedDb.verifyUser).not.toHaveBeenCalled();
   });
 
-  it('ignores Turnstile token during normal login', async () => {
+  it('records a successful D1 login before issuing its session', async () => {
     const response = await POST(
       new Request('https://app.example.com/api/login', {
         method: 'POST',
@@ -169,7 +188,89 @@ describe('login route without Turnstile protection', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockedVerifyTurnstileToken).not.toHaveBeenCalled();
+    expect(mockedValidateLoginSecurity).toHaveBeenCalledWith(
+      expect.objectContaining({ turnstileToken: 'token' })
+    );
     expect(mockedDb.verifyUser).toHaveBeenCalledWith('alice', 'password123');
+    expect(mockedRecordLoginResult).toHaveBeenCalledWith({
+      attemptKey: 'attempt-key',
+      success: true,
+    });
+  });
+
+  it('does not issue a session when successful login recording fails', async () => {
+    process.env.USERNAME = 'alice';
+    process.env.PASSWORD = 'password123';
+    mockedRecordLoginResult.mockRejectedValue(
+      new Error('login security storage unavailable')
+    );
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    const response = await POST(
+      new Request('https://app.example.com/api/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: 'alice',
+          password: 'password123',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: '服务器错误' });
+    consoleError.mockRestore();
+  });
+
+  it('records failed credentials without revealing whether the username exists', async () => {
+    mockedDb.verifyUser.mockResolvedValue(false);
+
+    const response = await POST(
+      new Request('https://app.example.com/api/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: 'unknown',
+          password: 'password123',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: '用户名或密码错误',
+    });
+    expect(mockedRecordLoginResult).toHaveBeenCalledWith({
+      attemptKey: 'attempt-key',
+      success: false,
+    });
+  });
+
+  it('uses the synthetic owner username for localstorage pre-auth', async () => {
+    process.env.NEXT_PUBLIC_STORAGE_TYPE = 'localstorage';
+    process.env.PASSWORD = 'password123';
+
+    const response = await POST(
+      new Request('https://app.example.com/api/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'password123',
+          turnstileToken: 'token',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedValidateLoginSecurity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: 'owner',
+        turnstileToken: 'token',
+        ip: '203.0.113.10',
+      })
+    );
+    expect(mockedRecordLoginResult).toHaveBeenCalledWith({
+      attemptKey: 'attempt-key',
+      success: true,
+    });
   });
 });

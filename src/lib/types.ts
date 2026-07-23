@@ -316,6 +316,7 @@ export interface RuntimeConfig {
   HLS_PROXY?: string;
   SOURCE_RANKING_ENABLED?: boolean;
   TURNSTILE_SITE_KEY?: string;
+  LOGIN_TURNSTILE_REQUIRED?: boolean;
   REGISTER_INVITE_REQUIRED?: boolean;
   CURRENT_USER?: {
     username?: string | null;

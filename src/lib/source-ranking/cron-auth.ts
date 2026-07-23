@@ -43,7 +43,7 @@ export function isAuthorizedCronRequest(
 ): boolean {
   const expectedToken = readCronApiToken(source);
   if (!expectedToken) {
-    return true;
+    return false;
   }
 
   const incomingToken = readCronRequestToken(request);
