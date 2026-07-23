@@ -33,13 +33,13 @@ import {
   toHlsAdSkipWindows,
   toUserMarkAdSkipWindow,
 } from '@/lib/hls-ad-skip';
+import { getNearbyHlsSegmentDurationSeconds } from '@/lib/hls-nearby-segment-duration';
 import type { HlsPlaybackPolicyResult } from '@/lib/hls-playback-policy';
 import {
   detectAppleDevice,
   detectPlaybackProbePlatform,
   resolveHlsPlaybackPolicy,
 } from '@/lib/hls-playback-policy';
-import { getNearbyHlsSegmentDurationSeconds } from '@/lib/hls-nearby-segment-duration';
 import {
   type HlsRecoveryAction,
   getHlsPlaybackNudgeTime,
@@ -49,6 +49,11 @@ import {
   shouldTriggerHlsWaitingRecovery,
 } from '@/lib/hls-recovery';
 import { stopVideoElementLoading } from '@/lib/media-cleanup';
+import {
+  consumePlayIdentityInitSkip,
+  isArtPlayerBoundToContainer,
+  resolvePlayUrlTitle,
+} from '@/lib/play-page-player-lifecycle';
 import {
   type PlayRecordSaveReason,
   type PlayRecordSaveSnapshot,
@@ -388,6 +393,10 @@ function PlayPageClient() {
     searchParams.get('stype') || '',
     searchParams.get('prefer') || '',
   ].join('\0');
+  // Soft source switches update the URL via replaceState (Next syncs that into
+  // useSearchParams). Skip the one identity-init that would otherwise flip
+  // `loading` and unmount the ArtPlayer host while artPlayerRef stays stale.
+  const skipPlayIdentityInitRef = useRef(false);
 
   // -----------------------------------------------------------------------------
   // 状态变量（State）
@@ -3108,6 +3117,16 @@ function PlayPageClient() {
     resetPublishedPlayTime();
   };
 
+  // Full identity init flips `loading` and unmounts the ArtPlayer host. Drop the
+  // stale instance so the next mount recreates instead of calling `.switch`.
+  useEffect(() => {
+    if (loading && artPlayerRef.current) {
+      disposeCurrentPlayer();
+    }
+    // Intentionally only react to the loading gate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
   const createCustomHlsJsLoader = (HlsModule: any) =>
     class CustomHlsJsLoader extends HlsModule.DefaultConfig.loader {
       constructor(config: any) {
@@ -3222,6 +3241,16 @@ function PlayPageClient() {
 
   // 进入页面时直接获取全部源信息
   useEffect(() => {
+    const identityInit = consumePlayIdentityInitSkip(
+      skipPlayIdentityInitRef.current
+    );
+    if (identityInit.clearSkip) {
+      skipPlayIdentityInitRef.current = false;
+    }
+    if (!identityInit.runInit) {
+      return;
+    }
+
     let cancelled = false;
     let readyTimer: ReturnType<typeof setTimeout> | null = null;
     const controller = new AbortController();
@@ -3531,7 +3560,16 @@ function PlayPageClient() {
       newUrl.searchParams.set('source', detailData.source);
       newUrl.searchParams.set('id', detailData.id);
       newUrl.searchParams.set('year', detailData.year);
-      newUrl.searchParams.set('title', detailData.title);
+      // Some detail APIs return an empty title; never wipe a good URL title
+      // (that would churn playIdentityKey and re-enter init mid-flight).
+      const resolvedTitle = resolvePlayUrlTitle({
+        detailTitle: detailData.title,
+        urlTitle,
+        fallbackTitle: videoTitleRef.current,
+      });
+      if (resolvedTitle) {
+        newUrl.searchParams.set('title', resolvedTitle);
+      }
       newUrl.searchParams.delete('prefer');
       window.history.replaceState({}, '', newUrl.toString());
 
@@ -3705,14 +3743,25 @@ function PlayPageClient() {
         );
       }
 
-      // 更新URL参数（不刷新页面）
+      // 更新URL参数（不刷新页面）。Next 会把 replaceState 同步进 useSearchParams，
+      // 从而改变 playIdentityKey；跳过随之而来的那一次全量 init，避免 loading 门闸
+      // 卸掉 ArtPlayer 宿主却留下 stale artPlayerRef。
       const newUrl = new URL(window.location.href);
       newUrl.searchParams.set('source', newSource);
       newUrl.searchParams.set('id', newId);
       newUrl.searchParams.set('year', newDetail.year);
+      const switchedTitle = resolvePlayUrlTitle({
+        detailTitle: newDetail.title,
+        urlTitle: newUrl.searchParams.get('title'),
+        fallbackTitle: newTitle,
+      });
+      if (switchedTitle) {
+        newUrl.searchParams.set('title', switchedTitle);
+      }
+      skipPlayIdentityInitRef.current = true;
       window.history.replaceState({}, '', newUrl.toString());
 
-      setVideoTitle(newDetail.title || newTitle);
+      setVideoTitle(switchedTitle || newDetail.title || newTitle);
       setVideoYear(newDetail.year);
       setVideoCover(newDetail.poster);
       // Keep identity refs in lockstep with the in-flight source change so
@@ -4097,8 +4146,12 @@ function PlayPageClient() {
 
         const playbackPolicy = playbackPolicyRef.current;
 
-        // 播放器统一使用 hls.js，实例存在时直接切换地址。
-        if (artPlayerRef.current) {
+        // 播放器统一使用 hls.js，实例存在且仍挂在当前宿主上时直接切换地址。
+        // loading 门闸会卸掉宿主 DOM，此时 artPlayerRef 可能是 stale，必须重建。
+        if (
+          artPlayerRef.current &&
+          isArtPlayerBoundToContainer(artPlayerRef.current, artRef.current)
+        ) {
           artPlayerRef.current.switch = videoUrl;
           artPlayerRef.current.title = `${videoTitle} - 第${
             currentEpisodeIndex + 1
@@ -4110,6 +4163,9 @@ function PlayPageClient() {
             );
           }
           return;
+        }
+        if (artPlayerRef.current) {
+          artPlayerRef.current = null;
         }
 
         // 首次创建播放器实例。

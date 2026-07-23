@@ -189,4 +189,36 @@ describe('source feedback route', () => {
       skipped: true,
     });
   });
+
+  it('returns 202 instead of 500 when D1 persist throws (e.g. missing column)', async () => {
+    mockedGetSourceRankingRuntime.mockReturnValue({
+      enabled: true,
+      hasD1: true,
+      fallbackToLive: true,
+    });
+    mockedSavePlaybackFeedback.mockRejectedValue(
+      new Error('no such column: platform')
+    );
+
+    const response = await POST(
+      new Request('https://app.example.com/api/source-feedback', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          sourceKey: 'alpha',
+          playbackMode: 'direct',
+          startupSuccess: true,
+        }),
+      })
+    );
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({
+      saved: false,
+      skipped: true,
+      error: 'feedback-persist-failed',
+    });
+  });
 });

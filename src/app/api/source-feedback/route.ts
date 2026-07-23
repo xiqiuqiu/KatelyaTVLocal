@@ -60,10 +60,22 @@ export async function POST(request: Request) {
     return addCorsHeaders(response);
   }
 
-  const saved = await savePlaybackFeedback(
-    rankingEnv || (process.env as unknown as RuntimeSource),
-    payload
-  );
-  const response = NextResponse.json({ saved }, { status: saved ? 200 : 202 });
-  return addCorsHeaders(response);
+  try {
+    const saved = await savePlaybackFeedback(
+      rankingEnv || (process.env as unknown as RuntimeSource),
+      payload
+    );
+    const response = NextResponse.json(
+      { saved },
+      { status: saved ? 200 : 202 }
+    );
+    return addCorsHeaders(response);
+  } catch {
+    // Missing D1 migrations (e.g. platform column) must not 500 the play page.
+    const response = NextResponse.json(
+      { saved: false, skipped: true, error: 'feedback-persist-failed' },
+      { status: 202 }
+    );
+    return addCorsHeaders(response);
+  }
 }
