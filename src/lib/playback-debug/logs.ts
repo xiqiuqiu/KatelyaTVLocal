@@ -193,7 +193,7 @@ export async function savePlaybackDebugLog(
         playlist_filter,
         segment_mode,
         recovery_profile,
-        current_time,
+        "current_time",
         duration,
         ready_state,
         network_state,
@@ -243,6 +243,7 @@ export async function listPlaybackDebugLogs(
   const limit = Math.min(200, Math.max(1, Math.floor(requestedLimit || 100)));
   const result = await db
     .prepare(
+      // Quote current_time: bare identifier is SQLite CURRENT_TIME (HH:MM:SS).
       `SELECT
         id,
         session_id,
@@ -255,7 +256,7 @@ export async function listPlaybackDebugLogs(
         playlist_filter,
         segment_mode,
         recovery_profile,
-        current_time,
+        "current_time",
         duration,
         ready_state,
         network_state,

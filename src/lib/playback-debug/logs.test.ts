@@ -117,9 +117,12 @@ describe('playback debug logs', () => {
 
     const logs = await listPlaybackDebugLogs({ DB: mock.db }, 10);
 
-    expect(mock.prepare).toHaveBeenCalledWith(
-      expect.stringContaining('FROM playback_debug_logs')
-    );
+    const selectSql = String(mock.prepare.mock.calls[0]?.[0] ?? '');
+    // SQLite treats bare `current_time` as the CURRENT_TIME function and
+    // returns "HH:MM:SS", which toFiniteNumber then maps to null in exports.
+    expect(selectSql).toMatch(/"current_time"/);
+    expect(selectSql).not.toMatch(/(?<!")current_time(?!")/);
+    expect(selectSql).toContain('FROM playback_debug_logs');
     expect(mock.bind).toHaveBeenCalledWith(10);
     expect(logs).toEqual([
       expect.objectContaining({
@@ -127,6 +130,8 @@ describe('playback debug logs', () => {
         sessionId: 'session-1',
         eventType: 'hls-stall',
         playbackDomain: 'example.com',
+        currentTime: 438.2,
+        duration: 1200,
         details: { action: 'reload-source' },
         createdAt: 1780066860058,
       }),
