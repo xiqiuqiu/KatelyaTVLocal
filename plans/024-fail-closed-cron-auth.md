@@ -1,6 +1,6 @@
 # 024 — Fail closed when cron authentication is unconfigured
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 6e7374f
 - **Severity**: HIGH
 - **Category**: Security

@@ -4,17 +4,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionSigningSecret } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
-import { createSessionCookieValue } from '@/lib/security/session';
+import { recordLoginResult, validateLoginSecurity } from '@/lib/login/security';
+import {
+  createSessionCookieValue,
+  type SessionRole,
+} from '@/lib/security/session';
+import { getClientIp } from '@/lib/turnstile';
 
 export const runtime = 'edge';
 
-const STORAGE_TYPE =
-  (process.env.NEXT_PUBLIC_STORAGE_TYPE as
-    | 'localstorage'
-    | 'redis'
-    | 'd1'
-    | 'upstash'
-    | undefined) || 'localstorage';
+function getStorageType() {
+  return (
+    (process.env.NEXT_PUBLIC_STORAGE_TYPE as
+      | 'localstorage'
+      | 'redis'
+      | 'd1'
+      | 'upstash'
+      | undefined) || 'localstorage'
+  );
+}
 
 function setAuthCookie(
   req: NextRequest,
@@ -41,10 +49,61 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (STORAGE_TYPE === 'localstorage') {
+    const { username, password, turnstileToken } = await req.json();
+    const storageType = getStorageType();
+    const security = await validateLoginSecurity({
+      username:
+        storageType === 'localstorage'
+          ? 'owner'
+          : typeof username === 'string'
+          ? username
+          : '',
+      turnstileToken:
+        typeof turnstileToken === 'string' ? turnstileToken : undefined,
+      ip: getClientIp(req.headers),
+    });
+    if (!security.ok) {
+      return NextResponse.json(
+        { error: security.error },
+        { status: security.status }
+      );
+    }
+
+    const createAuthenticatedResponse = async (session: {
+      username?: string;
+      role: SessionRole;
+    }) => {
+      await recordLoginResult({
+        attemptKey: security.attemptKey,
+        success: true,
+      });
+      const response = NextResponse.json({ ok: true });
+      const cookieValue = await createSessionCookieValue(
+        session,
+        signingSecret
+      );
+      const expires = new Date();
+      expires.setDate(expires.getDate() + 7);
+
+      setAuthCookie(req, response, cookieValue, expires);
+      return response;
+    };
+    const createFailedCredentialsResponse = async () => {
+      await recordLoginResult({
+        attemptKey: security.attemptKey,
+        success: false,
+      });
+      return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
+    };
+
+    if (storageType === 'localstorage') {
       const envPassword = process.env.PASSWORD;
 
       if (!envPassword) {
+        await recordLoginResult({
+          attemptKey: security.attemptKey,
+          success: true,
+        });
         const response = NextResponse.json({ ok: true });
         response.cookies.set('auth', '', {
           path: '/',
@@ -56,31 +115,16 @@ export async function POST(req: NextRequest) {
         return response;
       }
 
-      const { password } = await req.json();
       if (typeof password !== 'string') {
-        return NextResponse.json({ error: '密码不能为空' }, { status: 400 });
+        return await createFailedCredentialsResponse();
       }
 
       if (password !== envPassword) {
-        return NextResponse.json(
-          { ok: false, error: '密码错误' },
-          { status: 401 }
-        );
+        return await createFailedCredentialsResponse();
       }
 
-      const response = NextResponse.json({ ok: true });
-      const cookieValue = await createSessionCookieValue(
-        { role: 'user' },
-        signingSecret
-      );
-      const expires = new Date();
-      expires.setDate(expires.getDate() + 7);
-
-      setAuthCookie(req, response, cookieValue, expires);
-      return response;
+      return await createAuthenticatedResponse({ role: 'user' });
     }
-
-    const { username, password } = await req.json();
 
     if (!username || typeof username !== 'string') {
       return NextResponse.json({ error: '用户名不能为空' }, { status: 400 });
@@ -89,47 +133,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '密码不能为空' }, { status: 400 });
     }
 
-    if (username === process.env.USERNAME && password === process.env.PASSWORD) {
-      const response = NextResponse.json({ ok: true });
-      const cookieValue = await createSessionCookieValue(
-        { username, role: 'owner' },
-        signingSecret
-      );
-      const expires = new Date();
-      expires.setDate(expires.getDate() + 7);
-
-      setAuthCookie(req, response, cookieValue, expires);
-      return response;
+    if (
+      username === process.env.USERNAME &&
+      password === process.env.PASSWORD
+    ) {
+      return await createAuthenticatedResponse({ username, role: 'owner' });
     } else if (username === process.env.USERNAME) {
-      return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
+      return await createFailedCredentialsResponse();
     }
 
     const config = await getConfig();
-    const user = config.UserConfig.Users.find((item) => item.username === username);
+    const user = config.UserConfig.Users.find(
+      (item) => item.username === username
+    );
     if (user?.banned) {
-      return NextResponse.json({ error: '用户被封禁' }, { status: 401 });
+      return await createFailedCredentialsResponse();
     }
 
     try {
       await db.upgradeLegacyPasswords();
       const verified = await db.verifyUser(username, password);
       if (!verified) {
-        return NextResponse.json(
-          { error: '用户名或密码错误' },
-          { status: 401 }
-        );
+        return await createFailedCredentialsResponse();
       }
 
-      const response = NextResponse.json({ ok: true });
-      const cookieValue = await createSessionCookieValue(
-        { username, role: user?.role || 'user' },
-        signingSecret
-      );
-      const expires = new Date();
-      expires.setDate(expires.getDate() + 7);
-
-      setAuthCookie(req, response, cookieValue, expires);
-      return response;
+      return await createAuthenticatedResponse({
+        username,
+        role: user?.role || 'user',
+      });
     } catch (err) {
       console.error('数据库验证失败', err);
       return NextResponse.json({ error: '数据库错误' }, { status: 500 });

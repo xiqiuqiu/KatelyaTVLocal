@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 
 import {
   buildRegistrationInviteLink,
@@ -8,6 +14,7 @@ import {
 import LoginPage from '@/app/login/page';
 
 let mockSearchParams = new URLSearchParams();
+const originalFetch = global.fetch;
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => mockSearchParams,
@@ -20,6 +27,8 @@ jest.mock('@/components/ThemeToggle', () => ({
 describe('LoginPage invite link', () => {
   beforeEach(() => {
     mockSearchParams = new URLSearchParams();
+    document.getElementById('cf-turnstile-script')?.remove();
+    delete window.turnstile;
     window.RUNTIME_CONFIG = {
       STORAGE_TYPE: 'd1',
       ENABLE_REGISTER: true,
@@ -28,6 +37,7 @@ describe('LoginPage invite link', () => {
   });
 
   afterEach(() => {
+    global.fetch = originalFetch;
     jest.clearAllMocks();
   });
 
@@ -100,5 +110,54 @@ describe('LoginPage invite link', () => {
     ).toBeDisabled();
     expect(await screen.findByLabelText('邀请码')).toBeInTheDocument();
     expect(document.getElementById('register-turnstile')).not.toBeNull();
+  });
+
+  it('sends the login Turnstile token when login verification is required', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: '请先完成人机验证' }),
+    });
+    global.fetch = fetchMock;
+    window.RUNTIME_CONFIG = {
+      STORAGE_TYPE: 'd1',
+      TURNSTILE_SITE_KEY: 'site-key',
+      LOGIN_TURNSTILE_REQUIRED: true,
+    };
+    window.turnstile = {
+      render: jest.fn((_container, options) => {
+        options.callback('login-token');
+        return 'widget-id';
+      }),
+      reset: jest.fn(),
+    };
+
+    render(<LoginPage />);
+
+    const script = await waitFor(() => {
+      const element = document.getElementById('cf-turnstile-script');
+      expect(element).not.toBeNull();
+      return element;
+    });
+    act(() => {
+      script?.dispatchEvent(new Event('load'));
+    });
+
+    fireEvent.change(await screen.findByLabelText('用户名'), {
+      target: { value: 'alice' },
+    });
+    fireEvent.change(screen.getByLabelText('访问密码'), {
+      target: { value: 'password123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '进入 ReelFind' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      username: 'alice',
+      password: 'password123',
+      turnstileToken: 'login-token',
+    });
   });
 });

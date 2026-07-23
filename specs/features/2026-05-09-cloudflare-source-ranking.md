@@ -45,7 +45,7 @@ CRON_API_TOKEN=
 - `SOURCE_RANKING_FALLBACK_TO_LIVE`: Fall back to live probing when D1 has no results (keep `true`)
 - `SOURCE_RANKING_CRON_ENABLED`: Enable scheduled health checks
 - `SOURCE_RANKING_HAS_D1`: Local/test override to mark D1 as available
-- `CRON_API_TOKEN`: Optional token for `/api/cron` access (`x-cron-token` or `Authorization: Bearer <token>`)
+- `CRON_API_TOKEN`: Required when cron is enabled. Protects `/api/cron` access (`x-cron-token` or `Authorization: Bearer <token>`)
 
 ## D1 Binding
 
@@ -78,5 +78,5 @@ A separate lightweight Cloudflare Worker (`workers/source-ranking-cron/`) trigge
 - `SOURCE_RANKING_FALLBACK_TO_LIVE=true`
 - `SOURCE_RANKING_CRON_ENABLED=true` on Pages side
 - Separate cron worker deployed pointing to `https://your-domain/api/cron`
-- If `CRON_API_TOKEN` is set, both Pages and cron worker share the same value
+- `CRON_API_TOKEN` configured on Pages and cron worker with the same value whenever cron is enabled
 - Cron frequency: 1-2 times per day

@@ -204,4 +204,176 @@ describe('cloudflare-first source preference', () => {
       jest.useRealTimers();
     }
   });
+
+  describe('probe target validation', () => {
+    it('rejects localhost without fetching upstream', async () => {
+      global.fetch = jest.fn();
+
+      const result = await probeSourcePlaybackWithCache(
+        'http://localhost/video.mp4',
+        'https://app.example.com'
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind: 'unavailable',
+          reason: 'Blocked host',
+          cacheState: 'miss',
+        })
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects RFC1918 private IPv4 without fetching upstream', async () => {
+      global.fetch = jest.fn();
+
+      const result = await probeSourcePlaybackWithCache(
+        'http://10.0.0.5/video.mp4',
+        'https://app.example.com'
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind: 'unavailable',
+          reason: 'Blocked host',
+        })
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects cloud metadata hosts without fetching upstream', async () => {
+      global.fetch = jest.fn();
+
+      const result = await probeSourcePlaybackWithCache(
+        'http://metadata.google.internal/computeMetadata/v1/',
+        'https://app.example.com'
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind: 'unavailable',
+          reason: 'Blocked host',
+        })
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-http URLs without fetching upstream', async () => {
+      global.fetch = jest.fn();
+
+      const result = await probeSourcePlaybackWithCache(
+        'ftp://files.example.com/video.mp4',
+        'https://app.example.com'
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind: 'unavailable',
+          reason: 'URL must use http or https',
+        })
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects redirects to private hosts', async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        new MockResponse('', {
+          status: 302,
+          headers: {
+            Location: 'http://127.0.0.1/internal',
+          },
+        })
+      );
+
+      const result = await probeSourcePlaybackWithCache(
+        'https://media.example.com/video.mp4',
+        'https://app.example.com'
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind: 'unavailable',
+          reason: 'Blocked redirect target: Blocked host',
+        })
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://media.example.com/video.mp4',
+        expect.objectContaining({ redirect: 'manual' })
+      );
+    });
+
+    it('rejects private nested playlist targets without fetching them', async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        new MockResponse('#EXTM3U\nhttp://127.0.0.1/segment.ts', {
+          status: 200,
+          headers: {
+            'access-control-allow-origin': '*',
+            'content-type': 'application/vnd.apple.mpegurl',
+          },
+        })
+      );
+
+      const result = await probeSourcePlaybackWithCache(
+        'https://media.example.com/playlist.m3u8',
+        'https://app.example.com'
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind: 'unavailable',
+          reason: 'Blocked host',
+        })
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps successful public HLS and range probes', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(
+          new MockResponse(
+            '#EXTM3U\nhttps://media.example.com/segment.ts',
+            {
+              status: 200,
+              headers: {
+                'access-control-allow-origin': '*',
+                'content-type': 'application/vnd.apple.mpegurl',
+              },
+            }
+          )
+        )
+        .mockResolvedValueOnce(
+          new MockResponse('', {
+            status: 206,
+            headers: {
+              'access-control-allow-origin': '*',
+            },
+          })
+        );
+
+      const result = await probeSourcePlaybackWithCache(
+        'https://media.example.com/playlist.m3u8',
+        'https://app.example.com'
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind: 'direct',
+          upstreamStatus: 200,
+        })
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch).toHaveBeenNthCalledWith(
+        1,
+        'https://media.example.com/playlist.m3u8',
+        expect.objectContaining({ redirect: 'manual' })
+      );
+      expect(global.fetch).toHaveBeenNthCalledWith(
+        2,
+        'https://media.example.com/segment.ts',
+        expect.objectContaining({ redirect: 'manual' })
+      );
+    });
+  });
 });

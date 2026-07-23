@@ -332,6 +332,14 @@ KatelyaTV 使用标准 Apple CMS V10 API 格式。在项目根目录创建 `conf
 | `REGISTER_PASSWORD_MIN_LENGTH`         | 密码最小长度                  | `6`     |
 | `REGISTER_IP_WINDOW_SECONDS`           | IP 速率限制时间窗口（秒）     | `3600`  |
 | `REGISTER_IP_WINDOW_LIMIT`             | 每 IP 每窗口最大注册次数      | `3`     |
+| `LOGIN_TURNSTILE_REQUIRED`             | 登录前要求 Turnstile 验证     | `false` |
+| `LOGIN_RATE_WINDOW_SECONDS`            | 登录失败限流时间窗口（秒）    | `900`   |
+| `LOGIN_RATE_WINDOW_LIMIT`              | 每 IP + 用户名组合的失败上限  | `0`（关闭；D1 建议 `5`） |
+
+启用非零 `LOGIN_RATE_WINDOW_LIMIT` 前，必须先将
+`migrations/2026-07-23_login_security_events.sql` 部署到 D1 绑定，确认表和
+索引已创建，再部署应用并开启限流。限流启用但 D1 不可用时，登录会以 HTTP 500
+失败关闭。
 
 ### AI 找片助手
 
@@ -357,14 +365,14 @@ KatelyaTV 使用标准 Apple CMS V10 API 格式。在项目根目录创建 `conf
 
 ### Cloudflare 源站评分
 
-| 变量                                 | 描述                         | 默认值  |
-| ------------------------------------ | ---------------------------- | ------- |
-| `SOURCE_RANKING_ENABLED`             | 启用源站评分                 | `false` |
-| `NEXT_PUBLIC_SOURCE_RANKING_ENABLED` | 向前端公开评分状态           | `false` |
-| `SOURCE_RANKING_FALLBACK_TO_LIVE`    | 降级到实时探测               | `true`  |
-| `SOURCE_RANKING_CRON_ENABLED`        | 启用定时健康检查             | `false` |
-| `SOURCE_RANKING_HAS_D1`              | 覆盖 D1 可用性（仅测试用）   | `false` |
-| `CRON_API_TOKEN`                     | `/api/cron` 接口的认证 Token | （空）  |
+| 变量                                 | 描述                                      | 默认值  |
+| ------------------------------------ | ----------------------------------------- | ------- |
+| `SOURCE_RANKING_ENABLED`             | 启用源站评分                              | `false` |
+| `NEXT_PUBLIC_SOURCE_RANKING_ENABLED` | 向前端公开评分状态                        | `false` |
+| `SOURCE_RANKING_FALLBACK_TO_LIVE`    | 降级到实时探测                            | `true`  |
+| `SOURCE_RANKING_CRON_ENABLED`        | 启用定时健康检查                          | `false` |
+| `SOURCE_RANKING_HAS_D1`              | 覆盖 D1 可用性（仅测试用）                | `false` |
+| `CRON_API_TOKEN`                     | 启用 cron 时 `/api/cron` 必需的认证 Token | （空）  |
 
 ### 验证部署
 

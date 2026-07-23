@@ -40,9 +40,15 @@ class MockResponse {
     this.status = init?.status ?? 200;
     this.headers = new MockHeaders();
     if (init?.headers) {
-      new MockHeaders(init.headers as Record<string, string>).forEach(
-        (value, key) => this.headers.set(key, value)
-      );
+      if (typeof (init.headers as Headers).forEach === 'function') {
+        (init.headers as Headers).forEach((value, key) => {
+          this.headers.set(key, value);
+        });
+      } else {
+        new MockHeaders(init.headers as Record<string, string>).forEach(
+          (value, key) => this.headers.set(key, value)
+        );
+      }
     }
   }
 
@@ -130,10 +136,98 @@ describe('image proxy route', () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('image-bytes');
+    expect(response.headers.get('content-type')).toBe('image/jpeg');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     expect(global.fetch).toHaveBeenCalledWith(
       'https://img.example.com/poster.jpg',
       expect.objectContaining({ redirect: 'manual' })
     );
+  });
+
+  it('accepts parameterized JPEG content type', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      new MockResponse('image-bytes', {
+        status: 200,
+        headers: {
+          'content-type': 'image/jpeg; charset=utf-8',
+        },
+      }) as unknown as Response
+    );
+
+    const response = await GET(
+      new MockRequest(
+        'https://app.example.com/api/image-proxy?url=https%3A%2F%2Fimg.example.com%2Fposter.jpg'
+      ) as unknown as Request
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/jpeg');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(await response.text()).toBe('image-bytes');
+  });
+
+  it('returns 415 for HTML content type', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      new MockResponse('<html></html>', {
+        status: 200,
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+        },
+      }) as unknown as Response
+    );
+
+    const response = await GET(
+      new MockRequest(
+        'https://app.example.com/api/image-proxy?url=https%3A%2F%2Fimg.example.com%2Fposter.jpg'
+      ) as unknown as Request
+    );
+
+    expect(response.status).toBe(415);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Unsupported image content type',
+    });
+  });
+
+  it('returns 415 for SVG content type', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      new MockResponse('<svg></svg>', {
+        status: 200,
+        headers: {
+          'content-type': 'image/svg+xml',
+        },
+      }) as unknown as Response
+    );
+
+    const response = await GET(
+      new MockRequest(
+        'https://app.example.com/api/image-proxy?url=https%3A%2F%2Fimg.example.com%2Fposter.jpg'
+      ) as unknown as Request
+    );
+
+    expect(response.status).toBe(415);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Unsupported image content type',
+    });
+  });
+
+  it('returns 415 when content type is missing', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      new MockResponse('image-bytes', {
+        status: 200,
+        headers: {},
+      }) as unknown as Response
+    );
+
+    const response = await GET(
+      new MockRequest(
+        'https://app.example.com/api/image-proxy?url=https%3A%2F%2Fimg.example.com%2Fposter.jpg'
+      ) as unknown as Request
+    );
+
+    expect(response.status).toBe(415);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Unsupported image content type',
+    });
   });
 
   it('rejects redirects to private hosts', async () => {

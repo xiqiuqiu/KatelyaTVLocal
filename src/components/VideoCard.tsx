@@ -9,21 +9,18 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, {
   useCallback,
-  useEffect,
   useMemo,
   useState,
   useTransition,
 } from 'react';
 
 import {
-  type Favorite,
   deleteFavorite,
   deletePlayRecord,
   generateStorageKey,
-  isFavorited,
   saveFavorite,
-  subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { useFavoriteStatus } from '@/lib/favorites-store.client';
 import { buildHomeHeroPlayHref } from '@/lib/home-hero';
 import { SearchResult } from '@/lib/types';
 import { type ImageProxyOptions, processImageUrl } from '@/lib/utils';
@@ -57,6 +54,86 @@ interface VideoCardProps {
   imageSize?: ImageProxyOptions;
 }
 
+interface FavoriteHeartButtonProps {
+  storageKey: string;
+  actualSource: string;
+  actualId: string;
+  actualTitle: string;
+  actualPoster: string;
+  actualYear?: string;
+  actualEpisodes?: number;
+  source_name?: string;
+  iconButtonClass: string;
+  isSmall: boolean;
+}
+
+function FavoriteHeartButton({
+  storageKey,
+  actualSource,
+  actualId,
+  actualTitle,
+  actualPoster,
+  actualYear,
+  actualEpisodes,
+  source_name,
+  iconButtonClass,
+  isSmall,
+}: FavoriteHeartButtonProps) {
+  const favorited = useFavoriteStatus(storageKey);
+
+  const handleToggleFavorite = useCallback(
+    async (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      try {
+        if (favorited) {
+          await deleteFavorite(actualSource, actualId);
+        } else {
+          await saveFavorite(actualSource, actualId, {
+            title: actualTitle,
+            source_name: source_name || '',
+            year: actualYear || '',
+            cover: actualPoster,
+            total_episodes: actualEpisodes ?? 1,
+            save_time: Date.now(),
+          });
+        }
+      } catch (err) {
+        throw new Error('切换收藏状态失败');
+      }
+    },
+    [
+      actualEpisodes,
+      actualId,
+      actualPoster,
+      actualSource,
+      actualTitle,
+      actualYear,
+      favorited,
+      source_name,
+    ]
+  );
+
+  return (
+    <button
+      aria-label='切换收藏'
+      className={`${iconButtonClass} ${
+        favorited
+          ? 'border-[rgb(var(--ui-critical)/0.42)] bg-[rgb(var(--ui-critical)/0.2)] text-[rgb(var(--ui-critical))]'
+          : ''
+      }`}
+      onClick={handleToggleFavorite}
+      type='button'
+    >
+      <Heart
+        className={favorited ? 'fill-current' : ''}
+        size={isSmall ? 18 : 20}
+      />
+    </button>
+  );
+}
+
 export default function VideoCard({
   id,
   title = '',
@@ -82,7 +159,6 @@ export default function VideoCard({
   imageSize,
 }: VideoCardProps) {
   const router = useRouter();
-  const [favorited, setFavorited] = useState(false);
   const [hasImageLoaded, setHasImageLoaded] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
   const [isNavigationPending, startNavigationTransition] = useTransition();
@@ -149,77 +225,10 @@ export default function VideoCard({
       : 'tv'
     : type;
 
-  useEffect(() => {
-    if (from === 'douban' || !actualSource || !actualId) return;
-
-    let cancelled = false;
-
-    const fetchFavoriteStatus = async () => {
-      try {
-        const nextFavorited = await isFavorited(actualSource, actualId);
-        if (cancelled) return;
-        setFavorited(nextFavorited);
-      } catch (err) {
-        if (!cancelled) {
-          throw new Error('检查收藏状态失败');
-        }
-      }
-    };
-
-    void fetchFavoriteStatus();
-
-    const storageKey = generateStorageKey(actualSource, actualId);
-    const unsubscribe = subscribeToDataUpdates(
-      'favoritesUpdated',
-      (newFavorites: Record<string, Favorite>) => {
-        setFavorited(!!newFavorites[storageKey]);
-      }
-    );
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [from, actualSource, actualId]);
-
-  const handleToggleFavorite = useCallback(
-    async (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (from === 'douban' || !actualSource || !actualId) return;
-
-      try {
-        if (favorited) {
-          await deleteFavorite(actualSource, actualId);
-          setFavorited(false);
-        } else {
-          await saveFavorite(actualSource, actualId, {
-            title: actualTitle,
-            source_name: source_name || '',
-            year: actualYear || '',
-            cover: actualPoster,
-            total_episodes: actualEpisodes ?? 1,
-            save_time: Date.now(),
-          });
-          setFavorited(true);
-        }
-      } catch (err) {
-        throw new Error('切换收藏状态失败');
-      }
-    },
-    [
-      actualEpisodes,
-      actualId,
-      actualPoster,
-      actualSource,
-      actualTitle,
-      actualYear,
-      favorited,
-      from,
-      source_name,
-    ]
-  );
+  const favoriteStorageKey =
+    from !== 'douban' && actualSource && actualId
+      ? generateStorageKey(actualSource, actualId)
+      : null;
 
   const handleDeleteRecord = useCallback(
     async (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -458,22 +467,19 @@ export default function VideoCard({
                 </button>
               ) : null}
 
-              {config.showHeart ? (
-                <button
-                  aria-label='切换收藏'
-                  className={`${iconButtonClass} ${
-                    favorited
-                      ? 'border-[rgb(var(--ui-critical)/0.42)] bg-[rgb(var(--ui-critical)/0.2)] text-[rgb(var(--ui-critical))]'
-                      : ''
-                  }`}
-                  onClick={handleToggleFavorite}
-                  type='button'
-                >
-                  <Heart
-                    className={favorited ? 'fill-current' : ''}
-                    size={isSmall ? 18 : 20}
-                  />
-                </button>
+              {config.showHeart && favoriteStorageKey && actualSource && actualId ? (
+                <FavoriteHeartButton
+                  actualEpisodes={actualEpisodes}
+                  actualId={actualId}
+                  actualPoster={actualPoster}
+                  actualSource={actualSource}
+                  actualTitle={actualTitle}
+                  actualYear={actualYear}
+                  iconButtonClass={iconButtonClass}
+                  isSmall={isSmall}
+                  source_name={source_name}
+                  storageKey={favoriteStorageKey}
+                />
               ) : null}
             </CardActions>
           ) : null}
