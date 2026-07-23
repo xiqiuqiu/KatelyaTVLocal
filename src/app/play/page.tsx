@@ -3220,6 +3220,8 @@ function PlayPageClient() {
         urlSource && urlId ? '正在获取视频详情...' : '正在搜索播放源...'
       );
 
+      let clearedByReadyTimer = false;
+      try {
       const searchResults = await fetchSourcesData(urlSearchTitle || urlTitle);
       if (cancelled) return;
       let detailResults: SearchResult[] = [];
@@ -3424,6 +3426,20 @@ function PlayPageClient() {
       readyTimer = setTimeout(() => {
         if (!cancelled) setLoading(false);
       }, 1000);
+      clearedByReadyTimer = true;
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        if (!cancelled) {
+          setPlaybackError(
+            err instanceof Error ? err.message : '初始化播放失败',
+            'generic'
+          );
+        }
+      } finally {
+        if (!cancelled && !clearedByReadyTimer) {
+          setLoading(false);
+        }
+      }
     };
 
     void initAll();
