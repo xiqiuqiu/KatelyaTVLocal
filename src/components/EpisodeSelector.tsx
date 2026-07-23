@@ -32,6 +32,90 @@ import {
 import EpisodeSelectorEpisodes from '@/components/player/EpisodeSelectorEpisodes';
 import EpisodeSelectorSources from '@/components/player/EpisodeSelectorSources';
 
+/** Stable default — inline `= []` would break memo/deps identity every render. */
+const EMPTY_SOURCES: SearchResult[] = [];
+
+function mergeVideoInfoMaps(
+  precomputed: Map<string, SourceVideoInfo> | undefined,
+  local: Map<string, SourceVideoInfo>
+): Map<string, SourceVideoInfo> {
+  if (!precomputed || precomputed.size === 0) {
+    return local;
+  }
+
+  const next = new Map(precomputed);
+  local.forEach((value, key) => {
+    const existing = next.get(key);
+    if (!existing) {
+      next.set(key, value);
+      return;
+    }
+
+    // Local browser metrics win over backend (same rule as preference merge).
+    if (
+      value.speedSource === 'browser' &&
+      existing.speedSource === 'backend'
+    ) {
+      next.set(key, value);
+    }
+  });
+
+  return next;
+}
+
+function isParentOwnedSourceKey(
+  sourceKey: string,
+  precomputedSourceStatuses?: Map<string, SourceStatus>,
+  precomputedVideoInfo?: Map<string, SourceVideoInfo>
+): boolean {
+  if (precomputedVideoInfo?.has(sourceKey)) {
+    return true;
+  }
+
+  const status = precomputedSourceStatuses?.get(sourceKey);
+  if (!status) {
+    return false;
+  }
+
+  // idle / probing / fromMemory are scaffolding, not final owned results.
+  if (
+    status.kind === 'idle' ||
+    status.kind === 'probing' ||
+    status.fromMemory
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function mergeStatusMaps(
+  precomputed: Map<string, SourceStatus> | undefined,
+  local: Map<string, SourceStatus>
+): Map<string, SourceStatus> {
+  const next = new Map(local);
+
+  if (!precomputed || precomputed.size === 0) {
+    return next;
+  }
+
+  // Same gate as the deleted precomputedSourceStatuses mirror effect:
+  // parent fills only when local has no stronger live result yet.
+  precomputed.forEach((status, key) => {
+    const previous = next.get(key);
+    if (
+      !previous ||
+      previous.kind === 'idle' ||
+      previous.kind === 'probing' ||
+      previous.fromMemory
+    ) {
+      next.set(key, status);
+    }
+  });
+
+  return next;
+}
+
 interface EpisodeSelectorProps {
   /** 总集数 */
   totalEpisodes: number;
@@ -70,7 +154,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   currentSource,
   currentId,
   videoTitle,
-  availableSources = [],
+  availableSources = EMPTY_SOURCES,
   sourceSearchLoading = false,
   sourceSearchError = null,
   precomputedVideoInfo,
@@ -80,7 +164,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   const router = useRouter();
   const pageCount = Math.ceil(totalEpisodes / episodesPerPage);
 
-  // 存储每个源的视频信息
+  // Local maps only for incremental UI probes; parent owns precomputed*.
   const [videoInfoMap, setVideoInfoMap] = useState<
     Map<string, SourceVideoInfo>
   >(new Map());
@@ -91,25 +175,38 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     new Set()
   );
 
-  // 使用 ref 来避免闭包问题
+  const displayVideoInfoMap = mergeVideoInfoMaps(
+    precomputedVideoInfo,
+    videoInfoMap
+  );
+  const displaySourceStatusMap = mergeStatusMaps(
+    precomputedSourceStatuses,
+    sourceStatusMap
+  );
+
+  // 使用 ref 来避免闭包问题 — keep in sync with merged display maps
   const attemptedSourcesRef = useRef<Set<string>>(new Set());
   const videoInfoMapRef = useRef<Map<string, SourceVideoInfo>>(new Map());
   const sourceStatusMapRef = useRef<Map<string, SourceStatus>>(new Map());
   const sourcePreferenceProbeKeyRef = useRef<string>('');
   const sourcePreferenceFreshProbeKeyRef = useRef<string>('');
 
-  // 同步状态到 ref
+  // Keep refs aligned with merged display maps for async probe callbacks.
   useEffect(() => {
-    attemptedSourcesRef.current = attemptedSources;
-  }, [attemptedSources]);
+    const next = new Set(attemptedSources);
+    precomputedVideoInfo?.forEach((_, key) => {
+      next.add(key);
+    });
+    attemptedSourcesRef.current = next;
+  }, [attemptedSources, precomputedVideoInfo]);
 
   useEffect(() => {
-    videoInfoMapRef.current = videoInfoMap;
-  }, [videoInfoMap]);
+    videoInfoMapRef.current = displayVideoInfoMap;
+  }, [displayVideoInfoMap]);
 
   useEffect(() => {
-    sourceStatusMapRef.current = sourceStatusMap;
-  }, [sourceStatusMap]);
+    sourceStatusMapRef.current = displaySourceStatusMap;
+  }, [displaySourceStatusMap]);
 
   // 主要的 tab 状态：'episodes' 或 'sources'
   // 当只有一集时默认展示 "换源"，并隐藏 "选集" 标签
@@ -533,95 +630,21 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     });
   }, [availableSources, currentId, currentSource]);
 
-  // 当有预计算结果时，先合并到videoInfoMap中
-  useEffect(() => {
-    if (precomputedVideoInfo && precomputedVideoInfo.size > 0) {
-      setVideoInfoMap((prev) => {
-        const newMap = new Map(prev);
-        precomputedVideoInfo.forEach((value, key) => {
-          newMap.set(key, value);
-        });
-        return newMap;
-      });
-
-      setAttemptedSources((prev) => {
-        const newSet = new Set(prev);
-        precomputedVideoInfo.forEach((info, key) => {
-          newSet.add(key);
-        });
-        return newSet;
-      });
-
-      setSourceStatusMap((prev) => {
-        const next = new Map(prev);
-
-        precomputedVideoInfo.forEach((info, key) => {
-          const previousStatus = next.get(key);
-          if (info.hasError) {
-            if (previousStatus?.kind === 'unavailable') {
-              next.set(key, {
-                ...previousStatus,
-                measured: info,
-                updatedAt: Math.max(
-                  previousStatus.updatedAt || 0,
-                  info.speedUpdatedAt || 0
-                ),
-              });
-              return;
-            }
-
-            next.set(
-              key,
-              createPlayableSourceStatus({
-                reason: info.errorReason || '初始化测速失败，可尝试播放',
-                playbackMode: 'direct',
-                domain: previousStatus?.domain || null,
-                measured: info,
-              })
-            );
-            return;
-          }
-
-          next.set(
-            key,
-            createSourceStatus('direct', {
-              reason: '初始化检测通过',
-              playbackMode: 'direct',
-              domain: previousStatus?.domain || null,
-              measured: info,
-            })
-          );
-        });
-
-        return next;
-      });
-    }
-  }, [precomputedVideoInfo]);
-
-  useEffect(() => {
-    if (precomputedSourceStatuses && precomputedSourceStatuses.size > 0) {
-      setSourceStatusMap((prev) => {
-        const next = new Map(prev);
-
-        precomputedSourceStatuses.forEach((status, key) => {
-          const previousStatus = next.get(key);
-          if (
-            !previousStatus ||
-            previousStatus.kind === 'idle' ||
-            previousStatus.kind === 'probing' ||
-            previousStatus.fromMemory
-          ) {
-            next.set(key, status);
-          }
-        });
-
-        return next;
-      });
-    }
-  }, [precomputedSourceStatuses]);
-
   useEffect(() => {
     if (activeTab !== 'sources' || availableSources.length === 0) {
+      return;
+    }
+
+    // Parent already owns final preference/probe results — do not re-fetch those keys.
+    const uncoveredSources = availableSources.filter(
+      (source) =>
+        !isParentOwnedSourceKey(
+          getSourceIdentityKey(source.source, source.id),
+          precomputedSourceStatuses,
+          precomputedVideoInfo
+        )
+    );
+    if (uncoveredSources.length === 0) {
       return;
     }
 
@@ -640,7 +663,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         titleSample: source.title,
       };
     };
-    const requestSources = availableSources.map(toPreferenceRequestSource);
+    const requestSources = uncoveredSources.map(toPreferenceRequestSource);
     const requestKey = requestSources
       .map((source) => `${source.sourceKey}:${source.episodeUrl || ''}`)
       .join('|');
@@ -654,10 +677,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
     const probeFallbackSources = async (targetSourceKeys?: Set<string>) => {
       const fallbackSources = targetSourceKeys
-        ? availableSources.filter((source) =>
+        ? uncoveredSources.filter((source) =>
             targetSourceKeys.has(getSourceIdentityKey(source.source, source.id))
           )
-        : availableSources;
+        : uncoveredSources;
       const concurrency = 6;
       let currentIndex = 0;
 
@@ -760,7 +783,19 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         const next = new Map(prev);
 
         results.forEach((result) => {
-          const previousStatus = next.get(result.sourceKey);
+          const localStatus = next.get(result.sourceKey);
+          const precomputedStatus = precomputedSourceStatuses?.get(
+            result.sourceKey
+          );
+          // Prefer live local results; otherwise inherit parent scaffolding
+          // (e.g. fromMemory unavailable) so rescue rules still apply.
+          const previousStatus =
+            localStatus &&
+            localStatus.kind !== 'idle' &&
+            localStatus.kind !== 'probing' &&
+            !localStatus.fromMemory
+              ? localStatus
+              : precomputedStatus || localStatus;
           const measured = buildVideoInfoFromPreferenceResult(result);
           if (
             !canReplaceSourceStatus(previousStatus) &&
@@ -971,6 +1006,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     createRescuedSourceStatus,
     getKnownSourceStatus,
     getBackendRescuedStatus,
+    precomputedSourceStatuses,
+    precomputedVideoInfo,
     sourceSelectionScores,
     value,
   ]);
@@ -1007,8 +1044,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     sources: availableSources,
     currentSourceKey,
     currentEpisodeIndex,
-    statuses: sourceStatusMap,
-    measured: videoInfoMap,
+    statuses: displaySourceStatusMap,
+    measured: displayVideoInfoMap,
     sourceSelectionScores,
   });
 

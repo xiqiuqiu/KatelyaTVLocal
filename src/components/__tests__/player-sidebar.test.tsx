@@ -111,11 +111,12 @@ describe('EpisodeSelector playback sidebar controls', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '线路' }));
 
+    // Parent already owns a final status for this key — do not re-batch preference.
     await waitFor(() => {
-      expect(mockedFetchSourcePreferencesInBatches).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('A源')).toBeInTheDocument();
     });
+    expect(mockedFetchSourcePreferencesInBatches).not.toHaveBeenCalled();
 
-    expect(screen.getByText('A源')).toBeInTheDocument();
     expect(screen.getByText('该线路当前不可用')).toBeInTheDocument();
     expect(screen.queryByText('服务端探测失败: 403')).not.toBeInTheDocument();
     const unavailableSourceButton = screen.getByRole('button', {
