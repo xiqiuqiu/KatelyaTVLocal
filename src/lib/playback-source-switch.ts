@@ -226,6 +226,26 @@ export function clampSourceSwitchResumeTime({
 }
 
 /**
+ * Prod session 4619b870: MANIFEST_PARSED finalized resume at 1897.16 while
+ * player.duration was still 0. Safari/iPad often cannot honor that seek, the
+ * playhead collapses to 0, and clearing the queue leaves later canplay unable
+ * to re-apply — user sees "stall then jump to start".
+ */
+export function shouldDeferQueuedResumeUntilDurationReady({
+  resumeTime,
+  duration,
+}: {
+  resumeTime: number;
+  duration: number;
+}): boolean {
+  return (
+    Number.isFinite(resumeTime) &&
+    resumeTime > 0 &&
+    !(Number.isFinite(duration) && duration > 0)
+  );
+}
+
+/**
  * Guard against applying a stale Recovery Resume Time that would yank the
  * playhead backward. Prod 8bd17d7d: canplay reapplied 2241 while already at 2287
  * after escape-budget exhaustion / same-source remount churn.

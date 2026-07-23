@@ -6,6 +6,7 @@ import {
   getSourceSwitchTargetEpisodeIndex,
   resolveAutoSourceSwitchSeedTime,
   shouldApplyQueuedResumeTime,
+  shouldDeferQueuedResumeUntilDurationReady,
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
 
@@ -265,6 +266,26 @@ describe('shouldIgnoreSourceChangeTimeout', () => {
         isVideoLoading: true,
         timeoutSourceKey: 'same-source',
         currentSourceKey: 'same-source',
+      })
+    ).toBe(false);
+  });
+});
+
+describe('shouldDeferQueuedResumeUntilDurationReady', () => {
+  it('defers when MANIFEST_PARSED fires before duration is known (prod 4619b870)', () => {
+    expect(
+      shouldDeferQueuedResumeUntilDurationReady({
+        resumeTime: 1897.16,
+        duration: 0,
+      })
+    ).toBe(true);
+  });
+
+  it('applies once the target source duration is available', () => {
+    expect(
+      shouldDeferQueuedResumeUntilDurationReady({
+        resumeTime: 1897.16,
+        duration: 3026.52,
       })
     ).toBe(false);
   });

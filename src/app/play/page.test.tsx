@@ -32,6 +32,7 @@ let mockArtPlayerInstance:
   | undefined;
 const mockArtPlayerEventHandlers = new Map<string, () => void>();
 let mockAutoFireManifestParsed = true;
+let mockDefaultPlayerDuration = 120;
 const mockManifestParsedHandlers: Array<() => void> = [];
 
 jest.mock('next/navigation', () => ({
@@ -126,7 +127,7 @@ jest.mock('artplayer', () => ({
       removeEventListener: jest.fn(),
       canPlayType: jest.fn(() => ''),
       currentTime: 0,
-      duration: 120,
+      duration: mockDefaultPlayerDuration,
       getElementsByTagName: jest.fn(() => []),
       hasAttribute: jest.fn(() => false),
       load: jest.fn(),
@@ -139,7 +140,7 @@ jest.mock('artplayer', () => ({
     };
     const player = {
       currentTime: 0,
-      duration: 120,
+      duration: mockDefaultPlayerDuration,
       volume: 0.7,
       notice: { show: '' },
       on: jest.fn((event: string, handler: () => void) => {
@@ -458,6 +459,7 @@ describe('PlayPage automatic source-switch resume', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockAutoFireManifestParsed = true;
+    mockDefaultPlayerDuration = 120;
     mockManifestParsedHandlers.length = 0;
     mockSearchParams = new URLSearchParams(
       'source=old&id=1&title=%E6%B5%8B%E8%AF%95'
@@ -648,5 +650,93 @@ describe('PlayPage automatic source-switch resume', () => {
     }
 
     expect(playerAfterSwitch.currentTime).toBe(115);
+  });
+
+  it('keeps queued resume when MANIFEST_PARSED fires before duration is known (prod 4619b870)', async () => {
+    // New ArtPlayer instances report duration 0 until metadata arrives — matching
+    // the prod finalize log: switch-source-resume-applied with duration: 0.
+    mockDefaultPlayerDuration = 0;
+    mockAutoFireManifestParsed = false;
+    mockManifestParsedHandlers.length = 0;
+
+    render(<PlayPage />);
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/search?q=%E6%B5%8B%E8%AF%95',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('episode-selector-sources')).toHaveTextContent(
+        '旧源,新源'
+      );
+    });
+
+    expect(mockSourceChangeHandler).toBeDefined();
+    expect(mockArtPlayerInstance).toBeDefined();
+    if (!mockArtPlayerInstance) {
+      throw new Error('ArtPlayer mock was not initialized');
+    }
+
+    const player = mockArtPlayerInstance;
+    player.currentTime = 1887.55;
+    player.video.currentTime = 1887.55;
+
+    let switchPromise: Promise<boolean> | undefined;
+    await act(async () => {
+      switchPromise = mockSourceChangeHandler?.('new', '2', '测试', {
+        autoRecovery: true,
+        resumeTime: 1897.16,
+        reason: 'HLS 播放异常',
+        autoPlayAfterReady: true,
+      });
+      await switchPromise;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const playerAfterSwitch = mockArtPlayerInstance;
+    if (!playerAfterSwitch) {
+      throw new Error('ArtPlayer mock missing after source switch');
+    }
+    playerAfterSwitch.currentTime = 0;
+    playerAfterSwitch.video.currentTime = 0;
+    playerAfterSwitch.duration = 0;
+    playerAfterSwitch.video.duration = 0;
+
+    mockAutoFireManifestParsed = true;
+    await act(async () => {
+      (playerAfterSwitch as { switch?: string }).switch =
+        'https://example.com/new.m3u8';
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // MANIFEST_PARSED arms targetReady; canplay finalizes synchronously (the
+    // queued microtask is not required for this signal).
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+
+    // Duration still unknown: do not seek (Safari would collapse it) and do not
+    // consume the queued Recovery Resume Time.
+    expect(playerAfterSwitch.duration).toBe(0);
+    expect(playerAfterSwitch.currentTime).toBe(0);
+
+    // Later canplay with real duration must still restore the queued resume.
+    playerAfterSwitch.duration = 3026.52;
+    playerAfterSwitch.video.duration = 3026.52;
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+
+    expect(playerAfterSwitch.currentTime).toBe(1897.16);
   });
 });

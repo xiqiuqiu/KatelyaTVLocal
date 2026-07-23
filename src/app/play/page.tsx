@@ -91,6 +91,7 @@ import {
   getSourceSwitchResumePlan,
   getSourceSwitchTargetEpisodeIndex,
   shouldApplyQueuedResumeTime,
+  shouldDeferQueuedResumeUntilDurationReady,
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
 import {
@@ -4262,36 +4263,22 @@ function PlayPageClient() {
             }
           );
 
+          let clearQueuedResume = true;
           if (resumeTimeRef.current && resumeTimeRef.current > 0) {
             try {
               const duration = player.duration || 0;
-              const livePlayhead = Number(
-                (player.currentTime || currentPlayTimeRef.current || 0).toFixed(
-                  2
-                )
-              );
-              const adapted = adaptWatchProgressPlayhead({
-                playTime: resumeTimeRef.current,
-                sourceTotalTime: sourceDurationBeforeSwitchRef.current,
-                targetTotalTime: duration,
-              });
-              const target = clampSourceSwitchResumeTime({
-                resumeTime: adapted,
-                duration,
-              });
               if (
-                !shouldApplyQueuedResumeTime({
-                  queuedResumeTime: target,
-                  currentPlayTime: livePlayhead,
+                shouldDeferQueuedResumeUntilDurationReady({
+                  resumeTime: resumeTimeRef.current,
+                  duration,
                 })
               ) {
+                clearQueuedResume = false;
                 emitPlaybackDebugLog(
-                  'switch-source-resume-skipped-stale',
-                  '已跳过会回拉进度的过期恢复点',
+                  'switch-source-resume-deferred-duration',
+                  '目标源时长未知，推迟应用恢复进度',
                   {
-                    queuedResumeTime: target,
-                    originalResumeTime: resumeTimeRef.current,
-                    livePlayhead,
+                    resumeTime: resumeTimeRef.current,
                     duration,
                     sourceKey: getCurrentSourceKey(),
                     trigger,
@@ -4301,38 +4288,81 @@ function PlayPageClient() {
                   }
                 );
               } else {
-                player.currentTime = target;
-                console.log('成功恢复播放进度到:', resumeTimeRef.current);
-                emitPlaybackDebugLog(
-                  'switch-source-resume-applied',
-                  '已在新播放源应用恢复进度',
-                  {
-                    resumeTime: target,
-                    originalResumeTime: resumeTimeRef.current,
-                    duration,
-                    sourceKey: getCurrentSourceKey(),
-                    trigger,
-                  },
-                  {
-                    playbackUrl: player.video?.currentSrc || videoUrlRef.current,
-                  }
+                const livePlayhead = Number(
+                  (
+                    player.currentTime ||
+                    currentPlayTimeRef.current ||
+                    0
+                  ).toFixed(2)
                 );
+                const adapted = adaptWatchProgressPlayhead({
+                  playTime: resumeTimeRef.current,
+                  sourceTotalTime: sourceDurationBeforeSwitchRef.current,
+                  targetTotalTime: duration,
+                });
+                const target = clampSourceSwitchResumeTime({
+                  resumeTime: adapted,
+                  duration,
+                });
+                if (
+                  !shouldApplyQueuedResumeTime({
+                    queuedResumeTime: target,
+                    currentPlayTime: livePlayhead,
+                  })
+                ) {
+                  emitPlaybackDebugLog(
+                    'switch-source-resume-skipped-stale',
+                    '已跳过会回拉进度的过期恢复点',
+                    {
+                      queuedResumeTime: target,
+                      originalResumeTime: resumeTimeRef.current,
+                      livePlayhead,
+                      duration,
+                      sourceKey: getCurrentSourceKey(),
+                      trigger,
+                    },
+                    {
+                      playbackUrl:
+                        player.video?.currentSrc || videoUrlRef.current,
+                    }
+                  );
+                } else {
+                  player.currentTime = target;
+                  console.log('成功恢复播放进度到:', resumeTimeRef.current);
+                  emitPlaybackDebugLog(
+                    'switch-source-resume-applied',
+                    '已在新播放源应用恢复进度',
+                    {
+                      resumeTime: target,
+                      originalResumeTime: resumeTimeRef.current,
+                      duration,
+                      sourceKey: getCurrentSourceKey(),
+                      trigger,
+                    },
+                    {
+                      playbackUrl:
+                        player.video?.currentSrc || videoUrlRef.current,
+                    }
+                  );
+                }
               }
             } catch (err) {
               console.warn('恢复播放进度失败:', err);
             }
           }
-          resumeTimeRef.current = null;
-          if (
-            isPlaybackRecoverySessionAuthorityEnabled() &&
-            (playbackSessionStateRef.current.recoveryInFlight === 'resume' ||
-              playbackSessionStateRef.current.recoveryResumeTime != null)
-          ) {
-            dispatchPlaybackSessionEvent({
-              type: 'recovery.effectSettled',
-              kind: 'resume',
-              nowMs: Date.now(),
-            });
+          if (clearQueuedResume) {
+            resumeTimeRef.current = null;
+            if (
+              isPlaybackRecoverySessionAuthorityEnabled() &&
+              (playbackSessionStateRef.current.recoveryInFlight === 'resume' ||
+                playbackSessionStateRef.current.recoveryResumeTime != null)
+            ) {
+              dispatchPlaybackSessionEvent({
+                type: 'recovery.effectSettled',
+                kind: 'resume',
+                nowMs: Date.now(),
+              });
+            }
           }
 
           setTimeout(() => {
@@ -4354,7 +4384,9 @@ function PlayPageClient() {
             void canplayVideo?.play().catch(() => undefined);
           }
 
-          if (sourceSwitchSavePendingRef.current) {
+          // Keep resume-sync pending while duration is unknown so we do not
+          // persist a collapsed 0 playhead (prod 4619b870).
+          if (sourceSwitchSavePendingRef.current && clearQueuedResume) {
             sourceSwitchSavePendingRef.current = false;
             setTimeout(() => {
               void requestSaveCurrentPlayProgress('resume-sync');
