@@ -57,7 +57,7 @@ export default function AppShell({
         onToggleSidebar={handleToggleSidebar}
       />
       <div className='relative z-10 min-h-screen overflow-x-hidden pt-[calc(4rem+env(safe-area-inset-top))]'>
-        <div className='hidden md:block transition-[width,transform,opacity] duration-300 ease-out'>
+        <div className='hidden md:block'>
           <Sidebar
             activePath={activePath}
             onToggle={setIsSidebarCollapsed}
@@ -66,7 +66,7 @@ export default function AppShell({
           />
         </div>
         <main
-          className={`min-w-0 transition-[padding] duration-300 ${desktopOffsetClass}`}
+          className={`min-w-0 ${desktopOffsetClass}`}
         >
           <div
             className='ui-reveal mx-auto w-full max-w-[1600px] px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-8'

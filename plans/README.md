@@ -1,21 +1,34 @@
 # React improve-react plans
 
-Latest audit commit baseline: **6e7374f**. Earlier plans retain their historical
-execution context; plans 022–027 and refreshed plan 002 are based on this
-commit.
+Latest audit commit baseline: **411e0c2**. Earlier plans retain their historical
+execution context; plans **028–037** are based on this commit.
 
-These plans were produced by `/improve-react` for every vetted finding. Execute with any agent via `improve-react execute <plan>` or by following each file’s Steps literally.
+These plans were produced by `/improve-react` for vetted **HIGH** findings from
+the 2026-07-23 audit. Execute with any agent via `improve-react execute <plan>`
+or by following each file’s Steps literally.
 
-## Current selected batch
+## Current selected batch (HIGH risk @ 411e0c2)
 
 | Order | Plan | Depends on | Notes |
 |------:|------|------------|-------|
-| 1 | [022](022-restrict-image-proxy-content-types.md) | — | Public same-origin active-content injection |
-| 2 | [023](023-validate-source-probe-targets.md) | Existing shared proxy URL policy | Authenticated SSRF / open redirects |
-| 3 | [024](024-fail-closed-cron-auth.md) | — | Public cron fail-open |
-| 4 | [025](025-protect-login-attempts.md) | D1 migration + Turnstile config | Brute-force protection |
-| 5 | [026](026-isolate-playback-debug-clock.md) | — | Hot playback render path |
-| 6 | [027](027-centralize-video-card-favorites.md) | — | Card-list subscription fan-out |
+| 1 | [028](028-sanitize-login-redirect.md) | — | Open redirect after login/register |
+| 2 | [029](029-play-resync-on-searchparams.md) | — | Soft-nav keeps stale play identity |
+| 3 | [030](030-play-init-loading-finally.md) | 029 optional | Stuck full-page loading on init throw |
+| 4 | [036](036-search-check-response-ok.md) | — | Search treats HTTP errors as empty hits |
+| 5 | [031](031-cast-status-use-ref.md) | — | Cast state re-renders whole play page |
+| 6 | [032](032-sidebar-compositor-transitions.md) | — | Sidebar width/padding layout jank |
+| 7 | [033](033-topsearchbar-accessible-name.md) | — | Global search input unnamed |
+| 8 | [034](034-aifind-label-and-live-regions.md) | — | AI find label + live regions |
+| 9 | [035](035-skip-settings-dialog-a11y.md) | — | Skip settings dialog keyboard/focus |
+| 10 | [037](037-episode-selector-single-source-owner.md) | — | Dual source-preference ownership |
+
+**Still open / not in this batch**
+
+| Item | Notes |
+|------|-------|
+| [002](002-upgrade-next-rsc-security-line.md) | **BLOCKED** — RSC advisory; needs `@opennextjs/cloudflare` migration before Next bump |
+| PlayPageClient / SkipController giant split | Residual after 007; defer until 029/030/037 land |
+| MEDIUM backlog from audit | douban loading finally, home async races, banned-session re-check, CapsuleSwitch tabs, ContinueWatching parallel delete |
 
 ## Historical execution order
 
@@ -42,6 +55,12 @@ These plans were produced by `/improve-react` for every vetted finding. Execute 
 | 19 | [007](007-split-play-page-add-error-boundary.md) | 004, 005, 011, 018, 019 preferred | Large; after play bugfixes |
 | 20 | [015](015-admin-hydration-storage-branch.md) | — | Cold path |
 | 21 | [002](002-upgrade-next-rsc-security-line.md) | Prefer after 001–008 | Major upgrade; own PR |
+| 22 | [022](022-restrict-image-proxy-content-types.md) | — | Public same-origin active-content injection |
+| 23 | [023](023-validate-source-probe-targets.md) | Existing shared proxy URL policy | Authenticated SSRF / open redirects |
+| 24 | [024](024-fail-closed-cron-auth.md) | — | Public cron fail-open |
+| 25 | [025](025-protect-login-attempts.md) | D1 migration + Turnstile config | Brute-force protection |
+| 26 | [026](026-isolate-playback-debug-clock.md) | — | Hot playback render path |
+| 27 | [027](027-centralize-video-card-favorites.md) | — | Card-list subscription fan-out |
 
 ## Status board
 
@@ -74,15 +93,28 @@ These plans were produced by `/improve-react` for every vetted finding. Execute 
 | 025-protect-login-attempts | DONE | HIGH |
 | 026-isolate-playback-debug-clock | DONE | MEDIUM |
 | 027-centralize-video-card-favorites | DONE | MEDIUM |
+| 028-sanitize-login-redirect | DONE | HIGH |
+| 029-play-resync-on-searchparams | DONE | HIGH |
+| 030-play-init-loading-finally | DONE | HIGH |
+| 031-cast-status-use-ref | DONE | HIGH |
+| 032-sidebar-compositor-transitions | DONE | HIGH |
+| 033-topsearchbar-accessible-name | DONE | HIGH |
+| 034-aifind-label-and-live-regions | DONE | HIGH |
+| 035-skip-settings-dialog-a11y | DONE | HIGH |
+| 036-search-check-response-ok | DONE | HIGH |
+| 037-episode-selector-single-source-owner | DONE | HIGH |
 
 ## Execution notes
 
-- Plans are self-contained; executors should not need this chat.
-- For rule-backed items, re-fetch canonical recipes if the codebase drifted: `npx react-doctor@latest rules explain <rule>`.
-- After each plan: `npx react-doctor@latest --scope changed` plus the plan’s Verification section.
-- `002` is intentionally last among security items that need product scheduling — it is still required to fully clear the RSC advisory finding.
-- **002 BLOCKED (2026-07-19):** Deploy path still uses `@cloudflare/next-on-pages` (Next 14 peer only; package deprecated). Patched Next ≥15.5.18 / 16.2.6 requires migrating to `@opennextjs/cloudflare` first (Node runtime, not Edge-only). Do not bump `next` in this branch without that adapter migration — treat as its own PR.
-- **2026-07-22 selection:** user selected all five HIGH security findings plus
-  playback debug-clock and VideoCard favorite-subscription performance work.
-  Plan 002 remains blocked; execute 022–025 before the performance plans.
-- **2026-07-23 execute:** implemented 022–027 on branch `improve-react/022-027` in `.worktrees/improve-react-022-027`. Post-review fixes: default `LOGIN_RATE_WINDOW_LIMIT=0` (non-D1 safe); favorites store reloads after subscription gap; `video-card-actions` tests updated for shared store.
+- Plans are self-contained; executors should not need the audit chat.
+- For rule-backed items, re-fetch canonical recipes if the codebase drifted:
+  `npx react-doctor@latest rules explain <rule>`.
+- After each plan: `npx react-doctor@latest --scope changed` plus the plan’s
+  Verification section.
+- **002 BLOCKED (2026-07-19):** Deploy path still uses `@cloudflare/next-on-pages`
+  (Next 14 peer only; package deprecated). Patched Next ≥15.5.18 / 16.2.6
+  requires migrating to `@opennextjs/cloudflare` first. Do not bump `next` without
+  that adapter migration.
+- **2026-07-23 selection:** user asked to process HIGH-risk findings first.
+  Plans 028–037 cover those; MEDIUM backlog left unplanned until requested.
+  Recommended order above: security/correctness → play perf → a11y → ownership.

@@ -642,9 +642,14 @@ export default function AiFindPanel({ initialQuery = '' }: AiFindPanelProps) {
           </div>
 
           <div className='flex flex-col gap-3 rounded-2xl border border-white/10 bg-[rgb(var(--ui-bg-elevated)/0.72)] p-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)] sm:flex-row'>
+            <label className='sr-only' htmlFor='ai-find-query'>
+              AI 找片描述
+            </label>
             <input
+              aria-describedby={error ? 'ai-find-error' : undefined}
               className='min-h-12 flex-1 rounded-xl border border-transparent bg-white/[0.035] px-4 text-sm text-[rgb(var(--ui-text))] outline-none transition placeholder:text-[rgb(var(--ui-text-muted)/0.68)] focus:border-[rgb(var(--ui-success)/0.42)] focus:bg-white/[0.07]'
               disabled={loading}
+              id='ai-find-query'
               onChange={(event) => setQuery(event.target.value)}
               placeholder='例如：90年代经典港片动作片，想看节奏快一点'
               value={query}
@@ -667,14 +672,22 @@ export default function AiFindPanel({ initialQuery = '' }: AiFindPanelProps) {
             <CheckCircle2 className='h-4 w-4 text-[rgb(var(--ui-success))]' />
             <span>将保存本次结果，之后可直接打开</span>
             {loading ? (
-              <span className='ml-1 text-[rgb(var(--ui-success))]'>
+              <span
+                aria-live='polite'
+                className='ml-1 text-[rgb(var(--ui-success))]'
+                role='status'
+              >
                 {loadingText}
               </span>
             ) : null}
           </div>
 
           {error ? (
-            <div className='flex items-center gap-2 rounded-xl border border-[rgb(var(--ui-critical)/0.22)] bg-[rgb(var(--ui-critical)/0.08)] px-3 py-2 text-sm text-[rgb(var(--ui-critical))]'>
+            <div
+              className='flex items-center gap-2 rounded-xl border border-[rgb(var(--ui-critical)/0.22)] bg-[rgb(var(--ui-critical)/0.08)] px-3 py-2 text-sm text-[rgb(var(--ui-critical))]'
+              id='ai-find-error'
+              role='alert'
+            >
               <AlertCircle className='h-4 w-4' />
               <span>{error}</span>
             </div>

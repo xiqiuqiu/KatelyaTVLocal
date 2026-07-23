@@ -180,7 +180,7 @@ const Sidebar = ({
           data-sidebar
           data-testid='desktop-sidebar'
           data-collapsed={isCollapsed}
-          className={`ui-glass-strong fixed inset-y-0 left-0 z-40 flex h-screen flex-col rounded-none border-y-0 border-l-0 pt-[calc(4rem+env(safe-area-inset-top))] transition-[width,transform,opacity] duration-motionBase ease-easeOutStrong ${
+          className={`ui-glass-strong fixed inset-y-0 left-0 z-40 flex h-screen flex-col rounded-none border-y-0 border-l-0 pt-[calc(4rem+env(safe-area-inset-top))] transition-[transform,opacity] duration-motionBase ease-easeOutStrong ${
             isCollapsed ? 'w-20' : 'w-64'
           } ${
             visible

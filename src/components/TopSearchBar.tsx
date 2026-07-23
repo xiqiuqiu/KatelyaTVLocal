@@ -76,10 +76,11 @@ const TopSearchBar = ({
           <div className='flex-1'>
             <input
               type='text'
+              aria-label='搜索影片、电视剧、综艺'
               placeholder='搜索影片、电视剧、综艺...'
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className='h-11 w-full rounded-full border-0 bg-transparent px-5 text-sm text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))] focus:outline-none focus:ring-0'
+              className='h-11 w-full rounded-full border-0 bg-transparent px-5 text-sm text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))] focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.44)]'
             />
           </div>
           <button

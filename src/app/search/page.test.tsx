@@ -201,6 +201,7 @@ describe('SearchPage', () => {
     (global as typeof globalThis & { fetch: jest.Mock }).fetch = jest
       .fn()
       .mockResolvedValue({
+        ok: true,
         json: async () => ({ results: [] }),
       });
   });
@@ -250,6 +251,7 @@ describe('SearchPage', () => {
     (global as typeof globalThis & { fetch: jest.Mock }).fetch = jest
       .fn()
       .mockResolvedValue({
+        ok: true,
         json: async () => ({ results: sampleResults }),
       });
 
@@ -267,6 +269,7 @@ describe('SearchPage', () => {
   it('switches tabs by filtering already-fetched results without a new search request', async () => {
     mockSearchParams = new URLSearchParams('q=庆余年');
     const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
       json: async () => ({ results: sampleResults }),
     });
     (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
@@ -291,6 +294,7 @@ describe('SearchPage', () => {
   it('passes AbortSignal to search fetch', async () => {
     mockSearchParams = new URLSearchParams('q=test');
     const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
       json: async () => ({ results: [] }),
     });
     (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
@@ -303,6 +307,31 @@ describe('SearchPage', () => {
       expect.stringContaining('/api/search?q=test'),
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
+  });
+
+  it('clears results when search API returns a non-OK response', async () => {
+    mockSearchParams = new URLSearchParams('q=fail');
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = jest
+      .fn()
+      .mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: async () => ({
+          results: [{ id: '1', title: '不应展示', episodes: ['1'], source: 's1' }],
+        }),
+      });
+
+    await act(async () => {
+      render(<SearchPage />);
+    });
+
+    expect(screen.queryByText('不应展示')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tablist', { name: '结果分类' })).not.toBeInTheDocument();
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 
   it('aborts in-flight search fetch on unmount', async () => {
@@ -329,6 +358,7 @@ describe('SearchPage', () => {
     (global as typeof globalThis & { fetch: jest.Mock }).fetch = jest
       .fn()
       .mockResolvedValue({
+        ok: true,
         json: async () => ({
           results: [
             {

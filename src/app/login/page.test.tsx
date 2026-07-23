@@ -112,6 +112,56 @@ describe('LoginPage invite link', () => {
     expect(document.getElementById('register-turnstile')).not.toBeNull();
   });
 
+  it('sanitizes unsafe post-login redirect targets', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+    global.fetch = fetchMock;
+    mockSearchParams = new URLSearchParams('redirect=https://evil.com');
+    window.RUNTIME_CONFIG = {
+      STORAGE_TYPE: 'localstorage',
+    };
+
+    const originalLocation = window.location;
+    let redirectedTo: string | undefined;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        origin: 'http://localhost',
+        protocol: 'http:',
+        host: 'localhost',
+        hostname: 'localhost',
+        get href() {
+          return redirectedTo ?? 'http://localhost/';
+        },
+        set href(value: string) {
+          redirectedTo = value;
+        },
+      },
+    });
+
+    try {
+      render(<LoginPage />);
+
+      fireEvent.change(await screen.findByLabelText('访问密码'), {
+        target: { value: 'password123' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: '进入 ReelFind' }));
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled();
+      });
+      expect(redirectedTo).toBe('/');
+    } finally {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
   it('sends the login Turnstile token when login verification is required', async () => {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: false,
