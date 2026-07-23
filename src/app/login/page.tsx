@@ -326,7 +326,7 @@ function LoginPageClient() {
                           setError(null);
                           setAuthMode(mode as AuthMode);
                         }}
-                        className={`rounded-ui-sm px-4 py-3.5 text-base font-semibold transition-all duration-200 ${
+                        className={`rounded-ui-sm px-4 py-3.5 text-base font-semibold transition-colors duration-200 ${
                           authMode === mode
                             ? 'bg-[rgb(var(--ui-accent)/0.88)] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
                             : 'text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface))] hover:text-[rgb(var(--ui-text))]'
@@ -391,7 +391,7 @@ function LoginPageClient() {
                       />
                       <button
                         aria-label={showPassword ? '隐藏密码' : '显示密码'}
-                        className='absolute right-0 top-1/2 flex h-full w-16 -translate-y-1/2 items-center justify-center rounded-r-ui-sm text-[rgb(var(--ui-text-muted))] transition-colors duration-200 before:absolute before:inset-y-1 before:right-2 before:w-11 before:rounded-ui-sm before:border before:border-transparent before:bg-transparent before:transition-all before:duration-200 hover:text-[rgb(var(--ui-text))] hover:before:border-[rgb(var(--ui-border)/0.62)] hover:before:bg-[rgb(var(--ui-surface-strong)/0.44)] hover:before:shadow-ui-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.38)] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--ui-bg))]'
+                        className='absolute right-0 top-1/2 flex h-full w-16 -translate-y-1/2 items-center justify-center rounded-r-ui-sm text-[rgb(var(--ui-text-muted))] transition-colors duration-200 before:absolute before:inset-y-1 before:right-2 before:w-11 before:rounded-ui-sm before:border before:border-transparent before:bg-transparent before:transition-[border-color,background-color,box-shadow] before:duration-200 hover:text-[rgb(var(--ui-text))] hover:before:border-[rgb(var(--ui-border)/0.62)] hover:before:bg-[rgb(var(--ui-surface-strong)/0.44)] hover:before:shadow-ui-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.38)] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--ui-bg))]'
                         onClick={() => setShowPassword((value) => !value)}
                         onMouseDown={(event) => event.preventDefault()}
                         type='button'
@@ -468,7 +468,7 @@ function LoginPageClient() {
                           loading ||
                           (shouldAskUsername && !username)
                     }
-                    className='inline-flex min-h-[60px] w-full items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-5 py-4 text-lg font-semibold text-[rgb(var(--ui-on-accent))] shadow-[0_14px_32px_rgb(var(--ui-accent)/0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-65 disabled:hover:translate-y-0'
+                    className='inline-flex min-h-[60px] w-full items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-5 py-4 text-lg font-semibold text-[rgb(var(--ui-on-accent))] shadow-[0_14px_32px_rgb(var(--ui-accent)/0.22)] transition-[transform,filter] duration-150 ease ui-hover-lift hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-65 disabled:hover:translate-y-0'
                   >
                     {loading ? (
                       <>

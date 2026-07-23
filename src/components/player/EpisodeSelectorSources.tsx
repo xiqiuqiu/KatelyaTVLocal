@@ -142,7 +142,7 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
                     } ${source.source_name}`}
                     title={`${source.title} · ${sourceStatusText}`}
                     onClick={() => isClickable && onSourceClick(source)}
-                    className={`group relative min-w-0 rounded-ui-md border px-3 py-3 text-left transition-all duration-200
+                    className={`group relative min-w-0 rounded-ui-md border px-3 py-3 text-left transition-[border-color,background-color,color] duration-200
                           ${
                             isCurrentSource
                               ? `${stateActiveClass} cursor-default disabled:opacity-100`

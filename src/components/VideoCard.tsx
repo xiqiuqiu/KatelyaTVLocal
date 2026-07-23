@@ -336,9 +336,9 @@ export default function VideoCard({
     ? 'text-[10px] px-2 py-1'
     : 'text-xs px-2.5 py-1';
   const iconButtonClass =
-    'inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.46)] bg-[rgb(var(--ui-bg)/0.45)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition duration-200 hover:scale-[1.06] hover:border-[rgb(var(--ui-accent)/0.32)] hover:bg-[rgb(var(--ui-surface-strong)/0.62)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
+    'inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.46)] bg-[rgb(var(--ui-bg)/0.45)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition-[border-color,background-color,transform] duration-200 ease-out hover:border-[rgb(var(--ui-accent)/0.32)] hover:bg-[rgb(var(--ui-surface-strong)/0.62)] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
   const doubanLinkClass =
-    'absolute left-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-bg)/0.48)] text-[rgb(var(--ui-success))] shadow-ui-glass backdrop-blur-xl transition duration-200 hover:scale-[1.06] hover:border-[rgb(var(--ui-success)/0.48)] hover:bg-[rgb(var(--ui-surface-strong)/0.68)] hover:text-[rgb(var(--ui-on-accent))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
+    'absolute left-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-bg)/0.48)] text-[rgb(var(--ui-success))] shadow-ui-glass backdrop-blur-xl transition-[border-color,background-color,transform] duration-200 ease-out hover:border-[rgb(var(--ui-success)/0.48)] hover:bg-[rgb(var(--ui-surface-strong)/0.68)] hover:text-[rgb(var(--ui-on-accent))] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
   const posterActionLabel = `打开 ${actualTitle} 海报`;
   const titleActionLabel = `打开 ${actualTitle}`;
   const defaultImageSize = isSmall
@@ -348,7 +348,7 @@ export default function VideoCard({
 
   return (
     <article
-      className={`group relative w-full transition-all duration-300 ease-in-out hover:z-[500] ${
+      className={`group relative w-full hover:z-[500] ${
         isSmall ? 'origin-top-left scale-75' : ''
       }`}
     >
@@ -384,17 +384,17 @@ export default function VideoCard({
           />
 
           <div
-            className={`pointer-events-none absolute inset-0 bg-gradient-to-t from-[rgb(var(--ui-bg)/0.9)] via-[rgb(var(--ui-bg)/0.2)] to-transparent transition-opacity duration-300 group-hover:opacity-100 ${
+            className={`pointer-events-none absolute inset-0 bg-gradient-to-t from-[rgb(var(--ui-bg)/0.9)] via-[rgb(var(--ui-bg)/0.2)] to-transparent transition-opacity duration-150 ease group-hover:opacity-100 ${
               showOpeningState ? 'opacity-100' : 'opacity-80'
             }`}
           />
 
           {config.showPlayButton || showOpeningState ? (
             <div
-              className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-all duration-300 ease-in-out ${
+              className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-150 ease ${
                 showOpeningState
                   ? 'opacity-100'
-                  : 'opacity-0 delay-75 group-hover:opacity-100'
+                  : 'opacity-0 group-hover:opacity-100'
               }`}
             >
               {showOpeningState ? (
@@ -404,7 +404,7 @@ export default function VideoCard({
                 </span>
               ) : (
                 <PlayCircleIcon
-                  className='fill-transparent text-[rgb(var(--ui-text))] drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out'
+                  className='fill-transparent text-[rgb(var(--ui-text))] drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)]'
                   size={isSmall ? 34 : 52}
                   strokeWidth={0.9}
                 />
@@ -483,8 +483,10 @@ export default function VideoCard({
       {config.showProgress ? (
         <div className='mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10'>
           <div
-            className='h-full rounded-full bg-[rgb(var(--ui-accent))] transition-all duration-500 ease-out'
-            style={{ width: `${progress}%` }}
+            className='h-full w-full origin-left rounded-full bg-[rgb(var(--ui-accent))] transition-transform duration-200 ease-out'
+            style={{
+              transform: `scaleX(${Math.min(Math.max(progress, 0), 100) / 100})`,
+            }}
           />
         </div>
       ) : null}

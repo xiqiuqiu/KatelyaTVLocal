@@ -128,21 +128,23 @@ export default function AiFindResultGroups({
           />
 
           {group.groups.length > 0 ? (
-            <PosterGrid className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
-              {group.groups.map((item) => (
-                <div className='w-full' key={item.groupKey}>
-                  <VideoCard
-                    from='search'
-                    items={item.items}
-                    query={
-                      group.query.trim() !== item.title
-                        ? group.query.trim()
-                        : ''
-                    }
-                  />
-                </div>
-              ))}
-            </PosterGrid>
+            <div className='ui-ai-group-enter'>
+              <PosterGrid className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
+                {group.groups.map((item) => (
+                  <div className='w-full' key={item.groupKey}>
+                    <VideoCard
+                      from='search'
+                      items={item.items}
+                      query={
+                        group.query.trim() !== item.title
+                          ? group.query.trim()
+                          : ''
+                      }
+                    />
+                  </div>
+                ))}
+              </PosterGrid>
+            </div>
           ) : loadingGroups.includes(group.query) ? (
             <Surface
               className='flex items-center justify-center gap-2 px-6 py-8 text-center text-sm text-[rgb(var(--ui-text-muted))]'

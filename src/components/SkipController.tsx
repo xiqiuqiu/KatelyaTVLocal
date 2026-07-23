@@ -86,6 +86,11 @@ export default function SkipController({
   const [isCountdownPaused, setIsCountdownPaused] = useState(false);
   const [isWarningMode, setIsWarningMode] = useState(false); // 新增：预告模式状态
   const [isDesktopPanelOpen, setIsDesktopPanelOpen] = useState(true); // 新增：桌面端面板展开状态
+  const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
+  const [countdownMounted, setCountdownMounted] = useState(false);
+  const [countdownOpen, setCountdownOpen] = useState(false);
+  const [skipNoticeMounted, setSkipNoticeMounted] = useState(false);
+  const [skipNoticeOpen, setSkipNoticeOpen] = useState(false);
   const isCountdownPausedRef = useRef(isCountdownPaused); // 用于同步暂停状态
   const countdownSecondsRef = useRef(countdownSeconds);
   const showCountdownRef = useRef(showCountdown);
@@ -717,6 +722,32 @@ export default function SkipController({
   }, [showCountdown]);
 
   useEffect(() => {
+    if (showCountdown) {
+      setCountdownMounted(true);
+      const frame = requestAnimationFrame(() => setCountdownOpen(true));
+      return () => cancelAnimationFrame(frame);
+    }
+
+    setCountdownOpen(false);
+    const timer = window.setTimeout(() => setCountdownMounted(false), 180);
+    return () => window.clearTimeout(timer);
+  }, [showCountdown]);
+
+  useEffect(() => {
+    const visible = showSkipButton && !!currentSkipSegment;
+
+    if (visible) {
+      setSkipNoticeMounted(true);
+      const frame = requestAnimationFrame(() => setSkipNoticeOpen(true));
+      return () => cancelAnimationFrame(frame);
+    }
+
+    setSkipNoticeOpen(false);
+    const timer = window.setTimeout(() => setSkipNoticeMounted(false), 180);
+    return () => window.clearTimeout(timer);
+  }, [showSkipButton, currentSkipSegment]);
+
+  useEffect(() => {
     isSettingModeRef.current = isSettingMode;
     if (isSettingMode) {
       const time = artPlayerRef.current?.currentTime ?? currentTime;
@@ -743,8 +774,11 @@ export default function SkipController({
   return (
     <div className='skip-controller'>
       {/* 倒计时显示 - 简化样式 */}
-      {showCountdown && (
-        <div className='fixed top-20 left-1/2 transform -translate-x-1/2 z-[9999] bg-black/80 text-white px-4 py-2 rounded-lg backdrop-blur-sm border border-white/20 shadow-lg animate-fade-in'>
+      {countdownMounted && (
+        <div
+          className='skip-toast fixed top-20 left-1/2 z-[9999] -translate-x-1/2 rounded-lg border border-white/20 bg-black/80 px-4 py-2 text-white shadow-lg backdrop-blur-sm'
+          data-open={countdownOpen}
+        >
           <div className='flex items-center space-x-3'>
             <div className='flex flex-col'>
               <span className='text-sm font-medium'>
@@ -786,8 +820,11 @@ export default function SkipController({
       )}
 
       {/* 跳过按钮 */}
-      {showSkipButton && currentSkipSegment && (
-        <div className='fixed top-20 right-4 z-[9999] bg-black/80 text-white px-4 py-2 rounded-lg backdrop-blur-sm border border-white/20 shadow-lg animate-fade-in'>
+      {skipNoticeMounted && currentSkipSegment && (
+        <div
+          className='skip-toast fixed top-20 right-4 z-[9999] rounded-lg border border-white/20 bg-black/80 px-4 py-2 text-white shadow-lg backdrop-blur-sm'
+          data-open={skipNoticeOpen}
+        >
           <div className='flex items-center space-x-3'>
             <span className='text-sm'>
               {currentSkipSegment.type === 'opening'
@@ -980,7 +1017,7 @@ export default function SkipController({
                             openingStart: e.target.value,
                           })
                         }
-                        className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200'
+                        className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-[border-color,box-shadow] duration-200'
                         placeholder='0:00'
                       />
                       <div className='absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400'>
@@ -1022,7 +1059,7 @@ export default function SkipController({
                             openingEnd: e.target.value,
                           })
                         }
-                        className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200'
+                        className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-[border-color,box-shadow] duration-200'
                         placeholder='1:30'
                       />
                       <div className='absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400'>
@@ -1083,7 +1120,7 @@ export default function SkipController({
                             endingStart: e.target.value,
                           })
                         }
-                        className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200'
+                        className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-[border-color,box-shadow] duration-200'
                         placeholder='2:00'
                       />
                       <div className='absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400'>
@@ -1125,7 +1162,7 @@ export default function SkipController({
                             endingEnd: e.target.value,
                           })
                         }
-                        className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200'
+                        className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-[border-color,box-shadow] duration-200'
                         placeholder='留空直接跳下一集'
                       />
                       <div className='absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400'>
@@ -1239,7 +1276,7 @@ export default function SkipController({
               <button
                 type='button'
                 onClick={handleSaveBatchSettings}
-                className='flex-1 px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl'
+                className='flex-1 rounded-xl bg-[rgb(var(--ui-success))] px-6 py-4 font-semibold text-[rgb(var(--ui-on-accent))] shadow-lg transition-transform duration-[160ms] ease-out active:scale-[0.97]'
               >
                 <div className='flex items-center justify-center space-x-2'>
                   <svg
@@ -1271,7 +1308,7 @@ export default function SkipController({
                     autoNextEpisode: true,
                   });
                 }}
-                className='flex-1 px-6 py-4 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white rounded-xl font-semibold transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl'
+                className='flex-1 rounded-xl border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface-strong))] px-6 py-4 font-semibold text-[rgb(var(--ui-text))] shadow-lg transition-transform duration-[160ms] ease-out active:scale-[0.97]'
               >
                 <div className='flex items-center justify-center space-x-2'>
                   <svg
@@ -1394,14 +1431,13 @@ export default function SkipController({
                 type='button'
                 aria-label='打开跳过配置面板'
                 onClick={() => {
-                  const panel = document.getElementById('skip-segments-panel');
-                  panel?.classList.toggle('hidden');
+                  setIsMobilePanelOpen(true);
                   // 添加触觉反馈（如果设备支持）
                   if ('vibrate' in navigator) {
                     navigator.vibrate(50);
                   }
                 }}
-                className='w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-full shadow-xl flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 animate-pulse'
+                className='flex h-12 w-12 items-center justify-center rounded-full bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-xl transition-transform duration-[160ms] ease-out active:scale-[0.97]'
               >
                 <div className='relative'>
                   <svg
@@ -1417,7 +1453,7 @@ export default function SkipController({
                       d='M13 5l7 7-7 7M5 5l7 7-7 7'
                     />
                   </svg>
-                  <div className='absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs font-bold animate-bounce-in'>
+                  <div className='absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white'>
                     {skipConfig.segments.length}
                   </div>
                 </div>
@@ -1427,18 +1463,16 @@ export default function SkipController({
             {/* 移动端：全屏面板 */}
             <div
               id='skip-segments-panel'
-              className='lg:hidden fixed inset-0 z-[9999] hidden'
+              className='lg:hidden fixed inset-0 z-[9999]'
+              data-open={isMobilePanelOpen}
             >
               <button
                 type='button'
                 aria-label='关闭跳过面板'
                 className='absolute inset-0 bg-black/50 backdrop-blur-sm'
-                onClick={() => {
-                  const panel = document.getElementById('skip-segments-panel');
-                  panel?.classList.add('hidden');
-                }}
+                onClick={() => setIsMobilePanelOpen(false)}
               />
-              <div className='absolute inset-x-0 bottom-0 bg-white dark:bg-gray-800 rounded-t-3xl shadow-2xl max-h-[80vh] overflow-hidden flex flex-col animate-slide-up'>
+              <div className='skip-sheet absolute inset-x-0 bottom-0 flex max-h-[80vh] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-gray-800'>
                 {/* 拖拽指示器 */}
                 <div className='flex justify-center pt-3 pb-2'>
                   <div className='w-12 h-1 bg-gray-300 dark:bg-gray-600 rounded-full'></div>
@@ -1447,7 +1481,7 @@ export default function SkipController({
                 {/* 头部 */}
                 <div className='flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700'>
                   <div className='flex items-center space-x-3'>
-                    <div className='w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center'>
+                    <div className='flex h-10 w-10 items-center justify-center rounded-xl bg-[rgb(var(--ui-accent))]'>
                       <svg
                         className='w-6 h-6 text-white'
                         fill='none'
@@ -1474,10 +1508,7 @@ export default function SkipController({
                   <button
                     type='button'
                     aria-label='关闭跳过面板'
-                    onClick={() => {
-                      const panel = document.getElementById('skip-segments-panel');
-                      panel?.classList.add('hidden');
-                    }}
+                    onClick={() => setIsMobilePanelOpen(false)}
                     className='p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors'
                   >
                     <svg
@@ -1501,7 +1532,7 @@ export default function SkipController({
                   {skipConfig.segments.map((segment) => (
                     <div
                       key={segment.id}
-                      className='flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200'
+                      className='flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200'
                     >
                       <div className='flex items-center space-x-3 flex-1 min-w-0'>
                         <div
@@ -1554,7 +1585,7 @@ export default function SkipController({
                             handleDeleteSegment(segment.id!);
                           }
                         }}
-                        className='ml-3 p-3 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 flex-shrink-0'
+                        className='ml-3 flex-shrink-0 rounded-xl bg-red-500 p-3 text-white transition-[background-color,transform] duration-[160ms] ease-out hover:bg-red-600 active:scale-[0.97]'
                         aria-label='删除跳过片段'
                         title='删除'
                       >
@@ -1582,10 +1613,9 @@ export default function SkipController({
                     type='button'
                     onClick={() => {
                       onSettingModeChange?.(true);
-                      const panel = document.getElementById('skip-segments-panel');
-                      panel?.classList.add('hidden');
+                      setIsMobilePanelOpen(false);
                     }}
-                    className='w-full px-6 py-4 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-xl font-semibold transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg'
+                    className='w-full rounded-xl bg-[rgb(var(--ui-accent))] px-6 py-4 font-semibold text-[rgb(var(--ui-on-accent))] shadow-lg transition-transform duration-[160ms] ease-out active:scale-[0.97]'
                   >
                     <div className='flex items-center justify-center space-x-3'>
                       <svg
@@ -1609,14 +1639,14 @@ export default function SkipController({
             </div>
 
             {/* 桌面端：可收起设计 */}
-            <div className='hidden lg:block fixed bottom-6 left-6 z-[9998] transition-all duration-300 ease-out'>
+            <div className='hidden lg:block fixed bottom-6 left-6 z-[9998]'>
               {/* 收起状态：只显示一个圆形按钮 */}
               {!isDesktopPanelOpen && (
                 <button
                   type='button'
                   aria-label='打开跳过配置面板'
                   onClick={() => setIsDesktopPanelOpen(true)}
-                  className='w-14 h-14 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-full shadow-xl flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95 animate-pulse'
+                  className='flex h-14 w-14 items-center justify-center rounded-full bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-xl transition-transform duration-[160ms] ease-out active:scale-[0.97]'
                 >
                   <div className='relative'>
                     <svg
@@ -1632,7 +1662,7 @@ export default function SkipController({
                         d='M13 5l7 7-7 7M5 5l7 7-7 7'
                       />
                     </svg>
-                    <div className='absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs font-bold animate-bounce-in'>
+                    <div className='absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white'>
                       {skipConfig.segments.length}
                     </div>
                   </div>
@@ -1640,12 +1670,14 @@ export default function SkipController({
               )}
 
               {/* 展开状态：显示完整面板 */}
-              {isDesktopPanelOpen && (
-                <div className='max-w-md bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-600 animate-fade-in'>
+              <div
+                className='skip-desktop-panel max-w-md rounded-2xl border border-gray-200 bg-white/95 shadow-2xl backdrop-blur-sm dark:border-gray-600 dark:bg-gray-800/95'
+                data-open={isDesktopPanelOpen}
+              >
                   <div className='p-5'>
                     <div className='flex items-center justify-between mb-4'>
                       <h4 className='text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center'>
-                        <div className='w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center mr-3'>
+                        <div className='mr-3 flex h-8 w-8 items-center justify-center rounded-xl bg-[rgb(var(--ui-accent))]'>
                           <svg
                             className='w-5 h-5 text-white'
                             fill='none'
@@ -1694,7 +1726,7 @@ export default function SkipController({
                   {skipConfig.segments.map((segment) => (
                     <div
                       key={segment.id}
-                      className='group flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200'
+                      className='group flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200'
                     >
                       <div className='flex items-center space-x-3 flex-1'>
                         <div
@@ -1743,7 +1775,7 @@ export default function SkipController({
                             handleDeleteSegment(segment.id!);
                           }
                         }}
-                        className='opacity-0 group-hover:opacity-100 p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all duration-200 hover:scale-105 active:scale-95'
+                        className='rounded-lg bg-red-500 p-2 text-white opacity-0 transition-[background-color,opacity,transform] duration-[160ms] ease-out hover:bg-red-600 group-hover:opacity-100 active:scale-[0.97]'
                         aria-label='删除跳过片段'
                         title='删除'
                       >
@@ -1769,7 +1801,7 @@ export default function SkipController({
                   <button
                     type='button'
                     onClick={() => onSettingModeChange?.(true)}
-                    className='w-full px-4 py-3 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-xl font-semibold transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl'
+                    className='w-full rounded-xl bg-[rgb(var(--ui-accent))] px-4 py-3 font-semibold text-[rgb(var(--ui-on-accent))] shadow-lg transition-transform duration-[160ms] ease-out active:scale-[0.97]'
                   >
                     <div className='flex items-center justify-center space-x-2'>
                       <svg
@@ -1791,123 +1823,105 @@ export default function SkipController({
                 </div>
               </div>
             </div>
-              )}
             </div>
           </>
         )}
 
       <style jsx>{`
-        @keyframes fade-in {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+        .skip-toast {
+          opacity: 0;
+          transform: translateY(-8px);
+          transition:
+            opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+            transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
         }
-        
-        @keyframes slide-up {
-          from {
-            transform: translateY(100%);
-          }
-          to {
-            transform: translateY(0);
-          }
+
+        .skip-toast[data-open='true'] {
+          opacity: 1;
+          transform: translateY(0);
         }
-        
-        @keyframes bounce-in {
-          0% {
-            transform: scale(0.8);
-            opacity: 0;
-          }
-          50% {
-            transform: scale(1.05);
-          }
-          100% {
-            transform: scale(1);
-            opacity: 1;
-          }
+
+        #skip-segments-panel {
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
         }
-        
-        @keyframes pulse {
-          0%, 100% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.1);
-          }
+
+        #skip-segments-panel[data-open='true'] {
+          pointer-events: auto;
+          opacity: 1;
         }
-        
-        .animate-fade-in {
-          animation: fade-in 0.3s ease-out;
+
+        #skip-segments-panel .skip-sheet {
+          transform: translateY(100%);
+          transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
         }
-        
-        .animate-slide-up {
-          animation: slide-up 0.3s ease-out;
+
+        #skip-segments-panel[data-open='true'] .skip-sheet {
+          transform: translateY(0);
         }
-        
-        .animate-bounce-in {
-          animation: bounce-in 0.4s ease-out;
+
+        .skip-desktop-panel {
+          pointer-events: none;
+          opacity: 0;
+          transform: translateY(8px);
+          transition:
+            opacity 200ms cubic-bezier(0.23, 1, 0.32, 1),
+            transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
         }
-        
-        .animate-pulse {
-          animation: pulse 2s infinite;
+
+        .skip-desktop-panel[data-open='true'] {
+          pointer-events: auto;
+          opacity: 1;
+          transform: translateY(0);
         }
-        
-        @keyframes scale-in {
-          from {
-            transform: scale(0.8);
-            opacity: 0;
-          }
-          to {
-            transform: scale(1);
-            opacity: 1;
-          }
-        }
-        
-        .animate-scale-in {
-          animation: scale-in 0.2s ease-out;
-        }
-        
-        /* 移动端特定样式 */
+
         @media (max-width: 1024px) {
-          #skip-segments-panel {
-            transition: all 0.3s ease-out;
-          }
-          
-          #skip-segments-panel:not(.hidden) {
-            animation: slide-up 0.3s ease-out;
-          }
-          
-          /* 移动端滚动条优化 */
           #skip-segments-panel ::-webkit-scrollbar {
             width: 4px;
           }
-          
+
           #skip-segments-panel ::-webkit-scrollbar-track {
             background: transparent;
           }
-          
+
           #skip-segments-panel ::-webkit-scrollbar-thumb {
             background: #888;
             border-radius: 2px;
           }
-          
+
           #skip-segments-panel ::-webkit-scrollbar-thumb:hover {
             background: #666;
           }
         }
-        
-        /* 触摸设备优化 */
+
         @media (hover: none) {
           .group:hover .opacity-0 {
             opacity: 1;
           }
-          
-          button:active {
-            transform: scale(0.95);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .skip-toast {
+            transform: none;
+            transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
+          }
+          .skip-toast[data-open='true'] {
+            transform: none;
+          }
+          #skip-segments-panel .skip-sheet {
+            transform: none;
+            transition: none;
+          }
+          #skip-segments-panel[data-open='true'] .skip-sheet {
+            transform: none;
+          }
+          .skip-desktop-panel {
+            transform: none;
+            transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1);
+          }
+          .skip-desktop-panel[data-open='true'] {
+            transform: none;
           }
         }
       `}</style>
@@ -1920,10 +1934,10 @@ export function SkipSettingsButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className='flex items-center space-x-2 px-4 py-2.5 bg-gradient-to-r from-gray-100 to-gray-200 hover:from-gray-200 hover:to-gray-300 dark:from-gray-700 dark:to-gray-600 dark:hover:from-gray-600 dark:hover:to-gray-500 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 transition-all duration-200 hover:scale-105 active:scale-95 shadow-md hover:shadow-lg'
+      className='flex items-center space-x-2 rounded-xl border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-4 py-2.5 text-sm font-medium text-[rgb(var(--ui-text))] shadow-md transition-colors duration-200 hover:bg-[rgb(var(--ui-surface-strong))]'
       title='设置跳过片头片尾'
     >
-      <div className='w-5 h-5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center'>
+      <div className='flex h-5 w-5 items-center justify-center rounded-lg bg-[rgb(var(--ui-accent))]'>
         <svg
           className='w-3 h-3 text-white'
           fill='none'

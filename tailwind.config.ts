@@ -50,6 +50,16 @@ const config: Config = {
         'ui-strong': 'var(--ui-shadow-strong)',
         'ui-glass': 'var(--ui-shadow-glass)',
       },
+      transitionTimingFunction: {
+        easeOutStrong: 'cubic-bezier(0.23, 1, 0.32, 1)',
+        easeInOutStrong: 'cubic-bezier(0.77, 0, 0.175, 1)',
+        easeDrawer: 'cubic-bezier(0.32, 0.72, 0, 1)',
+      },
+      transitionDuration: {
+        motionFast: '120ms',
+        motionBase: '180ms',
+        motionSlow: '240ms',
+      },
       keyframes: {
         flicker: {
           '0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100%': {
@@ -86,9 +96,9 @@ const config: Config = {
       animation: {
         flicker: 'flicker 3s linear infinite',
         shimmer: 'shimmer 1.3s linear infinite',
-        'fade-in': 'fadeIn 0.3s ease-in-out',
-        'slide-up': 'slideUp 0.3s ease-in-out',
-        'slide-down': 'slideDown 0.3s ease-in-out',
+        'fade-in': 'fadeIn 180ms cubic-bezier(0.23, 1, 0.32, 1)',
+        'slide-up': 'slideUp 220ms cubic-bezier(0.23, 1, 0.32, 1)',
+        'slide-down': 'slideDown 220ms cubic-bezier(0.23, 1, 0.32, 1)',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',

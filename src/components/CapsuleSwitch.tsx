@@ -73,10 +73,10 @@ const CapsuleSwitch: React.FC<CapsuleSwitchProps> = ({
       {/* 滑动的白色背景指示器 */}
       {indicatorStyle.width > 0 && (
         <div
-          className='absolute bottom-1 top-1 rounded-full bg-[rgb(var(--ui-text))] shadow-ui-soft transition-all duration-300 ease-out'
+          className='absolute bottom-1 top-1 left-0 rounded-full bg-[rgb(var(--ui-text))] shadow-ui-soft transition-transform duration-300 ease-out'
           style={{
-            left: `${indicatorStyle.left}px`,
             width: `${indicatorStyle.width}px`,
+            transform: `translateX(${indicatorStyle.left}px)`,
           }}
         />
       )}
@@ -91,7 +91,7 @@ const CapsuleSwitch: React.FC<CapsuleSwitchProps> = ({
             }}
             aria-pressed={isActive}
             onClick={() => onChange(opt.value)}
-            className={`relative z-10 min-w-[3.5rem] whitespace-nowrap rounded-full px-3 py-2 text-sm font-medium transition-all duration-200 cursor-pointer sm:min-w-[4.5rem] sm:px-4 ${
+            className={`relative z-10 min-w-[3.5rem] whitespace-nowrap rounded-full px-3 py-2 text-sm font-medium transition-colors duration-motionBase ease-easeOutStrong cursor-pointer sm:min-w-[4.5rem] sm:px-4 ${
               isActive
                 ? 'text-[rgb(var(--ui-bg))]'
                 : 'text-[rgb(var(--ui-text-muted))] hover:text-[rgb(var(--ui-text))]'

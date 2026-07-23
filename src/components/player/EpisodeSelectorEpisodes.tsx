@@ -134,7 +134,7 @@ const EpisodeSelectorEpisodes: React.FC<EpisodeSelectorEpisodesProps> = ({
                     }}
                     onClick={() => onCategoryClick(idx)}
                     aria-current={isActive ? 'true' : undefined}
-                    className={`${buttonWidth} relative flex-shrink-0 whitespace-nowrap rounded-ui-sm border px-2.5 py-2 text-center text-xs font-semibold transition-all duration-200
+                    className={`${buttonWidth} relative flex-shrink-0 whitespace-nowrap rounded-ui-sm border px-2.5 py-2 text-center text-xs font-semibold transition-[border-color,background-color,color] duration-200
                           ${isActive ? stateActiveClass : stateIdleClass}
                         `.trim()}
                     title={`第 ${idx * episodesPerPage + 1}-${Math.min(
@@ -157,7 +157,7 @@ const EpisodeSelectorEpisodes: React.FC<EpisodeSelectorEpisodesProps> = ({
           </div>
         </div>
         <button
-          className='flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] transition-all duration-200 hover:border-[rgba(var(--ui-accent),0.45)] hover:bg-[rgba(var(--ui-surface-strong),0.82)] hover:text-[rgb(var(--ui-text))]'
+          className='flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] transition-[border-color,background-color,color] duration-200 hover:border-[rgba(var(--ui-accent),0.45)] hover:bg-[rgba(var(--ui-surface-strong),0.82)] hover:text-[rgb(var(--ui-text))]'
           aria-label='切换集数排序'
           title={descending ? '切换为正序' : '切换为倒序'}
           onClick={onToggleDescending}
@@ -190,7 +190,7 @@ const EpisodeSelectorEpisodes: React.FC<EpisodeSelectorEpisodesProps> = ({
                 e.stopPropagation();
                 onEpisodeClick(episodeNumber);
               }}
-              className={`flex h-10 w-full cursor-pointer items-center justify-center rounded-ui-sm border text-sm font-medium transition-all duration-200
+              className={`flex h-10 w-full cursor-pointer items-center justify-center rounded-ui-sm border text-sm font-medium transition-[border-color,background-color,color] duration-200
                     ${
                       isActive
                         ? 'border border-[rgb(var(--ui-accent))] bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'

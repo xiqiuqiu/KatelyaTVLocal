@@ -47,23 +47,21 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
               <Link
                 href={item.href}
                 data-active={active}
-                className={`relative flex h-16 w-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition ${
-                  active ? '-translate-y-0.5' : 'hover:-translate-y-0.5'
-                }`}
+                className={`relative flex h-16 w-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors transition-transform duration-[160ms] ease-out active:scale-[0.97]`}
               >
                 {active && (
                   <div className='absolute inset-x-2 inset-y-1 rounded-ui-md border border-[rgb(var(--ui-accent)/0.24)] bg-[rgb(var(--ui-surface-strong)/0.48)] shadow-ui-soft' />
                 )}
 
                 <Icon
-                  className={`relative h-5 w-5 transition ${
+                  className={`relative h-5 w-5 transition-colors ${
                     active
-                      ? 'scale-105 text-[rgb(var(--ui-accent))]'
+                      ? 'text-[rgb(var(--ui-accent))]'
                       : 'text-[rgb(var(--ui-text-muted))] hover:text-[rgb(var(--ui-text))]'
                   }`}
                 />
                 <span
-                  className={`relative transition ${
+                  className={`relative transition-colors ${
                     active
                       ? 'text-[rgb(var(--ui-text))]'
                       : 'text-[rgb(var(--ui-text-muted))]'

@@ -11,7 +11,7 @@ export default function CardActions({
 }: CardActionsProps) {
   return (
     <div
-      className={`absolute bottom-3 right-3 z-20 flex items-center gap-2 opacity-0 translate-y-2 transition-all duration-300 ease-in-out group-hover:translate-y-0 group-hover:opacity-100 ${className}`.trim()}
+      className={`absolute bottom-3 right-3 z-20 flex items-center gap-2 opacity-0 transition-opacity duration-150 ease max-md:opacity-100 group-hover:opacity-100 ${className}`.trim()}
     >
       {children}
     </div>

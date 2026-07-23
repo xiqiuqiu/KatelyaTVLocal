@@ -5370,7 +5370,7 @@ function PlayPageClient() {
             </div>
 
             <div
-              className={`transition-all duration-300 ease-in-out ${
+              className={`${
                 isEpisodeSelectorCollapsed ? 'hidden' : 'block'
               }`}
             >
