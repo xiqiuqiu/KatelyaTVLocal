@@ -102,6 +102,12 @@ export default function SkipController({
   const skipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const autoSkipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const settingsDialogRef = useRef<HTMLDivElement>(null);
+  const settingsCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsFocusRestoreRef = useRef<Element | null>(null);
+
+  const SETTINGS_FOCUSABLE_SELECTOR =
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
   // 时间格式转换函数
   const timeToSeconds = useCallback((timeStr: string): number => {
@@ -756,6 +762,76 @@ export default function SkipController({
     }
   }, [isSettingMode, artPlayerRef, currentTime]);
 
+  useEffect(() => {
+    if (!isSettingMode) {
+      return;
+    }
+
+    settingsFocusRestoreRef.current = document.activeElement;
+
+    const focusFrame = requestAnimationFrame(() => {
+      if (settingsCloseButtonRef.current) {
+        settingsCloseButtonRef.current.focus();
+      } else {
+        settingsDialogRef.current?.focus();
+      }
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onSettingModeChange?.(false);
+        return;
+      }
+
+      if (event.key !== 'Tab' || !settingsDialogRef.current) {
+        return;
+      }
+
+      const focusable = Array.from(
+        settingsDialogRef.current.querySelectorAll<HTMLElement>(
+          SETTINGS_FOCUSABLE_SELECTOR
+        )
+      ).filter(
+        (element) =>
+          !element.hasAttribute('disabled') &&
+          element.getAttribute('aria-hidden') !== 'true'
+      );
+
+      if (focusable.length === 0) {
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey) {
+        if (document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      document.removeEventListener('keydown', handleKeyDown);
+      const restoreTarget = settingsFocusRestoreRef.current;
+      if (
+        restoreTarget instanceof HTMLElement &&
+        document.contains(restoreTarget)
+      ) {
+        restoreTarget.focus();
+      }
+      settingsFocusRestoreRef.current = null;
+    };
+  }, [isSettingMode, onSettingModeChange]);
+
   // 清理定时器 - 增强版
   useEffect(() => {
     return () => {
@@ -845,12 +921,30 @@ export default function SkipController({
 
       {/* 设置模式面板 - 重新设计 */}
       {isSettingMode && (
-        <div className='fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4'>
-          <div className='bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700'>
+        <div
+          className='fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4'
+          role='presentation'
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              onSettingModeChange?.(false);
+            }
+          }}
+        >
+          <div
+            ref={settingsDialogRef}
+            role='dialog'
+            aria-modal='true'
+            aria-labelledby='skip-settings-title'
+            tabIndex={-1}
+            className='bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700'
+          >
             {/* 头部 */}
             <div className='flex items-center justify-between mb-8'>
               <div>
-                <h3 className='text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2'>
+                <h3
+                  id='skip-settings-title'
+                  className='text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2'
+                >
                   智能跳过设置
                 </h3>
                 <p className='text-sm text-gray-600 dark:text-gray-400'>
@@ -858,6 +952,7 @@ export default function SkipController({
                 </p>
               </div>
               <button
+                ref={settingsCloseButtonRef}
                 type='button'
                 aria-label='关闭跳过设置'
                 onClick={() => {
