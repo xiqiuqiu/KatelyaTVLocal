@@ -65,6 +65,7 @@ import {
   type PlaybackAttemptReporter,
   createPlaybackAttemptReporter,
   isPlaybackAttemptEnhancedReportingEnabled,
+  preferLogicalPlaybackUrl,
   sanitizePlaybackEvidenceUrl,
   summarizeUserAgent,
 } from '@/lib/playback-attempt';
@@ -964,8 +965,11 @@ function PlayPageClient() {
         typeof video?.networkState === 'number' ? video.networkState : null,
       paused: typeof video?.paused === 'boolean' ? video.paused : null,
       ended: typeof video?.ended === 'boolean' ? video.ended : null,
-      playbackUrl:
-        video?.currentSrc || video?.src || videoUrlRef.current || null,
+      playbackUrl: preferLogicalPlaybackUrl(
+        videoUrlRef.current,
+        video?.src,
+        video?.currentSrc
+      ),
       nearbySegmentDurationSeconds: getNearbyHlsSegmentDurationSeconds(
         hlsController as Parameters<
           typeof getNearbyHlsSegmentDurationSeconds
@@ -2138,7 +2142,10 @@ function PlayPageClient() {
     const videoSnapshot = getPlaybackDebugVideoSnapshot();
     const policy = playbackPolicyRef.current;
     const sanitizedPlayback = sanitizePlaybackEvidenceUrl(
-      typeof reported.playbackUrl === 'string' ? reported.playbackUrl : null
+      preferLogicalPlaybackUrl(
+        typeof reported.playbackUrl === 'string' ? reported.playbackUrl : null,
+        videoUrlRef.current
+      )
     );
 
     if (!playbackDebugEnabledRef.current) {
@@ -2213,8 +2220,11 @@ function PlayPageClient() {
     const policy = options.policy ?? playbackPolicyRef.current;
     const detailPlaybackUrl =
       typeof details.playbackUrl === 'string' ? details.playbackUrl : null;
-    const effectivePlaybackUrl =
-      options.playbackUrl ?? detailPlaybackUrl ?? videoUrlRef.current ?? null;
+    const effectivePlaybackUrl = preferLogicalPlaybackUrl(
+      options.playbackUrl,
+      detailPlaybackUrl,
+      videoUrlRef.current
+    );
 
     if (
       eventType === 'video-canplay' &&

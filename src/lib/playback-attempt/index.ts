@@ -11,6 +11,7 @@ export type {
 
 export {
   createPlaybackAttemptSessionId,
+  preferLogicalPlaybackUrl,
   sanitizeEvidenceDetails,
   sanitizePlaybackEvidenceUrl,
   summarizeUserAgent,

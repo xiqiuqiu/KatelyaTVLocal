@@ -1,5 +1,6 @@
 import {
   createPlaybackAttemptReporter,
+  preferLogicalPlaybackUrl,
   sanitizePlaybackEvidenceUrl,
   type PlaybackAttemptChannelDecision,
 } from './index';
@@ -74,6 +75,34 @@ describe('Playback Attempt evidence reporter', () => {
       playbackUrl: 'https://cdn.example.com/play/abc.m3u8',
       playbackDomain: 'cdn.example.com',
     });
+  });
+
+  it('does not mangle MediaSource blob URLs into pages.devhttps evidence', () => {
+    // Production symptom (iPad/Safari HLS.js MMS): video.currentSrc is a blob:
+    // URL. Naively concatenating URL.origin + URL.pathname yields a host like
+    // `*.pages.devhttps` after a second sanitize pass (client + D1 normalize).
+    const blobUrl =
+      'blob:https://4e5f0ef6.katelyatv-b3u.pages.dev/53dd7c71-1359-4838-910b-47ca980c8c4a';
+
+    const once = sanitizePlaybackEvidenceUrl(blobUrl);
+    expect(once).toEqual({ playbackUrl: null, playbackDomain: null });
+
+    // Client sanitize + D1 normalizeInput both call this; must stay idempotent.
+    const twice = sanitizePlaybackEvidenceUrl(once.playbackUrl);
+    expect(twice).toEqual({ playbackUrl: null, playbackDomain: null });
+  });
+
+  it('prefers logical media URLs over blob currentSrc for evidence', () => {
+    expect(
+      preferLogicalPlaybackUrl(
+        'blob:https://app.example.com/uuid',
+        'https://cdn.example.com/show/index.m3u8'
+      )
+    ).toBe('https://cdn.example.com/show/index.m3u8');
+
+    expect(
+      preferLogicalPlaybackUrl('blob:https://app.example.com/uuid', null, '')
+    ).toBeNull();
   });
 
   it('emits channel.skipped for debug-off / no-d1 without inventing a localStorage audit store', () => {
