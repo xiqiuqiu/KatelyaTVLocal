@@ -193,12 +193,17 @@ function SearchPageClient() {
           `/api/search?q=${encodeURIComponent(query.trim())}`,
           { signal: controller.signal }
         );
+        if (!response.ok) {
+          throw new Error(`搜索失败 (${response.status})`);
+        }
         const data = await response.json();
         if (cancelled) return;
-        setSearchResults(sortSearchResultsByRanking(query, data.results));
+        const results = Array.isArray(data?.results) ? data.results : [];
+        setSearchResults(sortSearchResultsByRanking(query, results));
         setShowResults(true);
       } catch (error) {
         if ((error as Error).name === 'AbortError') return;
+        console.error(error);
         if (!cancelled) setSearchResults([]);
       } finally {
         if (!cancelled) setIsLoading(false);
