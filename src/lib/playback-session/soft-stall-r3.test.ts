@@ -48,7 +48,8 @@ function loadPlayableAlts() {
 /**
  * Regression: sustained soft stuttering must reach R3 auto source-switch.
  * Root causes locked here:
- * 1) R2 effectSettled must not park on resume (blocks further escalation)
+ * 1) R2 effectSettled must clear in-flight (not park on resume) so soft stalls
+ *    can keep escalating — while keeping Recovery Resume Time for later R3
  * 2) Sustained soft stalls must exhaust the shared R ladder before R3.
  */
 describe('soft-stall → R3 auto source-switch', () => {
@@ -76,7 +77,8 @@ describe('soft-stall → R3 auto source-switch', () => {
 
         if (sameSource.stage === 'R2') {
           expect(state.recoveryInFlight).toBeNull();
-          expect(state.recoveryResumeTime).toBeNull();
+          // Keep Recovery Resume Time after R2 so a later R3 can seed even if
+          // the media element briefly reports currentTime≈0.
 
           const continued = reducePlaybackSession(state, {
             type: 'video.waiting',
@@ -260,5 +262,81 @@ describe('soft-stall → R3 auto source-switch', () => {
     // Session-layer R3 must carry a near-stuck resume point; page-layer canplay
     // races are covered separately in play/page.test.tsx.
     expect(switchResumeTime).toBeGreaterThan(100);
+  });
+
+  /**
+   * Prod symptom: after several soft delays the player auto-switches source,
+   * but playback restarts at 0. If the media element briefly reports
+   * currentTime≈0 after same-source reload/remount, R3 must still seed from
+   * Recovery Resume Time / Bad Points — not treat 0 as the real playhead.
+   */
+  it('keeps R3 resume near the pre-stall playhead when currentTime collapses after R2 settle', () => {
+    let state = loadPlayableAlts();
+    let sawR2 = false;
+
+    for (let tick = 0; tick < 20; tick += 1) {
+      const nowMs = 10_000 + tick * 3_000;
+      const result = reducePlaybackSession(state, {
+        type: 'video.waiting',
+        nowMs,
+        snapshot: { currentTime: 120 },
+      });
+      state = result.state;
+
+      const sameSource = result.effects.find(
+        (e) => e.type === 'sameSourceRecover'
+      );
+      if (sameSource && sameSource.type === 'sameSourceRecover') {
+        state = reducePlaybackSession(state, {
+          type: 'recovery.effectSettled',
+          kind: sameSource.stage as 'R1' | 'R2',
+          nowMs: nowMs + 100,
+        }).state;
+        if (sameSource.stage === 'R2') {
+          sawR2 = true;
+          expect(state.recoveryInFlight).toBeNull();
+          break;
+        }
+      }
+    }
+
+    expect(sawR2).toBe(true);
+
+    // Media element collapsed to 0 after same-source reload — common before
+    // the escape seek lands, or when ArtPlayer host briefly remounts.
+    const collapsed = reducePlaybackSession(state, {
+      type: 'video.waiting',
+      nowMs: 80_000,
+      snapshot: { currentTime: 0 },
+    });
+
+    // Keep pumping the ladder until R3 if the first collapsed waiting only
+    // re-enters observe / same-source recovery.
+    let next = collapsed;
+    for (let tick = 0; tick < 12 && !next.effects.some((e) => e.type === 'switchSource'); tick += 1) {
+      const sameSource = next.effects.find((e) => e.type === 'sameSourceRecover');
+      if (sameSource && sameSource.type === 'sameSourceRecover') {
+        next = reducePlaybackSession(next.state, {
+          type: 'recovery.effectSettled',
+          kind: sameSource.stage as 'R1' | 'R2',
+          nowMs: 80_100 + tick * 3_000,
+        });
+      }
+      next = reducePlaybackSession(next.state, {
+        type: 'video.waiting',
+        nowMs: 81_000 + tick * 3_000,
+        snapshot: { currentTime: 0 },
+      });
+    }
+
+    const switchEffect = next.effects.find((e) => e.type === 'switchSource');
+    expect(switchEffect).toBeDefined();
+    expect(switchEffect && switchEffect.type === 'switchSource').toBe(true);
+    if (!switchEffect || switchEffect.type !== 'switchSource') {
+      throw new Error('expected switchSource');
+    }
+
+    // User was at ~120 before the stall cascade; restarting at 0 is the bug.
+    expect(switchEffect.resumeTime).toBeGreaterThan(100);
   });
 });

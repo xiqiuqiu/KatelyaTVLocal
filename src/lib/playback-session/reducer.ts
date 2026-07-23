@@ -5,6 +5,7 @@ import {
 } from '@/lib/hls-ad-skip';
 import {
   getAutoRecoveryResumePlan,
+  resolveAutoSourceSwitchSeedTime,
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
 import { rememberPlaybackBadPoint } from '@/lib/playback-stuck-escape';
@@ -172,7 +173,11 @@ function createRecoverySwitchEffect(
 
   const candidate = selected.source;
   const sourceKey = selected.sourceKey;
-  const seedTime = state.recoveryResumeTime ?? snapshot.currentTime;
+  const seedTime = resolveAutoSourceSwitchSeedTime({
+    recoveryResumeTime: state.recoveryResumeTime,
+    snapshotCurrentTime: snapshot.currentTime,
+    badPoints: state.badPoints,
+  });
   const escape = getAutoRecoveryResumePlan({
     currentPlayTime: seedTime,
     badPoints: state.badPoints,
@@ -1299,12 +1304,13 @@ export function reducePlaybackSession(
       }
 
       // R2 escape seek is already applied by the adapter before settle.
-      // Parking on 'resume' required a second seeked that never comes and
-      // blocked the soft-stall ladder from reaching R3.
+      // Clear in-flight so the soft-stall ladder can keep escalating, but keep
+      // Recovery Resume Time: R3 seeds from it when the media element briefly
+      // reports currentTime≈0 after same-source reload/remount.
       if (event.kind === 'R2') {
         return {
           state: {
-            ...setRecoveryResumeTime(state, null),
+            ...state,
             recoveryInFlight: null,
           },
           effects: [],

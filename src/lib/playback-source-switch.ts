@@ -161,6 +161,46 @@ export function getAutoRecoveryResumeTime(
   return getAutoRecoveryResumePlan(input).resumeTime;
 }
 
+/**
+ * Seed playhead for automatic same-episode source switch (R3).
+ *
+ * Prefers an already-planned Recovery Resume Time, then a live snapshot when it
+ * still looks like mid-playback. When the media element has collapsed to ~0
+ * (reload/remount race after same-source recovery), fall back to the newest
+ * Bad Point anchor so Continuous Viewing does not restart from the beginning.
+ */
+export function resolveAutoSourceSwitchSeedTime(input: {
+  recoveryResumeTime: number | null | undefined;
+  snapshotCurrentTime: number;
+  badPoints?: readonly PlaybackBadPoint[];
+}): number {
+  const planned = input.recoveryResumeTime;
+  if (typeof planned === 'number' && Number.isFinite(planned) && planned > 1) {
+    return planned;
+  }
+
+  const live = input.snapshotCurrentTime;
+  if (Number.isFinite(live) && live > 1) {
+    return live;
+  }
+
+  const points = input.badPoints ?? [];
+  let newest: PlaybackBadPoint | null = null;
+  for (const point of points) {
+    if (!Number.isFinite(point.timeSeconds) || point.timeSeconds <= 1) {
+      continue;
+    }
+    if (!newest || point.updatedAtMs >= newest.updatedAtMs) {
+      newest = point;
+    }
+  }
+  if (newest) {
+    return newest.timeSeconds;
+  }
+
+  return Number.isFinite(live) ? live : 0;
+}
+
 export function getRewoundPlaybackResumeTime(
   currentPlayTime: number,
   rewindSeconds = PLAYBACK_RESUME_REWIND_SECONDS

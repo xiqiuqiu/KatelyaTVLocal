@@ -4,9 +4,62 @@ import {
   getNextRecoverySourceCandidate,
   getSourceSwitchResumePlan,
   getSourceSwitchTargetEpisodeIndex,
+  resolveAutoSourceSwitchSeedTime,
   shouldApplyQueuedResumeTime,
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
+
+describe('resolveAutoSourceSwitchSeedTime', () => {
+  it('prefers planned Recovery Resume Time over a collapsed live playhead', () => {
+    expect(
+      resolveAutoSourceSwitchSeedTime({
+        recoveryResumeTime: 118.5,
+        snapshotCurrentTime: 0,
+        badPoints: [
+          {
+            sourceKey: 'old',
+            timeSeconds: 120,
+            hitCount: 1,
+            updatedAtMs: 1,
+          },
+        ],
+      })
+    ).toBe(118.5);
+  });
+
+  it('falls back to the newest Bad Point when live and planned seeds collapsed', () => {
+    expect(
+      resolveAutoSourceSwitchSeedTime({
+        recoveryResumeTime: null,
+        snapshotCurrentTime: 0,
+        badPoints: [
+          {
+            sourceKey: 'old',
+            timeSeconds: 90,
+            hitCount: 1,
+            updatedAtMs: 1,
+          },
+          {
+            sourceKey: 'old',
+            timeSeconds: 120,
+            hitCount: 2,
+            updatedAtMs: 2,
+          },
+        ],
+      })
+    ).toBe(120);
+  });
+
+  it('uses the live playhead when it still looks like mid-playback', () => {
+    expect(
+      resolveAutoSourceSwitchSeedTime({
+        recoveryResumeTime: null,
+        snapshotCurrentTime: 240,
+        badPoints: [],
+      })
+    ).toBe(240);
+  });
+});
 
 describe('getSourceSwitchResumePlan', () => {
   it('keeps the current time for same-episode source switches and saves once after playback is ready', () => {

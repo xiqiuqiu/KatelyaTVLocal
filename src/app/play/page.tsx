@@ -935,10 +935,22 @@ function PlayPageClient() {
 
   const getCurrentVideoSnapshot = (): VideoSnapshot => {
     const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
-    const currentTime =
+    const liveTime =
       typeof video?.currentTime === 'number'
         ? video.currentTime
         : artPlayerRef.current?.currentTime || 0;
+    // Same-source reload/remount can briefly report 0; keep the last known
+    // mid-playback playhead so R3 auto-switch does not seed from the start.
+    const rememberedPlayhead = Math.max(
+      currentPlayTimeRef.current || 0,
+      hlsRecoveryStateRef.current.lastPlaybackTime || 0
+    );
+    const currentTime =
+      Number.isFinite(liveTime) && liveTime > 1
+        ? liveTime
+        : rememberedPlayhead > 1
+          ? rememberedPlayhead
+          : liveTime || 0;
     const hlsController =
       (artPlayerRef.current?.video as { hls?: unknown } | undefined)?.hls ||
       artPlayerRef.current?.hls ||
@@ -2836,17 +2848,11 @@ function PlayPageClient() {
       return false;
     }
 
-    const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
-    const currentPlayTime =
-      typeof video?.currentTime === 'number'
-        ? video.currentTime
-        : artPlayerRef.current?.currentTime || 0;
-
     syncPlaybackSessionSources();
     const sessionResult = dispatchPlaybackSessionEvent({
       type: 'recovery.runtimeEvidence',
       nowMs: Date.now(),
-      snapshot: { currentTime: currentPlayTime },
+      snapshot: getCurrentVideoSnapshot(),
       evidence: {
         platform: getPlaybackRuntimePlatform(),
         hardFailure: true,
@@ -3625,12 +3631,9 @@ function PlayPageClient() {
       sourceDurationBeforeSwitchRef.current =
         artPlayerRef.current?.duration || null;
 
-      // 记录当前播放进度（仅在同一集数切换时恢复）
-      const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
-      const currentPlayTime =
-        typeof video?.currentTime === 'number'
-          ? video.currentTime
-          : artPlayerRef.current?.currentTime || 0;
+      // 记录当前播放进度（仅在同一集数切换时恢复）。Prefer the snapshot so a
+      // briefly collapsed media currentTime does not wipe Recovery Resume Time.
+      const currentPlayTime = getCurrentVideoSnapshot().currentTime;
       console.log('换源前当前播放时间:', currentPlayTime);
 
       const sourceList =
