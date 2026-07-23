@@ -18,6 +18,7 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
 import { getInviteCodeFromSearchParams } from '@/lib/registration/invite-link';
+import { getSafeRedirectPath } from '@/lib/safe-redirect';
 
 import IOSCompatibility from '@/components/IOSCompatibility';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -152,8 +153,10 @@ function LoginPageClient() {
       });
 
       if (res.ok) {
-        const redirect = searchParams.get('redirect') || '/';
-        window.location.href = redirect;
+        window.location.href = getSafeRedirectPath(
+          searchParams.get('redirect'),
+          '/'
+        );
       } else if (res.status === 401) {
         setError('密码错误');
       } else {
@@ -194,8 +197,10 @@ function LoginPageClient() {
       });
 
       if (res.ok) {
-        const redirect = searchParams.get('redirect') || '/';
-        window.location.href = redirect;
+        window.location.href = getSafeRedirectPath(
+          searchParams.get('redirect'),
+          '/'
+        );
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? '服务器错误');
