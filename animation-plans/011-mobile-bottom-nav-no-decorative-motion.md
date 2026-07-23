@@ -1,6 +1,6 @@
 # 011 — Remove decorative MobileBottomNav translate/scale
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: MEDIUM
 - **Category**: Purpose & frequency

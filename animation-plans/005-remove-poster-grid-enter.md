@@ -1,6 +1,6 @@
 # 005 — Remove decorative PosterGrid enter; shorten page reveal
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: HIGH
 - **Category**: Purpose & frequency / Easing & duration

@@ -1,6 +1,6 @@
 # 008 — Make SkipController toasts/drawers interruptible
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: MEDIUM
 - **Category**: Interruptibility

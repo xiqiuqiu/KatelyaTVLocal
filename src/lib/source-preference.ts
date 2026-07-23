@@ -1,4 +1,8 @@
 import {
+  fetchWithValidatedRedirects,
+  validateProxyTargetUrl,
+} from './proxy-url-policy';
+import {
   SourceProbeResult,
   SourceStatusKind,
 } from './types';
@@ -35,22 +39,27 @@ function normalizeProbeTimeoutMs(timeoutMs?: number): number {
   return Math.min(10000, Math.max(1000, Math.floor(timeoutMs as number)));
 }
 
-async function fetchWithProbeTimeout(
-  input: RequestInfo | URL,
-  init: RequestInit = {},
+async function fetchValidatedProbeTarget(
+  targetUrl: string,
+  init: RequestInit,
   options?: SourceProbeOptions
 ): Promise<Response> {
+  const validation = validateProxyTargetUrl(targetUrl);
+  if (!validation.ok) {
+    throw new Error(validation.reason);
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),
     normalizeProbeTimeoutMs(options?.timeoutMs)
   );
-
   try {
-    return await fetch(input, {
-      ...init,
-      signal: controller.signal,
-    });
+    return await fetchWithValidatedRedirects(
+      validation.url.href,
+      { ...init, redirect: 'manual', signal: controller.signal },
+      { maxRedirects: 2 }
+    );
   } finally {
     clearTimeout(timeoutId);
   }
@@ -127,15 +136,19 @@ async function probeNestedTarget(
   origin: string,
   options?: SourceProbeOptions
 ): Promise<{ ok: boolean; corsAccessible: boolean; status: number }> {
+  const validation = validateProxyTargetUrl(targetUrl);
+  if (!validation.ok) {
+    throw new Error(validation.reason);
+  }
+
   const isNestedPlaylist = targetUrl.toLowerCase().includes('.m3u8');
-  const response = await fetchWithProbeTimeout(
-    targetUrl,
+  const response = await fetchValidatedProbeTarget(
+    validation.url.href,
     {
       headers: buildUpstreamHeaders(
-        targetUrl,
+        validation.url.href,
         isNestedPlaylist ? null : 'bytes=0-1'
       ),
-      redirect: 'follow',
     },
     options
   );
@@ -195,11 +208,10 @@ export async function probeSourcePlaybackUpstream(
   const startedAt = Date.now();
 
   try {
-    const upstreamResponse = await fetchWithProbeTimeout(
+    const upstreamResponse = await fetchValidatedProbeTarget(
       targetUrl,
       {
         headers: buildUpstreamHeaders(targetUrl),
-        redirect: 'follow',
       },
       options
     );
@@ -237,6 +249,18 @@ export async function probeSourcePlaybackUpstream(
 
     const playlistContent = await upstreamResponse.text();
     const nextTarget = getFirstPlaylistTarget(playlistContent, targetUrl);
+
+    if (nextTarget) {
+      const nestedValidation = validateProxyTargetUrl(nextTarget);
+      if (!nestedValidation.ok) {
+        return {
+          kind: 'unavailable',
+          reason: nestedValidation.reason,
+          domain,
+          probeTimeMs: Date.now() - startedAt,
+        };
+      }
+    }
 
     if (!nextTarget) {
       return {

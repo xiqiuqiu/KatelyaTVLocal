@@ -1,6 +1,6 @@
 # 007 — Align SkipController motion personality with the app
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: HIGH
 - **Category**: Cohesion & tokens

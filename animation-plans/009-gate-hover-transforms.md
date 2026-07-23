@@ -1,6 +1,6 @@
 # 009 — Gate hover transforms behind fine pointers
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: MEDIUM
 - **Category**: Accessibility

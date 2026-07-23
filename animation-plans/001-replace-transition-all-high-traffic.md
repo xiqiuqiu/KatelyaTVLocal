@@ -1,6 +1,6 @@
 # 001 — Replace high-traffic `transition-all` with explicit properties
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: HIGH
 - **Category**: Performance

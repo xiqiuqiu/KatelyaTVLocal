@@ -153,14 +153,22 @@ const Sidebar = ({
         onClick={() => setActive(item.href)}
         data-active={isActive}
         title={isCollapsed ? item.label : undefined}
-        className={`group flex items-center gap-3 rounded-ui-md px-4 py-3 text-sm transition ${
+        className={`group flex items-center gap-3 rounded-ui-md px-4 py-3 text-sm transition-colors duration-150 ease ${
           isCollapsed ? 'justify-center px-3' : ''
-        } text-[rgb(var(--ui-text-muted))] hover:-translate-y-0.5 hover:bg-[rgb(var(--ui-surface)/0.42)] hover:text-[rgb(var(--ui-text))] data-[active=true]:border data-[active=true]:border-[rgb(var(--ui-accent)/0.24)] data-[active=true]:bg-[rgb(var(--ui-surface-strong)/0.5)] data-[active=true]:text-[rgb(var(--ui-text))] data-[active=true]:shadow-ui-soft`}
+        } text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface)/0.42)] hover:text-[rgb(var(--ui-text))] data-[active=true]:border data-[active=true]:border-[rgb(var(--ui-accent)/0.24)] data-[active=true]:bg-[rgb(var(--ui-surface-strong)/0.5)] data-[active=true]:text-[rgb(var(--ui-text))] data-[active=true]:shadow-ui-soft`}
       >
         <span className='flex h-5 w-5 items-center justify-center'>
           <Icon className='h-4 w-4' />
         </span>
-        {!isCollapsed && <span className='truncate'>{item.label}</span>}
+        <span
+          className={`truncate overflow-hidden transition-[max-width,opacity] duration-200 ease-out ${
+            isCollapsed
+              ? 'pointer-events-none max-w-0 opacity-0'
+              : 'max-w-[9rem] opacity-100'
+          }`}
+        >
+          {item.label}
+        </span>
       </Link>
     );
   };
@@ -172,7 +180,7 @@ const Sidebar = ({
           data-sidebar
           data-testid='desktop-sidebar'
           data-collapsed={isCollapsed}
-          className={`ui-glass-strong fixed inset-y-0 left-0 z-40 flex h-screen flex-col rounded-none border-y-0 border-l-0 pt-[calc(4rem+env(safe-area-inset-top))] transition-all duration-300 ${
+          className={`ui-glass-strong fixed inset-y-0 left-0 z-40 flex h-screen flex-col rounded-none border-y-0 border-l-0 pt-[calc(4rem+env(safe-area-inset-top))] transition-[width,transform,opacity] duration-motionBase ease-easeOutStrong ${
             isCollapsed ? 'w-20' : 'w-64'
           } ${
             visible
@@ -186,7 +194,7 @@ const Sidebar = ({
                 <button
                   onClick={handleToggle}
                   aria-label={isCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-                  className={`absolute top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-surface)/0.42)] text-[rgb(var(--ui-text-muted))] shadow-ui-soft transition hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.52)] hover:text-[rgb(var(--ui-text))] ${
+                  className={`absolute top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-surface)/0.42)] text-[rgb(var(--ui-text-muted))] shadow-ui-soft transition-[left,transform,border-color,background-color,color] duration-300 ease-easeOutStrong hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.52)] hover:text-[rgb(var(--ui-text))] ${
                     isCollapsed ? 'left-1/2 -translate-x-1/2' : 'left-3'
                   }`}
                 >

@@ -222,10 +222,10 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
         {/* 滑动的白色背景指示器 */}
         {indicatorStyle.width > 0 && (
           <div
-            className='absolute bottom-0.5 top-0.5 rounded-full bg-[rgb(var(--ui-text))] shadow-ui-soft transition-all duration-300 ease-out sm:bottom-1 sm:top-1'
+            className='absolute bottom-0.5 top-0.5 left-0 rounded-full bg-[rgb(var(--ui-text))] shadow-ui-soft transition-transform duration-300 ease-out sm:bottom-1 sm:top-1'
             style={{
-              left: `${indicatorStyle.left}px`,
               width: `${indicatorStyle.width}px`,
+              transform: `translateX(${indicatorStyle.left}px)`,
             }}
           />
         )}
@@ -239,7 +239,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
                 buttonRefs.current[index] = el;
               }}
               onClick={() => onChange(option.value)}
-              className={`relative z-10 px-2 py-1 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 whitespace-nowrap ${
+              className={`relative z-10 px-2 py-1 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-full transition-colors duration-200 whitespace-nowrap ${
                 isActive
                   ? 'cursor-default text-[rgb(var(--ui-bg))]'
                   : 'cursor-pointer text-[rgb(var(--ui-text-muted))] hover:text-[rgb(var(--ui-text))]'

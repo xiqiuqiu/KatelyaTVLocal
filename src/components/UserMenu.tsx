@@ -33,6 +33,8 @@ export const UserMenu: React.FC = () => {
   const router = useRouter();
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const [isMenuMounted, setIsMenuMounted] = useState(false);
+  const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [storageType, setStorageType] = useState<string>('localstorage');
@@ -52,6 +54,18 @@ export const UserMenu: React.FC = () => {
   useEffect(() => {
     setIsOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsMenuMounted(true);
+      const frame = requestAnimationFrame(() => setIsMenuVisible(true));
+      return () => cancelAnimationFrame(frame);
+    }
+
+    setIsMenuVisible(false);
+    const timer = window.setTimeout(() => setIsMenuMounted(false), 180);
+    return () => window.clearTimeout(timer);
+  }, [isOpen]);
 
   // 获取认证信息和存储类型
   useEffect(() => {
@@ -222,7 +236,10 @@ export const UserMenu: React.FC = () => {
       />
 
       {/* 菜单面板 */}
-      <div className='fixed right-4 top-16 z-[1001] w-72 select-none overflow-hidden rounded-ui-lg border border-white/10 bg-[rgba(var(--ui-surface),0.9)] p-2 text-[rgb(var(--ui-text))] shadow-ui-strong backdrop-blur-2xl'>
+      <div
+        data-open={isMenuVisible ? 'true' : 'false'}
+        className='ui-user-menu-panel fixed right-4 top-16 z-[1001] w-72 origin-top-right select-none overflow-hidden rounded-ui-lg border border-white/10 bg-[rgba(var(--ui-surface),0.9)] p-2 text-[rgb(var(--ui-text))] shadow-ui-strong backdrop-blur-2xl transition-[opacity,transform] duration-[180ms] ease-easeOutStrong data-[open=false]:pointer-events-none data-[open=false]:scale-[0.96] data-[open=false]:opacity-0 data-[open=true]:scale-100 data-[open=true]:opacity-100'
+      >
         {/* 用户信息区域 */}
         <div className='rounded-ui-md border border-white/10 bg-white/[0.06] px-3 py-3'>
           <div className='space-y-1'>
@@ -414,7 +431,7 @@ export const UserMenu: React.FC = () => {
       </div>
 
       {/* 使用 Portal 将菜单面板渲染到 document.body */}
-      {isOpen && mounted && createPortal(menuPanel, document.body)}
+      {isMenuMounted && mounted && createPortal(menuPanel, document.body)}
 
       {/* 使用 Portal 将修改密码面板渲染到 document.body */}
       {isChangePasswordOpen &&

@@ -1,6 +1,6 @@
 # 016 — Soft-enter AI Find group results when loading finishes
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: LOW (missed opportunity)
 - **Category**: Missed opportunities

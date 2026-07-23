@@ -1,6 +1,6 @@
 # 003 — Drive capsule indicators with transform, not left/width
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: HIGH
 - **Category**: Performance

@@ -332,6 +332,14 @@ For recommended config files, see the download links in the deployment sections 
 | `REGISTER_PASSWORD_MIN_LENGTH`         | Minimum password length              | `6`     |
 | `REGISTER_IP_WINDOW_SECONDS`           | IP rate-limit window (seconds)       | `3600`  |
 | `REGISTER_IP_WINDOW_LIMIT`             | Max registrations per IP per window  | `3`     |
+| `LOGIN_TURNSTILE_REQUIRED`             | Require Turnstile before login       | `false` |
+| `LOGIN_RATE_WINDOW_SECONDS`            | Failed-login rate-limit window       | `900`   |
+| `LOGIN_RATE_WINDOW_LIMIT`              | Failed-login limit per IP + username | `0` (off; use `5` on D1) |
+
+Before setting a nonzero `LOGIN_RATE_WINDOW_LIMIT`, deploy
+`migrations/2026-07-23_login_security_events.sql` to the D1 binding, confirm
+the table and index exist, then deploy the application and enable the limit.
+Login throttling fails closed with HTTP 500 when enabled without D1.
 
 ### AI Find Assistant
 
@@ -357,14 +365,14 @@ For recommended config files, see the download links in the deployment sections 
 
 ### Cloudflare Source Ranking
 
-| Variable                             | Description                          | Default |
-| ------------------------------------ | ------------------------------------ | ------- |
-| `SOURCE_RANKING_ENABLED`             | Enable source ranking                | `false` |
-| `NEXT_PUBLIC_SOURCE_RANKING_ENABLED` | Expose status to frontend            | `false` |
-| `SOURCE_RANKING_FALLBACK_TO_LIVE`    | Fall back to live probe              | `true`  |
-| `SOURCE_RANKING_CRON_ENABLED`        | Enable cron health checks            | `false` |
-| `SOURCE_RANKING_HAS_D1`              | Override D1 availability (test only) | `false` |
-| `CRON_API_TOKEN`                     | Auth token for `/api/cron`           | (empty) |
+| Variable                             | Description                                              | Default |
+| ------------------------------------ | -------------------------------------------------------- | ------- |
+| `SOURCE_RANKING_ENABLED`             | Enable source ranking                                    | `false` |
+| `NEXT_PUBLIC_SOURCE_RANKING_ENABLED` | Expose status to frontend                                | `false` |
+| `SOURCE_RANKING_FALLBACK_TO_LIVE`    | Fall back to live probe                                  | `true`  |
+| `SOURCE_RANKING_CRON_ENABLED`        | Enable cron health checks                                | `false` |
+| `SOURCE_RANKING_HAS_D1`              | Override D1 availability (test only)                     | `false` |
+| `CRON_API_TOKEN`                     | Required auth token for `/api/cron` when cron is enabled | (empty) |
 
 ### Verification
 

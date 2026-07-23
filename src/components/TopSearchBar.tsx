@@ -45,7 +45,7 @@ const TopSearchBar = ({
             onClick={onToggleSidebar}
             aria-pressed={!isSidebarCollapsed}
             aria-label={isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-            className='inline-flex h-11 w-11 items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-surface)/0.42)] text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md transition hover:-translate-y-0.5 hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.52)] hover:text-[rgb(var(--ui-text))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent'
+            className='inline-flex h-11 w-11 items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-surface)/0.42)] text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md transition-[border-color,background-color,color,transform] duration-150 ease ui-hover-lift hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.52)] hover:text-[rgb(var(--ui-text))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent'
           >
             <Menu size={20} />
           </button>
@@ -85,7 +85,7 @@ const TopSearchBar = ({
           <button
             type='submit'
             aria-label='提交搜索'
-            className='inline-flex h-9 w-9 items-center justify-center rounded-full bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] transition hover:scale-105 hover:brightness-110'
+            className='inline-flex h-9 w-9 items-center justify-center rounded-full bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] transition-[filter,transform] duration-150 ease ui-hover-scale-md hover:brightness-110'
           >
             <Search size={18} />
           </button>

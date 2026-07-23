@@ -1,6 +1,6 @@
 # 010 — Unify motion tokens and enter curves
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: MEDIUM
 - **Category**: Cohesion & tokens

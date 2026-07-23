@@ -1,6 +1,6 @@
 # 013 — Add UserMenu enter/exit motion from the trigger
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: LOW (missed opportunity)
 - **Category**: Missed opportunities

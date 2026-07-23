@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import * as dbClient from '@/lib/db.client';
+import { __resetFavoritesStoreForTests } from '@/lib/favorites-store.client';
 import type { SearchResult } from '@/lib/types';
 
 import VideoCard from '@/components/VideoCard';
@@ -45,16 +46,18 @@ jest.mock('@/lib/db.client', () => ({
   deleteFavorite: jest.fn(),
   deletePlayRecord: jest.fn(),
   generateStorageKey: (source: string, id: string) => `${source}+${id}`,
-  isFavorited: jest.fn(),
+  getAllFavorites: jest.fn(async () => ({})),
   saveFavorite: jest.fn(),
   subscribeToDataUpdates: jest.fn(() => jest.fn()),
 }));
 
 describe('VideoCard', () => {
   beforeEach(() => {
+    __resetFavoritesStoreForTests();
+
     const deleteFavoriteMock = dbClient.deleteFavorite as jest.Mock;
     const deletePlayRecordMock = dbClient.deletePlayRecord as jest.Mock;
-    const isFavoritedMock = dbClient.isFavorited as jest.Mock;
+    const getAllFavoritesMock = dbClient.getAllFavorites as jest.Mock;
     const saveFavoriteMock = dbClient.saveFavorite as jest.Mock;
     const subscribeToDataUpdatesMock =
       dbClient.subscribeToDataUpdates as jest.Mock;
@@ -62,18 +65,19 @@ describe('VideoCard', () => {
     push.mockReset();
     deleteFavoriteMock.mockReset();
     deletePlayRecordMock.mockReset();
-    isFavoritedMock.mockReset();
+    getAllFavoritesMock.mockReset();
     saveFavoriteMock.mockReset();
-    subscribeToDataUpdatesMock.mockClear();
+    subscribeToDataUpdatesMock.mockReset();
 
-    isFavoritedMock.mockReturnValue(
-      new Promise(() => {
-        // Keep pending so action-only tests do not get async favorite updates.
-      })
-    );
+    getAllFavoritesMock.mockResolvedValue({});
+    subscribeToDataUpdatesMock.mockImplementation(() => jest.fn());
     saveFavoriteMock.mockResolvedValue(undefined);
     deleteFavoriteMock.mockResolvedValue(undefined);
     deletePlayRecordMock.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    __resetFavoritesStoreForTests();
   });
 
   it('routes on the primary click target for standard cards', () => {
@@ -340,24 +344,17 @@ describe('VideoCard', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  it('ignores stale favorite status after source or id changes', async () => {
-    let resolveFirst!: (value: boolean) => void;
-    let resolveSecond!: (value: boolean) => void;
-
-    const isFavoritedMock = dbClient.isFavorited as jest.Mock;
-    isFavoritedMock
-      .mockImplementationOnce(
-        () =>
-          new Promise<boolean>((resolve) => {
-            resolveFirst = resolve;
-          })
-      )
-      .mockImplementationOnce(
-        () =>
-          new Promise<boolean>((resolve) => {
-            resolveSecond = resolve;
-          })
-      );
+  it('reflects the current source/id favorite key after props change', async () => {
+    (dbClient.getAllFavorites as jest.Mock).mockResolvedValue({
+      'test+2': {
+        title: '示例影片',
+        source_name: '测试源',
+        year: '2026',
+        cover: '',
+        total_episodes: 12,
+        save_time: 1,
+      },
+    });
 
     const cardProps = {
       title: '示例影片',
@@ -372,26 +369,21 @@ describe('VideoCard', () => {
       <VideoCard id='1' source='test' {...cardProps} />
     );
 
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByRole('button', { name: '切换收藏' }).className
+    ).not.toContain('ui-critical');
+
     rerender(<VideoCard id='2' source='test' {...cardProps} />);
 
-    await act(async () => {
-      resolveSecond(true);
-      await Promise.resolve();
-    });
-
     await waitFor(() => {
-      const favoriteButton = screen.getByRole('button', { name: '切换收藏' });
-      expect(favoriteButton.className).toContain('ui-critical');
+      expect(
+        screen.getByRole('button', { name: '切换收藏' }).className
+      ).toContain('ui-critical');
     });
-
-    await act(async () => {
-      resolveFirst(false);
-      await Promise.resolve();
-    });
-
-    expect(screen.getByRole('button', { name: '切换收藏' }).className).toContain(
-      'ui-critical'
-    );
   });
 
   it('requests optimized poster sizes and can prioritize first-screen cards', () => {

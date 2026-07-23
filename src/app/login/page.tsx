@@ -53,6 +53,7 @@ function LoginPageClient() {
   const [shouldAskUsername, setShouldAskUsername] = useState(false);
   const [enableRegister, setEnableRegister] = useState(false);
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
+  const [loginTurnstileRequired, setLoginTurnstileRequired] = useState(false);
   const [registerInviteRequired, setRegisterInviteRequired] = useState(true);
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   useEffect(() => {
@@ -72,6 +73,9 @@ function LoginPageClient() {
       );
       setEnableRegister(Boolean(window.RUNTIME_CONFIG?.ENABLE_REGISTER));
       setTurnstileSiteKey(window.RUNTIME_CONFIG?.TURNSTILE_SITE_KEY || '');
+      setLoginTurnstileRequired(
+        window.RUNTIME_CONFIG?.LOGIN_TURNSTILE_REQUIRED === true
+      );
       setRegisterInviteRequired(
         window.RUNTIME_CONFIG?.REGISTER_INVITE_REQUIRED !== false
       );
@@ -79,23 +83,25 @@ function LoginPageClient() {
   }, []);
 
   useEffect(() => {
-    if (authMode !== 'register') {
-      setTurnstileToken('');
-    }
+    setTurnstileToken('');
   }, [authMode]);
 
   useEffect(() => {
     const shouldRenderTurnstile =
-      authMode === 'register' && enableRegister && turnstileSiteKey;
+      turnstileSiteKey &&
+      ((authMode === 'register' && enableRegister) ||
+        (authMode === 'login' && loginTurnstileRequired));
     if (!shouldRenderTurnstile) return;
 
     const scriptId = 'cf-turnstile-script';
+    const turnstileId =
+      authMode === 'login' ? 'login-turnstile' : 'register-turnstile';
     const renderTurnstile = () => {
-      if (!window.turnstile || !document.getElementById('register-turnstile')) {
+      if (!window.turnstile || !document.getElementById(turnstileId)) {
         return;
       }
 
-      const container = document.getElementById('register-turnstile');
+      const container = document.getElementById(turnstileId);
       if (!container || container.dataset.rendered === 'true') {
         return;
       }
@@ -121,13 +127,17 @@ function LoginPageClient() {
     } else {
       renderTurnstile();
     }
-  }, [authMode, enableRegister, turnstileSiteKey]);
+  }, [authMode, enableRegister, loginTurnstileRequired, turnstileSiteKey]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
 
     if (!password || (shouldAskUsername && !username)) return;
+    if (loginTurnstileRequired && !turnstileToken) {
+      setError('请先完成人机验证');
+      return;
+    }
 
     try {
       setLoading(true);
@@ -137,6 +147,7 @@ function LoginPageClient() {
         body: JSON.stringify({
           password,
           ...(shouldAskUsername ? { username } : {}),
+          turnstileToken,
         }),
       });
 
@@ -326,7 +337,7 @@ function LoginPageClient() {
                           setError(null);
                           setAuthMode(mode as AuthMode);
                         }}
-                        className={`rounded-ui-sm px-4 py-3.5 text-base font-semibold transition-all duration-200 ${
+                        className={`rounded-ui-sm px-4 py-3.5 text-base font-semibold transition-colors duration-200 ${
                           authMode === mode
                             ? 'bg-[rgb(var(--ui-accent)/0.88)] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
                             : 'text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface))] hover:text-[rgb(var(--ui-text))]'
@@ -391,7 +402,7 @@ function LoginPageClient() {
                       />
                       <button
                         aria-label={showPassword ? '隐藏密码' : '显示密码'}
-                        className='absolute right-0 top-1/2 flex h-full w-16 -translate-y-1/2 items-center justify-center rounded-r-ui-sm text-[rgb(var(--ui-text-muted))] transition-colors duration-200 before:absolute before:inset-y-1 before:right-2 before:w-11 before:rounded-ui-sm before:border before:border-transparent before:bg-transparent before:transition-all before:duration-200 hover:text-[rgb(var(--ui-text))] hover:before:border-[rgb(var(--ui-border)/0.62)] hover:before:bg-[rgb(var(--ui-surface-strong)/0.44)] hover:before:shadow-ui-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.38)] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--ui-bg))]'
+                        className='absolute right-0 top-1/2 flex h-full w-16 -translate-y-1/2 items-center justify-center rounded-r-ui-sm text-[rgb(var(--ui-text-muted))] transition-colors duration-200 before:absolute before:inset-y-1 before:right-2 before:w-11 before:rounded-ui-sm before:border before:border-transparent before:bg-transparent before:transition-[border-color,background-color,box-shadow] before:duration-200 hover:text-[rgb(var(--ui-text))] hover:before:border-[rgb(var(--ui-border)/0.62)] hover:before:bg-[rgb(var(--ui-surface-strong)/0.44)] hover:before:shadow-ui-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.38)] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--ui-bg))]'
                         onClick={() => setShowPassword((value) => !value)}
                         onMouseDown={(event) => event.preventDefault()}
                         type='button'
@@ -445,6 +456,19 @@ function LoginPageClient() {
                       </>
                     )}
 
+                  {authMode === 'login' &&
+                    loginTurnstileRequired &&
+                    (turnstileSiteKey ? (
+                      <div
+                        id='login-turnstile'
+                        className='flex min-h-[82px] items-center justify-center overflow-hidden rounded-ui-sm border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg)/0.34)] px-3 py-2'
+                      />
+                    ) : (
+                      <p className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'>
+                        登录人机验证尚未配置，请稍后再试。
+                      </p>
+                    ))}
+
                   {error && (
                     <p
                       role='alert'
@@ -466,9 +490,11 @@ function LoginPageClient() {
                           (registerInviteRequired && !inviteCode.trim())
                         : !password ||
                           loading ||
-                          (shouldAskUsername && !username)
+                          (shouldAskUsername && !username) ||
+                          (loginTurnstileRequired &&
+                            (!turnstileSiteKey || !turnstileToken))
                     }
-                    className='inline-flex min-h-[60px] w-full items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-5 py-4 text-lg font-semibold text-[rgb(var(--ui-on-accent))] shadow-[0_14px_32px_rgb(var(--ui-accent)/0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-65 disabled:hover:translate-y-0'
+                    className='inline-flex min-h-[60px] w-full items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-5 py-4 text-lg font-semibold text-[rgb(var(--ui-on-accent))] shadow-[0_14px_32px_rgb(var(--ui-accent)/0.22)] transition-[transform,filter] duration-150 ease ui-hover-lift hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-65 disabled:hover:translate-y-0'
                   >
                     {loading ? (
                       <>

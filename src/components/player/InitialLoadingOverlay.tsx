@@ -66,7 +66,7 @@ export default function InitialLoadingOverlay({
               return (
                 <div
                   key={item}
-                  className={`rounded-ui-sm border px-3 py-2 transition-all duration-300 ${
+                  className={`rounded-ui-sm border px-3 py-2 transition-[border-color,background-color,color,box-shadow] duration-300 ${
                     isActive
                       ? 'border-[rgba(var(--ui-accent),0.42)] bg-[rgba(var(--ui-accent),0.14)] text-[rgb(var(--ui-text))]'
                       : 'border-white/10 bg-white/5 text-[rgb(var(--ui-text-muted))]'
@@ -83,8 +83,10 @@ export default function InitialLoadingOverlay({
 
           <div className='h-2 overflow-hidden rounded-full bg-white/5'>
             <div
-              className='h-full rounded-full bg-[linear-gradient(90deg,rgba(var(--ui-accent),0.72),rgba(var(--ui-accent-warm),0.92))] transition-all duration-700 ease-out'
-              style={{ width: `${progressMap[stage]}%` }}
+              className='h-full w-full origin-left rounded-full bg-[linear-gradient(90deg,rgba(var(--ui-accent),0.72),rgba(var(--ui-accent-warm),0.92))] transition-transform duration-200 ease-out'
+              style={{
+                transform: `scaleX(${Math.min(Math.max(progressMap[stage], 0), 100) / 100})`,
+              }}
             ></div>
           </div>
         </div>

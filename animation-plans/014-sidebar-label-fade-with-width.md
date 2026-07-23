@@ -1,6 +1,6 @@
 # 014 — Fade Sidebar labels in sync with width collapse
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: LOW (missed opportunity)
 - **Category**: Missed opportunities

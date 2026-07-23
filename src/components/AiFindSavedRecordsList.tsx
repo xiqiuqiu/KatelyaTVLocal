@@ -60,7 +60,7 @@ export default function AiFindSavedRecordsList({
           return (
             <button
               aria-label={record.query}
-              className={`group relative min-h-[9.25rem] overflow-hidden rounded-2xl border p-3 text-left transition duration-200 hover:-translate-y-0.5 hover:border-[rgb(var(--ui-success)/0.42)] hover:bg-white/[0.075] ${
+              className={`group relative min-h-[9.25rem] overflow-hidden rounded-2xl border p-3 text-left transition-[border-color,background-color,transform] duration-150 ease ui-hover-lift hover:border-[rgb(var(--ui-success)/0.42)] hover:bg-white/[0.075] ${
                 activeSavedRecordId === record.id
                   ? 'border-[rgb(var(--ui-success)/0.46)] bg-[rgb(var(--ui-success)/0.09)]'
                   : 'border-white/10 bg-white/[0.045]'

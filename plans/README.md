@@ -68,12 +68,12 @@ These plans were produced by `/improve-react` for every vetted finding. Execute 
 | 019-play-lazy-ref-init | DONE | HIGH |
 | 020-skip-segments-stable-keys | DONE | MEDIUM |
 | 021-async-race-favorite-skip-continue | DONE | MEDIUM |
-| 022-restrict-image-proxy-content-types | TODO | HIGH |
-| 023-validate-source-probe-targets | TODO | HIGH |
-| 024-fail-closed-cron-auth | TODO | HIGH |
-| 025-protect-login-attempts | TODO | HIGH |
-| 026-isolate-playback-debug-clock | TODO | MEDIUM |
-| 027-centralize-video-card-favorites | TODO | MEDIUM |
+| 022-restrict-image-proxy-content-types | DONE | HIGH |
+| 023-validate-source-probe-targets | DONE | HIGH |
+| 024-fail-closed-cron-auth | DONE | HIGH |
+| 025-protect-login-attempts | DONE | HIGH |
+| 026-isolate-playback-debug-clock | DONE | MEDIUM |
+| 027-centralize-video-card-favorites | DONE | MEDIUM |
 
 ## Execution notes
 
@@ -85,3 +85,4 @@ These plans were produced by `/improve-react` for every vetted finding. Execute 
 - **2026-07-22 selection:** user selected all five HIGH security findings plus
   playback debug-clock and VideoCard favorite-subscription performance work.
   Plan 002 remains blocked; execute 022–025 before the performance plans.
+- **2026-07-23 execute:** implemented 022–027 on branch `improve-react/022-027` in `.worktrees/improve-react-022-027`. Post-review fixes: default `LOGIN_RATE_WINDOW_LIMIT=0` (non-D1 safe); favorites store reloads after subscription gap; `video-card-actions` tests updated for shared store.

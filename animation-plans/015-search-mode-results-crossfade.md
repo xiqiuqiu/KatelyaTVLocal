@@ -1,6 +1,6 @@
 # 015 — Crossfade search mode and skeleton→results
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: LOW (missed opportunity)
 - **Category**: Missed opportunities

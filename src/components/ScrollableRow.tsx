@@ -119,7 +119,7 @@ export default function ScrollableRow({
         >
           <button
             aria-label='向左滚动'
-            className='pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.52)] bg-[rgb(var(--ui-surface-strong)/0.78)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition duration-200 hover:scale-[1.06] hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.94)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40'
+            className='pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.52)] bg-[rgb(var(--ui-surface-strong)/0.78)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition-[border-color,background-color,transform] duration-150 ease ui-hover-scale-sm hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.94)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40'
             onClick={handleScrollLeftClick}
             type='button'
           >
@@ -136,7 +136,7 @@ export default function ScrollableRow({
         >
           <button
             aria-label='向右滚动'
-            className='pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.52)] bg-[rgb(var(--ui-surface-strong)/0.78)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition duration-200 hover:scale-[1.06] hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.94)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40'
+            className='pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.52)] bg-[rgb(var(--ui-surface-strong)/0.78)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition-[border-color,background-color,transform] duration-150 ease ui-hover-scale-sm hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.94)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40'
             onClick={handleScrollRightClick}
             type='button'
           >

@@ -144,6 +144,9 @@ import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
 import PlayDetailSection from '@/components/PlayDetailSection';
 import InitialLoadingOverlay from '@/components/player/InitialLoadingOverlay';
+import PlaybackDebugPlayhead, {
+  formatDebugPlaybackTime,
+} from '@/components/player/PlaybackDebugPlayhead';
 import PlayerHeader from '@/components/player/PlayerHeader';
 import PlayerLoadingOverlay from '@/components/player/PlayerLoadingOverlay';
 import PlayerSidebar from '@/components/player/PlayerSidebar';
@@ -304,17 +307,6 @@ type PlaybackErrorKind =
   | 'source-unavailable'
   | 'player'
   | 'generic';
-
-function formatDebugPlaybackTime(value?: number | null) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return '--:--';
-  }
-  const minutes = Math.floor(value / 60);
-  const seconds = Math.floor(value % 60)
-    .toString()
-    .padStart(2, '0');
-  return `${minutes}:${seconds}`;
-}
 
 function logDirectAdObserveDebug(
   playlistUrl: string | undefined,
@@ -657,25 +649,16 @@ function PlayPageClient() {
   const lastSaveTimeRef = useRef<number>(0);
   const lastSavedSnapshotRef = useRef<PlayRecordSaveSnapshot | null>(null);
 
-  // 播放器时间：高频进度走 ref；React state 仅秒级刷新供调试 UI
-  const [currentPlayTime, setCurrentPlayTime] = useState<number>(0);
+  // 播放器时间：高频进度走 ref；调试 UI 由 PlaybackDebugPlayhead 秒级采样
   const currentPlayTimeRef = useRef(0);
-  const lastPublishedPlaySecondRef = useRef(-1);
   const [videoDuration, setVideoDuration] = useState<number>(0);
 
   const publishPlayTimeForUi = (currentTime: number) => {
     currentPlayTimeRef.current = currentTime;
-    const publishedSecond = Math.floor(currentTime);
-    if (publishedSecond !== Math.floor(lastPublishedPlaySecondRef.current)) {
-      lastPublishedPlaySecondRef.current = currentTime;
-      setCurrentPlayTime(currentTime);
-    }
   };
 
   const resetPublishedPlayTime = () => {
     currentPlayTimeRef.current = 0;
-    lastPublishedPlaySecondRef.current = -1;
-    setCurrentPlayTime(0);
   };
 
   // 跳过设置状态
@@ -5296,7 +5279,9 @@ function PlayPageClient() {
                       </div>
                       <div className='mb-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-amber-100/90'>
                         <div>
-                          位置：{formatDebugPlaybackTime(currentPlayTime)}
+                          <PlaybackDebugPlayhead
+                            currentTimeRef={currentPlayTimeRef}
+                          />
                         </div>
                         <div>模式：{playbackMode}</div>
                         <div>
@@ -5370,7 +5355,7 @@ function PlayPageClient() {
             </div>
 
             <div
-              className={`transition-all duration-300 ease-in-out ${
+              className={`${
                 isEpisodeSelectorCollapsed ? 'hidden' : 'block'
               }`}
             >

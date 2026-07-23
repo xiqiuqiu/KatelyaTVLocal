@@ -1,6 +1,6 @@
 # 027 — Centralize VideoCard favorite subscriptions
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 6e7374f
 - **Severity**: MEDIUM
 - **Category**: Performance

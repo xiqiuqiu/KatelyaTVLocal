@@ -296,7 +296,11 @@ function SearchPageClient() {
             </div>
           </Surface>
 
-          {searchMode === 'ai' ? (
+          <div
+            key={`${searchMode}-${isLoading ? 'loading' : 'ready'}`}
+            className='ui-search-view'
+          >
+            {searchMode === 'ai' ? (
             <AiFindPanel initialQuery={searchQuery} />
           ) : isLoading ? (
             <section className='space-y-4'>
@@ -482,20 +486,21 @@ function SearchPageClient() {
               </Surface>
             </section>
           ) : null}
+          </div>
         </div>
       </div>
 
       {/* 返回顶部悬浮按钮 */}
       <button
         onClick={scrollToTop}
-        className={`ui-glass fixed bottom-20 right-6 z-[500] flex h-12 w-12 items-center justify-center rounded-full text-[rgb(var(--ui-text))] transition-all duration-300 ease-in-out hover:scale-105 hover:border-[rgb(var(--ui-accent)/0.42)] md:bottom-6 group ${
+        className={`ui-glass fixed bottom-20 right-6 z-[500] flex h-12 w-12 items-center justify-center rounded-full text-[rgb(var(--ui-text))] transition-[opacity,transform,border-color] duration-150 ease ui-hover-scale-md hover:border-[rgb(var(--ui-accent)/0.42)] md:bottom-6 group ${
           showBackToTop
             ? 'opacity-100 translate-y-0 pointer-events-auto'
             : 'opacity-0 translate-y-4 pointer-events-none'
         }`}
         aria-label='返回顶部'
       >
-        <ChevronUp className='w-6 h-6 transition-transform group-hover:scale-110' />
+        <ChevronUp className='w-6 h-6 transition-transform duration-150 ease ui-hover-scale-sm' />
       </button>
     </PageLayout>
   );

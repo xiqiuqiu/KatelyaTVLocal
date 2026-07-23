@@ -1028,7 +1028,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             role='tab'
             aria-selected={activeTab === 'episodes'}
             onClick={() => setActiveTab('episodes')}
-            className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-all duration-200
+            className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-[border-color,background-color,color,box-shadow] duration-200
                 ${
                   activeTab === 'episodes'
                     ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
@@ -1044,7 +1044,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           role='tab'
           aria-selected={activeTab === 'sources'}
           onClick={handleSourceTabClick}
-          className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-all duration-200
+          className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-[border-color,background-color,color,box-shadow] duration-200
                 ${
                   activeTab === 'sources'
                     ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'

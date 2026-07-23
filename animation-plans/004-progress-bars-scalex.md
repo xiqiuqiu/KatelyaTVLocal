@@ -1,6 +1,6 @@
 # 004 — Animate progress bars with `scaleX`, not `width`
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: HIGH
 - **Category**: Performance

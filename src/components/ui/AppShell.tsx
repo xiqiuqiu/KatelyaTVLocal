@@ -57,7 +57,7 @@ export default function AppShell({
         onToggleSidebar={handleToggleSidebar}
       />
       <div className='relative z-10 min-h-screen overflow-x-hidden pt-[calc(4rem+env(safe-area-inset-top))]'>
-        <div className='hidden md:block transition-all duration-300'>
+        <div className='hidden md:block transition-[width,transform,opacity] duration-300 ease-out'>
           <Sidebar
             activePath={activePath}
             onToggle={setIsSidebarCollapsed}

@@ -1,6 +1,6 @@
 # 006 — Strip VideoCard high-frequency hover motion stack
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: HIGH
 - **Category**: Purpose & frequency

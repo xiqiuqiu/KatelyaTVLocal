@@ -1,6 +1,6 @@
 # 012 — Calm continuous logo / particle ambient motion
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: LOW
 - **Category**: Cohesion

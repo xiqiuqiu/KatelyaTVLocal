@@ -27,26 +27,28 @@ Produced by `/improve-animations` for every vetted finding (01–12) plus missed
 | 15 | [015](015-search-mode-results-crossfade.md) | LOW | 005, 010 | Search branch fade |
 | 16 | [016](016-aifind-group-result-enter.md) | LOW | 005, 010, 015 optional | AI group result enter |
 
+> **Post-review polish (2026-07):** Block findings addressed for plans **008** (SkipController reduced-motion in styled-jsx), **014** (sidebar label max-width + opacity sync), **006** (VideoCard scrim 150ms), and **011-adjacent** (sidebar nav hover lift removed). Status remains DONE.
+
 ## Status board
 
 | # | Plan | Severity | Status |
 |--:|------|----------|--------|
-| 001 | [Replace transition-all](001-replace-transition-all-high-traffic.md) | HIGH | TODO |
-| 002 | [Fix reduced-motion nuke](002-fix-reduced-motion-nuke.md) | HIGH | TODO |
-| 003 | [Capsule indicator transform](003-capsule-indicator-transform.md) | HIGH | TODO |
-| 004 | [Progress bars scaleX](004-progress-bars-scalex.md) | HIGH | TODO |
-| 005 | [Remove PosterGrid enter](005-remove-poster-grid-enter.md) | HIGH | TODO |
-| 006 | [Strip VideoCard hover stack](006-strip-videocard-hover-stack.md) | HIGH | TODO |
-| 007 | [SkipController personality](007-skipcontroller-personality-align.md) | HIGH | TODO |
-| 008 | [SkipController interruptible](008-skipcontroller-interruptible-transitions.md) | MEDIUM | TODO |
-| 009 | [Gate hover transforms](009-gate-hover-transforms.md) | MEDIUM | TODO |
-| 010 | [Unify motion tokens](010-unify-motion-tokens.md) | MEDIUM | TODO |
-| 011 | [MobileBottomNav no decorative motion](011-mobile-bottom-nav-no-decorative-motion.md) | MEDIUM | TODO |
-| 012 | [Calm logo ambient](012-calm-logo-ambient.md) | LOW | TODO |
-| 013 | [UserMenu enter/exit](013-usermenu-enter-exit.md) | LOW | TODO |
-| 014 | [Sidebar label fade](014-sidebar-label-fade-with-width.md) | LOW | TODO |
-| 015 | [Search crossfade](015-search-mode-results-crossfade.md) | LOW | TODO |
-| 016 | [AI Find group enter](016-aifind-group-result-enter.md) | LOW | TODO |
+| 001 | [Replace transition-all](001-replace-transition-all-high-traffic.md) | HIGH | DONE |
+| 002 | [Fix reduced-motion nuke](002-fix-reduced-motion-nuke.md) | HIGH | DONE |
+| 003 | [Capsule indicator transform](003-capsule-indicator-transform.md) | HIGH | DONE |
+| 004 | [Progress bars scaleX](004-progress-bars-scalex.md) | HIGH | DONE |
+| 005 | [Remove PosterGrid enter](005-remove-poster-grid-enter.md) | HIGH | DONE |
+| 006 | [Strip VideoCard hover stack](006-strip-videocard-hover-stack.md) | HIGH | DONE |
+| 007 | [SkipController personality](007-skipcontroller-personality-align.md) | HIGH | DONE |
+| 008 | [SkipController interruptible](008-skipcontroller-interruptible-transitions.md) | MEDIUM | DONE |
+| 009 | [Gate hover transforms](009-gate-hover-transforms.md) | MEDIUM | DONE |
+| 010 | [Unify motion tokens](010-unify-motion-tokens.md) | MEDIUM | DONE |
+| 011 | [MobileBottomNav no decorative motion](011-mobile-bottom-nav-no-decorative-motion.md) | MEDIUM | DONE |
+| 012 | [Calm logo ambient](012-calm-logo-ambient.md) | LOW | DONE |
+| 013 | [UserMenu enter/exit](013-usermenu-enter-exit.md) | LOW | DONE |
+| 014 | [Sidebar label fade](014-sidebar-label-fade-with-width.md) | LOW | DONE |
+| 015 | [Search crossfade](015-search-mode-results-crossfade.md) | LOW | DONE |
+| 016 | [AI Find group enter](016-aifind-group-result-enter.md) | LOW | DONE |
 
 ## Dependencies (summary)
 

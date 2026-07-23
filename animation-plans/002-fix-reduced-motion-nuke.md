@@ -1,6 +1,6 @@
 # 002 — Fix global `prefers-reduced-motion` nuke
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: 0094879
 - **Severity**: HIGH
 - **Category**: Accessibility
