@@ -355,6 +355,82 @@ describe('AiFindPanel', () => {
     );
   });
 
+  it('exposes an accessible name and live regions for query status', async () => {
+    let resolveFind:
+      | ((value: {
+          ok: boolean;
+          status: number;
+          headers: ReturnType<typeof mockHeaders>;
+          json: () => Promise<unknown>;
+        }) => void)
+      | undefined;
+    const findPromise = new Promise<{
+      ok: boolean;
+      status: number;
+      headers: ReturnType<typeof mockHeaders>;
+      json: () => Promise<unknown>;
+    }>((resolve) => {
+      resolveFind = resolve;
+    });
+
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = jest
+      .fn()
+      .mockImplementation(async (url: string) => {
+        if (url === '/api/ai/find') {
+          return findPromise;
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          headers: mockHeaders(),
+          json: async () => ({
+            group: {
+              query: '测试候选',
+              reason: '测试',
+              confidence: 'high',
+              rawCount: 0,
+              groupedCount: 0,
+              groups: [],
+              notFound: true,
+            },
+            failed: false,
+          }),
+        };
+      });
+
+    await act(async () => {
+      render(<AiFindPanel />);
+    });
+
+    const input = screen.getByRole('textbox', { name: 'AI 找片描述' });
+    expect(input).toHaveAttribute('id', 'ai-find-query');
+    expect(input).not.toHaveAttribute('aria-describedby');
+
+    fireEvent.change(input, {
+      target: { value: '90年代经典港片动作片' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '开始找片' }));
+
+    const status = await screen.findByRole('status');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(status).toHaveTextContent('正在理解你的找片需求');
+
+    resolveFind?.({
+      ok: false,
+      status: 500,
+      headers: mockHeaders(),
+      json: async () => ({
+        error: 'AI 找片服务暂时不可用',
+      }),
+    });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveAttribute('id', 'ai-find-error');
+    expect(alert).toHaveTextContent('AI 找片服务暂时不可用');
+    expect(input).toHaveAttribute('aria-describedby', 'ai-find-error');
+  });
+
   it('ignores a stale main submit when a newer submit finishes first', async () => {
     mockedCreateAiFindRequestId
       .mockReturnValueOnce('run_first')
