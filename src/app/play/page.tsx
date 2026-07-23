@@ -681,7 +681,7 @@ function PlayPageClient() {
 
   // 跳过设置状态
   const [isSkipSettingMode, setIsSkipSettingMode] = useState<boolean>(false);
-  const [castStatus, setCastStatus] = useState<CastStatus>('idle');
+  const castStatusRef = useRef<CastStatus>('idle');
   // 可撤销自动跳过提示（#36）：短时展示，一键恢复到窗口起点
   const [adSkipUndoToast, setAdSkipUndoToast] = useState<{
     windowKey: string;
@@ -4856,9 +4856,9 @@ function PlayPageClient() {
               index: 9,
               html: castControlIcon,
               tooltip:
-                castStatus === 'connected'
+                castStatusRef.current === 'connected'
                   ? '已投屏'
-                  : castStatus === 'connecting'
+                  : castStatusRef.current === 'connecting'
                   ? '正在连接投屏'
                   : '投屏',
               click: async function (this: any, component: any) {
@@ -4869,7 +4869,7 @@ function PlayPageClient() {
                 const playbackUrl = videoUrlRef.current;
                 const proxyUrl = buildHlsProxyUrl(directUrl);
 
-                setCastStatus('connecting');
+                castStatusRef.current = 'connecting';
                 updateCastControlElement(
                   castControlElement,
                   'connecting',
@@ -4893,7 +4893,7 @@ function PlayPageClient() {
                   onNotice: (message) => showPlayerNotice(this, message),
                 });
 
-                setCastStatus(result.status);
+                castStatusRef.current = result.status;
                 updateCastControlElement(
                   castControlElement,
                   result.status,
