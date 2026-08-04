@@ -153,6 +153,7 @@ import {
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
+import { usePlaybackPreparation } from '@/components/playback-preparation/PlaybackPreparationProvider';
 import PlayDetailSection from '@/components/PlayDetailSection';
 import InitialLoadingOverlay from '@/components/player/InitialLoadingOverlay';
 import PlaybackDebugPlayhead, {
@@ -390,6 +391,7 @@ function useLazyRef<T>(initializer: () => T): { current: T } {
 function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const playbackPreparation = usePlaybackPreparation();
   const playIdentityKey = [
     searchParams.get('source') || '',
     searchParams.get('id') || '',
@@ -407,10 +409,6 @@ function PlayPageClient() {
   // 状态变量（State）
   // -----------------------------------------------------------------------------
   const [loading, setLoading] = useState(true);
-  const [loadingStage, setLoadingStage] = useState<
-    'searching' | 'preferring' | 'fetching' | 'ready'
-  >('searching');
-  const [loadingMessage, setLoadingMessage] = useState('正在搜索播放源...');
   const [error, setError] = useState<string | null>(null);
   const [errorKind, setErrorKind] = useState<PlaybackErrorKind>('generic');
   const [detail, setDetail] = useState<SearchResult | null>(null);
@@ -527,6 +525,7 @@ function PlayPageClient() {
   ) => {
     setErrorKind(kind);
     setError(message);
+    playbackPreparation.markTerminalFailure();
   };
 
   useEffect(() => {
@@ -763,9 +762,7 @@ function PlayPageClient() {
       return;
     }
     const undoToastVisible = Boolean(adSkipUndoToastRef.current);
-    const autoSwitchUndoVisible = Boolean(
-      autoSourceSwitchUndoToastRef.current
-    );
+    const autoSwitchUndoVisible = Boolean(autoSourceSwitchUndoToastRef.current);
     const showMark = shouldShowMarkAdControl({ undoToastVisible });
     const markEl = art.controls?.markAdSkip as HTMLElement | undefined;
     if (markEl) {
@@ -1334,8 +1331,7 @@ function PlayPageClient() {
         clearAutoSourceSwitchUndoDismissTimer();
         setAutoSourceSwitchUndoToast(null);
         const previous = availableSourcesRef.current.find(
-          (source) =>
-            `${source.source}-${source.id}` === effect.sourceKey
+          (source) => `${source.source}-${source.id}` === effect.sourceKey
         );
         if (!previous) {
           return;
@@ -1343,21 +1339,17 @@ function PlayPageClient() {
         if (effect.resumeTime != null) {
           resumeTimeRef.current = effect.resumeTime;
         }
-        void handleSourceChange(
-          previous.source,
-          previous.id,
-          previous.title,
-          {
-            autoRecovery: false,
-            resumeTime: effect.resumeTime,
-            reason: '撤销自动切源',
-            autoPlayAfterReady: true,
-          }
-        );
+        void handleSourceChange(previous.source, previous.id, previous.title, {
+          autoRecovery: false,
+          resumeTime: effect.resumeTime,
+          reason: '撤销自动切源',
+          autoPlayAfterReady: true,
+        });
       },
       onShowInPlayerFailure: () => {
         clearAutoSourceSwitchUndoDismissTimer();
         setAutoSourceSwitchUndoToast(null);
+        playbackPreparation.markTerminalFailure();
         setInPlayerFailure({ reason: 'recovery-exhausted' });
       },
     });
@@ -1775,8 +1767,8 @@ function PlayPageClient() {
         typeof video?.duration === 'number' && Number.isFinite(video.duration)
           ? video.duration
           : video
-            ? null
-            : undefined,
+          ? null
+          : undefined,
     });
     // Dead timeline scrub always paints 0:00 and must not cancel recovery or
     // wipe the remembered mid-episode playhead (鬼谜东宫 iPad export).
@@ -1791,7 +1783,8 @@ function PlayPageClient() {
               : null,
           readyState: video?.readyState ?? null,
           duration:
-            typeof video?.duration === 'number' && Number.isFinite(video.duration)
+            typeof video?.duration === 'number' &&
+            Number.isFinite(video.duration)
               ? video.duration
               : null,
           rememberedPlayhead: Number(getRememberedPlayheadSeconds().toFixed(2)),
@@ -1848,8 +1841,8 @@ function PlayPageClient() {
         typeof video?.duration === 'number' && Number.isFinite(video.duration)
           ? video.duration
           : video
-            ? null
-            : undefined,
+          ? null
+          : undefined,
     });
     if (collapsed && (currentTime == null || currentTime <= 1)) {
       return;
@@ -3343,7 +3336,6 @@ function PlayPageClient() {
     }
 
     let cancelled = false;
-    let readyTimer: ReturnType<typeof setTimeout> | null = null;
     const controller = new AbortController();
 
     const urlSource = searchParams.get('source') || '';
@@ -3451,227 +3443,213 @@ function PlayPageClient() {
       setPrecomputedVideoInfo(new Map());
       setPrecomputedSourceStatuses(new Map());
       setSourceSelectionScores(new Map());
-      setLoadingStage(urlSource && urlId ? 'fetching' : 'searching');
-      setLoadingMessage(
-        urlSource && urlId ? '正在获取视频详情...' : '正在搜索播放源...'
-      );
 
-      let clearedByReadyTimer = false;
       try {
-      const searchResults = await fetchSourcesData(urlSearchTitle || urlTitle);
-      if (cancelled) return;
-      let detailResults: SearchResult[] = [];
-      let historyRecord: PlaybackHistoryRecord | null = null;
-
-      if (
-        urlSource &&
-        urlId &&
-        !searchResults.some(
-          (source) => source.source === urlSource && source.id === urlId
-        )
-      ) {
-        detailResults = await fetchSourceDetail(urlSource, urlId);
+        const searchResults = await fetchSourcesData(
+          urlSearchTitle || urlTitle
+        );
         if (cancelled) return;
-      }
+        let detailResults: SearchResult[] = [];
+        let historyRecord: PlaybackHistoryRecord | null = null;
 
-      if (urlSource && urlId) {
-        try {
-          const allRecords = await getAllPlayRecords();
+        if (
+          urlSource &&
+          urlId &&
+          !searchResults.some(
+            (source) => source.source === urlSource && source.id === urlId
+          )
+        ) {
+          detailResults = await fetchSourceDetail(urlSource, urlId);
           if (cancelled) return;
-          const contentKey = buildWatchProgressContentKey({
-            title: urlSearchTitle || urlTitle,
-            year: urlYear,
-          });
-          const latest = planLatestWatchProgressForContent({
-            contentKey,
-            records: allRecords as Record<
-              string,
-              import('@/lib/types').PlayRecord
-            >,
-            legacyRoute: { source: urlSource, id: urlId },
-            authorityMode: getWatchProgressAuthorityMode(),
-          });
-
-          if (latest.record) {
-            historyRecord = {
-              index: latest.record.index,
-              play_time: latest.record.play_time,
-              total_time: latest.record.total_time,
-              title: latest.record.title,
-              year: latest.record.year,
-            };
-          }
-        } catch (err) {
-          console.error('读取播放记录失败:', err);
         }
-      }
 
-      let sourcesInfo = searchResults;
-      let detailData: SearchResult | null = searchResults[0] || null;
-      let fellBackFromHistory = false;
-      let restoredEpisodeIndex: number | null = null;
-      let restoredResumeTime: number | null = null;
+        if (urlSource && urlId) {
+          try {
+            const allRecords = await getAllPlayRecords();
+            if (cancelled) return;
+            const contentKey = buildWatchProgressContentKey({
+              title: urlSearchTitle || urlTitle,
+              year: urlYear,
+            });
+            const latest = planLatestWatchProgressForContent({
+              contentKey,
+              records: allRecords as Record<
+                string,
+                import('@/lib/types').PlayRecord
+              >,
+              legacyRoute: { source: urlSource, id: urlId },
+              authorityMode: getWatchProgressAuthorityMode(),
+            });
 
-      if (urlSource && urlId) {
-        const urlEpisodeParam = searchParams.get('episode');
-        const urlEpisodeIndex =
-          urlEpisodeParam == null || urlEpisodeParam === ''
-            ? null
-            : Math.max(0, Number.parseInt(urlEpisodeParam, 10) - 1);
+            if (latest.record) {
+              historyRecord = {
+                index: latest.record.index,
+                play_time: latest.record.play_time,
+                total_time: latest.record.total_time,
+                title: latest.record.title,
+                year: latest.record.year,
+              };
+            }
+          } catch (err) {
+            console.error('读取播放记录失败:', err);
+          }
+        }
 
-        const recovery = resolvePlaybackHistoryRecovery({
-          currentSource: urlSource,
-          currentId: urlId,
-          searchResults,
-          detailResults,
-          isFromPlayRecord: urlFromPlayRecord,
-          historyRecord,
-          urlEpisodeIndex,
-          contentKey: buildWatchProgressContentKey({
-            title: urlSearchTitle || urlTitle,
-            year: urlYear,
-          }),
-        });
+        let sourcesInfo = searchResults;
+        let detailData: SearchResult | null = searchResults[0] || null;
+        let fellBackFromHistory = false;
+        let restoredEpisodeIndex: number | null = null;
+        let restoredResumeTime: number | null = null;
 
-        if (!recovery.detail) {
+        if (urlSource && urlId) {
+          const urlEpisodeParam = searchParams.get('episode');
+          const urlEpisodeIndex =
+            urlEpisodeParam == null || urlEpisodeParam === ''
+              ? null
+              : Math.max(0, Number.parseInt(urlEpisodeParam, 10) - 1);
+
+          const recovery = resolvePlaybackHistoryRecovery({
+            currentSource: urlSource,
+            currentId: urlId,
+            searchResults,
+            detailResults,
+            isFromPlayRecord: urlFromPlayRecord,
+            historyRecord,
+            urlEpisodeIndex,
+            contentKey: buildWatchProgressContentKey({
+              title: urlSearchTitle || urlTitle,
+              year: urlYear,
+            }),
+          });
+
+          if (!recovery.detail) {
+            if (cancelled) return;
+            setPlaybackError(
+              recovery.error || '未找到匹配结果',
+              urlFromPlayRecord ? 'history-expired' : 'not-found'
+            );
+            setLoading(false);
+            return;
+          }
+
+          sourcesInfo = recovery.sources;
+          detailData = recovery.detail;
+          fellBackFromHistory = recovery.fellBackFromHistory;
+          restoredEpisodeIndex = recovery.resumeEpisodeIndex;
+          restoredResumeTime = recovery.resumeTime;
+        }
+
+        if (!detailData || sourcesInfo.length === 0) {
           if (cancelled) return;
           setPlaybackError(
-            recovery.error || '未找到匹配结果',
+            '未找到匹配结果',
             urlFromPlayRecord ? 'history-expired' : 'not-found'
           );
           setLoading(false);
           return;
         }
 
-        sourcesInfo = recovery.sources;
-        detailData = recovery.detail;
-        fellBackFromHistory = recovery.fellBackFromHistory;
-        restoredEpisodeIndex = recovery.resumeEpisodeIndex;
-        restoredResumeTime = recovery.resumeTime;
-      }
-
-      if (!detailData || sourcesInfo.length === 0) {
-        if (cancelled) return;
-        setPlaybackError(
-          '未找到匹配结果',
-          urlFromPlayRecord ? 'history-expired' : 'not-found'
-        );
-        setLoading(false);
-        return;
-      }
-
-      // 指定源和id且无需优选
-      if (
-        urlSource &&
-        urlId &&
-        !needPreferRef.current &&
-        !fellBackFromHistory
-      ) {
-        const target = sourcesInfo.find(
-          (source) => source.source === urlSource && source.id === urlId
-        );
-        if (target) {
-          detailData = target;
-        } else {
-          if (cancelled) return;
-          setPlaybackError('未找到匹配结果', 'not-found');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // 未指定源和 id 或需要优选，且开启优选开关
-      if (
-        (!urlSource ||
-          !urlId ||
-          needPreferRef.current ||
-          fellBackFromHistory) &&
-        optimizationEnabled
-      ) {
-        setLoadingStage('preferring');
-        setLoadingMessage('正在优选最佳播放源...');
-
-        detailData = await preferBestSource(sourcesInfo);
-        if (cancelled) return;
-      } else {
-        updateSourceSelectionScores(
-          sourcesInfo,
-          precomputedSourceStatusesRef.current,
-          precomputedVideoInfoRef.current
-        );
-      }
-
-      if (cancelled) return;
-
-      setAvailableSources(sourcesInfo);
-      console.log(detailData.source, detailData.id);
-
-      setNeedPrefer(false);
-      setCurrentSource(detailData.source);
-      setCurrentId(detailData.id);
-      setVideoYear(detailData.year);
-      setVideoTitle(detailData.title || videoTitleRef.current);
-      setVideoCover(detailData.poster);
-      setDetail(detailData);
-
-      if (restoredEpisodeIndex != null) {
-        setCurrentEpisodeIndex(restoredEpisodeIndex);
-        const historySourceKey = getSourceIdentityKey(
-          detailData.source,
-          detailData.id
-        );
-        const seedPlayTime =
-          historyRecord && historyRecord.index - 1 === restoredEpisodeIndex
-            ? historyRecord.play_time
-            : restoredResumeTime ?? 0;
-        const escape = planStallEscapeResume({
-          currentPlayTime: seedPlayTime,
-          badPoints: playbackSessionStateRef.current.badPoints,
-          sourceKey: historySourceKey,
-          mode: 'same-source',
-        });
-        // Only reinforce an already-known stuck point on refresh; never mark
-        // ordinary continue-watching resumes as bad points.
+        // 指定源和id且无需优选
         if (
-          escape.action === 'skip-forward' &&
-          escape.recordBadPointAt != null
+          urlSource &&
+          urlId &&
+          !needPreferRef.current &&
+          !fellBackFromHistory
         ) {
-          rememberCurrentPlaybackBadPoint(
-            escape.recordBadPointAt,
-            historySourceKey
+          const target = sourcesInfo.find(
+            (source) => source.source === urlSource && source.id === urlId
+          );
+          if (target) {
+            detailData = target;
+          } else {
+            if (cancelled) return;
+            setPlaybackError('未找到匹配结果', 'not-found');
+            setLoading(false);
+            return;
+          }
+        }
+
+        // 未指定源和 id 或需要优选，且开启优选开关
+        if (
+          (!urlSource ||
+            !urlId ||
+            needPreferRef.current ||
+            fellBackFromHistory) &&
+          optimizationEnabled
+        ) {
+          detailData = await preferBestSource(sourcesInfo);
+          if (cancelled) return;
+        } else {
+          updateSourceSelectionScores(
+            sourcesInfo,
+            precomputedSourceStatusesRef.current,
+            precomputedVideoInfoRef.current
           );
         }
-        resumeTimeRef.current = restoredResumeTime ?? escape.resumeTime ?? 0;
-      } else if (currentEpisodeIndex >= detailData.episodes.length) {
-        setCurrentEpisodeIndex(0);
-      }
 
-      // 规范URL参数
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.set('source', detailData.source);
-      newUrl.searchParams.set('id', detailData.id);
-      newUrl.searchParams.set('year', detailData.year);
-      // Some detail APIs return an empty title; never wipe a good URL title
-      // (that would churn playIdentityKey and re-enter init mid-flight).
-      const resolvedTitle = resolvePlayUrlTitle({
-        detailTitle: detailData.title,
-        urlTitle,
-        fallbackTitle: videoTitleRef.current,
-      });
-      if (resolvedTitle) {
-        newUrl.searchParams.set('title', resolvedTitle);
-      }
-      newUrl.searchParams.delete('prefer');
-      window.history.replaceState({}, '', newUrl.toString());
+        if (cancelled) return;
 
-      setLoadingStage('ready');
-      setLoadingMessage('准备就绪，即将开始播放...');
+        setAvailableSources(sourcesInfo);
+        console.log(detailData.source, detailData.id);
 
-      // 短暂延迟让用户看到完成状态
-      readyTimer = setTimeout(() => {
-        if (!cancelled) setLoading(false);
-      }, 1000);
-      clearedByReadyTimer = true;
+        setNeedPrefer(false);
+        setCurrentSource(detailData.source);
+        setCurrentId(detailData.id);
+        setVideoYear(detailData.year);
+        setVideoTitle(detailData.title || videoTitleRef.current);
+        setVideoCover(detailData.poster);
+        setDetail(detailData);
+
+        if (restoredEpisodeIndex != null) {
+          setCurrentEpisodeIndex(restoredEpisodeIndex);
+          const historySourceKey = getSourceIdentityKey(
+            detailData.source,
+            detailData.id
+          );
+          const seedPlayTime =
+            historyRecord && historyRecord.index - 1 === restoredEpisodeIndex
+              ? historyRecord.play_time
+              : restoredResumeTime ?? 0;
+          const escape = planStallEscapeResume({
+            currentPlayTime: seedPlayTime,
+            badPoints: playbackSessionStateRef.current.badPoints,
+            sourceKey: historySourceKey,
+            mode: 'same-source',
+          });
+          // Only reinforce an already-known stuck point on refresh; never mark
+          // ordinary continue-watching resumes as bad points.
+          if (
+            escape.action === 'skip-forward' &&
+            escape.recordBadPointAt != null
+          ) {
+            rememberCurrentPlaybackBadPoint(
+              escape.recordBadPointAt,
+              historySourceKey
+            );
+          }
+          resumeTimeRef.current = restoredResumeTime ?? escape.resumeTime ?? 0;
+        } else if (currentEpisodeIndex >= detailData.episodes.length) {
+          setCurrentEpisodeIndex(0);
+        }
+
+        // 规范URL参数
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set('source', detailData.source);
+        newUrl.searchParams.set('id', detailData.id);
+        newUrl.searchParams.set('year', detailData.year);
+        // Some detail APIs return an empty title; never wipe a good URL title
+        // (that would churn playIdentityKey and re-enter init mid-flight).
+        const resolvedTitle = resolvePlayUrlTitle({
+          detailTitle: detailData.title,
+          urlTitle,
+          fallbackTitle: videoTitleRef.current,
+        });
+        if (resolvedTitle) {
+          newUrl.searchParams.set('title', resolvedTitle);
+        }
+        newUrl.searchParams.delete('prefer');
+        window.history.replaceState({}, '', newUrl.toString());
+
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
         if (!cancelled) {
@@ -3681,7 +3659,7 @@ function PlayPageClient() {
           );
         }
       } finally {
-        if (!cancelled && !clearedByReadyTimer) {
+        if (!cancelled) {
           setLoading(false);
         }
       }
@@ -3692,7 +3670,6 @@ function PlayPageClient() {
     return () => {
       cancelled = true;
       controller.abort();
-      if (readyTimer) clearTimeout(readyTimer);
     };
   }, [playIdentityKey]);
 
@@ -4267,16 +4244,16 @@ function PlayPageClient() {
 
         const finalizeSourceChangeMediaReady = (
           trigger: 'canplay' | 'manifest'
-        ) => {
+        ): boolean => {
           const player = artPlayerRef.current;
           if (!player) {
-            return;
+            return false;
           }
 
           const sourceChangeAttempt = sourceChangeMediaAttemptRef.current;
           if (sourceChangeAttempt) {
             if (sourceChangeAttempt.mediaFinalized) {
-              return;
+              return false;
             }
             if (
               !sourceChangeAttempt.targetReady ||
@@ -4303,7 +4280,7 @@ function PlayPageClient() {
                   }
                 );
               }
-              return;
+              return false;
             }
             sourceChangeAttempt.mediaFinalized = true;
           }
@@ -4315,8 +4292,7 @@ function PlayPageClient() {
             attemptId:
               sourceChangeAttempt?.attemptId ??
               sourceChangeAttemptIdRef.current,
-            sourceKey:
-              sourceChangeAttempt?.sourceKey ?? getCurrentSourceKey(),
+            sourceKey: sourceChangeAttempt?.sourceKey ?? getCurrentSourceKey(),
             nowMs: Date.now(),
             automatic: sourceChangeAttempt?.automatic ?? false,
           });
@@ -4358,7 +4334,8 @@ function PlayPageClient() {
                     trigger,
                   },
                   {
-                    playbackUrl: player.video?.currentSrc || videoUrlRef.current,
+                    playbackUrl:
+                      player.video?.currentSrc || videoUrlRef.current,
                   }
                 );
               } else {
@@ -4440,9 +4417,7 @@ function PlayPageClient() {
           }
 
           setTimeout(() => {
-            if (
-              Math.abs(player.volume - lastVolumeRef.current) > 0.01
-            ) {
+            if (Math.abs(player.volume - lastVolumeRef.current) > 0.01) {
               player.volume = lastVolumeRef.current;
             }
             player.notice.show = '';
@@ -4513,6 +4488,7 @@ function PlayPageClient() {
                   : undefined,
             });
           }
+          return true;
         };
 
         artPlayerRef.current = new Artplayer({
@@ -5309,7 +5285,9 @@ function PlayPageClient() {
         // 监听视频可播放事件；与 MANIFEST_PARSED 共用 finalize，避免早到的
         // canplay 被 stale 门控丢掉后不再恢复进度。
         artPlayerRef.current.on('video:canplay', () => {
-          finalizeSourceChangeMediaReady('canplay');
+          if (finalizeSourceChangeMediaReady('canplay')) {
+            playbackPreparation.markFrameReady();
+          }
         });
 
         artPlayerRef.current.on('video:playing', () => {
@@ -5452,7 +5430,7 @@ function PlayPageClient() {
   if (loading) {
     return (
       <PageLayout activePath='/play'>
-        <InitialLoadingOverlay message={loadingMessage} stage={loadingStage} />
+        <InitialLoadingOverlay title={videoTitle || undefined} />
       </PageLayout>
     );
   }
@@ -5592,6 +5570,7 @@ function PlayPageClient() {
           <Surface variant='raised' className='min-w-0 overflow-hidden p-3'>
             <div className='relative aspect-video min-h-[260px] w-full overflow-hidden md:min-h-[360px] lg:min-h-[460px] 2xl:min-h-[620px]'>
               <div
+                data-playback-preparation-target
                 ref={artRef}
                 className='play-page-player h-full w-full overflow-hidden rounded-ui-md bg-black shadow-ui-strong'
               ></div>
@@ -5773,9 +5752,7 @@ function PlayPageClient() {
             </div>
 
             <div
-              className={`${
-                isEpisodeSelectorCollapsed ? 'hidden' : 'block'
-              }`}
+              className={`${isEpisodeSelectorCollapsed ? 'hidden' : 'block'}`}
             >
               <EpisodeSelector
                 totalEpisodes={totalEpisodes}
@@ -5828,7 +5805,7 @@ function PlayPageClient() {
 const PlayFallback = () => {
   return (
     <PageLayout activePath='/play'>
-      <InitialLoadingOverlay message='正在准备播放环境...' stage='searching' />
+      <InitialLoadingOverlay />
     </PageLayout>
   );
 };

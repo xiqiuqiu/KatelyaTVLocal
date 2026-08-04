@@ -1,5 +1,11 @@
 /* eslint-disable @next/next/no-img-element */
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 
 import * as dbClient from '@/lib/db.client';
 import { __resetFavoritesStoreForTests } from '@/lib/favorites-store.client';
@@ -8,6 +14,7 @@ import type { SearchResult } from '@/lib/types';
 import VideoCard from '@/components/VideoCard';
 
 const push = jest.fn();
+const mockPlaybackPreparationStart = jest.fn();
 
 jest.mock('next/image', () => ({
   __esModule: true,
@@ -19,6 +26,19 @@ jest.mock('next/image', () => ({
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
 }));
+
+jest.mock(
+  '@/components/playback-preparation/PlaybackPreparationProvider',
+  () => ({
+    usePlaybackPreparation: () => ({
+      active: true,
+      start: mockPlaybackPreparationStart,
+      markFrameReady: jest.fn(),
+      markTerminalFailure: jest.fn(),
+      cancel: jest.fn(),
+    }),
+  })
+);
 
 jest.mock('@/components/ImagePlaceholder', () => ({
   ImagePlaceholder: () => <div data-testid='image-placeholder' />,
@@ -42,6 +62,7 @@ describe('VideoCard favorites store integration', () => {
   beforeEach(() => {
     __resetFavoritesStoreForTests();
     push.mockReset();
+    mockPlaybackPreparationStart.mockReset();
     favoritesUpdateCallback = null;
 
     (dbClient.getAllFavorites as jest.Mock).mockResolvedValue({});
@@ -104,6 +125,30 @@ describe('VideoCard favorites store integration', () => {
     expect(
       screen.queryByRole('button', { name: '切换收藏' })
     ).not.toBeInTheDocument();
+  });
+
+  it('starts the shared preparation transition with the resolved play link', () => {
+    render(
+      <VideoCard
+        id='video-1'
+        source='source-a'
+        title='庆余年'
+        poster='https://img.example/poster.jpg'
+        year='2024'
+        from='search'
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '打开 庆余年 海报' }));
+
+    expect(mockPlaybackPreparationStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        href: '/play?source=source-a&id=video-1&title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024',
+        title: '庆余年',
+        poster: 'https://img.example/poster.jpg',
+      })
+    );
+    expect(push).not.toHaveBeenCalled();
   });
 
   it('does not subscribe for aggregate search cards without a heart action', async () => {

@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import React, {
   useCallback,
   useMemo,
+  useRef,
   useState,
   useTransition,
 } from 'react';
@@ -26,6 +27,7 @@ import { SearchResult } from '@/lib/types';
 import { type ImageProxyOptions, processImageUrl } from '@/lib/utils';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
+import { usePlaybackPreparation } from '@/components/playback-preparation/PlaybackPreparationProvider';
 import CardActions from '@/components/ui/CardActions';
 import Surface from '@/components/ui/Surface';
 
@@ -159,6 +161,8 @@ export default function VideoCard({
   imageSize,
 }: VideoCardProps) {
   const router = useRouter();
+  const posterRef = useRef<HTMLDivElement>(null);
+  const playbackPreparation = usePlaybackPreparation();
   const [hasImageLoaded, setHasImageLoaded] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
   const [isNavigationPending, startNavigationTransition] = useTransition();
@@ -251,6 +255,10 @@ export default function VideoCard({
     [actualId, actualSource, from, onDelete, onDeleteRecord]
   );
 
+  const playbackCardKey = `${from}:${actualSource || 'douban'}:${
+    actualId || actualDoubanId || actualTitle
+  }`;
+
   const handleClick = useCallback(() => {
     if (showOpeningState) return;
 
@@ -281,11 +289,29 @@ export default function VideoCard({
     if (!href) return;
 
     setIsOpening(true);
+    if (playbackPreparation.active) {
+      const rect = posterRef.current?.getBoundingClientRect();
+      playbackPreparation.start({
+        href,
+        cardKey: playbackCardKey,
+        title: actualTitle,
+        poster: actualPoster,
+        year: actualYear,
+        rect: {
+          top: rect?.top ?? 0,
+          left: rect?.left ?? 0,
+          width: rect?.width || 120,
+          height: rect?.height || 180,
+        },
+      });
+      return;
+    }
     startNavigationTransition(() => {
       router.push(href);
     });
   }, [
     actualId,
+    actualPoster,
     actualQuery,
     actualSearchType,
     actualSource,
@@ -293,6 +319,8 @@ export default function VideoCard({
     actualYear,
     from,
     isAggregate,
+    playbackCardKey,
+    playbackPreparation,
     router,
     showOpeningState,
   ]);
@@ -360,9 +388,13 @@ export default function VideoCard({
       className={`group relative w-full hover:z-[500] ${
         isSmall ? 'origin-top-left scale-75' : ''
       }`}
+      data-playback-preparation-card={playbackCardKey}
     >
       <Surface className='relative overflow-hidden' variant='raised'>
-        <div className='relative aspect-[2/3] overflow-hidden rounded-[inherit]'>
+        <div
+          className='relative aspect-[2/3] overflow-hidden rounded-[inherit]'
+          ref={posterRef}
+        >
           {!hasImageLoaded ? (
             <ImagePlaceholder aspectRatio='aspect-[2/3]' />
           ) : null}
@@ -467,7 +499,10 @@ export default function VideoCard({
                 </button>
               ) : null}
 
-              {config.showHeart && favoriteStorageKey && actualSource && actualId ? (
+              {config.showHeart &&
+              favoriteStorageKey &&
+              actualSource &&
+              actualId ? (
                 <FavoriteHeartButton
                   actualEpisodes={actualEpisodes}
                   actualId={actualId}
@@ -491,7 +526,9 @@ export default function VideoCard({
           <div
             className='h-full w-full origin-left rounded-full bg-[rgb(var(--ui-accent))] transition-transform duration-200 ease-out'
             style={{
-              transform: `scaleX(${Math.min(Math.max(progress, 0), 100) / 100})`,
+              transform: `scaleX(${
+                Math.min(Math.max(progress, 0), 100) / 100
+              })`,
             }}
           />
         </div>

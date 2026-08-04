@@ -12,6 +12,7 @@ import { getConfig } from '@/lib/config';
 import { parseSessionCookieValue } from '@/lib/security/session';
 import { serializeForHtmlScript } from '@/lib/serialize-for-html-script';
 
+import PlaybackPreparationProvider from '../components/playback-preparation/PlaybackPreparationProvider';
 import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
 
@@ -127,7 +128,9 @@ export default async function RootLayout({
       >
         <ThemeProvider attribute='class' defaultTheme='system' enableSystem>
           <SiteProvider siteName={siteName} announcement={announcement}>
-            {children}
+            <PlaybackPreparationProvider>
+              {children}
+            </PlaybackPreparationProvider>
           </SiteProvider>
         </ThemeProvider>
       </body>

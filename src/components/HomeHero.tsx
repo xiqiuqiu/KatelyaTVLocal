@@ -3,13 +3,16 @@
 import { Play, Star } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { type MouseEvent, useRef } from 'react';
 
 import {
-  buildHomeHeroPlayHref,
   type HomeHeroCandidate,
   type HomeHeroMediaType,
+  buildHomeHeroPlayHref,
 } from '@/lib/home-hero';
 import { processImageUrl } from '@/lib/utils';
+
+import { usePlaybackPreparation } from '@/components/playback-preparation/PlaybackPreparationProvider';
 
 const MEDIA_TYPE_LABEL: Record<Exclude<HomeHeroMediaType, ''>, string> = {
   movie: '电影',
@@ -34,7 +37,13 @@ function HomeHeroSkeleton() {
   );
 }
 
-export default function HomeHero({ candidate, loading = false }: HomeHeroProps) {
+export default function HomeHero({
+  candidate,
+  loading = false,
+}: HomeHeroProps) {
+  const surfaceRef = useRef<HTMLElement>(null);
+  const playbackPreparation = usePlaybackPreparation();
+
   if (loading) {
     return <HomeHeroSkeleton />;
   }
@@ -52,11 +61,33 @@ export default function HomeHero({ candidate, loading = false }: HomeHeroProps) 
     height: 720,
     quality: 82,
   });
+  const playbackCardKey = `hero:douban:${item.id || item.title}`;
+
+  const handlePlay = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!playbackPreparation.active) return;
+    event.preventDefault();
+    const rect = surfaceRef.current?.getBoundingClientRect();
+    playbackPreparation.start({
+      href: playHref,
+      cardKey: playbackCardKey,
+      title: item.title,
+      poster: item.poster,
+      year: item.year,
+      rect: {
+        top: rect?.top ?? 0,
+        left: rect?.left ?? 0,
+        width: rect?.width || 320,
+        height: rect?.height || 180,
+      },
+    });
+  };
 
   return (
     <section
       aria-label='精选推荐'
       className='relative overflow-hidden rounded-ui-lg border border-[rgb(var(--ui-border)/0.28)] bg-[rgb(var(--ui-bg))] shadow-ui-soft'
+      data-playback-preparation-card={playbackCardKey}
+      ref={surfaceRef}
     >
       <div className='relative aspect-[16/10] w-full sm:aspect-[21/9]'>
         <Image
@@ -106,6 +137,7 @@ export default function HomeHero({ candidate, loading = false }: HomeHeroProps) 
               <Link
                 className='inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[rgb(var(--ui-accent))] px-4 text-sm font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent sm:min-h-11 sm:px-5'
                 href={playHref}
+                onClick={handlePlay}
               >
                 <Play aria-hidden className='h-4 w-4 fill-current' />
                 立即播放

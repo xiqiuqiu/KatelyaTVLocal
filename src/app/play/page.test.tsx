@@ -34,6 +34,7 @@ const mockArtPlayerEventHandlers = new Map<string, () => void>();
 let mockAutoFireManifestParsed = true;
 let mockDefaultPlayerDuration = 120;
 const mockManifestParsedHandlers: Array<() => void> = [];
+const mockMarkPreparationFrameReady = jest.fn();
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -61,6 +62,19 @@ jest.mock('@/components/PageLayout', () => ({
     <div data-testid='page-layout'>{children}</div>
   ),
 }));
+
+jest.mock(
+  '@/components/playback-preparation/PlaybackPreparationProvider',
+  () => ({
+    usePlaybackPreparation: () => ({
+      active: true,
+      start: jest.fn(),
+      markFrameReady: mockMarkPreparationFrameReady,
+      markTerminalFailure: jest.fn(),
+      cancel: jest.fn(),
+    }),
+  })
+);
 
 jest.mock('@/components/player/InitialLoadingOverlay', () => ({
   __esModule: true,
@@ -162,7 +176,10 @@ jest.mock('artplayer', () => ({
       options.url.includes('.m3u8') &&
       options.customType?.m3u8
     ) {
-      options.customType.m3u8(video as unknown as HTMLVideoElement, options.url);
+      options.customType.m3u8(
+        video as unknown as HTMLVideoElement,
+        options.url
+      );
     }
     return player;
   }),
@@ -215,8 +232,9 @@ async function settlePlayPage() {
     );
   });
 
-  act(() => {
-    jest.advanceTimersByTime(1000);
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
   });
 
   expect(
@@ -270,6 +288,17 @@ describe('PlayPage source initialization', () => {
   it('syncs available sources from detail fallback after search misses the current source', async () => {
     render(<PlayPage />);
     await settlePlayPage();
+  });
+
+  it('ends the preparation transition when the player reaches canplay', async () => {
+    render(<PlayPage />);
+    await settlePlayPage();
+
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+
+    expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -549,6 +578,8 @@ describe('PlayPage automatic source-switch resume', () => {
     playerBeforeSwitch.video.currentTime = 120;
 
     let switchPromise: Promise<boolean> | undefined;
+    const preparationReadyCallsBeforeStaleCanplay =
+      mockMarkPreparationFrameReady.mock.calls.length;
     act(() => {
       switchPromise = mockSourceChangeHandler?.('new', '2', '测试', {
         autoRecovery: true,
@@ -559,6 +590,9 @@ describe('PlayPage automatic source-switch resume', () => {
       // Stale canplay from the old source must not consume the queued resume.
       mockArtPlayerEventHandlers.get('video:canplay')?.();
     });
+    expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(
+      preparationReadyCallsBeforeStaleCanplay
+    );
     await act(async () => {
       await switchPromise;
       await Promise.resolve();
