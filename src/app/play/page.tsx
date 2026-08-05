@@ -755,6 +755,16 @@ function PlayPageClient() {
     }
   };
 
+  function setPlayerUndoBarOpen(
+    el: HTMLElement | undefined,
+    open: boolean
+  ): void {
+    if (!el) return;
+    el.classList.add('player-undo-bar');
+    el.dataset.open = open ? 'true' : 'false';
+    el.setAttribute('aria-hidden', open ? 'false' : 'true');
+  }
+
   /** Sync mark control + undo/feedback layers inside ArtPlayer (fullscreen-safe). */
   const syncAdSkipPlayerChrome = () => {
     const art = artPlayerRef.current;
@@ -769,15 +779,11 @@ function PlayPageClient() {
       markEl.style.display = showMark ? '' : 'none';
     }
     const undoEl = art.layers?.adSkipUndo as HTMLElement | undefined;
-    if (undoEl) {
-      undoEl.style.display = undoToastVisible ? 'flex' : 'none';
-    }
+    setPlayerUndoBarOpen(undoEl, undoToastVisible);
     const autoSwitchUndoEl = art.layers?.autoSourceSwitchUndo as
       | HTMLElement
       | undefined;
-    if (autoSwitchUndoEl) {
-      autoSwitchUndoEl.style.display = autoSwitchUndoVisible ? 'flex' : 'none';
-    }
+    setPlayerUndoBarOpen(autoSwitchUndoEl, autoSwitchUndoVisible);
     const feedbackEl = art.layers?.adSkipMarkFeedback as
       | HTMLElement
       | undefined;
@@ -5177,9 +5183,9 @@ function PlayPageClient() {
           layers: [
             {
               name: 'adSkipUndo',
-              html: '<button type="button" aria-label="撤销广告跳过并恢复播放位置" style="pointer-events:auto;border-radius:9999px;border:1px solid rgba(255,255,255,0.25);background:rgba(0,0,0,0.8);padding:8px 16px;font-size:14px;font-weight:500;color:#fff;backdrop-filter:blur(8px);cursor:pointer">已为你跳过广告 · 点此恢复</button>',
+              html: '<button type="button" aria-label="撤销广告跳过并恢复播放位置" style="border-radius:9999px;border:1px solid rgba(255,255,255,0.25);background:rgba(0,0,0,0.8);padding:8px 16px;font-size:14px;font-weight:500;color:#fff;backdrop-filter:blur(8px);cursor:pointer">已为你跳过广告 · 点此恢复</button>',
               style: {
-                display: 'none',
+                display: 'flex',
                 position: 'absolute',
                 left: '0',
                 right: '0',
@@ -5190,6 +5196,9 @@ function PlayPageClient() {
                 zIndex: '50',
               },
               mounted: function (element: HTMLElement) {
+                element.classList.add('player-undo-bar');
+                element.dataset.open = 'false';
+                element.setAttribute('aria-hidden', 'true');
                 const button = element.querySelector('button');
                 button?.addEventListener('click', (event) => {
                   event.stopPropagation();
@@ -5199,9 +5208,9 @@ function PlayPageClient() {
             },
             {
               name: 'autoSourceSwitchUndo',
-              html: '<button type="button" aria-label="撤销自动切换播放源" style="pointer-events:auto;border-radius:12px;border:1px solid rgba(255,255,255,0.35);background:rgba(0,0,0,0.88);padding:10px 18px;font-size:15px;font-weight:600;color:#fff;backdrop-filter:blur(10px);cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,0.35)">已自动切换线路 · 点此撤销</button>',
+              html: '<button type="button" aria-label="撤销自动切换播放源" style="border-radius:12px;border:1px solid rgba(255,255,255,0.35);background:rgba(0,0,0,0.88);padding:10px 18px;font-size:15px;font-weight:600;color:#fff;backdrop-filter:blur(10px);cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,0.35)">已自动切换线路 · 点此撤销</button>',
               style: {
-                display: 'none',
+                display: 'flex',
                 position: 'absolute',
                 left: '0',
                 right: '0',
@@ -5212,6 +5221,9 @@ function PlayPageClient() {
                 zIndex: '55',
               },
               mounted: function (element: HTMLElement) {
+                element.classList.add('player-undo-bar');
+                element.dataset.open = 'false';
+                element.setAttribute('aria-hidden', 'true');
                 const button = element.querySelector('button');
                 button?.addEventListener('click', (event) => {
                   event.stopPropagation();

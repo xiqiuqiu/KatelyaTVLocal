@@ -1,8 +1,8 @@
 # Animation improve-animations plans
 
-Audit commit baseline: **0094879**.
+Audit commit baseline: **0094879** (plans 001–016). Plan **017** stamped at **9ef3b24**.
 
-Produced by `/improve-animations` for every vetted finding (01–12) plus missed opportunities (13–16). Execute with any agent via `improve-animations execute <plan>` or by following each file’s Steps literally. Plans are self-contained — do not rely on the audit chat.
+Produced by `/improve-animations` for every vetted finding (01–12) plus missed opportunities (13–16), and later `plan` invocations (017+). Execute with any agent via `improve-animations execute <plan>` or by following each file’s Steps literally. Plans are self-contained — do not rely on the audit chat.
 
 > Note: `plans/` is reserved for improve-react / other work. Animation plans live here in `animation-plans/`.
 
@@ -26,6 +26,7 @@ Produced by `/improve-animations` for every vetted finding (01–12) plus missed
 | 14 | [013](013-usermenu-enter-exit.md) | LOW | 002, 010 | UserMenu origin-aware enter/exit |
 | 15 | [015](015-search-mode-results-crossfade.md) | LOW | 005, 010 | Search branch fade |
 | 16 | [016](016-aifind-group-result-enter.md) | LOW | 005, 010, 015 optional | AI group result enter |
+| 17 | [017](017-player-undo-bars-bottom-edge.md) | MEDIUM | 008 pattern, 010 tokens | Ad-skip + R3 undo bars bottom-edge enter/exit |
 
 > **Post-review polish (2026-07):** Block findings addressed for plans **008** (SkipController reduced-motion in styled-jsx), **014** (sidebar label max-width + opacity sync), **006** (VideoCard scrim 150ms), and **011-adjacent** (sidebar nav hover lift removed). Status remains DONE.
 
@@ -49,6 +50,7 @@ Produced by `/improve-animations` for every vetted finding (01–12) plus missed
 | 014 | [Sidebar label fade](014-sidebar-label-fade-with-width.md) | LOW | DONE |
 | 015 | [Search crossfade](015-search-mode-results-crossfade.md) | LOW | DONE |
 | 016 | [AI Find group enter](016-aifind-group-result-enter.md) | LOW | DONE |
+| 017 | [Player undo bars bottom-edge](017-player-undo-bars-bottom-edge.md) | MEDIUM | DONE |
 
 ## Dependencies (summary)
 
@@ -57,3 +59,4 @@ Produced by `/improve-animations` for every vetted finding (01–12) plus missed
 - **006/011 → 009**: remove intentional decoration before gating leftovers.
 - **007 → 008**: personality cleanup before toast/drawer rewiring (same file).
 - **005 → 015/016**: do not reintroduce long grid stagger when adding view enters.
+- **017**: independent of open React plans; reuse plan **008**’s `data-open` + CSS transition pattern and plan **010** token values (`180ms`, `cubic-bezier(0.23, 1, 0.32, 1)`). Do not touch Session dismiss timing.
