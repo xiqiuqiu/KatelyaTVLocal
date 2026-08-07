@@ -61,6 +61,7 @@ import {
   type PlayRecordSaveReason,
   type PlayRecordSaveSnapshot,
   getPlayRecordHeartbeatIntervalMs,
+  resolvePlayTimeForWatchProgressSave,
   shouldSavePlayRecord,
 } from '@/lib/play-record-save-policy';
 import {
@@ -4041,9 +4042,14 @@ function PlayPageClient() {
     const duration = Math.floor(options?.totalTime ?? player.duration ?? 0);
     const episodeIndex =
       options?.episodeIndex ?? currentEpisodeIndexRef.current;
-    const rawPlayTime = Math.floor(
-      options?.playTime ?? player.currentTime ?? 0
-    );
+    const livePlayTime = options?.playTime ?? player.currentTime ?? 0;
+    const rawPlayTime = resolvePlayTimeForWatchProgressSave({
+      livePlayTime,
+      rememberedPlayhead: Math.max(
+        getRememberedPlayheadSeconds(),
+        lastSavedSnapshotRef.current?.playTime ?? 0
+      ),
+    });
     const sealed =
       reason === 'episode-ended' || options?.completed
         ? planEpisodeChangeSave({
@@ -4323,19 +4329,27 @@ function PlayPageClient() {
           if (resumeTimeRef.current && resumeTimeRef.current > 0) {
             try {
               const duration = player.duration || 0;
+              const videoReadyState = (
+                player.video as HTMLVideoElement | undefined
+              )?.readyState;
               if (
                 shouldDeferQueuedResumeUntilDurationReady({
                   resumeTime: resumeTimeRef.current,
                   duration,
+                  readyState: videoReadyState,
                 })
               ) {
                 clearQueuedResume = false;
                 emitPlaybackDebugLog(
                   'switch-source-resume-deferred-duration',
-                  '目标源时长未知，推迟应用恢复进度',
+                  '目标源尚未可 seek，推迟应用恢复进度',
                   {
                     resumeTime: resumeTimeRef.current,
                     duration,
+                    readyState:
+                      typeof videoReadyState === 'number'
+                        ? videoReadyState
+                        : null,
                     sourceKey: getCurrentSourceKey(),
                     trigger,
                   },

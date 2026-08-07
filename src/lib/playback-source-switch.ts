@@ -230,19 +230,30 @@ export function clampSourceSwitchResumeTime({
  * player.duration was still 0. Safari/iPad often cannot honor that seek, the
  * playhead collapses to 0, and clearing the queue leaves later canplay unable
  * to re-apply — user sees "stall then jump to start".
+ *
+ * 金特务：本色回归 (apple-hlsjs): duration was already known (~4151) at
+ * readyState 0; seek to 2431 still did not stick. Also defer until the media
+ * element reports HAVE_CURRENT_DATA (readyState >= 2).
  */
 export function shouldDeferQueuedResumeUntilDurationReady({
   resumeTime,
   duration,
+  readyState,
 }: {
   resumeTime: number;
   duration: number;
+  readyState?: number | null;
 }): boolean {
-  return (
-    Number.isFinite(resumeTime) &&
-    resumeTime > 0 &&
-    !(Number.isFinite(duration) && duration > 0)
-  );
+  if (!(Number.isFinite(resumeTime) && resumeTime > 0)) {
+    return false;
+  }
+  if (!(Number.isFinite(duration) && duration > 0)) {
+    return true;
+  }
+  if (readyState != null && readyState < 2) {
+    return true;
+  }
+  return false;
 }
 
 /**

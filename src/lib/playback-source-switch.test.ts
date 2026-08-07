@@ -289,6 +289,33 @@ describe('shouldDeferQueuedResumeUntilDurationReady', () => {
       })
     ).toBe(false);
   });
+
+  /**
+   * Prod: 金特务：本色回归 (apple-hlsjs).
+   * Manifest finalize had duration≈4151 but readyState=0; seek to 2431 was
+   * applied then lost, queue cleared, later canplay stayed at 0. Defer until
+   * the element can honor the seek (HAVE_CURRENT_DATA), not only until
+   * duration is known.
+   */
+  it('defers mid-episode resume when duration is known but timeline is not yet seekable (金特务 prod)', () => {
+    expect(
+      shouldDeferQueuedResumeUntilDurationReady({
+        resumeTime: 2431.34,
+        duration: 4151.64,
+        readyState: 0,
+      })
+    ).toBe(true);
+  });
+
+  it('applies once duration is known and readyState can honor the seek', () => {
+    expect(
+      shouldDeferQueuedResumeUntilDurationReady({
+        resumeTime: 2431.34,
+        duration: 4151.64,
+        readyState: 2,
+      })
+    ).toBe(false);
+  });
 });
 
 describe('clampSourceSwitchResumeTime', () => {
