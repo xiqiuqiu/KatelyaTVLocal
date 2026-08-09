@@ -30,7 +30,10 @@ let mockArtPlayerInstance:
       };
     }
   | undefined;
-const mockArtPlayerEventHandlers = new Map<string, () => void>();
+const mockArtPlayerEventHandlers = new Map<
+  string,
+  (...args: unknown[]) => void
+>();
 let mockAutoFireManifestParsed = true;
 let mockDefaultPlayerDuration = 120;
 const mockManifestParsedHandlers: Array<() => void> = [];
@@ -281,6 +284,7 @@ describe('PlayPage source initialization', () => {
   });
 
   afterEach(() => {
+    mockAutoFireManifestParsed = true;
     jest.useRealTimers();
     jest.clearAllMocks();
   });
@@ -299,6 +303,40 @@ describe('PlayPage source initialization', () => {
     });
 
     expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not show a failure panel when a single-source startup error is followed by canplay', async () => {
+    mockAutoFireManifestParsed = false;
+    render(<PlayPage />);
+    await settlePlayPage();
+
+    await act(async () => {
+      mockArtPlayerEventHandlers.get('error')?.(new Event('error'));
+      await Promise.resolve();
+    });
+
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+
+    expect(
+      screen.queryByRole('heading', { name: '当前线路无法继续恢复' })
+    ).toBeNull();
+  });
+
+  it('shows the failure panel when a single-source startup actually times out', async () => {
+    mockAutoFireManifestParsed = false;
+    render(<PlayPage />);
+    await settlePlayPage();
+
+    await act(async () => {
+      jest.advanceTimersByTime(25_000);
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByRole('heading', { name: '当前线路无法继续恢复' })
+    ).toBeTruthy();
   });
 });
 
