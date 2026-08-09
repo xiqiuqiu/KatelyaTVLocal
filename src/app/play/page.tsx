@@ -5340,6 +5340,19 @@ function PlayPageClient() {
                 artPlayerRef.current?.video?.currentSrc || videoUrlRef.current,
             }
           );
+
+          if (playbackSessionStateRef.current.sourceChangeInFlight) {
+            emitPlaybackDebugLog(
+              'player-error-deferred',
+              '换源或起播仍在进行，等待 HLS 结果或起播超时',
+              {
+                sourceChangeAttemptId: sourceChangeAttemptIdRef.current,
+                sourceKey: getCurrentSourceKey(),
+              }
+            );
+            return;
+          }
+
           void trySwitchToNextAvailableSource(
             '播放器错误，自动切换到其他播放源'
           ).then((switched) => {
