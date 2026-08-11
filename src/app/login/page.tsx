@@ -226,7 +226,7 @@ function LoginPageClient() {
 
   return (
     <IOSCompatibility>
-      <main className='relative min-h-screen overflow-hidden bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text))]'>
+      <main className='relative min-h-dvh overflow-hidden bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text))]'>
         <Image
           src='/login-cinema-bg.png'
           alt=''
@@ -241,7 +241,7 @@ function LoginPageClient() {
           <ThemeToggle />
         </div>
 
-        <div className='relative z-10 mx-auto flex min-h-screen w-full max-w-[1660px] items-center px-4 py-20 sm:px-8 lg:w-[calc(77.5vw+80px)] lg:translate-y-7 lg:px-10'>
+        <div className='relative z-10 mx-auto flex min-h-dvh w-full max-w-[1660px] items-center px-4 py-20 sm:px-8 lg:w-[calc(77.5vw+80px)] lg:translate-y-7 lg:px-10'>
           <div className='grid w-full overflow-hidden rounded-[28px] border border-[rgb(var(--ui-border)/0.9)] bg-[rgb(var(--ui-bg)/0.78)] shadow-[0_36px_110px_rgb(0_0_0/0.52)] backdrop-blur-xl lg:h-[min(73vh,840px)] lg:grid-cols-[1.07fr_0.93fr]'>
             <section className='relative hidden h-full min-h-0 overflow-hidden border-r border-[rgb(var(--ui-border)/0.82)] lg:block'>
               <Image
@@ -537,7 +537,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className='flex min-h-screen items-center justify-center bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text-muted))]'>
+        <div className='flex min-h-dvh items-center justify-center bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text-muted))]'>
           Loading...
         </div>
       }

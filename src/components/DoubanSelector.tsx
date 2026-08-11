@@ -263,7 +263,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
             <span className='min-w-[48px] text-xs font-medium text-[rgb(var(--ui-text-muted))] sm:text-sm'>
               分类
             </span>
-            <div className='overflow-x-auto'>
+            <div className='overflow-x-auto touch-pan-x'>
               {renderCapsuleSelector(
                 moviePrimaryOptions,
                 primarySelection || moviePrimaryOptions[0].value,
@@ -278,7 +278,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
             <span className='min-w-[48px] text-xs font-medium text-[rgb(var(--ui-text-muted))] sm:text-sm'>
               地区
             </span>
-            <div className='overflow-x-auto'>
+            <div className='overflow-x-auto touch-pan-x'>
               {renderCapsuleSelector(
                 movieSecondaryOptions,
                 secondarySelection || movieSecondaryOptions[0].value,
@@ -296,7 +296,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
           <span className='min-w-[48px] text-xs font-medium text-[rgb(var(--ui-text-muted))] sm:text-sm'>
             类型
           </span>
-          <div className='overflow-x-auto'>
+          <div className='overflow-x-auto touch-pan-x'>
             {renderCapsuleSelector(
               tvOptions,
               secondarySelection || tvOptions[0].value,
@@ -313,7 +313,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
           <span className='min-w-[48px] text-xs font-medium text-[rgb(var(--ui-text-muted))] sm:text-sm'>
             类型
           </span>
-          <div className='overflow-x-auto'>
+          <div className='overflow-x-auto touch-pan-x'>
             {renderCapsuleSelector(
               showOptions,
               secondarySelection || showOptions[0].value,

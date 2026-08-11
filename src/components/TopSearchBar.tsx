@@ -80,7 +80,7 @@ const TopSearchBar = ({
               placeholder='搜索影片、电视剧、综艺...'
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className='h-11 w-full rounded-full border-0 bg-transparent px-5 text-sm text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))] focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.44)]'
+              className='h-11 w-full rounded-full border-0 bg-transparent px-5 text-base text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))] focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.44)]'
             />
           </div>
           <button

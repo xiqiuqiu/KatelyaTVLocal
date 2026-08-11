@@ -647,7 +647,7 @@ export default function AiFindPanel({ initialQuery = '' }: AiFindPanelProps) {
             </label>
             <input
               aria-describedby={error ? 'ai-find-error' : undefined}
-              className='min-h-12 flex-1 rounded-xl border border-transparent bg-white/[0.035] px-4 text-sm text-[rgb(var(--ui-text))] outline-none transition placeholder:text-[rgb(var(--ui-text-muted)/0.68)] focus:border-[rgb(var(--ui-success)/0.42)] focus:bg-white/[0.07]'
+              className='min-h-12 flex-1 rounded-xl border border-transparent bg-white/[0.035] px-4 text-base text-[rgb(var(--ui-text))] outline-none transition placeholder:text-[rgb(var(--ui-text-muted)/0.68)] focus:border-[rgb(var(--ui-success)/0.42)] focus:bg-white/[0.07]'
               disabled={loading}
               id='ai-find-query'
               onChange={(event) => setQuery(event.target.value)}

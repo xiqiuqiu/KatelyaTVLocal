@@ -27,7 +27,7 @@ const modalPanelClassName =
   'fixed left-1/2 top-1/2 z-[1001] max-h-[90vh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-ui-lg border border-white/10 bg-[rgba(var(--ui-surface),0.9)] p-6 text-[rgb(var(--ui-text))] shadow-ui-strong backdrop-blur-2xl';
 
 const inputClassName =
-  'w-full rounded-ui-sm border border-white/10 bg-white/5 px-3 py-2 text-sm text-[rgb(var(--ui-text))] transition-colors placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgba(var(--ui-accent),0.34)] disabled:cursor-not-allowed disabled:opacity-55';
+  'w-full rounded-ui-sm border border-white/10 bg-white/5 px-3 py-2 text-base text-[rgb(var(--ui-text))] transition-colors placeholder:text-[rgb(var(--ui-text-muted))] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgba(var(--ui-accent),0.34)] disabled:cursor-not-allowed disabled:opacity-55';
 
 export const UserMenu: React.FC = () => {
   const router = useRouter();
