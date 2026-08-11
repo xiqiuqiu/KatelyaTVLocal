@@ -375,10 +375,16 @@
 /* 基础样式重置 */
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html {
   scroll-behavior: smooth;
+}
+
+html.play-overscroll-lock,
+html.play-overscroll-lock body {
+  overscroll-behavior: none;
 }
 
 body {
@@ -405,6 +411,34 @@ button {
 input,
 textarea {
   font-family: inherit;
+}
+
+/* 触控交互：去掉 300ms 延迟感，避免长按选中按钮文字 */
+a,
+button,
+[role='button'],
+summary,
+label[for],
+input[type='button'],
+input[type='submit'],
+input[type='reset'],
+input[type='checkbox'],
+input[type='radio'] {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 文本输入仍需可选中/复制 */
+input:not([type='button']):not([type='submit']):not([type='reset']):not(
+    [type='checkbox']
+  ):not([type='radio']):not([type='range']):not([type='file']):not(
+    [type='color']
+  ):not([type='hidden']),
+textarea,
+select {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* 图片样式 */

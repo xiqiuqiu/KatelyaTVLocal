@@ -20,6 +20,17 @@
     cursor: url('/images/new-tab.png') 10 10, pointer;
   }
 
+  /* 移动端默认 body 为 text-sm；输入框至少 16px，避免 iOS 聚焦缩放 */
+  input:not([type='button']):not([type='submit']):not([type='reset']):not(
+      [type='checkbox']
+    ):not([type='radio']):not([type='range']):not([type='file']):not(
+      [type='color']
+    ):not([type='hidden']),
+  textarea,
+  select {
+    font-size: 1rem;
+  }
+
   /* #region  /**=========== Typography =========== */
   .h0 {
     @apply font-primary text-3xl font-bold md:text-5xl;
@@ -67,7 +78,7 @@
 
   /* Class to adjust with sticky footer */
   .min-h-main {
-    @apply min-h-[calc(100vh-56px)];
+    @apply min-h-[calc(100dvh-56px)];
   }
 }
 

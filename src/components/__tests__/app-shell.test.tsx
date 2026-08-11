@@ -90,4 +90,35 @@ describe('AppShell', () => {
     expect(window.localStorage.getItem('sidebarCollapsed')).toBe('false');
     expect(window.__sidebarCollapsed).toBe(false);
   });
+
+  it('locks overscroll only while the play page is active', async () => {
+    const { rerender, unmount } = render(
+      <AppShell activePath='/play'>
+        <div>play-body</div>
+      </AppShell>
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains('play-overscroll-lock')).toBe(
+        true
+      );
+    });
+
+    rerender(
+      <AppShell activePath='/search'>
+        <div>search-body</div>
+      </AppShell>
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains('play-overscroll-lock')).toBe(
+        false
+      );
+    });
+
+    unmount();
+    expect(document.documentElement.classList.contains('play-overscroll-lock')).toBe(
+      false
+    );
+  });
 });

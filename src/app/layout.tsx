@@ -124,7 +124,7 @@ export default async function RootLayout({
         />
       </head>
       <body
-        className={`${inter.className} ${inter.variable} min-h-screen bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text))]`}
+        className={`${inter.className} ${inter.variable} min-h-dvh bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text))]`}
       >
         <ThemeProvider attribute='class' defaultTheme='system' enableSystem>
           <SiteProvider siteName={siteName} announcement={announcement}>

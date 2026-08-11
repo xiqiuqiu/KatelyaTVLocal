@@ -4,7 +4,7 @@ export const runtime = 'edge';
 
 export default function NotFound() {
   return (
-    <div className='flex min-h-screen items-center justify-center bg-slate-50 px-4'>
+    <div className='flex min-h-dvh items-center justify-center bg-slate-50 px-4'>
       <div className='w-full max-w-lg rounded-3xl bg-white p-10 text-center shadow-xl'>
         <div className='mb-4 text-sm font-medium uppercase tracking-[0.3em] text-slate-400'>
           404

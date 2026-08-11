@@ -102,7 +102,7 @@ const EpisodeSelectorEpisodes: React.FC<EpisodeSelectorEpisodesProps> = ({
       <div className='mb-3 flex flex-shrink-0 items-center gap-2'>
         <div className='relative min-w-0 flex-1 overflow-hidden rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-bg-elevated))]'>
           <div
-            className='snap-x snap-mandatory overflow-x-auto overflow-y-hidden scroll-smooth scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 hover:scrollbar-thumb-white/35 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 hover:[&::-webkit-scrollbar-thumb]:bg-white/35 [&::-webkit-scrollbar-track]:bg-transparent'
+            className='snap-x snap-mandatory touch-pan-x overflow-x-auto overflow-y-hidden scroll-smooth scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 hover:scrollbar-thumb-white/35 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 hover:[&::-webkit-scrollbar-thumb]:bg-white/35 [&::-webkit-scrollbar-track]:bg-transparent'
             ref={categoryContainerRef}
             style={{
               scrollbarWidth: 'thin',

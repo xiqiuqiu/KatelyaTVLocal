@@ -39,6 +39,19 @@ export default function AppShell({
     }
   }, []);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    if (activePath !== '/play') {
+      root.classList.remove('play-overscroll-lock');
+      return;
+    }
+
+    root.classList.add('play-overscroll-lock');
+    return () => {
+      root.classList.remove('play-overscroll-lock');
+    };
+  }, [activePath]);
+
   const desktopOffsetClass = useMemo(() => {
     return isSidebarCollapsed ? 'md:pl-20' : 'md:pl-64';
   }, [isSidebarCollapsed]);
@@ -51,12 +64,12 @@ export default function AppShell({
   };
 
   return (
-    <div className='ui-app-bg ui-breathing-canvas min-h-screen text-[rgb(var(--ui-text))]'>
+    <div className='ui-app-bg ui-breathing-canvas min-h-dvh text-[rgb(var(--ui-text))]'>
       <TopSearchBar
         isSidebarCollapsed={isSidebarCollapsed}
         onToggleSidebar={handleToggleSidebar}
       />
-      <div className='relative z-10 min-h-screen overflow-x-hidden pt-[calc(4rem+env(safe-area-inset-top))]'>
+      <div className='relative z-10 min-h-dvh overflow-x-hidden pt-[calc(4rem+env(safe-area-inset-top))]'>
         <div className='hidden md:block'>
           <Sidebar
             activePath={activePath}
