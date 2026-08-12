@@ -125,3 +125,7 @@ The system's current judgement of whether a candidate source can be shown, tried
 **Related Recommendation (相关推荐)**:
 The play-page row of same-kind titles derived from the title currently being watched — Douban "also-liked" for that title, with a genre-tag fallback drawn from its `vod_class`, excluding the current title and heavily-watched titles while keeping favorites. It is discovery-first (cards route through search to become playable and are not pre-verified) and never falls back to generic popularity; when no relevant items exist it shows nothing. Distinct from the home hot lists and from the same-title Source list.
 _Avoid_: 猜你喜欢 (as the label for this now content-based row); treating it as a personalized taste model; treating it as a guaranteed-playable list.
+
+**Auth Audit Event**:
+An append-only record of an authentication outcome for a username: only `login_success`, `login_failure`, or explicit `logout`. It answers who authenticated when and with what result; it does not cover registration, password change, active login, current online presence, or a Playback Session. Registration remains a separate registration audit record. See ADR 0008.
+_Avoid_: login security / rate-limit attempt rows as audit history; Auth Session; equating Cookie lifetime with logout; Playback Attempt `sessionId` as the auth correlation id; folding register/password-change into the same event type without an explicit decision

@@ -10,9 +10,19 @@ export interface LoginSecurityInput {
   fetchImpl?: typeof fetch;
 }
 
+export type LoginSecurityAuditReason =
+  | 'turnstile_failure'
+  | 'rate_limited';
+
 export type LoginSecurityResult =
   | { ok: true; status: 200; attemptKey: string }
-  | { ok: false; status: 400 | 429 | 500; error: string };
+  | {
+      ok: false;
+      status: 400 | 429 | 500;
+      error: string;
+      /** Present for pre-credential rejects that belong on the Auth Audit trail. */
+      auditReason?: LoginSecurityAuditReason;
+    };
 
 interface LoginSecurityConfig {
   turnstileRequired: boolean;
@@ -123,6 +133,7 @@ async function checkFailedAttempts({
       ok: false,
       status: 429,
       error: '登录尝试过于频繁，请稍后再试',
+      auditReason: 'rate_limited',
     };
   }
 
@@ -143,10 +154,13 @@ export async function validateLoginSecurity(
       fetchImpl: input.fetchImpl,
     });
     if (!turnstile.ok) {
+      const status = turnstile.status === 500 ? 500 : 400;
       return {
         ok: false,
-        status: turnstile.status === 500 ? 500 : 400,
+        status,
         error: turnstile.error || '人机验证失败，请重试',
+        // Infrastructure Turnstile 500s stay off the primary audit path.
+        ...(status === 400 ? { auditReason: 'turnstile_failure' as const } : {}),
       };
     }
   }

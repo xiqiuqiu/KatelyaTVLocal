@@ -1,3 +1,4 @@
+import { recordAuthAuditEvent } from '@/lib/auth-audit';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 import { recordLoginResult, validateLoginSecurity } from '@/lib/login/security';
@@ -94,6 +95,10 @@ jest.mock('@/lib/login/security', () => ({
   recordLoginResult: jest.fn(),
 }));
 
+jest.mock('@/lib/auth-audit', () => ({
+  recordAuthAuditEvent: jest.fn(() => Promise.resolve({ recorded: true })),
+}));
+
 describe('login route security', () => {
   const mockedGetConfig = getConfig as jest.MockedFunction<typeof getConfig>;
   const mockedDb = db as jest.Mocked<typeof db>;
@@ -102,6 +107,8 @@ describe('login route security', () => {
   const mockedRecordLoginResult = recordLoginResult as jest.MockedFunction<
     typeof recordLoginResult
   >;
+  const mockedRecordAuthAuditEvent =
+    recordAuthAuditEvent as jest.MockedFunction<typeof recordAuthAuditEvent>;
 
   beforeAll(() => {
     process.env.NEXT_PUBLIC_STORAGE_TYPE = 'd1';
@@ -110,6 +117,7 @@ describe('login route security', () => {
   });
 
   beforeEach(() => {
+    process.env.NEXT_PUBLIC_STORAGE_TYPE = 'd1';
     mockedGetConfig.mockResolvedValue({
       UserConfig: {
         AllowRegister: true,
@@ -123,6 +131,7 @@ describe('login route security', () => {
       attemptKey: 'attempt-key',
     });
     mockedRecordLoginResult.mockResolvedValue();
+    mockedRecordAuthAuditEvent.mockResolvedValue({ recorded: true });
   });
 
   afterEach(() => {
@@ -141,6 +150,7 @@ describe('login route security', () => {
       ok: false,
       status: 400,
       error: '请先完成人机验证',
+      auditReason: 'turnstile_failure',
     });
 
     const response = await POST(
@@ -149,6 +159,7 @@ describe('login route security', () => {
         headers: {
           'content-type': 'application/json',
           'cf-connecting-ip': '203.0.113.10',
+          'user-agent': 'Mozilla/5.0 TestBrowser',
         },
         body: JSON.stringify({
           username: 'alice',
@@ -169,6 +180,15 @@ describe('login route security', () => {
       })
     );
     expect(mockedDb.verifyUser).not.toHaveBeenCalled();
+    expect(mockedRecordAuthAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'login_failure',
+        username: 'alice',
+        failureReason: 'turnstile_failure',
+        ip: '203.0.113.10',
+        userAgent: 'Mozilla/5.0 TestBrowser',
+      })
+    );
   });
 
   it('records a successful D1 login before issuing its session', async () => {
@@ -196,6 +216,13 @@ describe('login route security', () => {
       attemptKey: 'attempt-key',
       success: true,
     });
+    expect(mockedRecordAuthAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'login_success',
+        username: 'alice',
+        ip: '203.0.113.10',
+      })
+    );
   });
 
   it('does not issue a session when successful login recording fails', async () => {
@@ -223,6 +250,27 @@ describe('login route security', () => {
     consoleError.mockRestore();
   });
 
+  it('still issues a session when auth audit write fails', async () => {
+    mockedRecordAuthAuditEvent.mockRejectedValue(new Error('audit unavailable'));
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    const response = await POST(
+      new Request('https://app.example.com/api/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: 'alice',
+          password: 'password123',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    consoleError.mockRestore();
+  });
+
   it('records failed credentials without revealing whether the username exists', async () => {
     mockedDb.verifyUser.mockResolvedValue(false);
 
@@ -244,6 +292,33 @@ describe('login route security', () => {
       attemptKey: 'attempt-key',
       success: false,
     });
+    expect(mockedRecordAuthAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'login_failure',
+        username: 'unknown',
+        failureReason: 'invalid_credentials',
+      })
+    );
+  });
+
+  it('records missing username as invalid_username without credential checks', async () => {
+    const response = await POST(
+      new Request('https://app.example.com/api/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'password123',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockedDb.verifyUser).not.toHaveBeenCalled();
+    expect(mockedRecordAuthAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'login_failure',
+        failureReason: 'invalid_username',
+      })
+    );
   });
 
   it('uses the synthetic owner username for localstorage pre-auth', async () => {
@@ -272,5 +347,11 @@ describe('login route security', () => {
       attemptKey: 'attempt-key',
       success: true,
     });
+    expect(mockedRecordAuthAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'login_success',
+        username: 'owner',
+      })
+    );
   });
 });

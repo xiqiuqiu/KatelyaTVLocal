@@ -78,6 +78,7 @@ describe('login security', () => {
       ok: false,
       status: 400,
       error: '请先完成人机验证',
+      auditReason: 'turnstile_failure',
     });
     expect(db.prepare).not.toHaveBeenCalled();
   });
@@ -120,6 +121,7 @@ describe('login security', () => {
       ok: false,
       status: 429,
       error: '登录尝试过于频繁，请稍后再试',
+      auditReason: 'rate_limited',
     });
   });
 

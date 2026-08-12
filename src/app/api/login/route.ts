@@ -1,6 +1,10 @@
 /* eslint-disable no-console */
 import { NextRequest, NextResponse } from 'next/server';
 
+import {
+  recordAuthAuditEvent,
+  type AuthAuditFailureReason,
+} from '@/lib/auth-audit';
 import { getSessionSigningSecret } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
@@ -39,6 +43,24 @@ function setAuthCookie(
   });
 }
 
+function getRequestUserAgent(req: NextRequest): string | null {
+  return req.headers.get('user-agent');
+}
+
+async function writeAuthAudit(input: {
+  eventType: 'login_success' | 'login_failure';
+  username?: string | null;
+  failureReason?: AuthAuditFailureReason | null;
+  ip: string;
+  userAgent: string | null;
+}) {
+  try {
+    await recordAuthAuditEvent(input);
+  } catch (error) {
+    console.error('auth audit write failed', error);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const signingSecret = getSessionSigningSecret();
@@ -51,18 +73,30 @@ export async function POST(req: NextRequest) {
 
     const { username, password, turnstileToken } = await req.json();
     const storageType = getStorageType();
+    const clientIp = getClientIp(req.headers);
+    const userAgent = getRequestUserAgent(req);
+    const securityUsername =
+      storageType === 'localstorage'
+        ? 'owner'
+        : typeof username === 'string'
+        ? username
+        : '';
     const security = await validateLoginSecurity({
-      username:
-        storageType === 'localstorage'
-          ? 'owner'
-          : typeof username === 'string'
-          ? username
-          : '',
+      username: securityUsername,
       turnstileToken:
         typeof turnstileToken === 'string' ? turnstileToken : undefined,
-      ip: getClientIp(req.headers),
+      ip: clientIp,
     });
     if (!security.ok) {
+      if (security.auditReason) {
+        await writeAuthAudit({
+          eventType: 'login_failure',
+          username: securityUsername,
+          failureReason: security.auditReason,
+          ip: clientIp,
+          userAgent,
+        });
+      }
       return NextResponse.json(
         { error: security.error },
         { status: security.status }
@@ -77,6 +111,12 @@ export async function POST(req: NextRequest) {
         attemptKey: security.attemptKey,
         success: true,
       });
+      await writeAuthAudit({
+        eventType: 'login_success',
+        username: session.username ?? securityUsername,
+        ip: clientIp,
+        userAgent,
+      });
       const response = NextResponse.json({ ok: true });
       const cookieValue = await createSessionCookieValue(
         session,
@@ -88,10 +128,19 @@ export async function POST(req: NextRequest) {
       setAuthCookie(req, response, cookieValue, expires);
       return response;
     };
-    const createFailedCredentialsResponse = async () => {
+    const createFailedCredentialsResponse = async (
+      auditUsername: string = securityUsername
+    ) => {
       await recordLoginResult({
         attemptKey: security.attemptKey,
         success: false,
+      });
+      await writeAuthAudit({
+        eventType: 'login_failure',
+        username: auditUsername,
+        failureReason: 'invalid_credentials',
+        ip: clientIp,
+        userAgent,
       });
       return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
     };
@@ -127,9 +176,23 @@ export async function POST(req: NextRequest) {
     }
 
     if (!username || typeof username !== 'string') {
+      await writeAuthAudit({
+        eventType: 'login_failure',
+        username: typeof username === 'string' ? username : '',
+        failureReason: 'invalid_username',
+        ip: clientIp,
+        userAgent,
+      });
       return NextResponse.json({ error: '用户名不能为空' }, { status: 400 });
     }
     if (!password || typeof password !== 'string') {
+      await writeAuthAudit({
+        eventType: 'login_failure',
+        username,
+        failureReason: 'invalid_credentials',
+        ip: clientIp,
+        userAgent,
+      });
       return NextResponse.json({ error: '密码不能为空' }, { status: 400 });
     }
 
@@ -139,7 +202,7 @@ export async function POST(req: NextRequest) {
     ) {
       return await createAuthenticatedResponse({ username, role: 'owner' });
     } else if (username === process.env.USERNAME) {
-      return await createFailedCredentialsResponse();
+      return await createFailedCredentialsResponse(username);
     }
 
     const config = await getConfig();
@@ -147,14 +210,14 @@ export async function POST(req: NextRequest) {
       (item) => item.username === username
     );
     if (user?.banned) {
-      return await createFailedCredentialsResponse();
+      return await createFailedCredentialsResponse(username);
     }
 
     try {
       await db.upgradeLegacyPasswords();
       const verified = await db.verifyUser(username, password);
       if (!verified) {
-        return await createFailedCredentialsResponse();
+        return await createFailedCredentialsResponse(username);
       }
 
       return await createAuthenticatedResponse({
