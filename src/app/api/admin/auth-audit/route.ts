@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { isAdminRequest } from '@/lib/admin-auth';
 import {
-  listAuthAuditEvents,
   type AuthAuditEventType,
+  listAuthAuditEvents,
 } from '@/lib/auth-audit';
 
 export const runtime = 'edge';

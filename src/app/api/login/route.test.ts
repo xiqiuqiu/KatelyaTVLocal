@@ -191,6 +191,35 @@ describe('login route security', () => {
     );
   });
 
+  it('records rate-limited rejects before password verification', async () => {
+    mockedValidateLoginSecurity.mockResolvedValue({
+      ok: false,
+      status: 429,
+      error: '登录尝试过于频繁，请稍后再试',
+      auditReason: 'rate_limited',
+    });
+
+    const response = await POST(
+      new Request('https://app.example.com/api/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: 'alice',
+          password: 'password123',
+        }),
+      })
+    );
+
+    expect(response.status).toBe(429);
+    expect(mockedDb.verifyUser).not.toHaveBeenCalled();
+    expect(mockedRecordAuthAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'login_failure',
+        username: 'alice',
+        failureReason: 'rate_limited',
+      })
+    );
+  });
+
   it('records a successful D1 login before issuing its session', async () => {
     const response = await POST(
       new Request('https://app.example.com/api/login', {

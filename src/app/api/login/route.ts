@@ -1,17 +1,17 @@
 /* eslint-disable no-console */
 import { NextRequest, NextResponse } from 'next/server';
 
-import {
-  recordAuthAuditEvent,
-  type AuthAuditFailureReason,
-} from '@/lib/auth-audit';
 import { getSessionSigningSecret } from '@/lib/auth';
+import {
+  type AuthAuditFailureReason,
+  recordAuthAuditEvent,
+} from '@/lib/auth-audit';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 import { recordLoginResult, validateLoginSecurity } from '@/lib/login/security';
 import {
-  createSessionCookieValue,
   type SessionRole,
+  createSessionCookieValue,
 } from '@/lib/security/session';
 import { getClientIp } from '@/lib/turnstile';
 
