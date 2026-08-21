@@ -327,4 +327,29 @@ describe('PlaybackPreparationProvider', () => {
 
     expect(back).not.toHaveBeenCalled();
   });
+
+  it('blocks background wheel scroll while the overlay is visible and releases it once the frame is ready', () => {
+    render(
+      <PlaybackPreparationProvider>
+        <Harness />
+      </PlaybackPreparationProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '播放' }));
+    const dialog = screen.getByRole('dialog');
+
+    const blockedWheel = new Event('wheel', { cancelable: true });
+    dialog.dispatchEvent(blockedWheel);
+    expect(blockedWheel.defaultPrevented).toBe(true);
+
+    const blockedTouchMove = new Event('touchmove', { cancelable: true });
+    dialog.dispatchEvent(blockedTouchMove);
+    expect(blockedTouchMove.defaultPrevented).toBe(true);
+
+    // Once the first frame is ready the overlay stops trapping scroll.
+    fireEvent.click(screen.getByRole('button', { name: '首帧' }));
+    const releasedWheel = new Event('wheel', { cancelable: true });
+    dialog.dispatchEvent(releasedWheel);
+    expect(releasedWheel.defaultPrevented).toBe(false);
+  });
 });

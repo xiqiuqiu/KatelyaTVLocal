@@ -136,10 +136,27 @@ function PlaybackPreparationOverlay({
 }) {
   const reducedMotion = readReducedMotion();
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const overlayRootRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(returning);
   const [target, setTarget] = useState<PlaybackPreparationRect>(() =>
     getPlayerRect()
   );
+
+  // While the preparation overlay is covering the viewport it is a modal
+  // dialog: block wheel / touch scroll from leaking into the destination page
+  // behind it. Released as soon as the frame is ready (overlay starts fading).
+  useEffect(() => {
+    if (ready) return;
+    const root = overlayRootRef.current;
+    if (!root) return;
+    const preventScroll = (event: Event) => event.preventDefault();
+    root.addEventListener('wheel', preventScroll, { passive: false });
+    root.addEventListener('touchmove', preventScroll, { passive: false });
+    return () => {
+      root.removeEventListener('wheel', preventScroll);
+      root.removeEventListener('touchmove', preventScroll);
+    };
+  }, [ready]);
 
   useEffect(() => {
     const update = () => setTarget(getPlayerRect());
@@ -188,6 +205,7 @@ function PlaybackPreparationOverlay({
           cancelButtonRef.current?.focus({ preventScroll: true });
         }
       }}
+      ref={overlayRootRef}
       role='dialog'
       style={{ transitionDuration: `${reducedMotion ? 80 : READY_FADE_MS}ms` }}
     >

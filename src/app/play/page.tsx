@@ -4599,9 +4599,14 @@ function PlayPageClient() {
                   // canplay may have already fired (and been ignored) before the
                   // target manifest was ready; browsers often do not re-emit.
                   // Finalize on the microtask so artPlayerRef is assigned after
-                  // `new Artplayer(...)` returns.
+                  // `new Artplayer(...)` returns. Closing the preparation
+                  // transition is part of finalizing media readiness here: an
+                  // early canplay swallowed by the stale gate must not leave the
+                  // overlay stuck over a playing video.
                   queueMicrotask(() => {
-                    finalizeSourceChangeMediaReady('manifest');
+                    if (finalizeSourceChangeMediaReady('manifest')) {
+                      playbackPreparation.markFrameReady();
+                    }
                   });
                 }
               });
@@ -5320,6 +5325,12 @@ function PlayPageClient() {
           clearWaitingRecoveryTimer();
           markHlsPlaybackProgress(artPlayerRef.current.currentTime || 0);
           scheduleProgressiveSourceProbe();
+          // Backstop for the preparation transition: if the video is genuinely
+          // playing while the overlay is still covering (e.g. its canplay was
+          // swallowed by the source-change stale gate, or the source is direct
+          // with no manifest), dismiss the overlay now. markFrameReady is
+          // idempotent — the provider guards on phase/generation.
+          playbackPreparation.markFrameReady();
         });
 
         artPlayerRef.current.on('error', (err: any) => {

@@ -812,3 +812,198 @@ describe('PlayPage automatic source-switch resume', () => {
     expect(playerAfterSwitch.currentTime).toBe(1897.16);
   });
 });
+
+describe('PlayPage preparation transition completion', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockAutoFireManifestParsed = true;
+    mockDefaultPlayerDuration = 120;
+    mockManifestParsedHandlers.length = 0;
+    mockSearchParams = new URLSearchParams(
+      'source=old&id=1&title=%E6%B5%8B%E8%AF%95'
+    );
+    mockSourceChangeHandler = undefined;
+    mockArtPlayerInstance = undefined;
+    mockArtPlayerEventHandlers.clear();
+    (
+      getAllPlayRecords as jest.MockedFunction<typeof getAllPlayRecords>
+    ).mockResolvedValue({});
+
+    const oldSource = createSource({
+      source: 'old',
+      id: '1',
+      title: '测试',
+      source_name: '旧源',
+      episodes: ['https://example.com/old.m3u8'],
+    });
+    const newSource = createSource({
+      source: 'new',
+      id: '2',
+      title: '测试',
+      source_name: '新源',
+      episodes: ['https://example.com/new.m3u8'],
+    });
+
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.startsWith('/api/playback-debug')) {
+        return {
+          ok: true,
+          json: async () => ({ enabled: false }),
+        } as Response;
+      }
+      if (url.startsWith('/api/detail')) {
+        return {
+          ok: true,
+          json: async () => oldSource,
+        } as Response;
+      }
+      if (url.startsWith('/api/search')) {
+        return {
+          ok: true,
+          json: async () => ({ results: [oldSource, newSource] }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({}),
+      } as Response;
+    });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  async function settleWithSources() {
+    render(<PlayPage />);
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/search?q=%E6%B5%8B%E8%AF%95',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('episode-selector-sources')
+      ).toHaveTextContent('旧源,新源');
+    });
+  }
+
+  it('dismisses the preparation overlay once the switched source actually starts playing even if its canplay was swallowed as stale', async () => {
+    // The first source never reaches canplay, so the preparation overlay is
+    // still covering while an automatic/manual source switch is in flight.
+    mockAutoFireManifestParsed = false;
+    mockManifestParsedHandlers.length = 0;
+    mockMarkPreparationFrameReady.mockClear();
+
+    await settleWithSources();
+
+    await act(async () => {
+      await mockSourceChangeHandler?.('new', '2', '测试', {
+        autoRecovery: true,
+        resumeTime: 115,
+        reason: '自动恢复测试',
+        autoPlayAfterReady: true,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const playerAfterSwitch = mockArtPlayerInstance;
+    if (!playerAfterSwitch) {
+      throw new Error('ArtPlayer mock missing after source switch');
+    }
+
+    // Load the target source's media playlist explicitly (mirrors production's
+    // customType path) without auto-firing its manifest yet.
+    mockAutoFireManifestParsed = false;
+    await act(async () => {
+      (playerAfterSwitch as { switch?: string }).switch =
+        'https://example.com/new.m3u8';
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The target source's canplay arrives while its HLS manifest is still
+    // unknown (or the target is a direct non-HLS source with no manifest at
+    // all): the stale gate swallows it and markFrameReady is never reached.
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+    expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(0);
+
+    // The video is genuinely playing now — the overlay must not stay up while
+    // playback runs behind it (user-reported stuck-poster symptom).
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:playing')?.();
+    });
+
+    expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses the preparation overlay when the switched source manifest finalizes after an early swallowed canplay', async () => {
+    // Early canplay before targetReady is deliberately ignored (stale gate),
+    // but the MANIFEST_PARSED fallback must still close the transition instead
+    // of leaving the poster overlay stuck over a playing video.
+    mockAutoFireManifestParsed = false;
+    mockManifestParsedHandlers.length = 0;
+    mockMarkPreparationFrameReady.mockClear();
+
+    await settleWithSources();
+
+    await act(async () => {
+      await mockSourceChangeHandler?.('new', '2', '测试', {
+        autoRecovery: true,
+        resumeTime: 115,
+        reason: '自动恢复测试',
+        autoPlayAfterReady: true,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const playerAfterSwitch = mockArtPlayerInstance;
+    if (!playerAfterSwitch) {
+      throw new Error('ArtPlayer mock missing after source switch');
+    }
+
+    // Load the target source's media playlist without auto-firing its manifest.
+    mockAutoFireManifestParsed = false;
+    await act(async () => {
+      (playerAfterSwitch as { switch?: string }).switch =
+        'https://example.com/new.m3u8';
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Early canplay is swallowed by the stale gate before targetReady.
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+    expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(0);
+
+    // Late MANIFEST_PARSED arms targetReady and finalizes media readiness; this
+    // fallback must also call markFrameReady even if the browser never re-emits
+    // canplay. Only the live handler (the one bound to the current hls) can
+    // fire in production — the mock keeps stale handlers from destroyed
+    // players, so fire the latest one and flush the faked microtask queue.
+    await act(async () => {
+      const liveManifestHandler =
+        mockManifestParsedHandlers[mockManifestParsedHandlers.length - 1];
+      liveManifestHandler?.();
+      jest.runAllTicks();
+      await Promise.resolve();
+    });
+
+    expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(1);
+  });
+});
