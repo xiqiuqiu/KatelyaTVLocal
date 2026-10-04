@@ -625,6 +625,7 @@ function PlayPageClient() {
     () => new Map<string, SourceSelectionScore>()
   );
   const playbackStartupStartedAtRef = useRef<number | null>(null);
+  const wasPlayingBeforeBackgroundRef = useRef(false);
   const startupFeedbackSentRef = useRef(false);
   const waitingRecoveryTimerRef = useRef<number | null>(null);
   const sourceChangeTimeoutTimerRef = useRef<number | null>(null);
@@ -1721,6 +1722,20 @@ function PlayPageClient() {
   };
 
   const markHlsUserPause = (currentTime?: number) => {
+    // iOS pauses MMS media while locking/backgrounding. That browser pause is
+    // not user intent; preserving `playing` lets the foreground wake-up run.
+    if (
+      typeof document !== 'undefined' &&
+      document.visibilityState === 'hidden' &&
+      playbackPolicyRef.current?.disableRemotePlayback === true &&
+      playbackSessionStateRef.current.playbackIntent === 'playing'
+    ) {
+      wasPlayingBeforeBackgroundRef.current = true;
+      clearWaitingRecoveryTimer();
+      resetProgressiveSourceProbeStability();
+      return;
+    }
+
     const now = Date.now();
     dispatchPlaybackSessionEvent({ type: 'user.pause' });
     const state = hlsRecoveryStateRef.current;
@@ -1740,6 +1755,57 @@ function PlayPageClient() {
     state.userPausedAt = 0;
     state.manualInteractionUntil = now + HLS_MANUAL_INTERACTION_GRACE_MS;
   };
+
+  useEffect(() => {
+    const resumeAfterBackground = () => {
+      if (
+        document.visibilityState !== 'visible' ||
+        !wasPlayingBeforeBackgroundRef.current
+      ) {
+        return;
+      }
+
+      wasPlayingBeforeBackgroundRef.current = false;
+      const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+      if (!video) return;
+
+      const hls = video.hls as
+        | { startLoad?: (startPosition?: number) => void }
+        | undefined;
+      hls?.startLoad?.(
+        resolveHlsRestartLoadPosition({
+          liveCurrentTime: video.currentTime,
+          rememberedPlayhead: getRememberedPlayheadSeconds(),
+        })
+      );
+      void video.play().catch(() => undefined);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        const video = artPlayerRef.current?.video as
+          | HTMLVideoElement
+          | undefined;
+        wasPlayingBeforeBackgroundRef.current = Boolean(
+          video &&
+            !video.ended &&
+            playbackPolicyRef.current?.disableRemotePlayback === true &&
+            playbackSessionStateRef.current.playbackIntent === 'playing'
+        );
+        return;
+      }
+      resumeAfterBackground();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pageshow', resumeAfterBackground);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', resumeAfterBackground);
+    };
+    // The handlers read current playback state exclusively through refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const resolveSeekIntentClassification = (seekTimeSeconds?: number) => {
     const session = playbackSessionStateRef.current;

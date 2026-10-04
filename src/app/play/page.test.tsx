@@ -26,6 +26,8 @@ let mockArtPlayerInstance:
       video: {
         currentTime: number;
         duration: number;
+        paused: boolean;
+        play: jest.Mock;
         hls?: unknown;
       };
     }
@@ -35,6 +37,7 @@ const mockArtPlayerEventHandlers = new Map<
   (...args: unknown[]) => void
 >();
 let mockAutoFireManifestParsed = true;
+let mockHlsSupported = false;
 let mockDefaultPlayerDuration = 120;
 const mockManifestParsedHandlers: Array<() => void> = [];
 const mockMarkPreparationFrameReady = jest.fn();
@@ -145,12 +148,14 @@ jest.mock('artplayer', () => ({
       canPlayType: jest.fn(() => ''),
       currentTime: 0,
       duration: mockDefaultPlayerDuration,
+      paused: false,
       getElementsByTagName: jest.fn(() => []),
       hasAttribute: jest.fn(() => false),
       load: jest.fn(),
       pause: jest.fn(),
       play: jest.fn().mockResolvedValue(undefined),
       removeAttribute: jest.fn(),
+      setAttribute: jest.fn(),
       appendChild: jest.fn(),
       src: '',
       hls: undefined as unknown,
@@ -192,11 +197,12 @@ jest.mock('hls.js', () => {
   class MockHls {
     static DefaultConfig = { loader: class TestHlsLoader {} };
     static Events = { ERROR: 'error', MANIFEST_PARSED: 'manifestParsed' };
-    static isSupported = () => false;
+    static isSupported = () => mockHlsSupported;
 
     attachMedia = jest.fn();
     destroy = jest.fn();
     loadSource = jest.fn();
+    startLoad = jest.fn();
     on = jest.fn((event: string, handler: () => void) => {
       if (event === MockHls.Events.MANIFEST_PARSED) {
         if (mockAutoFireManifestParsed) {
@@ -285,6 +291,17 @@ describe('PlayPage source initialization', () => {
 
   afterEach(() => {
     mockAutoFireManifestParsed = true;
+    mockHlsSupported = false;
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: 'jsdom',
+    });
+    delete (window as Window & { ManagedMediaSource?: unknown })
+      .ManagedMediaSource;
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
     jest.useRealTimers();
     jest.clearAllMocks();
   });
@@ -303,6 +320,60 @@ describe('PlayPage source initialization', () => {
     });
 
     expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('revives Apple MMS playback after the page returns from the background', async () => {
+    mockHlsSupported = true;
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
+    });
+    Object.defineProperty(window, 'ManagedMediaSource', {
+      configurable: true,
+      value: class MockManagedMediaSource {},
+    });
+    render(<PlayPage />);
+    await settlePlayPage();
+
+    const player = mockArtPlayerInstance;
+    if (!player) throw new Error('player was not created');
+    const hls = player.video.hls as { startLoad: jest.Mock };
+    player.currentTime = 120;
+    player.video.currentTime = 120;
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:pause')?.();
+    });
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    expect(hls.startLoad).toHaveBeenCalledWith(119);
+    expect(player.video.play).toHaveBeenCalled();
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:pause')?.();
+    });
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    expect(hls.startLoad).toHaveBeenCalledTimes(2);
   });
 
   it('does not show a failure panel when a single-source startup error is followed by canplay', async () => {
