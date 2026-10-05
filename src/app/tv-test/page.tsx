@@ -3,6 +3,8 @@
 import Hls from 'hls.js';
 import { useEffect, useRef, useState } from 'react';
 
+export const runtime = 'edge';
+
 const SAMPLE_URL =
   'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8';
 
