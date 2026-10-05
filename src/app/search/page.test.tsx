@@ -8,6 +8,7 @@ const push = jest.fn();
 let mockSearchParams = new URLSearchParams();
 const mockSearchParamsAdapter = {
   get: (key: string) => mockSearchParams.get(key),
+  toString: () => mockSearchParams.toString(),
 };
 
 jest.mock('next/navigation', () => ({
@@ -26,9 +27,12 @@ jest.mock('@/lib/db.client', () => ({
 }));
 
 jest.mock('@/components/AiFindPanel', () => {
-  return function MockAiFindPanel(props: { initialQuery?: string }) {
+  return function MockAiFindPanel(props: {
+    initialQuery?: string;
+    tvMode?: boolean;
+  }) {
     return (
-      <div data-testid='ai-find-panel'>
+      <div data-testid='ai-find-panel' data-tv-mode={props.tvMode}>
         AI Find Panel {props.initialQuery || ''}
       </div>
     );
@@ -38,8 +42,24 @@ jest.mock('@/components/AiFindPanel', () => {
 jest.mock(
   '@/components/PageLayout',
   () =>
-    ({ children }: { children: React.ReactNode }) =>
-      <div data-testid='page-layout'>{children}</div>
+    ({
+      children,
+      tvMode,
+      modeHref,
+    }: {
+      children: React.ReactNode;
+      tvMode?: boolean;
+      modeHref?: string;
+    }) =>
+      (
+        <div
+          data-testid='page-layout'
+          data-tv-mode={tvMode}
+          data-mode-href={modeHref}
+        >
+          {children}
+        </div>
+      )
 );
 
 jest.mock(
@@ -88,11 +108,15 @@ jest.mock(
     ({
       children,
       onClick,
+      href,
     }: {
       children: React.ReactNode;
       onClick?: () => void;
+      href?: string;
     }) =>
-      (
+      href ? (
+        <a href={href}>{children}</a>
+      ) : (
         <button onClick={onClick} type='button'>
           {children}
         </button>
@@ -110,10 +134,11 @@ jest.mock('@/components/VideoCard', () => {
     typeName?: string;
     year?: string;
     statusText?: string;
+    tvMode?: boolean;
   }) {
     const title = props.title || props.items?.[0]?.title || 'Video Card';
     return (
-      <div data-testid='video-card'>
+      <div data-testid='video-card' data-tv-mode={props.tvMode}>
         <span>{title}</span>
         {props.typeName ? <span>{props.typeName}</span> : null}
         {props.year ? <span>{props.year}</span> : null}
@@ -259,7 +284,9 @@ describe('SearchPage', () => {
       render(<SearchPage />);
     });
 
-    expect(await screen.findByRole('tablist', { name: '结果分类' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('tablist', { name: '结果分类' })
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '全部 3' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '电影 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '剧集 1' })).toBeInTheDocument();
@@ -320,7 +347,9 @@ describe('SearchPage', () => {
         ok: false,
         status: 500,
         json: async () => ({
-          results: [{ id: '1', title: '不应展示', episodes: ['1'], source: 's1' }],
+          results: [
+            { id: '1', title: '不应展示', episodes: ['1'], source: 's1' },
+          ],
         }),
       });
 
@@ -329,7 +358,9 @@ describe('SearchPage', () => {
     });
 
     expect(screen.queryByText('不应展示')).not.toBeInTheDocument();
-    expect(screen.queryByRole('tablist', { name: '结果分类' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('tablist', { name: '结果分类' })
+    ).not.toBeInTheDocument();
     expect(consoleErrorSpy).toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
   });
@@ -392,5 +423,106 @@ describe('SearchPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '剧集 0' }));
     expect(screen.getByText('该分类下暂无结果')).toBeInTheDocument();
     expect(screen.queryByText('只有电影')).not.toBeInTheDocument();
+  });
+
+  it('submits trimmed TV queries and keeps history in TV mode', async () => {
+    mockSearchParams = new URLSearchParams('tv=1');
+    mockedGetSearchHistory.mockResolvedValue(['庆余年']);
+    await act(async () => {
+      render(<SearchPage />);
+    });
+    expect(screen.getByTestId('page-layout')).toHaveAttribute(
+      'data-tv-mode',
+      'true'
+    );
+    expect(screen.queryByTestId('ai-find-panel')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '庆余年' }));
+    expect(push).toHaveBeenLastCalledWith(
+      '/search?q=%E5%BA%86%E4%BD%99%E5%B9%B4&tv=1'
+    );
+    const input = screen.getByRole('searchbox');
+    fireEvent.click(input);
+    fireEvent.change(input, { target: { value: '  庆余年 & 第二季  ' } });
+    fireEvent.submit(screen.getByRole('search', { name: '电视搜索' }));
+    expect(push).toHaveBeenLastCalledWith(
+      '/search?q=%E5%BA%86%E4%BD%99%E5%B9%B4+%26+%E7%AC%AC%E4%BA%8C%E5%AD%A3&tv=1'
+    );
+    expect(input).toHaveAttribute('readonly');
+    fireEvent.click(screen.getByRole('button', { name: 'AI 找片' }));
+    expect(screen.getByTestId('ai-find-panel')).toHaveAttribute(
+      'data-tv-mode',
+      'true'
+    );
+    expect(push).toHaveBeenLastCalledWith('/search?tv=1&mode=ai');
+  });
+
+  it('opens TV AI directly without searching the description through normal search and retains mode on switching', async () => {
+    mockSearchParams = new URLSearchParams('tv=1&mode=ai&q=港片');
+    await act(async () => {
+      render(<SearchPage />);
+    });
+    expect(screen.getByTestId('ai-find-panel')).toHaveTextContent('港片');
+    expect(global.fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '普通搜索' }));
+    await act(async () => undefined);
+    expect(screen.getByRole('searchbox')).toHaveValue('港片');
+    expect(push).toHaveBeenLastCalledWith('/search?tv=1&q=%E6%B8%AF%E7%89%87');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps TV results navigable through aggregation and category changes without refetching', async () => {
+    mockSearchParams = new URLSearchParams('tv=1&q=庆余年');
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: sampleResults }),
+    });
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
+    await act(async () => {
+      render(<SearchPage />);
+    });
+    expect(screen.getAllByTestId('video-card')).toHaveLength(3);
+    for (const card of screen.getAllByTestId('video-card'))
+      expect(card).toHaveAttribute('data-tv-mode', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '聚合：开' }));
+    expect(screen.getByRole('button', { name: '聚合：关' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+    fireEvent.click(screen.getByRole('button', { name: '电影 1' }));
+    expect(screen.getAllByTestId('video-card')).toHaveLength(1);
+    expect(screen.getByTestId('video-card')).toHaveAttribute(
+      'data-tv-mode',
+      'true'
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('page-layout')).toHaveAttribute(
+      'data-mode-href',
+      `/search?${mockSearchParams.toString()}`
+    );
+  });
+
+  it('retries a failed TV search through the existing request and cancellation path', async () => {
+    mockSearchParams = new URLSearchParams('tv=1&q=test');
+    const errorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ results: sampleResults }),
+      });
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
+    await act(async () => {
+      render(<SearchPage />);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('搜索失败，请重试。');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '重试搜索' }));
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    errorSpy.mockRestore();
   });
 });

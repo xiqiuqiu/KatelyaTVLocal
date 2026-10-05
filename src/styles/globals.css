@@ -110,6 +110,7 @@
     :is(
       button:not(:disabled),
       a[href],
+      input[data-tv-input]:not(:disabled),
       [role='button']:not([aria-disabled='true']),
       [role='slider']:not([aria-disabled='true'])
     ):focus {
@@ -130,5 +131,40 @@
   .art-video-player[data-tv-mode='true']
     .art-control-progress[data-tv-player-control='true'] {
     min-height: 24px;
+  }
+
+  [data-tv-browse='true']
+    :is(button:not([tabindex='-1']), a[href], input[data-tv-input]) {
+    min-height: 48px;
+    min-width: 48px;
+    scroll-margin: 1rem;
+  }
+
+  [data-tv-browse='true'] .ui-reveal {
+    animation: none;
+  }
+
+  [data-tv-browse='true'] .text-xs {
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  [data-tv-browse='true'] .text-sm {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  [data-tv-card-primary]:focus {
+    outline-offset: -6px !important;
+  }
+
+  .tv-history-confirm button {
+    min-height: 48px;
+    min-width: 80px;
+  }
+
+  .tv-history-confirm button:focus {
+    outline: 4px solid #d5ff5f;
+    outline-offset: 3px;
   }
 }

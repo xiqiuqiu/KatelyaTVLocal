@@ -8,8 +8,8 @@ import {
   Square,
   Trash2,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Swal from 'sweetalert2';
 
 import {
@@ -23,6 +23,7 @@ import {
   buildContinueWatchingRecords,
   resolveContinueWatchingRoute,
 } from '@/lib/play-records';
+import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 
 import PageLayout from '@/components/PageLayout';
 import ActionLink from '@/components/ui/ActionLink';
@@ -60,7 +61,7 @@ function formatProgress(record: PlayRecord): string {
   return `已观看 ${percent}%`;
 }
 
-function buildPlayHref(item: HistoryItem): string {
+function buildPlayHref(item: HistoryItem, tvMode: boolean): string {
   const params = new URLSearchParams();
   params.set('source', item.source);
   params.set('id', item.id);
@@ -69,13 +70,15 @@ function buildPlayHref(item: HistoryItem): string {
   if (item.search_title) params.set('stitle', item.search_title);
   params.set('stype', item.total_episodes > 1 ? 'tv' : '');
   params.set('from', 'playrecord');
-  return `/play?${params.toString()}`;
+  const href = `/play?${params.toString()}`;
+  return tvMode ? buildTvModeHref(href, true) : href;
 }
 
 async function confirmDangerAction(options: {
   title: string;
   text: string;
   confirmButtonText: string;
+  tvMode: boolean;
 }): Promise<boolean> {
   const result = await Swal.fire({
     title: options.title,
@@ -85,13 +88,16 @@ async function confirmDangerAction(options: {
     confirmButtonText: options.confirmButtonText,
     cancelButtonText: '取消',
     confirmButtonColor: '#dc2626',
+    focusCancel: options.tvMode,
+    customClass: { popup: options.tvMode ? 'tv-history-confirm' : '' },
   });
 
   return result.isConfirmed;
 }
 
-export default function HistoryPage() {
+function HistoryClient() {
   const router = useRouter();
+  const tvMode = isTvMode(useSearchParams());
   const [records, setRecords] = useState<Record<string, PlayRecord>>({});
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -194,6 +200,7 @@ export default function HistoryPage() {
 
   const handleDeleteOne = async (item: HistoryItem) => {
     const confirmed = await confirmDangerAction({
+      tvMode,
       title: '删除这条播放记录？',
       text: item.title,
       confirmButtonText: '删除',
@@ -205,6 +212,7 @@ export default function HistoryPage() {
   const handleDeleteSelected = async () => {
     const targets = items.filter((item) => selectedKeys.has(item.key));
     const confirmed = await confirmDangerAction({
+      tvMode,
       title: `删除已选 ${targets.length} 条记录？`,
       text: '删除后这些播放进度不会再出现在继续观看和历史记录中。',
       confirmButtonText: '删除已选',
@@ -215,6 +223,7 @@ export default function HistoryPage() {
 
   const handleClearAll = async () => {
     const confirmed = await confirmDangerAction({
+      tvMode,
       title: '清空全部播放历史？',
       text: '这会删除当前账号的所有播放记录，操作不可撤销。',
       confirmButtonText: '清空全部',
@@ -232,11 +241,11 @@ export default function HistoryPage() {
   };
 
   return (
-    <PageLayout activePath='/history'>
+    <PageLayout activePath='/history' tvMode={tvMode}>
       <div className='space-y-6 overflow-visible sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
         <PageHeader
           action={
-            <ActionLink href='/'>
+            <ActionLink href={tvMode ? buildTvModeHref('/', true) : '/'}>
               返回首页
               <ChevronRight className='h-4 w-4 rotate-180' />
             </ActionLink>
@@ -335,8 +344,9 @@ export default function HistoryPage() {
 
                     <button
                       aria-label={`继续播放 ${item.title}`}
+                      tabIndex={tvMode ? -1 : undefined}
                       className='relative aspect-[2/3] overflow-hidden rounded-ui-sm bg-[rgb(var(--ui-surface-strong)/0.32)] text-left'
-                      onClick={() => router.push(buildPlayHref(item))}
+                      onClick={() => router.push(buildPlayHref(item, tvMode))}
                       type='button'
                     >
                       {item.cover ? (
@@ -355,8 +365,9 @@ export default function HistoryPage() {
 
                     <div className='min-w-0'>
                       <button
+                        tabIndex={tvMode ? -1 : undefined}
                         className='block max-w-full truncate text-left text-base font-semibold text-[rgb(var(--ui-text))] transition hover:text-[rgb(var(--ui-accent))]'
-                        onClick={() => router.push(buildPlayHref(item))}
+                        onClick={() => router.push(buildPlayHref(item, tvMode))}
                         type='button'
                       >
                         {item.title}
@@ -381,8 +392,10 @@ export default function HistoryPage() {
 
                     <div className='col-span-3 flex items-center justify-end gap-2 sm:col-span-1 sm:flex-col sm:items-stretch'>
                       <button
+                        data-tv-primary={tvMode || undefined}
+                        data-tv-focus-key={`history:${item.key}`}
                         className='inline-flex items-center justify-center gap-2 rounded-full bg-[rgb(var(--ui-accent))] px-3 py-2 text-sm font-semibold text-[rgb(var(--ui-on-accent))] transition hover:brightness-110'
-                        onClick={() => router.push(buildPlayHref(item))}
+                        onClick={() => router.push(buildPlayHref(item, tvMode))}
                         type='button'
                       >
                         <Play className='h-4 w-4' />
@@ -406,5 +419,17 @@ export default function HistoryPage() {
         </section>
       </div>
     </PageLayout>
+  );
+}
+
+export default function HistoryPage() {
+  return (
+    <Suspense
+      fallback={
+        <PageLayout activePath='/history'>正在加载播放历史…</PageLayout>
+      }
+    >
+      <HistoryClient />
+    </Suspense>
   );
 }

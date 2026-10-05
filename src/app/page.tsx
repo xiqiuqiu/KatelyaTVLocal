@@ -16,6 +16,7 @@ import {
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
 import { selectHomeHeroCandidate } from '@/lib/home-hero';
+import { isTvMode } from '@/lib/tv-interaction';
 import { DoubanItem } from '@/lib/types';
 import { homeTabMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
@@ -51,6 +52,7 @@ function HomeClient() {
   const searchParams = useSearchParams();
   const activeTab =
     searchParams.get('tab') === 'favorites' ? 'favorites' : 'home';
+  const tvMode = activeTab === 'home' && isTvMode(searchParams);
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
@@ -187,14 +189,22 @@ function HomeClient() {
     <section className='space-y-4'>
       <SectionHeader
         action={
-          <ActionLink href={href}>
-            {pageSectionLabels.viewMore}
-            <ChevronRight className='h-4 w-4' />
-          </ActionLink>
+          tvMode ? null : (
+            <ActionLink href={href}>
+              {pageSectionLabels.viewMore}
+              <ChevronRight className='h-4 w-4' />
+            </ActionLink>
+          )
         }
         title={title}
       />
-      <PosterGrid className='grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6'>
+      <PosterGrid
+        className={
+          tvMode
+            ? 'grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5'
+            : 'grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6'
+        }
+      >
         {loading
           ? Array.from({ length: 12 }).map((_, index) => (
               <div key={index} className='w-full'>
@@ -212,7 +222,8 @@ function HomeClient() {
                   imagePriority={priorityImages && index < 4}
                   poster={item.poster}
                   rate={item.rate}
-                  size='small'
+                  size={tvMode ? 'default' : 'small'}
+                  tvMode={tvMode}
                   title={item.title}
                   type={type}
                   year={item.year}
@@ -226,6 +237,7 @@ function HomeClient() {
   return (
     <PageLayout
       activePath={activeTab === 'favorites' ? '/?tab=favorites' : '/'}
+      tvMode={tvMode}
     >
       <div className='space-y-8 overflow-visible sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
         {activeTab === 'favorites' ? (
@@ -283,9 +295,13 @@ function HomeClient() {
           ) : (
             // 首页视图：Hero 为首屏构图，继续观看紧随其后
             <>
-              <HomeHero candidate={homeHeroCandidate} loading={loading} />
+              <HomeHero
+                candidate={homeHeroCandidate}
+                loading={loading}
+                tvMode={tvMode}
+              />
 
-              <ContinueWatching />
+              <ContinueWatching tvMode={tvMode} />
 
               {renderHomeSection({
                 href: '/douban?type=movie',

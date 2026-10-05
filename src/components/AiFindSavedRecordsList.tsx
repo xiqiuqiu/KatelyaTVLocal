@@ -5,6 +5,8 @@ import { Clock3, PlayCircle } from 'lucide-react';
 import type { AiFindSavedRecordSummary } from '@/lib/types';
 
 interface AiFindSavedRecordsListProps {
+  tvMode?: boolean;
+  disabled?: boolean;
   savedRecords: AiFindSavedRecordSummary[];
   activeSavedRecordId: string | null;
   onSelectRecord: (recordId: string) => void | Promise<void>;
@@ -34,12 +36,54 @@ function getSavedRecordInitials(query: string): string[] {
 }
 
 export default function AiFindSavedRecordsList({
+  tvMode = false,
+  disabled = false,
   savedRecords,
   activeSavedRecordId,
   onSelectRecord,
 }: AiFindSavedRecordsListProps) {
   if (savedRecords.length === 0) {
     return null;
+  }
+
+  if (tvMode) {
+    return (
+      <section className='space-y-4'>
+        <h2 className='text-2xl font-semibold'>最近 AI 找片</h2>
+        <p className='text-base text-[rgb(var(--ui-text-muted))]'>
+          {disabled
+            ? '本次查询完成后可打开历史记录。'
+            : '选择记录直接打开保存的结果，不重新请求 AI。'}
+        </p>
+        <div className='space-y-3'>
+          {savedRecords.slice(0, 8).map((record) => (
+            <button
+              key={record.id}
+              type='button'
+              disabled={disabled}
+              aria-label={record.query}
+              aria-pressed={activeSavedRecordId === record.id}
+              data-tv-focus-key={`ai-record:${record.id}`}
+              onClick={() => void onSelectRecord(record.id)}
+              className={`flex min-h-16 w-full flex-wrap items-center justify-between gap-3 rounded-ui-sm border px-5 py-4 text-left disabled:opacity-60 ${
+                activeSavedRecordId === record.id
+                  ? 'border-[rgb(var(--ui-accent))] bg-[rgb(var(--ui-accent)/0.12)]'
+                  : 'border-[rgb(var(--ui-border))]'
+              }`}
+            >
+              <span className='min-w-0 flex-1 break-words text-xl font-semibold'>
+                {record.query}
+              </span>
+              <span className='text-base text-[rgb(var(--ui-text-muted))]'>
+                {record.foundGroupCount} 组结果 ·{' '}
+                {record.status === 'complete' ? '已完成' : '部分结果'} ·{' '}
+                {formatSavedRecordTime(record.updatedAt)}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+    );
   }
 
   return (

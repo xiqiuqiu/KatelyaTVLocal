@@ -6,9 +6,11 @@ import * as dbClient from '@/lib/db.client';
 import HistoryPage from './page';
 
 const push = jest.fn();
+let mockSearchParams = new URLSearchParams();
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push }),
+  useSearchParams: () => mockSearchParams,
 }));
 
 jest.mock('sweetalert2', () => ({
@@ -60,6 +62,7 @@ function mockRecords() {
 
 describe('HistoryPage', () => {
   beforeEach(() => {
+    mockSearchParams = new URLSearchParams();
     push.mockReset();
     (Swal.fire as jest.Mock).mockResolvedValue({ isConfirmed: true });
     (dbClient.getAllPlayRecords as jest.Mock).mockResolvedValue(mockRecords());
@@ -98,6 +101,31 @@ describe('HistoryPage', () => {
       );
     });
     expect(dbClient.clearAllPlayRecords).not.toHaveBeenCalled();
+  });
+
+  it('keeps TV mode on every resume route and defaults destructive confirmation to cancel', async () => {
+    mockSearchParams.set('tv', '1');
+    render(<HistoryPage />);
+    await screen.findAllByText('特殊记录');
+    fireEvent.click(screen.getByRole('button', { name: '继续播放 特殊记录' }));
+    fireEvent.click(screen.getAllByRole('button', { name: '继续播放' })[0]);
+    for (const [href] of push.mock.calls) {
+      const params = new URLSearchParams(href.split('?')[1]);
+      expect(params.get('tv')).toBe('1');
+      expect(params.get('id')).toBe('keep+id&hash#eq=1');
+    }
+    expect(screen.getByRole('link', { name: '返回首页' })).toHaveAttribute(
+      'href',
+      '/?tv=1'
+    );
+    (Swal.fire as jest.Mock).mockResolvedValueOnce({ isConfirmed: false });
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
+    await waitFor(() =>
+      expect(Swal.fire).toHaveBeenCalledWith(
+        expect.objectContaining({ focusCancel: true })
+      )
+    );
+    expect(dbClient.deletePlayRecordByKey).not.toHaveBeenCalled();
   });
 
   it('deletes selected records one by one and keeps clear-all separate', async () => {

@@ -73,8 +73,12 @@ jest.mock('@/components/SiteProvider', () => ({
 jest.mock(
   '@/components/PageLayout',
   () =>
-    ({ children }: { children: React.ReactNode }) =>
-      <div data-testid='page-layout'>{children}</div>
+    ({ children, tvMode }: { children: React.ReactNode; tvMode?: boolean }) =>
+      (
+        <div data-testid='page-layout' data-tv-mode={tvMode}>
+          {children}
+        </div>
+      )
 );
 
 jest.mock('@/components/ScrollableRow', () => ({
@@ -86,7 +90,9 @@ jest.mock('@/components/ScrollableRow', () => ({
 
 jest.mock('@/components/VideoCard', () => ({
   __esModule: true,
-  default: ({ title }: { title: string }) => <div>{title}</div>,
+  default: ({ title, tvMode }: { title: string; tvMode?: boolean }) => (
+    <div data-tv-card-mode={tvMode}>{title}</div>
+  ),
 }));
 
 describe('Home page composition', () => {
@@ -115,7 +121,9 @@ describe('Home page composition', () => {
     const continueSection = continueHeading.closest('section');
     expect(continueSection).not.toBeNull();
     expect(
-      within(continueSection as HTMLElement).getByRole('link', { name: /更多/i })
+      within(continueSection as HTMLElement).getByRole('link', {
+        name: /更多/i,
+      })
     ).toHaveAttribute('href', '/history');
 
     const heroIndex = container.textContent?.indexOf('庆余年') ?? -1;
@@ -124,5 +132,26 @@ describe('Home page composition', () => {
     expect(continueIndex).toBeGreaterThan(heroIndex);
 
     expect(screen.queryByRole('heading', { name: '首页' })).toBeNull();
+  });
+
+  it('keeps TV mode from the home hero and continue-watching section into playback and history', async () => {
+    mockSearchParams.set('tv', '1');
+    render(<HomePage />);
+    await screen.findByRole('heading', { name: '庆余年' });
+    expect(screen.getByTestId('page-layout')).toHaveAttribute(
+      'data-tv-mode',
+      'true'
+    );
+    expect(
+      screen.getByRole('link', { name: '立即播放' }).getAttribute('href')
+    ).toContain('&tv=1');
+    expect(screen.getByRole('link', { name: '更多' })).toHaveAttribute(
+      'href',
+      '/history?tv=1'
+    );
+    expect(await screen.findByText('续看示例')).toHaveAttribute(
+      'data-tv-card-mode',
+      'true'
+    );
   });
 });

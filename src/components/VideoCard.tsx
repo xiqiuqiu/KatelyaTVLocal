@@ -23,6 +23,7 @@ import {
 } from '@/lib/db.client';
 import { useFavoriteStatus } from '@/lib/favorites-store.client';
 import { buildHomeHeroPlayHref } from '@/lib/home-hero';
+import { buildTvModeHref } from '@/lib/tv-interaction';
 import { SearchResult } from '@/lib/types';
 import { type ImageProxyOptions, processImageUrl } from '@/lib/utils';
 
@@ -54,6 +55,7 @@ interface VideoCardProps {
   size?: 'default' | 'small';
   imagePriority?: boolean;
   imageSize?: ImageProxyOptions;
+  tvMode?: boolean;
 }
 
 interface FavoriteHeartButtonProps {
@@ -159,6 +161,7 @@ export default function VideoCard({
   size = 'default',
   imagePriority = false,
   imageSize,
+  tvMode = false,
 }: VideoCardProps) {
   const router = useRouter();
   const posterRef = useRef<HTMLDivElement>(null);
@@ -287,6 +290,7 @@ export default function VideoCard({
     }
 
     if (!href) return;
+    if (tvMode) href = buildTvModeHref(href, true);
 
     setIsOpening(true);
     if (playbackPreparation.active) {
@@ -323,6 +327,7 @@ export default function VideoCard({
     playbackPreparation,
     router,
     showOpeningState,
+    tvMode,
   ]);
 
   const config = useMemo(() => {
@@ -416,6 +421,9 @@ export default function VideoCard({
           />
 
           <button
+            data-tv-focus-key={`play:${playbackCardKey}`}
+            data-tv-card-primary={tvMode || undefined}
+            data-tv-primary={(tvMode && from === 'playrecord') || undefined}
             aria-label={posterActionLabel}
             aria-busy={showOpeningState}
             className='absolute inset-0 z-10 rounded-[inherit]'
@@ -453,7 +461,7 @@ export default function VideoCard({
             </div>
           ) : null}
 
-          {config.showDoubanLink && actualDoubanId ? (
+          {!tvMode && config.showDoubanLink && actualDoubanId ? (
             <a
               aria-label='打开豆瓣页面'
               className={doubanLinkClass}
@@ -487,7 +495,7 @@ export default function VideoCard({
           </div>
 
           {config.showHeart || config.showCheckCircle ? (
-            <CardActions>
+            <CardActions className={tvMode ? '!opacity-100' : ''}>
               {config.showCheckCircle ? (
                 <button
                   aria-label='删除播放记录'
@@ -536,6 +544,7 @@ export default function VideoCard({
 
       <div className={`text-center ${isSmall ? 'mt-2' : 'mt-3'}`}>
         <button
+          tabIndex={tvMode ? -1 : undefined}
           aria-label={titleActionLabel}
           className={`block w-full truncate font-semibold text-[rgb(var(--ui-text))] transition-colors duration-300 hover:text-[rgb(var(--ui-success))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent ${
             isSmall ? 'text-lg leading-6' : 'text-base leading-5'
