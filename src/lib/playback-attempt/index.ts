@@ -1,3 +1,14 @@
+export {
+  createPlaybackAttemptReporter,
+  isPlaybackAttemptEnhancedReportingEnabled,
+} from './reporter';
+export {
+  createPlaybackAttemptSessionId,
+  preferLogicalPlaybackUrl,
+  sanitizeEvidenceDetails,
+  sanitizePlaybackEvidenceUrl,
+  summarizeUserAgent,
+} from './sanitize';
 export type {
   CreatePlaybackAttemptReporterOptions,
   PlaybackAttemptChannelDecision,
@@ -8,16 +19,3 @@ export type {
   PlaybackAttemptSkipReason,
   PlaybackAttemptTransportResult,
 } from './types';
-
-export {
-  createPlaybackAttemptSessionId,
-  preferLogicalPlaybackUrl,
-  sanitizeEvidenceDetails,
-  sanitizePlaybackEvidenceUrl,
-  summarizeUserAgent,
-} from './sanitize';
-
-export {
-  createPlaybackAttemptReporter,
-  isPlaybackAttemptEnhancedReportingEnabled,
-} from './reporter';

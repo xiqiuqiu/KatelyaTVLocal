@@ -2,7 +2,11 @@
 
 import { useSyncExternalStore } from 'react';
 
-import { getAllFavorites, subscribeToDataUpdates, type Favorite } from './db.client';
+import {
+  type Favorite,
+  getAllFavorites,
+  subscribeToDataUpdates,
+} from './db.client';
 
 let snapshot: Record<string, Favorite> = {};
 let loadPromise: Promise<void> | null = null;
@@ -14,7 +18,8 @@ function emit() {
 }
 
 function ensureLoaded() {
-  loadPromise ??= getAllFavorites()
+  if (loadPromise) return;
+  loadPromise = getAllFavorites()
     .then((favorites) => {
       snapshot = favorites;
       emit();

@@ -87,6 +87,7 @@ jest.mock('@/lib/source-ranking/scheduler', () => ({
 const originalEnv = process.env;
 
 let GET: (request: Request) => Promise<Response>;
+let consoleErrorSpy: jest.SpyInstance;
 
 describe('cron route auth', () => {
   beforeAll(() => {
@@ -97,7 +98,9 @@ describe('cron route auth', () => {
   beforeEach(() => {
     process.env = { ...originalEnv };
     delete process.env.CRON_API_TOKEN;
-    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -115,7 +118,7 @@ describe('cron route auth', () => {
       success: false,
       message: 'Unauthorized',
     });
-    expect(console.error).toHaveBeenCalledWith(
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
       'Cron API rejected: CRON_API_TOKEN is not configured'
     );
   });
@@ -132,7 +135,7 @@ describe('cron route auth', () => {
       success: false,
       message: 'Unauthorized',
     });
-    expect(console.error).toHaveBeenCalledWith(
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
       'Cron API rejected: unauthorized request'
     );
   });
@@ -151,7 +154,7 @@ describe('cron route auth', () => {
       success: false,
       message: 'Unauthorized',
     });
-    expect(console.error).toHaveBeenCalledWith(
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
       'Cron API rejected: unauthorized request'
     );
   });

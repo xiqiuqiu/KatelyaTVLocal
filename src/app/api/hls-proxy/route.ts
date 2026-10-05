@@ -16,8 +16,8 @@ import {
 import type { HlsMediaSegmentMode } from '@/lib/hls-proxy-rewrite';
 import { rewritePlaylistContent } from '@/lib/hls-proxy-rewrite';
 import {
-  ProxyRedirectError,
   fetchWithValidatedRedirects,
+  ProxyRedirectError,
   validateProxyTargetUrl,
 } from '@/lib/proxy-url-policy';
 

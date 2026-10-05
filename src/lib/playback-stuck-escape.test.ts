@@ -1,16 +1,16 @@
 import {
-  PLAYBACK_EDGE_REWIND_SECONDS,
-  PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS,
-  findNearbyPlaybackBadPoint,
-  planStallEscapeResume,
-  purgeBadPointsOverlappingAdSkipWindow,
-  rememberPlaybackBadPoint,
-} from '@/lib/playback-stuck-escape';
-import {
   getAutoRecoveryResumeTime,
   getRewoundPlaybackResumeTime,
   getSourceSwitchResumePlan,
 } from '@/lib/playback-source-switch';
+import {
+  findNearbyPlaybackBadPoint,
+  planStallEscapeResume,
+  PLAYBACK_EDGE_REWIND_SECONDS,
+  PLAYBACK_FALLBACK_SEGMENT_DURATION_SECONDS,
+  purgeBadPointsOverlappingAdSkipWindow,
+  rememberPlaybackBadPoint,
+} from '@/lib/playback-stuck-escape';
 
 const STUCK_AT_SECONDS = 438.6;
 
@@ -134,15 +134,18 @@ describe('ad-skip then bad-point Segment-Scaled Escape (iOS Pad jump)', () => {
     expect(first.action).toBe('skip-forward');
     // Still inside the interval → jump to its escapeEnd (not another +segment).
     expect(first.resumeTime).toBe(priorEscapeEnd);
+    if (first.resumeTime == null) {
+      throw new Error('Expected skip-forward resume time');
+    }
 
     badPoints = rememberPlaybackBadPoint(badPoints, {
       sourceKey: 'ruyi-1',
-      timeSeconds: first.resumeTime!,
+      timeSeconds: first.resumeTime,
       nowMs: 2_000,
-      escapeEndSeconds: first.resumeTime!,
+      escapeEndSeconds: first.resumeTime,
     });
     const second = planStallEscapeResume({
-      currentPlayTime: first.resumeTime!,
+      currentPlayTime: first.resumeTime,
       sourceKey: 'ruyi-1',
       mode: 'same-source',
       badPoints,

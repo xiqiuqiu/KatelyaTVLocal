@@ -5,10 +5,20 @@ export {
   isWatchProgressDualWriteEnabled,
 } from './authority';
 export {
-  buildWatchProgressContentKey,
   type WatchProgressContentKeyInput,
+  buildWatchProgressContentKey,
 } from './content-key';
 export {
+  type AdaptWatchProgressPlayheadInput,
+  type PlanEpisodeChangeSaveInput,
+  type PlanEpisodeChangeSaveResult,
+  type PlanLatestWatchProgressInput,
+  type PlanWatchProgressReadInput,
+  type PlanWatchProgressReadResult,
+  type PlanWatchProgressWriteInput,
+  type PlanWatchProgressWriteResult,
+  type WatchProgressIdentity,
+  type WatchProgressRoute,
   adaptWatchProgressPlayhead,
   buildLegacyPlayRecordStorageKey,
   buildWatchProgressStorageKey,
@@ -20,14 +30,4 @@ export {
   planWatchProgressRead,
   planWatchProgressWrite,
   WATCH_PROGRESS_DURATION_MISMATCH_RATIO,
-  type AdaptWatchProgressPlayheadInput,
-  type PlanEpisodeChangeSaveInput,
-  type PlanEpisodeChangeSaveResult,
-  type PlanLatestWatchProgressInput,
-  type PlanWatchProgressReadInput,
-  type PlanWatchProgressReadResult,
-  type PlanWatchProgressWriteInput,
-  type PlanWatchProgressWriteResult,
-  type WatchProgressIdentity,
-  type WatchProgressRoute,
 } from './planner';

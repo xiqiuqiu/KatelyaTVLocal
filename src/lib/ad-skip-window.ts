@@ -1,7 +1,7 @@
 import {
+  type HlsAdSkipWindow,
   getEffectiveAdWindowTrustTier,
   resolveAdWindowTrustTier,
-  type HlsAdSkipWindow,
 } from '@/lib/hls-ad-skip';
 
 /** Persisted Ad Skip Window — shared within one deployment (ADR 0004). */
@@ -44,7 +44,9 @@ export function getAdSkipWindowRangeKey(
     'startTimeSeconds' | 'endTimeSeconds'
   >
 ): string {
-  return `${window.startTimeSeconds.toFixed(3)}-${window.endTimeSeconds.toFixed(3)}`;
+  return `${window.startTimeSeconds.toFixed(3)}-${window.endTimeSeconds.toFixed(
+    3
+  )}`;
 }
 
 export function toPersistedAdSkipWindow(input: {
@@ -133,7 +135,10 @@ export function mergeEpisodeAdSkipConfigs(
   const byRange = new Map<string, PersistedAdSkipWindow>();
 
   for (const window of existing?.windows ?? []) {
-    byRange.set(getAdSkipWindowRangeKey(window), { ...window, origin: 'persisted' });
+    byRange.set(getAdSkipWindowRangeKey(window), {
+      ...window,
+      origin: 'persisted',
+    });
   }
 
   for (const window of incoming.windows) {

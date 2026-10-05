@@ -17,6 +17,7 @@ export default function PlayError({
   const router = useRouter();
 
   useEffect(() => {
+    // eslint-disable-next-line no-console
     console.error('播放页渲染异常:', error);
   }, [error]);
 

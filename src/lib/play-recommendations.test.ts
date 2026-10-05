@@ -1,10 +1,9 @@
-import type { DoubanItem } from '@/lib/types';
-
 import {
-  collectHeavilyWatchedTitles,
   type HeavilyWatchedPlayRecord,
+  collectHeavilyWatchedTitles,
   selectPlayRecommendations,
 } from '@/lib/play-recommendations';
+import type { DoubanItem } from '@/lib/types';
 
 function playRecord(
   overrides: Partial<HeavilyWatchedPlayRecord> &
@@ -36,7 +35,10 @@ describe('selectPlayRecommendations', () => {
       genreFallback: [item({ id: 'g1', title: '同题材乙' })],
     });
 
-    expect(result.map((entry) => entry.title)).toEqual(['也喜欢甲', '同题材乙']);
+    expect(result.map((entry) => entry.title)).toEqual([
+      '也喜欢甲',
+      '同题材乙',
+    ]);
   });
 
   it('excludes the current title by normalized match', () => {

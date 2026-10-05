@@ -1,12 +1,10 @@
-import {
-  buildSourceAvailabilityList,
-  selectRecoveryCandidate,
-} from './index';
+import type { SearchResult, SourceStatus, SourceVideoInfo } from '@/lib/types';
+
 import {
   clearAttemptedLedgersOnEpisodeChange,
   clearAttemptedLedgersOnTitleChange,
 } from './attempted-ledgers';
-import type { SearchResult, SourceStatus, SourceVideoInfo } from '@/lib/types';
+import { buildSourceAvailabilityList, selectRecoveryCandidate } from './index';
 
 function createSource(
   source: string,

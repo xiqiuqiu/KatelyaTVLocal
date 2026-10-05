@@ -6,12 +6,12 @@ import {
   waitFor,
 } from '@testing-library/react';
 
+import { createAiFindRequestId } from '@/lib/ai-find/debug';
 import {
   deleteAiFindSavedRecord,
   getAiFindSavedRecord,
   listAiFindSavedRecords,
 } from '@/lib/ai-find/history-client';
-import { createAiFindRequestId } from '@/lib/ai-find/debug';
 import type { AiFindResponse } from '@/lib/ai-find/types';
 
 import AiFindPanel from './AiFindPanel';

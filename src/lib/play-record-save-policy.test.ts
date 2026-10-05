@@ -1,8 +1,8 @@
 import {
+  type PlayRecordSaveSnapshot,
   getPlayRecordHeartbeatIntervalMs,
   resolvePlayTimeForWatchProgressSave,
   shouldSavePlayRecord,
-  type PlayRecordSaveSnapshot,
 } from '@/lib/play-record-save-policy';
 
 function createSnapshot(
@@ -93,7 +93,11 @@ describe('shouldSavePlayRecord', () => {
 
   it('always saves when the source key changes during a heartbeat', () => {
     const previous = createSnapshot({ key: 'source-a+100' });
-    const next = createSnapshot({ key: 'source-a+999', savedAt: 2000, playTime: 121 });
+    const next = createSnapshot({
+      key: 'source-a+999',
+      savedAt: 2000,
+      playTime: 121,
+    });
 
     expect(shouldSavePlayRecord(previous, next, 'heartbeat')).toBe(true);
   });
@@ -101,14 +105,22 @@ describe('shouldSavePlayRecord', () => {
   it('saves forced events when total duration shifts enough within the duplicate window', () => {
     const previous = createSnapshot();
     // playTime barely moved (delta 2), but totalTime jumped 5s (e.g. late metadata load)
-    const next = createSnapshot({ savedAt: 3000, playTime: 122, totalTime: 1805 });
+    const next = createSnapshot({
+      savedAt: 3000,
+      playTime: 122,
+      totalTime: 1805,
+    });
 
     expect(shouldSavePlayRecord(previous, next, 'pause')).toBe(true);
   });
 
   it('skips forced events when neither playTime nor totalTime moved enough within the duplicate window', () => {
     const previous = createSnapshot();
-    const next = createSnapshot({ savedAt: 3000, playTime: 122, totalTime: 1803 });
+    const next = createSnapshot({
+      savedAt: 3000,
+      playTime: 122,
+      totalTime: 1803,
+    });
 
     expect(shouldSavePlayRecord(previous, next, 'pause')).toBe(false);
   });
@@ -116,7 +128,11 @@ describe('shouldSavePlayRecord', () => {
   it('heartbeat ignores totalTime changes — only playTime delta matters', () => {
     const previous = createSnapshot();
     // totalTime jumped 10s but playTime barely moved
-    const next = createSnapshot({ savedAt: 31000, playTime: 122, totalTime: 1810 });
+    const next = createSnapshot({
+      savedAt: 31000,
+      playTime: 122,
+      totalTime: 1810,
+    });
 
     expect(shouldSavePlayRecord(previous, next, 'heartbeat')).toBe(false);
   });
@@ -126,7 +142,9 @@ describe('shouldSavePlayRecord', () => {
     // elapsedMs = 10001 > 10000  →  should save
     const next = createSnapshot({ savedAt: 11001, playTime: 121 });
 
-    expect(shouldSavePlayRecord(previous, next, 'visibility-hidden')).toBe(true);
+    expect(shouldSavePlayRecord(previous, next, 'visibility-hidden')).toBe(
+      true
+    );
   });
 
   it('skips forced events exactly at the duplicate window edge (not yet over)', () => {

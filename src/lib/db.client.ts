@@ -15,9 +15,9 @@
  */
 
 import {
+  type EpisodeAdSkipConfig,
   applyAdSkipWindowConfirmation,
   generateAdSkipConfigKey,
-  type EpisodeAdSkipConfig,
 } from './ad-skip-window';
 import { getRuntimeCurrentUser } from './auth';
 import { getRecentPlayRecordsFromAll } from './play-record-key';
@@ -1916,7 +1916,10 @@ export async function recordAdSkipWindowConfirmation(input: {
     });
 
     if (!response.ok) {
-      console.error('持久化 Ad Skip Window 确认失败（已降级）:', response.status);
+      console.error(
+        '持久化 Ad Skip Window 确认失败（已降级）:',
+        response.status
+      );
       return null;
     }
 

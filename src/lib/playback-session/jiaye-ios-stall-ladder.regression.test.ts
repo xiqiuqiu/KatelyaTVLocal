@@ -2,11 +2,11 @@ import {
   createInitialPlaybackSessionState,
   reducePlaybackSession,
 } from '@/lib/playback-session';
+import { allowsAutomaticEffect } from '@/lib/playback-session/intent';
 import {
   HEALTHY_SUSTAINED_SECONDS,
   RECOVERY_R0_SOFT_OBSERVE_MS,
 } from '@/lib/playback-session/recovery';
-import { allowsAutomaticEffect } from '@/lib/playback-session/intent';
 import type {
   PlaybackSessionEffect,
   PlaybackSessionState,

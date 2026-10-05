@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
 import {
-  ProxyRedirectError,
   fetchWithValidatedRedirects,
+  ProxyRedirectError,
   validateProxyTargetUrl,
 } from '@/lib/proxy-url-policy';
 
@@ -107,8 +107,11 @@ export async function GET(request: Request) {
     }
 
     const contentType =
-      imageResponse.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() ||
-      '';
+      imageResponse.headers
+        .get('content-type')
+        ?.split(';', 1)[0]
+        .trim()
+        .toLowerCase() || '';
     if (!ALLOWED_IMAGE_CONTENT_TYPES.has(contentType)) {
       const response = NextResponse.json(
         { error: 'Unsupported image content type' },

@@ -1,24 +1,21 @@
+import {
+  type EpisodeAdSkipConfig,
+  type PersistedAdSkipWindow,
+  applyAdSkipWindowConfirmation,
+  generateAdSkipConfigKey,
+  mergeAdSkipWindowsForLoad,
+  mergeEpisodeAdSkipConfigs,
+  toPersistedAdSkipWindow,
+} from '@/lib/ad-skip-window';
 import type { HlsAdSkipWindow } from '@/lib/hls-ad-skip';
 import {
   AD_WINDOW_CONFIRM_SILENT_THRESHOLD,
   AD_WINDOW_UNDO_DEMOTE_THRESHOLD,
 } from '@/lib/hls-ad-skip';
 
-import {
-  applyAdSkipWindowConfirmation,
-  generateAdSkipConfigKey,
-  mergeAdSkipWindowsForLoad,
-  mergeEpisodeAdSkipConfigs,
-  toPersistedAdSkipWindow,
-  type EpisodeAdSkipConfig,
-  type PersistedAdSkipWindow,
-} from '@/lib/ad-skip-window';
-
 describe('generateAdSkipConfigKey', () => {
   it('keys by source, id, and episodeIndex on the logical timeline identity', () => {
-    expect(generateAdSkipConfigKey('ruyi', '38961', 0)).toBe(
-      'ruyi+38961+0'
-    );
+    expect(generateAdSkipConfigKey('ruyi', '38961', 0)).toBe('ruyi+38961+0');
   });
 });
 
@@ -110,12 +107,14 @@ describe('mergeAdSkipWindowsForLoad', () => {
       }),
     ];
 
-    expect(mergeAdSkipWindowsForLoad({ persisted: demoted, analyzer: [] })[0].trustTier).toBe(
-      'observe'
-    );
-    expect(mergeAdSkipWindowsForLoad({ persisted: promoted, analyzer: [] })[0].trustTier).toBe(
-      'silent'
-    );
+    expect(
+      mergeAdSkipWindowsForLoad({ persisted: demoted, analyzer: [] })[0]
+        .trustTier
+    ).toBe('observe');
+    expect(
+      mergeAdSkipWindowsForLoad({ persisted: promoted, analyzer: [] })[0]
+        .trustTier
+    ).toBe('silent');
   });
 });
 
@@ -192,7 +191,8 @@ describe('applyAdSkipWindowConfirmation', () => {
       nowMs: 6000,
     });
 
-    expect(next!.windows[0]).toMatchObject({
+    if (!next) throw new Error('Expected persisted ad skip config');
+    expect(next.windows[0]).toMatchObject({
       confirmCount: 2,
       trustScore: 2,
       undoCount: 0,
@@ -236,8 +236,9 @@ describe('applyAdSkipWindowConfirmation', () => {
       nowMs: 7000,
     });
 
-    expect(next!.windows).toHaveLength(1);
-    expect(next!.windows[0]).toMatchObject({
+    if (!next) throw new Error('Expected persisted ad skip config');
+    expect(next.windows).toHaveLength(1);
+    expect(next.windows[0]).toMatchObject({
       confirmCount: 1,
       undoCount: 1,
       trustScore: 0,
@@ -346,7 +347,9 @@ describe('mergeEpisodeAdSkipConfigs', () => {
       ],
     };
 
-    expect(mergeEpisodeAdSkipConfigs(existing, incoming).windows[0]).toMatchObject({
+    expect(
+      mergeEpisodeAdSkipConfigs(existing, incoming).windows[0]
+    ).toMatchObject({
       confirmCount: 3,
       undoCount: 1,
       updated_time: 2000,

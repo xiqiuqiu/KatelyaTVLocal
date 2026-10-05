@@ -446,10 +446,6 @@ function PlayPageClient() {
   const [searchTitle, setSearchTitle] = useState(
     () => searchParams.get('stitle') || ''
   );
-  const [searchType, setSearchType] = useState(
-    () => searchParams.get('stype') || ''
-  );
-  const isFromPlayRecordEntry = searchParams.get('from') === 'playrecord';
 
   // 是否需要优选
   const [needPrefer, setNeedPrefer] = useState(
@@ -1036,9 +1032,7 @@ function PlayPageClient() {
     );
     player.classList.toggle('art-tv-controls-focused', hasFocusedControl);
     if (tvEnabled && document.activeElement === document.body) {
-      player
-        .querySelector<HTMLElement>('.art-control-playAndPause')
-        ?.focus();
+      player.querySelector<HTMLElement>('.art-control-playAndPause')?.focus();
     }
   };
 
@@ -3724,7 +3718,6 @@ function PlayPageClient() {
     setVideoTitle(urlTitle);
     setVideoYear(urlYear);
     setSearchTitle(urlSearchTitle);
-    setSearchType(urlSearchType);
     setNeedPrefer(urlNeedPrefer);
     currentSourceRef.current = urlSource;
     currentIdRef.current = urlId;
@@ -6207,7 +6200,6 @@ function PlayPageClient() {
                 </div>
               )}
             </div>
-
           </Surface>
 
           <PlayerSidebar
