@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'edge';
+
 interface TvRemoteDebugEvent {
   id: number;
   receivedAt: string;
