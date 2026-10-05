@@ -14,16 +14,18 @@ interface AppShellProps {
   activePath?: string;
   children: React.ReactNode;
   tvMode?: boolean;
+  modeHref?: string;
 }
 
 export default function AppShell({
   children,
   activePath = '/',
   tvMode = false,
+  modeHref = activePath,
 }: AppShellProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const rootRef = useRef<HTMLDivElement>(null);
-  const browsePage = activePath === '/' || activePath === '/history';
+  const browsePage = ['/', '/history', '/search'].includes(activePath);
   useTvBrowseNavigation(rootRef, tvMode && browsePage, activePath);
 
   useEffect(() => {
@@ -119,7 +121,7 @@ export default function AppShell({
                 <Link
                   href='/?tv=1'
                   data-tv-focus-key='nav-home'
-                  data-tv-back={activePath === '/history' || undefined}
+                  data-tv-back={(browsePage && activePath !== '/') || undefined}
                   aria-current={activePath === '/' ? 'page' : undefined}
                   className='inline-flex min-h-12 items-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.28)] px-5 text-lg font-semibold'
                 >
@@ -133,9 +135,17 @@ export default function AppShell({
                 >
                   播放历史
                 </Link>
+                <Link
+                  href='/search?tv=1'
+                  data-tv-focus-key='nav-search'
+                  aria-current={activePath === '/search' ? 'page' : undefined}
+                  className='inline-flex min-h-12 items-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.28)] px-5 text-lg font-semibold'
+                >
+                  搜索
+                </Link>
                 {browsePage && (
                   <Link
-                    href={buildTvModeHref(activePath, false)}
+                    href={buildTvModeHref(modeHref, false)}
                     data-tv-focus-key='nav-exit'
                     className='ml-auto inline-flex min-h-12 items-center rounded-ui-sm px-5 text-lg'
                   >
@@ -146,7 +156,7 @@ export default function AppShell({
             ) : browsePage ? (
               <div className='mb-4 flex justify-end'>
                 <Link
-                  href={buildTvModeHref(activePath, true)}
+                  href={buildTvModeHref(modeHref, true)}
                   className='inline-flex min-h-11 items-center rounded-full border border-[rgb(var(--ui-border)/0.28)] px-4 text-sm font-semibold'
                 >
                   电视模式

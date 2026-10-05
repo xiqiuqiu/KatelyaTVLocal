@@ -65,8 +65,17 @@ jest.mock(
 
 jest.mock(
   '@/components/VideoCard',
-  () => (props: { items?: Array<{ title: string }> }) =>
-    <div>海报卡片 {props.items?.[0]?.title || ''}</div>
+  () => (props: { items?: Array<{ title: string }>; tvMode?: boolean }) =>
+    (
+      <button
+        type='button'
+        data-testid='ai-video-card'
+        data-tv-mode={props.tvMode}
+        data-tv-card-primary={props.tvMode || undefined}
+      >
+        海报卡片 {props.items?.[0]?.title || ''}
+      </button>
+    )
 );
 
 const savedResponse: AiFindResponse = {
@@ -141,6 +150,203 @@ describe('AiFindPanel', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('uses the shared AI and progressive group pipeline in TV mode, with results usable while other candidates load', async () => {
+    mockedListAiFindSavedRecords.mockResolvedValue([
+      {
+        id: 'busy_record',
+        query: '保存的查询',
+        answer: '',
+        candidateCount: 1,
+        foundGroupCount: 1,
+        status: 'complete',
+        createdAt: 1,
+        updatedAt: 1,
+        lastOpenedAt: 1,
+        openedCount: 0,
+      },
+    ]);
+    let finishGroup: () => void = () => undefined;
+    const pendingGroup = new Promise<void>((resolve) => {
+      finishGroup = resolve;
+    });
+    const fetchMock = jest
+      .fn()
+      .mockImplementation(async (url: string, init: RequestInit) => {
+        if (url === '/api/ai/find')
+          return {
+            ok: true,
+            status: 200,
+            headers: mockHeaders(),
+            json: async () => ({
+              ...savedResponse,
+              candidateQueries: [
+                ...savedResponse.candidateQueries,
+                { ...savedResponse.candidateQueries[0], query: '另一部' },
+              ],
+              groups: [],
+            }),
+          };
+        const { candidate } = JSON.parse(String(init.body));
+        if (candidate.query === '另一部') {
+          await pendingGroup;
+          return { ok: false, json: async () => ({ error: '线路查询失败' }) };
+        }
+        return {
+          ok: true,
+          json: async () => ({ group: savedResponse.groups[0] }),
+        };
+      });
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
+    await act(async () => {
+      render(<AiFindPanel tvMode initialQuery='港片动作片' />);
+    });
+    const input = screen.getByRole('searchbox', { name: 'AI 找片描述' });
+    expect(input).toHaveAttribute('readonly');
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(input);
+    fireEvent.change(input, { target: { value: '  经典港片  ' } });
+    fireEvent.submit(screen.getByRole('search'));
+    const card = await screen.findByTestId('ai-video-card');
+    expect(card).toHaveTextContent('英雄本色');
+    expect(card).toHaveAttribute('data-tv-mode', 'true');
+    expect(screen.queryByText(savedResponse.answer)).not.toBeInTheDocument();
+    expect(screen.queryByText('高匹配')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '刷新结果' })).toBeDisabled();
+    const savedButton = screen.getByRole('button', { name: '保存的查询' });
+    expect(savedButton).toBeDisabled();
+    fireEvent.click(savedButton);
+    expect(mockedGetAiFindSavedRecord).not.toHaveBeenCalled();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '已找到的影片可以直接播放'
+    );
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/ai/find');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      query: '经典港片',
+      resolveGroups: false,
+    });
+    await act(async () => {
+      finishGroup();
+    });
+    expect(await screen.findByText('线路查询失败')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '刷新结果' })).not.toBeDisabled();
+    expect(savedButton).not.toBeDisabled();
+    expect(card).toBeInTheDocument();
+  });
+
+  it('opens compact TV saved results without rerunning AI and keeps cards in TV mode', async () => {
+    mockedListAiFindSavedRecords.mockResolvedValue([
+      {
+        id: 'rec_tv',
+        query: '经典港片',
+        answer: savedResponse.answer,
+        candidateCount: 1,
+        foundGroupCount: 1,
+        status: 'complete',
+        createdAt: 1,
+        updatedAt: 2,
+        lastOpenedAt: 2,
+        openedCount: 0,
+      },
+    ]);
+    mockedGetAiFindSavedRecord.mockResolvedValue({
+      id: 'rec_tv',
+      userName: 'alice',
+      query: '经典港片',
+      response: savedResponse,
+      status: 'complete',
+      createdAt: 1,
+      updatedAt: 2,
+      lastOpenedAt: 2,
+      openedCount: 0,
+    });
+    await act(async () => {
+      render(<AiFindPanel tvMode />);
+    });
+    fireEvent.click(await screen.findByRole('button', { name: '经典港片' }));
+    expect(await screen.findByTestId('ai-video-card')).toHaveAttribute(
+      'data-tv-mode',
+      'true'
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('ai-video-card')).toHaveFocus()
+    );
+    expect(screen.getByRole('searchbox')).toHaveValue('经典港片');
+    expect(screen.getByRole('button', { name: '经典港片' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('offers TV retry and fills suggestions without making an automatic AI request', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        headers: mockHeaders(),
+        json: async () => ({ error: 'AI 暂时不可用' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: mockHeaders(),
+        json: async () => ({
+          ...savedResponse,
+          candidateQueries: [],
+          groups: [],
+          answer: '请补充线索',
+          suggestions: ['经典港片'],
+        }),
+      });
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
+    await act(async () => {
+      render(<AiFindPanel tvMode initialQuery='找电影' />);
+    });
+    fireEvent.submit(screen.getByRole('search'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('AI 暂时不可用');
+    expect(screen.getByRole('searchbox')).toHaveAttribute(
+      'aria-describedby',
+      'tv-search-help ai-find-error'
+    );
+    fireEvent.click(screen.getByRole('button', { name: '重试找片' }));
+    const suggestion = await screen.findByRole('button', { name: '经典港片' });
+    fireEvent.click(suggestion);
+    expect(screen.getByRole('searchbox')).toHaveValue('经典港片');
+    expect(screen.getByRole('searchbox')).toHaveFocus();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('stops loading timers and ignores a pending AI response after leaving the panel', async () => {
+    let finishFind: () => void = () => undefined;
+    const pendingFind = new Promise<void>((resolve) => {
+      finishFind = resolve;
+    });
+    const fetchMock = jest.fn().mockImplementation(async () => {
+      await pendingFind;
+      return {
+        ok: true,
+        status: 200,
+        headers: mockHeaders(),
+        json: async () => savedResponse,
+      };
+    });
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
+    const clearInterval = jest.spyOn(window, 'clearInterval');
+    const view = render(<AiFindPanel tvMode initialQuery='港片' />);
+    fireEvent.submit(screen.getByRole('search'));
+    await screen.findByRole('button', { name: '查找中' });
+    clearInterval.mockClear();
+    view.unmount();
+    expect(clearInterval).toHaveBeenCalled();
+    await act(async () => {
+      finishFind();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    clearInterval.mockRestore();
   });
 
   it('loads a saved record without calling AI find endpoints', async () => {

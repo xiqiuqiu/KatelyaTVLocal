@@ -9,7 +9,7 @@ import {
 } from '@/lib/tv-interaction';
 
 const ACTIONS =
-  'button:not(:disabled):not([tabindex="-1"]), a[href]:not([tabindex="-1"])';
+  'button:not(:disabled):not([tabindex="-1"]), a[href]:not([tabindex="-1"]), input[data-tv-input]:not(:disabled)';
 
 function available(element: HTMLElement): boolean {
   if (
@@ -163,6 +163,13 @@ export default function useTvBrowseNavigation(
       const current = controls.find(
         (control) => control === document.activeElement
       );
+      // Editing belongs to the native input/IME, not directional page navigation.
+      if (
+        event.isComposing ||
+        event.keyCode === 229 ||
+        (current instanceof HTMLInputElement && !current.readOnly)
+      )
+        return;
       if (isTvDirectionalKey(event.key)) {
         interacted = true;
         pending = null;
@@ -202,11 +209,17 @@ export default function useTvBrowseNavigation(
     const onPointer = (event: PointerEvent) => {
       interacted = true;
       virtualPointer = event.pointerType === '';
-      pending = resolveTvRemoteClickTarget({
-        pointerType: event.pointerType,
-        activeElement: document.activeElement,
-        eventTarget: event.target,
-      });
+      const active = document.activeElement;
+      pending =
+        virtualPointer &&
+        active instanceof HTMLInputElement &&
+        active.hasAttribute('data-tv-input')
+          ? active
+          : resolveTvRemoteClickTarget({
+              pointerType: event.pointerType,
+              activeElement: active,
+              eventTarget: event.target,
+            });
     };
     const onClick = (event: MouseEvent) => {
       if (activating) return;

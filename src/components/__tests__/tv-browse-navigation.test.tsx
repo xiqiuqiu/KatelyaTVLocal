@@ -6,6 +6,7 @@ import {
   waitFor,
 } from '@testing-library/react';
 
+import TvSearchForm from '@/components/TvSearchForm';
 import AppShell from '@/components/ui/AppShell';
 
 jest.mock('@/components/TopSearchBar', () => () => <div>网页搜索栏</div>);
@@ -42,6 +43,8 @@ describe('TV browse interaction', () => {
         if (this.dataset.tvFocusKey === 'card-a') return rect(0, 100);
         if (this.dataset.tvFocusKey === 'card-b') return rect(150, 100);
         if (this.dataset.tvFocusKey === 'nav-exit') return rect(190, 0);
+        if (this.dataset.tvFocusKey === 'search-input') return rect(0, 100);
+        if (this.dataset.tvFocusKey === 'search-submit') return rect(150, 100);
         return rect(0, 0);
       });
   });
@@ -169,5 +172,78 @@ describe('TV browse interaction', () => {
     });
     fireEvent(screen.getByRole('button', { name: '影片甲' }), event);
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('separates TV form navigation from native input editing and protects IME confirmation', async () => {
+    const onSearch = jest.fn();
+    render(
+      <AppShell tvMode activePath='/search' modeHref='/search?q=test&tv=1'>
+        <TvSearchForm initialQuery='test' onSearch={onSearch} />
+      </AppShell>
+    );
+    const input = screen.getByRole('searchbox');
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(input).toHaveAttribute('readonly');
+    fireEvent.keyDown(input, { key: 'ArrowRight' });
+    expect(screen.getByRole('button', { name: '搜索' })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement || document.body, {
+      key: 'ArrowLeft',
+    });
+    expect(input).toHaveFocus();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(input).not.toHaveAttribute('readonly');
+    const caret = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(input, caret);
+    expect(caret.defaultPrevented).toBe(false);
+    expect(input).toHaveFocus();
+    const composing = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(input, composing);
+    expect(composing.defaultPrevented).toBe(true);
+    expect(onSearch).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(input).toHaveFocus();
+    expect(input).toHaveAttribute('readonly');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.getByRole('button', { name: '搜索' })).toHaveFocus();
+    expect(input).toHaveAttribute('readonly');
+    expect(screen.getByRole('link', { name: '退出电视模式' })).toHaveAttribute(
+      'href',
+      '/search?q=test'
+    );
+    expect(screen.getByRole('link', { name: '搜索' })).toHaveAttribute(
+      'href',
+      '/search?tv=1'
+    );
+  });
+
+  it('redirects virtual confirmation to the TV input without activating an unrelated control', async () => {
+    const onSearch = jest.fn();
+    render(
+      <AppShell tvMode activePath='/search'>
+        <TvSearchForm initialQuery='' onSearch={onSearch} />
+      </AppShell>
+    );
+    const input = screen.getByRole('searchbox');
+    await waitFor(() => expect(input).toHaveFocus());
+    const pointer = new Event('pointerdown', { bubbles: true });
+    Object.defineProperty(pointer, 'pointerType', { value: '' });
+    fireEvent(document.body, pointer);
+    fireEvent.click(document.body, { detail: 1 });
+    expect(input).not.toHaveAttribute('readonly');
+    expect(onSearch).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: '  庆余年  ' } });
+    fireEvent.submit(screen.getByRole('search', { name: '电视搜索' }));
+    expect(onSearch).toHaveBeenCalledTimes(1);
+    expect(onSearch).toHaveBeenCalledWith('庆余年');
   });
 });

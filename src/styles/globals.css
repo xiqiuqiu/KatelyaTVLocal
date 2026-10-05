@@ -110,6 +110,7 @@
     :is(
       button:not(:disabled),
       a[href],
+      input[data-tv-input]:not(:disabled),
       [role='button']:not([aria-disabled='true']),
       [role='slider']:not([aria-disabled='true'])
     ):focus {
@@ -132,7 +133,8 @@
     min-height: 24px;
   }
 
-  [data-tv-browse='true'] :is(button:not([tabindex='-1']), a[href]) {
+  [data-tv-browse='true']
+    :is(button:not([tabindex='-1']), a[href], input[data-tv-input]) {
     min-height: 48px;
     min-width: 48px;
     scroll-margin: 1rem;
