@@ -1,6 +1,6 @@
 # Play-page Related Recommendation (content-based)
 
-> Spec for ADR 0005. See `docs/adr/0005-content-based-related-recommendation.md` and the `Related Recommendation` term in `CONTEXT.md`.
+> Spec for ADR 0005. See `docs/adr/0005-content-based-related-recommendation.md` and the `Related Recommendation` term in `GLOSSARY.md`.
 
 ## Problem Statement
 

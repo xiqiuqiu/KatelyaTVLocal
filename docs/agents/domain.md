@@ -8,21 +8,21 @@ This repo uses a single-context domain docs layout:
 
 ```text
 /
-├── CONTEXT.md
+├── GLOSSARY.md
 ├── docs/adr/
 └── src/
 ```
 
 ## Before exploring, read these
 
-- `CONTEXT.md` at the repo root
+- `GLOSSARY.md` at the repo root
 - ADRs in `docs/adr/` that touch the area being worked on
 
-If a future `CONTEXT-MAP.md` is added, treat it as a signal that the repo has moved to a multi-context layout and follow that map.
+If a future `GLOSSARY-MAP.md` is added, treat it as a signal that the repo has moved to a multi-context layout and follow that map.
 
 ## Use the glossary's vocabulary
 
-When output names a domain concept in an issue title, refactor proposal, hypothesis, or test name, use the term as defined in `CONTEXT.md`.
+When output names a domain concept in an issue title, refactor proposal, hypothesis, or test name, use the term as defined in `GLOSSARY.md`.
 
 If the concept needed is not in the glossary yet, either reconsider whether the term belongs in this project language or use `/domain-modeling` to add it when it has been resolved.
 
