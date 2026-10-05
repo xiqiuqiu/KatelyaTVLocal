@@ -9,11 +9,13 @@ import TopSearchBar from '@/components/TopSearchBar';
 interface AppShellProps {
   activePath?: string;
   children: React.ReactNode;
+  tvMode?: boolean;
 }
 
 export default function AppShell({
   children,
   activePath = '/',
+  tvMode = false,
 }: AppShellProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
@@ -64,36 +66,51 @@ export default function AppShell({
   };
 
   return (
-    <div className='ui-app-bg ui-breathing-canvas min-h-dvh text-[rgb(var(--ui-text))]'>
-      <TopSearchBar
-        isSidebarCollapsed={isSidebarCollapsed}
-        onToggleSidebar={handleToggleSidebar}
-      />
-      <div className='relative z-10 min-h-dvh overflow-x-hidden pt-[calc(4rem+env(safe-area-inset-top))]'>
-        <div className='hidden md:block'>
-          <Sidebar
-            activePath={activePath}
-            onToggle={setIsSidebarCollapsed}
-            collapsed={isSidebarCollapsed}
-            showCollapseToggle={false}
-          />
-        </div>
-        <main
-          className={`min-w-0 ${desktopOffsetClass}`}
-        >
+    <div
+      data-tv-mode={tvMode}
+      className='ui-app-bg ui-breathing-canvas min-h-dvh text-[rgb(var(--ui-text))]'
+    >
+      {!tvMode && (
+        <TopSearchBar
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={handleToggleSidebar}
+        />
+      )}
+      <div
+        className={`relative z-10 min-h-dvh overflow-x-hidden ${
+          tvMode ? '' : 'pt-[calc(4rem+env(safe-area-inset-top))]'
+        }`}
+      >
+        {!tvMode && (
+          <div className='hidden md:block'>
+            <Sidebar
+              activePath={activePath}
+              onToggle={setIsSidebarCollapsed}
+              collapsed={isSidebarCollapsed}
+              showCollapseToggle={false}
+            />
+          </div>
+        )}
+        <main className={`min-w-0 ${tvMode ? '' : desktopOffsetClass}`}>
           <div
-            className='ui-reveal mx-auto w-full max-w-[1600px] px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-8'
+            className={`ui-reveal mx-auto w-full max-w-[1600px] ${
+              tvMode ? 'px-5 py-5' : 'px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-8'
+            }`}
             style={{
-              paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))',
+              paddingBottom: tvMode
+                ? '1.25rem'
+                : 'calc(5rem + env(safe-area-inset-bottom))',
             }}
           >
             {children}
           </div>
         </main>
       </div>
-      <div className='md:hidden'>
-        <MobileBottomNav activePath={activePath} />
-      </div>
+      {!tvMode && (
+        <div className='md:hidden'>
+          <MobileBottomNav activePath={activePath} />
+        </div>
+      )}
     </div>
   );
 }

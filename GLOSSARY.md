@@ -39,6 +39,14 @@ _Avoid_: loading progress wizard; source-search or source-ranking explanation; f
 **Playback Session**:
 A user's active attempt to watch one selected title through one playable source and episode position. A Playback Session includes user playback actions, browser video events, source changes, recovery decisions, progress saving, and debug evidence for that active watch attempt.
 
+**TV Mode**:
+An explicit playback-page experience for television browsers and remote controls. It changes presentation and interaction while sharing the same Playback Session, source, episode, recovery, and progress behavior as Web Mode.
+_Avoid_: separate TV player; automatic device guessing; duplicating playback policy
+
+**TV Interaction Baseline**:
+The verified remote-control event and focus behavior of the target television browser that TV Mode must preserve through future changes.
+_Avoid_: desktop keyboard assumptions; treating remote focus movement as activation
+
 **Playback Attempt**:
 The evidence-correlation unit for one Playback Session. All browser events, session decisions, source feedback, debug logs, and user actions for that watch are joined by a single `sessionId` from play-page entry until title change, leave, or session end. Same-title source switches and episode changes stay inside one Playback Attempt.
 _Avoid_: minting a new correlation id on every source switch; using content or route keys alone as the attempt identity
