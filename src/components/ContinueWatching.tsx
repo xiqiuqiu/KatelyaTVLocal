@@ -14,10 +14,12 @@ import {
   buildContinueWatchingRecords,
   resolveContinueWatchingRoute,
 } from '@/lib/play-records';
+import { buildTvModeHref } from '@/lib/tv-interaction';
 
 import ScrollableRow from '@/components/ScrollableRow';
 import ActionLink from '@/components/ui/ActionLink';
 import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
+import PosterGrid from '@/components/ui/PosterGrid';
 import SectionHeader from '@/components/ui/SectionHeader';
 import VideoCard from '@/components/VideoCard';
 
@@ -25,15 +27,21 @@ const CONTINUE_WATCHING_RECORD_LIMIT = 50;
 
 interface ContinueWatchingProps {
   className?: string;
+  tvMode?: boolean;
 }
 
-export default function ContinueWatching({ className }: ContinueWatchingProps) {
+export default function ContinueWatching({
+  className,
+  tvMode = false,
+}: ContinueWatchingProps) {
   const [playRecords, setPlayRecords] = useState<
     (PlayRecord & { key: string; groupedKeys: string[] })[]
   >([]);
   const [loading, setLoading] = useState(true);
-  const cardWidthClass =
-    'w-24 min-w-[96px] min-[440px]:w-36 min-[440px]:min-w-[140px] sm:w-44 sm:min-w-[180px]';
+  const cardWidthClass = tvMode
+    ? 'w-full'
+    : 'w-24 min-w-[96px] min-[440px]:w-36 min-[440px]:min-w-[140px] sm:w-44 sm:min-w-[180px]';
+  const Row = tvMode ? PosterGrid : ScrollableRow;
 
   // 处理播放记录数据更新的函数
   const updatePlayRecords = (allRecords: Record<string, PlayRecord>) => {
@@ -96,7 +104,9 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
       <SectionHeader
         action={
           !loading && playRecords.length > 0 ? (
-            <ActionLink href='/history'>
+            <ActionLink
+              href={tvMode ? buildTvModeHref('/history', true) : '/history'}
+            >
               更多
               <ChevronRight className='h-4 w-4' />
             </ActionLink>
@@ -105,7 +115,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
         className='mb-4'
         title='继续观看'
       />
-      <ScrollableRow>
+      <Row>
         {loading
           ? // 加载状态显示灰色占位数据
             Array.from({ length: 6 }).map((_, index) => (
@@ -126,6 +136,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
               return (
                 <div key={record.key} className={cardWidthClass}>
                   <VideoCard
+                    tvMode={tvMode}
                     id={id}
                     title={record.title}
                     poster={record.cover}
@@ -152,7 +163,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
                 </div>
               );
             })}
-      </ScrollableRow>
+      </Row>
     </section>
   );
 }

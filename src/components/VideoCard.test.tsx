@@ -184,6 +184,28 @@ describe('VideoCard favorites store integration', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('preserves TV mode and encoded source ids through the shared playback preparation', () => {
+    render(
+      <VideoCard
+        tvMode
+        id='id+hash#value'
+        source='source-a'
+        title='续看'
+        from='playrecord'
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: '打开 续看 海报' }));
+    const href = mockPlaybackPreparationStart.mock.calls[0][0].href;
+    const params = new URLSearchParams(href.split('?')[1]);
+    expect(params.get('tv')).toBe('1');
+    expect(params.get('from')).toBe('playrecord');
+    expect(params.get('id')).toBe('id+hash#value');
+    expect(screen.getByRole('button', { name: '打开 续看' })).toHaveAttribute(
+      'tabindex',
+      '-1'
+    );
+  });
+
   it('updates only the matching card when favorites change through the shared store', async () => {
     (dbClient.getAllFavorites as jest.Mock).mockResolvedValue({
       'test+1': {

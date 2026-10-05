@@ -8,13 +8,54 @@ export function isTvMode(searchParams: URLSearchParams): boolean {
 }
 
 export function buildTvModeHref(href: string, enabled: boolean): string {
-  const url = new URL(href);
+  const url = new URL(href, 'https://tv.local');
   if (enabled) {
     url.searchParams.set(TV_MODE_QUERY_PARAM, '1');
   } else {
     url.searchParams.delete(TV_MODE_QUERY_PARAM);
   }
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+export function resolveTvBrowseFocusTarget(input: {
+  current: HTMLElement;
+  candidates: HTMLElement[];
+  key: string;
+}): HTMLElement | null {
+  if (!isTvDirectionalKey(input.key)) return null;
+  const horizontal = input.key === 'ArrowLeft' || input.key === 'ArrowRight';
+  const sign = input.key === 'ArrowLeft' || input.key === 'ArrowUp' ? -1 : 1;
+  const rect = input.current.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  let best: HTMLElement | null = null;
+  let bestScore = Infinity;
+
+  for (const candidate of input.candidates) {
+    if (candidate === input.current) continue;
+    if (
+      horizontal &&
+      input.current.hasAttribute('data-tv-card-primary') &&
+      candidate.closest('article') === input.current.closest('article')
+    )
+      continue;
+    const next = candidate.getBoundingClientRect();
+    const dx = next.left + next.width / 2 - x;
+    const dy = next.top + next.height / 2 - y;
+    const forward = (horizontal ? dx : dy) * sign;
+    if (forward <= 1) continue;
+    const cross = Math.abs(horizontal ? dy : dx);
+    const overlaps = horizontal
+      ? next.top < rect.bottom && next.bottom > rect.top
+      : next.left < rect.right && next.right > rect.left;
+    if (!overlaps && cross > forward) continue;
+    const score = forward + cross * 3 + (overlaps ? 0 : 10000);
+    if (score < bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 export function resolveTvRemoteClickTarget(input: {

@@ -1,10 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+import { buildTvModeHref } from '@/lib/tv-interaction';
 
 import MobileBottomNav from '@/components/MobileBottomNav';
 import Sidebar from '@/components/Sidebar';
 import TopSearchBar from '@/components/TopSearchBar';
+import useTvBrowseNavigation from '@/components/useTvBrowseNavigation';
 
 interface AppShellProps {
   activePath?: string;
@@ -18,6 +22,9 @@ export default function AppShell({
   tvMode = false,
 }: AppShellProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const browsePage = activePath === '/' || activePath === '/history';
+  useTvBrowseNavigation(rootRef, tvMode && browsePage, activePath);
 
   useEffect(() => {
     if (typeof window.__sidebarCollapsed === 'boolean') {
@@ -67,7 +74,9 @@ export default function AppShell({
 
   return (
     <div
+      ref={rootRef}
       data-tv-mode={tvMode}
+      data-tv-browse={tvMode && browsePage}
       className='ui-app-bg ui-breathing-canvas min-h-dvh text-[rgb(var(--ui-text))]'
     >
       {!tvMode && (
@@ -102,6 +111,48 @@ export default function AppShell({
                 : 'calc(5rem + env(safe-area-inset-bottom))',
             }}
           >
+            {tvMode ? (
+              <nav
+                aria-label='电视导航'
+                className='mb-6 flex flex-wrap items-center gap-4'
+              >
+                <Link
+                  href='/?tv=1'
+                  data-tv-focus-key='nav-home'
+                  data-tv-back={activePath === '/history' || undefined}
+                  aria-current={activePath === '/' ? 'page' : undefined}
+                  className='inline-flex min-h-12 items-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.28)] px-5 text-lg font-semibold'
+                >
+                  首页
+                </Link>
+                <Link
+                  href='/history?tv=1'
+                  data-tv-focus-key='nav-history'
+                  aria-current={activePath === '/history' ? 'page' : undefined}
+                  className='inline-flex min-h-12 items-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.28)] px-5 text-lg font-semibold'
+                >
+                  播放历史
+                </Link>
+                {browsePage && (
+                  <Link
+                    href={buildTvModeHref(activePath, false)}
+                    data-tv-focus-key='nav-exit'
+                    className='ml-auto inline-flex min-h-12 items-center rounded-ui-sm px-5 text-lg'
+                  >
+                    退出电视模式
+                  </Link>
+                )}
+              </nav>
+            ) : browsePage ? (
+              <div className='mb-4 flex justify-end'>
+                <Link
+                  href={buildTvModeHref(activePath, true)}
+                  className='inline-flex min-h-11 items-center rounded-full border border-[rgb(var(--ui-border)/0.28)] px-4 text-sm font-semibold'
+                >
+                  电视模式
+                </Link>
+              </div>
+            ) : null}
             {children}
           </div>
         </main>

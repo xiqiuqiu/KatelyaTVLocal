@@ -10,6 +10,7 @@ import {
   type HomeHeroMediaType,
   buildHomeHeroPlayHref,
 } from '@/lib/home-hero';
+import { buildTvModeHref } from '@/lib/tv-interaction';
 import { processImageUrl } from '@/lib/utils';
 
 import { usePlaybackPreparation } from '@/components/playback-preparation/PlaybackPreparationProvider';
@@ -23,6 +24,7 @@ const MEDIA_TYPE_LABEL: Record<Exclude<HomeHeroMediaType, ''>, string> = {
 interface HomeHeroProps {
   candidate: HomeHeroCandidate | null;
   loading?: boolean;
+  tvMode?: boolean;
 }
 
 function HomeHeroSkeleton() {
@@ -40,6 +42,7 @@ function HomeHeroSkeleton() {
 export default function HomeHero({
   candidate,
   loading = false,
+  tvMode = false,
 }: HomeHeroProps) {
   const surfaceRef = useRef<HTMLElement>(null);
   const playbackPreparation = usePlaybackPreparation();
@@ -53,7 +56,8 @@ export default function HomeHero({
   }
 
   const { item, type } = candidate;
-  const playHref = buildHomeHeroPlayHref(item, type);
+  const href = buildHomeHeroPlayHref(item, type);
+  const playHref = tvMode ? buildTvModeHref(href, true) : href;
   const typeLabel = type ? MEDIA_TYPE_LABEL[type] : null;
   const metadata = [item.year, typeLabel].filter(Boolean).join(' · ');
   const posterSrc = processImageUrl(item.poster, {
@@ -89,7 +93,13 @@ export default function HomeHero({
       data-playback-preparation-card={playbackCardKey}
       ref={surfaceRef}
     >
-      <div className='relative aspect-[16/10] w-full sm:aspect-[21/9]'>
+      <div
+        className={
+          tvMode
+            ? 'relative h-60 w-full'
+            : 'relative aspect-[16/10] w-full sm:aspect-[21/9]'
+        }
+      >
         <Image
           alt=''
           aria-hidden
@@ -135,6 +145,7 @@ export default function HomeHero({
 
             <div className='flex flex-wrap items-center gap-2 sm:gap-3'>
               <Link
+                data-tv-focus-key='hero-play'
                 className='inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[rgb(var(--ui-accent))] px-4 text-sm font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent sm:min-h-11 sm:px-5'
                 href={playHref}
                 onClick={handlePlay}
