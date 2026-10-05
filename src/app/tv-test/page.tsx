@@ -5,8 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 export const runtime = 'edge';
 
-const SAMPLE_URL =
-  'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8';
+const SAMPLE_URL = '/tv-test/hls/master.m3u8';
 
 type CheckStatus = 'pass' | 'warn' | 'fail';
 
@@ -201,8 +200,9 @@ export default function TvHlsTestPage() {
       return;
     }
 
+    let playbackUrl: string;
     try {
-      new URL(url);
+      playbackUrl = new URL(url, window.location.href).href;
     } catch {
       setPlaybackStatus('HLS 地址无效');
       return;
@@ -212,7 +212,7 @@ export default function TvHlsTestPage() {
     setLogs([]);
     setPlaybackStatus('正在连接 HLS');
     startedAtRef.current = performance.now();
-    appendLog(`开始测试：${url}`);
+    appendLog(`开始测试：${playbackUrl}`);
 
     const video = videoRef.current;
     if (!video) return;
@@ -231,7 +231,7 @@ export default function TvHlsTestPage() {
       hlsRef.current = hls;
       hls.on(Hls.Events.MEDIA_ATTACHED, () => {
         appendLog('hls.js 已连接 video，开始加载清单');
-        hls.loadSource(url);
+        hls.loadSource(playbackUrl);
       });
       hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
         if (force1080p && data.levels.length > 0) {
@@ -265,11 +265,17 @@ export default function TvHlsTestPage() {
         void tryPlay(video);
       });
       hls.on(Hls.Events.ERROR, (_, data) => {
+        const responseStatus = data.response?.code
+          ? ` / HTTP ${data.response.code}`
+          : '';
+        const reason = data.reason || data.error?.message;
         appendLog(
           `hls.js ${data.fatal ? '致命' : '非致命'}错误：${data.type} / ${
             data.details
-          }`
+          }${responseStatus}${reason ? ` / ${reason}` : ''}`
         );
+        const failedUrl = data.url || data.response?.url;
+        if (failedUrl) appendLog(`失败地址：${failedUrl}`);
         if (data.fatal) setPlaybackStatus('HLS 播放失败');
       });
       hls.attachMedia(video);
@@ -282,7 +288,7 @@ export default function TvHlsTestPage() {
     );
     if (nativeHls) {
       appendLog('MSE 不可用，改用浏览器原生 HLS');
-      video.src = url;
+      video.src = playbackUrl;
       void tryPlay(video);
       return;
     }
@@ -358,7 +364,7 @@ export default function TvHlsTestPage() {
           </h1>
           <p className='mt-4 max-w-4xl text-xl leading-relaxed text-[#b8c8c2]'>
             用于确认创维 Q7F Pro 的浏览器是否具备 MSE、H.264、AAC 和 hls.js
-            播放能力。先运行诊断，再播放公开 1080p 样片。
+            播放能力。默认样片与诊断页同域，不依赖境外视频 CDN。
           </p>
         </header>
 

@@ -67,6 +67,7 @@ const nextConfig = {
 const withPWA = require('next-pwa')({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
+  publicExcludes: ['!tv-test/hls/**/*'],
   register: true,
   skipWaiting: true,
 });
