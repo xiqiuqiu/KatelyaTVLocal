@@ -55,15 +55,36 @@ export function shouldWakeTvPlayerControls(input: {
 export function resolveTvPlayerConfirmTarget(input: {
   key: string;
   eventTarget: EventTarget | null;
+  activeElement?: Element | null;
 }): HTMLElement | null {
-  if (input.key !== 'Enter' || !(input.eventTarget instanceof HTMLElement)) {
+  if (input.key !== 'Enter') {
     return null;
   }
 
-  const control = input.eventTarget.closest<HTMLElement>(
-    '[data-tv-player-control="true"]'
-  );
+  const control =
+    (input.activeElement instanceof HTMLElement
+      ? input.activeElement.closest<HTMLElement>(
+          '[data-tv-player-control="true"]'
+        )
+      : null) ||
+    (input.eventTarget instanceof HTMLElement
+      ? input.eventTarget.closest<HTMLElement>(
+          '[data-tv-player-control="true"]'
+        )
+      : null);
   return control?.getAttribute('role') === 'button' ? control : null;
+}
+
+export function resolveTvPlayerActivationTarget(
+  control: HTMLElement
+): HTMLElement {
+  const visibleIcon = Array.from(control.children).find(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement &&
+      child.classList.contains('art-icon') &&
+      child.style.display !== 'none'
+  );
+  return visibleIcon || control;
 }
 
 export function resolveTvPlayerHorizontalControlTarget(input: {

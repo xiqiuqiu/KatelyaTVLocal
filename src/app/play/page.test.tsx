@@ -1,4 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import type { ReactNode } from 'react';
 
 import { getAllPlayRecords } from '@/lib/db.client';
@@ -23,10 +25,21 @@ let mockArtPlayerInstance:
   | {
       currentTime: number;
       duration: number;
+      fullscreen: boolean;
+      fullscreenWeb: boolean;
+      emit?: (event: string) => void;
+      controls: {
+        isHover: boolean;
+        show: boolean;
+      };
+      template: {
+        $player: HTMLElement;
+      };
       video: {
         currentTime: number;
         duration: number;
         paused: boolean;
+        muted?: boolean;
         play: jest.Mock;
         hls?: unknown;
       };
@@ -39,6 +52,7 @@ const mockArtPlayerEventHandlers = new Map<
 let mockAutoFireManifestParsed = true;
 let mockHlsSupported = false;
 let mockDefaultPlayerDuration = 120;
+let mockUseRealArtPlayer = false;
 const mockManifestParsedHandlers: Array<() => void> = [];
 const mockMarkPreparationFrameReady = jest.fn();
 
@@ -142,6 +156,56 @@ jest.mock('@/components/VideoCard', () => ({
 jest.mock('artplayer', () => ({
   __esModule: true,
   default: jest.fn().mockImplementation((options) => {
+    if (mockUseRealArtPlayer) {
+      const Artplayer = jest.requireActual('artplayer');
+      // Exercise real controls and timers without loading media in jsdom.
+      const player = new Artplayer({
+        ...options,
+        autoplay: false,
+        customType: { m3u8: () => undefined },
+      });
+      Object.defineProperties(player.video, {
+        playing: { value: true },
+        duration: { value: mockDefaultPlayerDuration },
+      });
+      player.video.play = jest.fn().mockResolvedValue(undefined);
+      player.video.pause = jest.fn();
+      player.video.load = jest.fn();
+      mockArtPlayerInstance = player;
+      return player;
+    }
+    const playerElement = document.createElement('div');
+    playerElement.className = 'art-video-player';
+    playerElement.innerHTML = `
+      <div class="art-bottom">
+        <div class="art-progress">
+          <div class="art-control art-control-progress"></div>
+        </div>
+        <div class="art-controls">
+          <div class="art-controls-left">
+            <div class="art-control art-control-playAndPause">
+              <i class="art-icon art-icon-play"></i>
+              <i class="art-icon art-icon-pause" style="display:none"></i>
+            </div>
+            <div class="art-control art-control-volume">
+              <i class="art-icon art-icon-volume"></i>
+              <i class="art-icon art-icon-volume-close" style="display:none"></i>
+            </div>
+            <div class="art-control art-control-nextEpisode">
+              <i class="art-icon"></i>
+            </div>
+          </div>
+          <div class="art-controls-right">
+            <div class="art-control art-control-setting">
+              <i class="art-icon"></i>
+            </div>
+            <div class="art-control art-control-fullscreenWeb"></div>
+            <div class="art-control art-control-fullscreen"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    options.container?.appendChild(playerElement);
     const video = {
       addEventListener: jest.fn(),
       removeEventListener: jest.fn(),
@@ -163,7 +227,11 @@ jest.mock('artplayer', () => ({
     const player = {
       currentTime: 0,
       duration: mockDefaultPlayerDuration,
+      fullscreen: false,
+      fullscreenWeb: false,
       volume: 0.7,
+      controls: { isHover: false, show: true },
+      template: { $player: playerElement },
       notice: { show: '' },
       on: jest.fn((event: string, handler: () => void) => {
         mockArtPlayerEventHandlers.set(event, handler);
@@ -290,6 +358,7 @@ describe('PlayPage source initialization', () => {
   });
 
   afterEach(() => {
+    mockUseRealArtPlayer = false;
     mockAutoFireManifestParsed = true;
     mockHlsSupported = false;
     Object.defineProperty(navigator, 'userAgent', {
@@ -321,6 +390,359 @@ describe('PlayPage source initialization', () => {
 
     expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(1);
   });
+
+  it('does not pin or restore player control focus after controls become idle', async () => {
+    mockSearchParams.set('tv', '1');
+    render(<PlayPage />);
+    await settlePlayPage();
+
+    const player = mockArtPlayerInstance;
+    if (!player) throw new Error('player was not created');
+    const playControl = player.template.$player.querySelector<HTMLElement>(
+      '.art-control-playAndPause'
+    );
+    const fullscreenControl =
+      player.template.$player.querySelector<HTMLElement>(
+        '.art-control-fullscreenWeb'
+      );
+    const volumeControl = player.template.$player.querySelector<HTMLElement>(
+      '.art-control-volume'
+    );
+    const nextEpisodeControl =
+      player.template.$player.querySelector<HTMLElement>(
+        '.art-control-nextEpisode'
+      );
+    const settingControl = player.template.$player.querySelector<HTMLElement>(
+      '.art-control-setting'
+    );
+    if (!playControl) throw new Error('play control was not created');
+    if (!fullscreenControl)
+      throw new Error('fullscreen control was not created');
+    if (!volumeControl) throw new Error('volume control was not created');
+    if (!nextEpisodeControl)
+      throw new Error('next episode control was not created');
+    if (!settingControl) throw new Error('setting control was not created');
+    playControl.scrollIntoView = jest.fn();
+    volumeControl.scrollIntoView = jest.fn();
+    nextEpisodeControl.scrollIntoView = jest.fn();
+    settingControl.scrollIntoView = jest.fn();
+    fullscreenControl.scrollIntoView = jest.fn();
+
+    act(() => {
+      mockArtPlayerEventHandlers.get('ready')?.();
+    });
+    expect(document.activeElement).toBe(document.body);
+    expect(player.controls.isHover).toBe(false);
+
+    act(() => {
+      playControl.focus();
+    });
+    expect(player.controls.isHover).toBe(false);
+
+    player.controls.show = false;
+    player.fullscreen = true;
+    act(() => {
+      playControl.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+      );
+      jest.advanceTimersByTime(20);
+    });
+    expect(player.controls.show).toBe(true);
+    expect(document.activeElement).toBe(playControl);
+
+    const onPlayControlClick = jest.fn();
+    const onVolumeControlClick = jest.fn();
+    const onNextEpisodeControlClick = jest.fn();
+    const onSettingControlClick = jest.fn();
+    const onFullscreenControlClick = jest.fn();
+    playControl
+      .querySelector('.art-icon-play')
+      ?.addEventListener('click', onPlayControlClick);
+    volumeControl
+      .querySelector('.art-icon-volume')
+      ?.addEventListener('click', onVolumeControlClick);
+    nextEpisodeControl.addEventListener('click', onNextEpisodeControlClick);
+    settingControl.addEventListener('click', onSettingControlClick);
+    fullscreenControl.addEventListener('click', onFullscreenControlClick);
+    act(() => {
+      player.template.$player.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      );
+    });
+    expect(onPlayControlClick).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      fullscreenControl.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, detail: 0 })
+      );
+    });
+    expect(onPlayControlClick).toHaveBeenCalledTimes(1);
+    expect(onFullscreenControlClick).not.toHaveBeenCalled();
+
+    act(() => {
+      const pointerDown = new Event('pointerdown', { bubbles: true });
+      Object.defineProperty(pointerDown, 'pointerType', { value: '' });
+      fullscreenControl.dispatchEvent(pointerDown);
+      player.template.$player.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      );
+    });
+    expect(onPlayControlClick).toHaveBeenCalledTimes(2);
+
+    for (const [control, listener] of [
+      [volumeControl, onVolumeControlClick],
+      [nextEpisodeControl, onNextEpisodeControlClick],
+      [settingControl, onSettingControlClick],
+      [fullscreenControl, onFullscreenControlClick],
+    ] as const) {
+      act(() => {
+        control.focus();
+        const pointerDown = new Event('pointerdown', { bubbles: true });
+        Object.defineProperty(pointerDown, 'pointerType', { value: '' });
+        playControl.dispatchEvent(pointerDown);
+        player.template.$player.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+        );
+      });
+      expect(listener).toHaveBeenCalledTimes(1);
+    }
+
+    act(() => {
+      playControl.focus();
+      const pointerDown = new Event('pointerdown', { bubbles: true });
+      Object.defineProperty(pointerDown, 'pointerType', { value: '' });
+      fullscreenControl.dispatchEvent(pointerDown);
+      fullscreenControl.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, detail: 0 })
+      );
+    });
+    expect(onPlayControlClick).toHaveBeenCalledTimes(3);
+    expect(onFullscreenControlClick).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      playControl.blur();
+      mockArtPlayerEventHandlers.get('video:timeupdate')?.();
+    });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('keeps fullscreen focus visible and activates the visible control on pointer-only confirmation', async () => {
+    mockSearchParams.set('tv', '1');
+    render(<PlayPage />);
+    await settlePlayPage();
+
+    const player = mockArtPlayerInstance;
+    if (!player) throw new Error('player was not created');
+    const element = player.template.$player;
+    const host = element.parentElement;
+    const volume = element.querySelector<HTMLElement>('.art-control-volume');
+    const next = element.querySelector<HTMLElement>('.art-control-nextEpisode');
+    if (!volume || !next) throw new Error('controls were not created');
+    volume.scrollIntoView = jest.fn();
+    next.scrollIntoView = jest.fn();
+    const onMute = jest.fn();
+    const onNext = jest.fn();
+    volume.querySelector('.art-icon-volume')?.addEventListener('click', onMute);
+    next.addEventListener('click', onNext);
+    const css = readFileSync(
+      join(process.cwd(), 'src/styles/globals.css'),
+      'utf8'
+    );
+    const style = document.createElement('style');
+    style.textContent = css.slice(
+      css.indexOf("  [data-tv-mode='true']"),
+      css.lastIndexOf('}')
+    );
+    document.head.appendChild(style);
+
+    try {
+      act(() => {
+        mockArtPlayerEventHandlers.get('ready')?.();
+        document.body.appendChild(element);
+        volume.focus();
+      });
+      expect(element.dataset.tvMode).toBe('true');
+      expect(getComputedStyle(volume).outline).toContain('4px');
+      act(() => {
+        const pointerDown = new Event('pointerdown', { bubbles: true });
+        Object.defineProperty(pointerDown, 'pointerType', { value: '' });
+        next.dispatchEvent(pointerDown);
+        next.dispatchEvent(
+          new MouseEvent('click', { bubbles: true, detail: 1 })
+        );
+      });
+      expect(onMute).toHaveBeenCalledTimes(1);
+      expect(onNext).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(volume);
+      act(() => {
+        next.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+        );
+        next.dispatchEvent(
+          new MouseEvent('click', { bubbles: true, detail: 0 })
+        );
+      });
+      expect(onMute).toHaveBeenCalledTimes(2);
+      expect(onNext).not.toHaveBeenCalled();
+      act(() => {
+        element.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+        );
+      });
+      expect(document.activeElement).toBe(next);
+      expect(getComputedStyle(next).outline).toContain('4px');
+    } finally {
+      style.remove();
+      host?.appendChild(element);
+    }
+  });
+
+  it('uses webpage fullscreen and lets the remote leave progress after seeking', async () => {
+    mockSearchParams.set('tv', '1');
+    render(<PlayPage />);
+    await settlePlayPage();
+    const player = mockArtPlayerInstance;
+    if (!player) throw new Error('player was not created');
+    const element = player.template.$player;
+    const volume = element.querySelector<HTMLElement>('.art-control-volume');
+    const progress = element.querySelector<HTMLElement>(
+      '.art-control-progress'
+    );
+    const fullscreen = element.querySelector<HTMLElement>(
+      '.art-control-fullscreen'
+    );
+    const fullscreenWeb = element.querySelector<HTMLElement>(
+      '.art-control-fullscreenWeb'
+    );
+    const volumeIcon = volume?.querySelector<HTMLElement>('.art-icon-volume');
+    if (!volume || !volumeIcon || !progress || !fullscreen || !fullscreenWeb)
+      throw new Error('controls were not created');
+    volume.scrollIntoView = jest.fn();
+    progress.scrollIntoView = jest.fn();
+    volumeIcon.scrollIntoView = jest.fn();
+    fullscreenWeb.scrollIntoView = jest.fn();
+    const onMute = jest.fn();
+    volume.querySelector('.art-icon-volume')?.addEventListener('click', onMute);
+    fullscreenWeb.addEventListener('click', () => {
+      player.fullscreenWeb = true;
+    });
+    act(() => {
+      mockArtPlayerEventHandlers.get('ready')?.();
+    });
+    expect(fullscreen.style.display).toBe('none');
+    act(() => {
+      fullscreenWeb.focus();
+      fullscreenWeb.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      );
+    });
+    expect(player.fullscreenWeb).toBe(true);
+    expect(player.fullscreen).toBe(false);
+    act(() => {
+      volumeIcon.tabIndex = 0;
+      volumeIcon.focus();
+    });
+    expect(document.activeElement).toBe(volume);
+    player.currentTime = 50;
+    act(() => {
+      volume.focus();
+      volume.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })
+      );
+    });
+    expect(document.activeElement).toBe(progress);
+    act(() => {
+      progress.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })
+      );
+    });
+    expect(player.currentTime).toBe(40);
+    act(() => {
+      progress.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+      );
+    });
+    expect(document.activeElement).toBe(volume);
+    act(() => {
+      element.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      );
+    });
+    expect(onMute).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([true, false])(
+    'preserves real ArtPlayer idle hiding and confirmation with TV mode %s',
+    async (tvMode) => {
+      mockUseRealArtPlayer = true;
+      if (tvMode) mockSearchParams.set('tv', '1');
+      render(<PlayPage />);
+      await settlePlayPage();
+      const player = mockArtPlayerInstance;
+      if (!player?.emit) throw new Error('real player was not created');
+      const emit = player.emit.bind(player);
+      const element = player.template.$player;
+      const volume = element.querySelector<HTMLElement>('.art-control-volume');
+      if (!volume) throw new Error('volume control was not created');
+      element
+        .querySelectorAll<HTMLElement>('.art-control, .art-icon')
+        .forEach((control) => {
+          control.scrollIntoView = jest.fn();
+        });
+      try {
+        act(() => {
+          emit('ready');
+          player.fullscreenWeb = true;
+          jest.advanceTimersByTime(20);
+          volume.focus();
+          volume.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+          const pointerDown = new Event('pointerdown', { bubbles: true });
+          Object.defineProperty(pointerDown, 'pointerType', { value: '' });
+          element.dispatchEvent(pointerDown);
+          element.dispatchEvent(
+            new MouseEvent('click', { bubbles: true, detail: 1 })
+          );
+        });
+        expect(player.video.muted).toBe(tvMode);
+        act(() => {
+          jest.advanceTimersByTime(4000);
+          emit('video:timeupdate');
+        });
+        expect(player.controls.show).toBe(!tvMode);
+        if (!tvMode) return;
+        expect(document.activeElement).toBe(volume);
+        act(() => {
+          volume.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+          );
+          jest.advanceTimersByTime(20);
+        });
+        expect(player.controls.show).toBe(true);
+        expect(document.activeElement).toBe(volume);
+        act(() => {
+          volume.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+          );
+        });
+        expect(player.video.muted).toBe(false);
+        act(() => {
+          element.classList.add('art-setting-show');
+          jest.advanceTimersByTime(4000);
+          emit('video:timeupdate');
+        });
+        expect(player.controls.show).toBe(true);
+        act(() => {
+          element.classList.remove('art-setting-show');
+          emit('video:timeupdate');
+        });
+        expect(player.controls.show).toBe(false);
+      } finally {
+        act(() => {
+          player.fullscreenWeb = false;
+        });
+      }
+    }
+  );
 
   it('revives Apple MMS playback after the page returns from the background', async () => {
     mockHlsSupported = true;
@@ -963,9 +1385,9 @@ describe('PlayPage preparation transition completion', () => {
       jest.advanceTimersByTime(1000);
     });
     await waitFor(() => {
-      expect(
-        screen.getByTestId('episode-selector-sources')
-      ).toHaveTextContent('旧源,新源');
+      expect(screen.getByTestId('episode-selector-sources')).toHaveTextContent(
+        '旧源,新源'
+      );
     });
   }
 

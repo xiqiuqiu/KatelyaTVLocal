@@ -3,6 +3,7 @@ import {
   getTvSeekTime,
   isTvDirectionalKey,
   isTvMode,
+  resolveTvPlayerActivationTarget,
   resolveTvPlayerConfirmTarget,
   resolveTvPlayerHorizontalControlTarget,
   resolveTvRemoteClickTarget,
@@ -151,8 +152,10 @@ describe('TV interaction baseline', () => {
 
   it('activates the focused ArtPlayer control with the remote confirm key', () => {
     const control = document.createElement('div');
+    const player = document.createElement('div');
     control.dataset.tvPlayerControl = 'true';
     control.setAttribute('role', 'button');
+    player.appendChild(control);
     const onClick = jest.fn();
     control.addEventListener('click', onClick);
 
@@ -162,5 +165,40 @@ describe('TV interaction baseline', () => {
     })?.click();
 
     expect(onClick).toHaveBeenCalledTimes(1);
+
+    resolveTvPlayerConfirmTarget({
+      key: 'Enter',
+      eventTarget: player,
+      activeElement: control,
+    })?.click();
+
+    expect(onClick).toHaveBeenCalledTimes(2);
+    const staleTarget = document.createElement('div');
+    staleTarget.dataset.tvPlayerControl = 'true';
+    staleTarget.setAttribute('role', 'button');
+    player.appendChild(staleTarget);
+    expect(
+      resolveTvPlayerConfirmTarget({
+        key: 'Enter',
+        eventTarget: staleTarget,
+        activeElement: control,
+      })
+    ).toBe(control);
+  });
+
+  it('activates the visible native icon inside an ArtPlayer control', () => {
+    const control = document.createElement('div');
+    control.innerHTML = `
+      <i class="art-icon art-icon-volume" style="display:none"></i>
+      <i class="art-icon art-icon-volume-close"></i>
+    `;
+
+    expect(
+      resolveTvPlayerActivationTarget(control).classList.contains(
+        'art-icon-volume-close'
+      )
+    ).toBe(true);
+    const customControl = document.createElement('div');
+    expect(resolveTvPlayerActivationTarget(customControl)).toBe(customControl);
   });
 });

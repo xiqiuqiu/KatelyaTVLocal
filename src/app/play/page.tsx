@@ -129,6 +129,7 @@ import {
   getTvSeekTime,
   isTvDirectionalKey,
   isTvMode as resolveIsTvMode,
+  resolveTvPlayerActivationTarget,
   resolveTvPlayerConfirmTarget,
   resolveTvPlayerHorizontalControlTarget,
   resolveTvRemoteClickTarget,
@@ -417,6 +418,11 @@ function PlayPageClient() {
   // `loading` and unmount the ArtPlayer host while artPlayerRef stays stale.
   const skipPlayIdentityInitRef = useRef(false);
   const isTvModeRef = useRef(isTvMode);
+  const tvPlayerConfirmInFlightRef = useRef<HTMLElement | null>(null);
+  const tvLastPlayerConfirmRef = useRef<{
+    target: HTMLElement;
+    at: number;
+  } | null>(null);
 
   // -----------------------------------------------------------------------------
   // 状态变量（State）
@@ -531,6 +537,68 @@ function PlayPageClient() {
   }, [isTvMode]);
 
   useEffect(() => {
+    if (!isTvMode || process.env.NODE_ENV !== 'development') return;
+
+    const sessionId = `tv-play-${Date.now().toString(36)}`;
+    const record = (event: Event) => {
+      const player = artPlayerRef.current?.template?.$player as
+        | HTMLElement
+        | undefined;
+      const active = document.activeElement;
+      if (!player) return;
+      void fetch('/api/tv-remote-debug', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          eventType: `player-${event.type}`,
+          payload: {
+            target:
+              event.target instanceof Element
+                ? event.target.getAttribute('class')
+                : null,
+            active: active?.getAttribute('class'),
+            outline: active ? getComputedStyle(active).outline : null,
+            key: event instanceof KeyboardEvent ? event.key : undefined,
+            keyCode: event instanceof KeyboardEvent ? event.keyCode : undefined,
+            detail: event instanceof MouseEvent ? event.detail : undefined,
+            pointerType:
+              typeof PointerEvent !== 'undefined' &&
+              event instanceof PointerEvent
+                ? event.pointerType
+                : undefined,
+            activating: tvPlayerConfirmInFlightRef.current?.className,
+            controlsVisible: artPlayerRef.current?.controls.show,
+            fullscreen: Boolean(
+              artPlayerRef.current?.fullscreen ||
+                artPlayerRef.current?.fullscreenWeb
+            ),
+            nativeFullscreen: Boolean(artPlayerRef.current?.fullscreen),
+            fullscreenWeb: Boolean(artPlayerRef.current?.fullscreenWeb),
+          },
+        }),
+        keepalive: true,
+      }).catch(() => undefined);
+    };
+    const eventTypes = [
+      'keydown',
+      'keyup',
+      'pointerdown',
+      'pointerup',
+      'touchstart',
+      'touchend',
+      'click',
+      'focusin',
+      'focusout',
+    ];
+    eventTypes.forEach((type) => window.addEventListener(type, record, true));
+    return () =>
+      eventTypes.forEach((type) =>
+        window.removeEventListener(type, record, true)
+      );
+  }, [isTvMode]);
+
+  useEffect(() => {
     if (!isTvMode) return;
 
     let pendingRemoteClickTarget: HTMLElement | null = null;
@@ -543,6 +611,36 @@ function PlayPageClient() {
     };
     const onClick = (event: MouseEvent) => {
       if (!pendingRemoteClickTarget) {
+        return;
+      }
+      const confirmInFlight = tvPlayerConfirmInFlightRef.current;
+      if (
+        confirmInFlight &&
+        event.target instanceof Node &&
+        confirmInFlight.contains(event.target)
+      ) {
+        return;
+      }
+      const recentConfirm = tvLastPlayerConfirmRef.current;
+      if (
+        event.detail === 0 &&
+        recentConfirm?.target === pendingRemoteClickTarget &&
+        Date.now() - recentConfirm.at < 500
+      ) {
+        pendingRemoteClickTarget = null;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (pendingRemoteClickTarget.dataset.tvPlayerControl === 'true') {
+        const target = pendingRemoteClickTarget;
+        pendingRemoteClickTarget = null;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        target.focus();
+        if (target.getAttribute('role') === 'button') {
+          activateTvPlayerControl(target);
+        }
         return;
       }
       if (event.target === pendingRemoteClickTarget) {
@@ -572,6 +670,7 @@ function PlayPageClient() {
     window.addEventListener('click', onClick, true);
     window.addEventListener('focusin', onFocusIn, true);
     return () => {
+      tvLastPlayerConfirmRef.current = null;
       window.removeEventListener('pointerdown', onPointerDown, true);
       window.removeEventListener('click', onClick, true);
       window.removeEventListener('focusin', onFocusIn, true);
@@ -870,17 +969,42 @@ function PlayPageClient() {
     }
   };
 
+  const activateTvPlayerControl = (control: HTMLElement) => {
+    tvPlayerConfirmInFlightRef.current = control;
+    try {
+      resolveTvPlayerActivationTarget(control).click();
+    } finally {
+      tvPlayerConfirmInFlightRef.current = null;
+    }
+    tvLastPlayerConfirmRef.current = { target: control, at: Date.now() };
+  };
+
   const syncTvPlayerControls = () => {
     const art = artPlayerRef.current;
     const player = art?.template?.$player as HTMLElement | undefined;
     if (!art || !player) return;
 
     const tvEnabled = isTvModeRef.current;
+    // ArtPlayer moves the player to body for fullscreenWeb.
+    if (tvEnabled) {
+      player.dataset.tvMode = 'true';
+      art.controls.isHover = false;
+    } else delete player.dataset.tvMode;
     const controls = player.querySelectorAll<HTMLElement>(
       '.art-controls .art-control:not(.art-control-time), .art-progress .art-control-progress'
     );
 
     controls.forEach((control) => {
+      // Keep remote confirmation in the TV WebView using webpage fullscreen.
+      if (control.classList.contains('art-control-fullscreen')) {
+        control.style.display = tvEnabled ? 'none' : '';
+        if (tvEnabled) {
+          control.tabIndex = -1;
+          control.removeAttribute('role');
+          delete control.dataset.tvPlayerControl;
+          return;
+        }
+      }
       if (!tvEnabled) {
         control.removeAttribute('tabindex');
         control.removeAttribute('role');
@@ -916,21 +1040,47 @@ function PlayPageClient() {
       }
     });
 
-    if (!tvEnabled) {
-      art.controls.isHover = false;
-    }
-
     if (player.dataset.tvPlayerFocusBound !== 'true') {
       player.dataset.tvPlayerFocusBound = 'true';
       const onClick = (event: MouseEvent) => {
-        if (!isTvModeRef.current) return;
+        if (!isTvModeRef.current || event.detail !== 0) return;
 
-        const control = (event.target as HTMLElement).closest<HTMLElement>(
+        const eventControl = (event.target as HTMLElement).closest<HTMLElement>(
           '[data-tv-player-control="true"]'
         );
-        if (!control || event.detail !== 0) return;
+        if (tvPlayerConfirmInFlightRef.current === eventControl) return;
 
-        if (control.classList.contains('art-control-progress')) {
+        const activeControl = (
+          document.activeElement as HTMLElement | null
+        )?.closest<HTMLElement>('[data-tv-player-control="true"]');
+        const focusedControl =
+          activeControl && player.contains(activeControl)
+            ? activeControl
+            : null;
+        const recentConfirm = tvLastPlayerConfirmRef.current;
+
+        if (
+          focusedControl &&
+          recentConfirm?.target === focusedControl &&
+          Date.now() - recentConfirm.at < 500
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+
+        if (
+          focusedControl?.getAttribute('role') === 'button' &&
+          (eventControl !== focusedControl || event.target === focusedControl)
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          focusedControl.focus();
+          activateTvPlayerControl(focusedControl);
+          return;
+        }
+
+        if (eventControl?.classList.contains('art-control-progress')) {
           event.preventDefault();
           event.stopPropagation();
         }
@@ -941,20 +1091,56 @@ function PlayPageClient() {
         const confirmTarget = resolveTvPlayerConfirmTarget({
           key: event.key,
           eventTarget: event.target,
+          activeElement: document.activeElement,
         });
         if (confirmTarget) {
           event.preventDefault();
           event.stopPropagation();
           art.controls.show = true;
-          confirmTarget.click();
+          activateTvPlayerControl(confirmTarget);
           return;
         }
 
-        if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+        if (!art.controls.show) return;
+        if (!isTvDirectionalKey(event.key)) return;
 
-        const progress = (event.target as HTMLElement).closest<HTMLElement>(
+        const focusedElement = document.activeElement as HTMLElement | null;
+        const currentElement =
+          focusedElement && player.contains(focusedElement)
+            ? focusedElement
+            : (event.target as HTMLElement);
+        const progress = currentElement.closest<HTMLElement>(
           '.art-control-progress[data-tv-player-control="true"]'
         );
+        const current = currentElement.closest<HTMLElement>(
+          '.art-controls [data-tv-player-control="true"]'
+        );
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          if (!progress && !current) return;
+          if (
+            current &&
+            event.key === 'ArrowDown' &&
+            !art.fullscreen &&
+            !art.fullscreenWeb
+          )
+            return;
+
+          event.preventDefault();
+          event.stopPropagation();
+          const lastButton = tvLastPlayerButtonRef.current;
+          const target =
+            event.key === 'ArrowUp'
+              ? player.querySelector<HTMLElement>('.art-control-progress')
+              : lastButton &&
+                player.contains(lastButton) &&
+                lastButton.dataset.tvPlayerControl === 'true' &&
+                !lastButton.hidden &&
+                lastButton.style.display !== 'none'
+              ? lastButton
+              : player.querySelector<HTMLElement>('.art-control-playAndPause');
+          target?.focus();
+          return;
+        }
         if (progress) {
           event.preventDefault();
           event.stopPropagation();
@@ -968,9 +1154,6 @@ function PlayPageClient() {
           return;
         }
 
-        const current = (event.target as HTMLElement).closest<HTMLElement>(
-          '.art-controls [data-tv-player-control="true"]'
-        );
         if (!current) return;
 
         const target = resolveTvPlayerHorizontalControlTarget({
@@ -994,45 +1177,23 @@ function PlayPageClient() {
         if (!control) return;
 
         tvLastPlayerControlRef.current = control;
-        player.classList.add('art-tv-controls-focused');
-        art.controls.isHover = true;
+        if (control.getAttribute('role') === 'button') {
+          tvLastPlayerButtonRef.current = control;
+        }
+        // Spatial navigation can focus an icon instead of its highlighted wrapper.
+        if (event.target !== control) control.focus();
         art.controls.show = true;
-      };
-      const onFocusOut = () => {
-        window.requestAnimationFrame(() => {
-          const activeControl = (
-            document.activeElement as HTMLElement | null
-          )?.closest?.('[data-tv-player-control="true"]');
-          if (activeControl && player.contains(activeControl)) return;
-
-          player.classList.remove('art-tv-controls-focused');
-          art.controls.isHover = false;
-        });
       };
 
       player.addEventListener('click', onClick, true);
       player.addEventListener('keydown', onKeyDown);
       player.addEventListener('focusin', onFocusIn);
-      player.addEventListener('focusout', onFocusOut);
       tvPlayerControlCleanupRef.current = () => {
         player.removeEventListener('click', onClick, true);
         player.removeEventListener('keydown', onKeyDown);
         player.removeEventListener('focusin', onFocusIn);
-        player.removeEventListener('focusout', onFocusOut);
         delete player.dataset.tvPlayerFocusBound;
       };
-    }
-
-    const activeElement = document.activeElement as HTMLElement | null;
-    const hasFocusedControl = Boolean(
-      tvEnabled &&
-        activeElement &&
-        player.contains(activeElement) &&
-        activeElement.closest('[data-tv-player-control="true"]')
-    );
-    player.classList.toggle('art-tv-controls-focused', hasFocusedControl);
-    if (tvEnabled && document.activeElement === document.body) {
-      player.querySelector<HTMLElement>('.art-control-playAndPause')?.focus();
     }
   };
 
@@ -1134,6 +1295,7 @@ function PlayPageClient() {
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
   const tvLastPlayerControlRef = useRef<HTMLElement | null>(null);
+  const tvLastPlayerButtonRef = useRef<HTMLElement | null>(null);
   const tvFullscreenOriginRef = useRef<HTMLElement | null>(null);
   const tvPlayerWasFullscreenRef = useRef(false);
   const tvPlayerControlCleanupRef = useRef<(() => void) | null>(null);
@@ -4316,9 +4478,7 @@ function PlayPageClient() {
             : null) ||
           player.querySelector<HTMLElement>('.art-control-playAndPause');
 
-        art.controls.isHover = true;
         art.controls.show = true;
-        player.classList.add('art-tv-controls-focused');
         window.requestAnimationFrame(() => target?.focus());
       }
       return;
@@ -4396,7 +4556,12 @@ function PlayPageClient() {
     // f 键 = 切换全屏
     if (e.key === 'f' || e.key === 'F') {
       if (artPlayerRef.current) {
-        artPlayerRef.current.fullscreen = !artPlayerRef.current.fullscreen;
+        if (isTvModeRef.current) {
+          artPlayerRef.current.fullscreenWeb =
+            !artPlayerRef.current.fullscreenWeb;
+        } else {
+          artPlayerRef.current.fullscreen = !artPlayerRef.current.fullscreen;
+        }
         e.preventDefault();
       }
     }
@@ -5668,6 +5833,12 @@ function PlayPageClient() {
         });
 
         // 监听播放器事件
+        artPlayerRef.current.on('document:mousemove', () => {
+          // A virtual remote cursor can stay over the toolbar indefinitely.
+          if (isTvModeRef.current)
+            artPlayerRef.current.controls.isHover = false;
+        });
+
         artPlayerRef.current.on('ready', () => {
           setErrorKind('generic');
           setError(null);
