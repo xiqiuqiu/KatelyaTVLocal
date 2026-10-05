@@ -1,6 +1,6 @@
 import {
-  ProxyRedirectError,
   fetchWithValidatedRedirects,
+  ProxyRedirectError,
   validateProxyTargetUrl,
 } from './proxy-url-policy';
 
@@ -90,7 +90,9 @@ describe('validateProxyTargetUrl', () => {
 
   it('rejects cloud metadata hostnames', () => {
     expect(
-      validateProxyTargetUrl('http://metadata.google.internal/computeMetadata/v1/')
+      validateProxyTargetUrl(
+        'http://metadata.google.internal/computeMetadata/v1/'
+      )
     ).toEqual({
       ok: false,
       reason: 'Blocked host',

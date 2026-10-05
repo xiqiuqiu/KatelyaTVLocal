@@ -1,7 +1,6 @@
+import type { HomeHeroMediaType } from '@/lib/home-hero';
 import type { SearchCategory } from '@/lib/search-category';
 import type { DoubanItem } from '@/lib/types';
-
-import type { HomeHeroMediaType } from '@/lib/home-hero';
 
 /** Progress ratio at or above this counts as heavily watched. */
 export const HEAVILY_WATCHED_PROGRESS = 0.8;

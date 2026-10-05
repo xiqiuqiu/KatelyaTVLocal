@@ -1,6 +1,6 @@
 import {
-  resolvePlaybackHistoryRecovery,
   type PlaybackHistoryRecord,
+  resolvePlaybackHistoryRecovery,
 } from '@/lib/playback-history-recovery';
 import type { SearchResult } from '@/lib/types';
 

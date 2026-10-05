@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit --incremental false",
     "test:watch": "jest --watch",
     "test": "jest",
+    "test:ci": "jest --runInBand",
+    "check:ci": "pnpm gen:runtime && pnpm typecheck && pnpm lint:strict && pnpm test:ci",
     "format": "prettier -w .",
     "format:check": "prettier -c .",
     "gen:runtime": "node scripts/convert-config.js",

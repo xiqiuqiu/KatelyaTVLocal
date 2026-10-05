@@ -38,6 +38,7 @@ export function usePlayFavorite(
         setFavorited(fav);
       } catch (err) {
         if (!cancelled) {
+          // eslint-disable-next-line no-console
           console.error('检查收藏状态失败:', err);
         }
       }
@@ -92,6 +93,7 @@ export function usePlayFavorite(
         setFavorited(true);
       }
     } catch (err) {
+      // eslint-disable-next-line no-console
       console.error('切换收藏失败:', err);
     }
   };

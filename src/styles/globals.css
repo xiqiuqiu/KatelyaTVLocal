@@ -105,4 +105,30 @@
   .animated-underline:focus-visible {
     background-size: 0 2px, 100% 2px;
   }
+
+  [data-tv-mode='true']
+    :is(
+      button:not(:disabled),
+      a[href],
+      [role='button']:not([aria-disabled='true']),
+      [role='slider']:not([aria-disabled='true'])
+    ):focus {
+    outline: 4px solid #d5ff5f;
+    outline-offset: 3px;
+    box-shadow: 0 0 0 7px rgb(213 255 95 / 22%);
+  }
+
+  .art-video-player[data-tv-mode='true'] [data-tv-player-control='true']:focus {
+    outline: 4px solid #d5ff5f;
+    outline-offset: -4px;
+    box-shadow: 0 0 0 7px rgb(213 255 95 / 22%);
+    border-radius: 8px;
+    background: rgb(213 255 95 / 16%);
+    opacity: 1;
+  }
+
+  .art-video-player[data-tv-mode='true']
+    .art-control-progress[data-tv-player-control='true'] {
+    min-height: 24px;
+  }
 }

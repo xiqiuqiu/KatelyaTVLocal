@@ -7,7 +7,7 @@ function createMockD1() {
   const run = jest.fn().mockResolvedValue({ success: true });
   const all = jest.fn().mockResolvedValue({ results: [] });
   const bind = jest.fn(() => ({ run, all }));
-  const prepare = jest.fn(() => ({ bind }));
+  const prepare = jest.fn((_sql: string) => ({ bind }));
 
   return {
     db: { prepare },

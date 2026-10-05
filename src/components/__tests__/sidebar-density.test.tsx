@@ -21,7 +21,7 @@ describe('Sidebar shell density', () => {
       'data-collapsed',
       'true'
     );
-    expect(screen.queryByText('首页')).not.toBeInTheDocument();
+    expect(screen.getByText('首页')).toHaveClass('max-w-0', 'opacity-0');
     expect(screen.getByRole('link', { name: '首页' })).toHaveAttribute(
       'href',
       '/'

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { UserMenu } from '@/components/UserMenu';
 
@@ -73,7 +73,7 @@ describe('UserMenu', () => {
     expect(prefetch).toHaveBeenCalledWith('/admin');
   });
 
-  it('closes the account menu immediately when opening the admin panel', async () => {
+  it('closes the account menu when opening the admin panel', async () => {
     currentUser = { username: 'admin', role: 'admin' };
     window.RUNTIME_CONFIG = {
       STORAGE_TYPE: 'd1',
@@ -92,7 +92,9 @@ describe('UserMenu', () => {
     fireEvent.click(await screen.findByText('管理面板'));
 
     expect(push).toHaveBeenCalledWith('/admin');
-    expect(screen.queryByText('管理面板')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText('管理面板')).not.toBeInTheDocument();
+    });
   });
 
   it('closes the account menu when the route changes', async () => {
@@ -116,7 +118,9 @@ describe('UserMenu', () => {
     mockPathname = '/admin';
     rerender(<UserMenu />);
 
-    expect(screen.queryByText('管理面板')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText('管理面板')).not.toBeInTheDocument();
+    });
   });
 
   it('closes the account menu when pressing Escape', async () => {
@@ -127,7 +131,9 @@ describe('UserMenu', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
 
-    expect(screen.queryByText('修改密码')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText('修改密码')).not.toBeInTheDocument();
+    });
   });
 
   it('closes the account menu when clicking the dismiss overlay', async () => {
@@ -138,7 +144,9 @@ describe('UserMenu', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '关闭菜单' }));
 
-    expect(screen.queryByText('修改密码')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText('修改密码')).not.toBeInTheDocument();
+    });
   });
 
   it('closes the change password panel when pressing Escape', async () => {

@@ -1,8 +1,8 @@
-import { AdminConfig } from './admin.types';
 import type {
   EpisodeAdSkipConfig,
   PersistedAdSkipWindow,
 } from './ad-skip-window';
+import { AdminConfig } from './admin.types';
 import type { AiFindResponse } from './ai-find/types';
 
 export type { EpisodeAdSkipConfig, PersistedAdSkipWindow };

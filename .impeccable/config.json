@@ -1,0 +1,15 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "ai-color-palette",
+        "value": "*",
+        "files": ["src/components/SkipController.tsx"],
+        "createdAt": "2026-10-05T12:33:24.786Z",
+        "reason": "Agent: incumbent semantic palette distinguishes episode endings from orange opening markers; all flagged lines predate the 2026-10-05 P0-only change"
+      }
+    ]
+  }
+}

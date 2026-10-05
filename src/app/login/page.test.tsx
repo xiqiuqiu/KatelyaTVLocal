@@ -20,6 +20,14 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => mockSearchParams,
 }));
 
+jest.mock('next/image', () => ({
+  __esModule: true,
+  default: ({ alt, src }: { alt: string; src: string }) => (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img alt={alt} src={src} />
+  ),
+}));
+
 jest.mock('@/components/ThemeToggle', () => ({
   ThemeToggle: () => <button type='button'>Theme</button>,
 }));

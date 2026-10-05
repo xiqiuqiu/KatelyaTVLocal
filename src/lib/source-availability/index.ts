@@ -381,17 +381,17 @@ export function selectRecoveryCandidate(
   return pickUnverifiedStartupFallbackCandidate(items, attempted);
 }
 
+export type { SourceAttemptedLedgers } from './attempted-ledgers';
 export {
   clearAttemptedLedgersOnEpisodeChange,
   clearAttemptedLedgersOnTitleChange,
 } from './attempted-ledgers';
-export type { SourceAttemptedLedgers } from './attempted-ledgers';
+export type {
+  ResolveRecoveryCandidateSourceInput,
+  SourceCandidateAuthorityMode,
+} from './authority';
 export {
   getSourceCandidateAuthorityMode,
   isSourceAvailabilityCandidateAuthorityEnabled,
   resolveRecoveryCandidateSource,
-} from './authority';
-export type {
-  ResolveRecoveryCandidateSourceInput,
-  SourceCandidateAuthorityMode,
 } from './authority';

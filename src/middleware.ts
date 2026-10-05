@@ -57,6 +57,9 @@ function shouldSkipAuth(pathname: string): boolean {
     '/icons/',
     '/logo.png',
     '/screenshot.png',
+    '/tv-test',
+    '/tv-remote-debug',
+    '/api/tv-remote-debug',
   ];
 
   return skipPaths.some((path) => pathname.startsWith(path));

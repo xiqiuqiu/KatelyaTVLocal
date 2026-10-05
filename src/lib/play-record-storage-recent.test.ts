@@ -283,8 +283,8 @@ describe('play record recent storage indexes', () => {
     jest.doMock('@upstash/redis', () => ({
       Redis: jest.fn().mockImplementation(() => client),
     }));
-    process.env.UPSTASH_REDIS_REST_URL = 'https://example.test';
-    process.env.UPSTASH_REDIS_REST_TOKEN = 'token';
+    process.env.UPSTASH_URL = 'https://example.test';
+    process.env.UPSTASH_TOKEN = 'token';
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { UpstashRedisStorage } = require('./upstash.db');
     const storage = new UpstashRedisStorage();

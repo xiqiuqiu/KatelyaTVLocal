@@ -13,10 +13,10 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import {
+  type SearchCategory,
   buildSearchCategoryTabs,
   filterSearchResultsByCategory,
   getSearchCardMeta,
-  type SearchCategory,
 } from '@/lib/search-category';
 import {
   shouldSuggestAiFind,
@@ -203,6 +203,7 @@ function SearchPageClient() {
         setShowResults(true);
       } catch (error) {
         if ((error as Error).name === 'AbortError') return;
+        // eslint-disable-next-line no-console
         console.error(error);
         if (!cancelled) setSearchResults([]);
       } finally {
@@ -242,7 +243,9 @@ function SearchPageClient() {
       : pageMeta['/search'].subtitle
     : pageMeta['/search'].subtitle;
   const displayedResultCount =
-    viewMode === 'agg' ? aggregatedResults.length : filteredSearchResults.length;
+    viewMode === 'agg'
+      ? aggregatedResults.length
+      : filteredSearchResults.length;
 
   return (
     <PageLayout activePath='/search'>
@@ -306,191 +309,191 @@ function SearchPageClient() {
             className='ui-search-view'
           >
             {searchMode === 'ai' ? (
-            <AiFindPanel initialQuery={searchQuery} />
-          ) : isLoading ? (
-            <section className='space-y-4'>
-              <SectionHeader
-                subtitle='正在整理结果与可用线路'
-                title={pageSectionLabels.searchResults}
-              />
-              <PosterGrid className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
-                {Array.from({ length: 12 }).map((_, index) => (
-                  <div key={`search-skeleton-${index}`} className='w-full'>
-                    <SkeletonPosterCard
-                      delayIndex={index}
-                      widths={['80%', '58%']}
-                    />
-                  </div>
-                ))}
-              </PosterGrid>
-            </section>
-          ) : showResults ? (
-            <section className='space-y-4'>
-              <SectionHeader
-                subtitle={`当前显示 ${displayedResultCount} 条${
-                  viewMode === 'agg' ? '聚合结果' : '原始结果'
-                }`}
-                title={pageSectionLabels.searchResults}
-              />
-              {shouldShowAiFindGuide ? (
-                <Surface
-                  className='border-[rgb(var(--ui-success)/0.24)] bg-[linear-gradient(135deg,rgb(var(--ui-success)/0.12),rgb(var(--ui-bg-elevated)/0.58))] p-4 sm:p-5'
-                  variant='plain'
-                >
-                  <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-                    <div>
-                      <p className='text-sm font-semibold text-[rgb(var(--ui-text))]'>
-                        结果较多，可以用 AI 精准找片
-                      </p>
-                      <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-                        会带入当前关键词，按片名线索重新整理候选结果。
-                      </p>
-                    </div>
-                    <button
-                      type='button'
-                      onClick={() => setSearchMode('ai')}
-                      className='inline-flex min-h-10 items-center justify-center rounded-xl bg-[rgb(var(--ui-success))] px-4 text-sm font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition hover:brightness-110'
-                    >
-                      用 AI 精准找片
-                    </button>
-                  </div>
-                </Surface>
-              ) : null}
-              {searchResults.length > 0 ? (
-                <>
-                  <CapsuleSwitch
-                    active={resultCategory}
-                    aria-label='结果分类'
-                    onChange={(value) =>
-                      setResultCategory(value as SearchCategory)
-                    }
-                    options={categoryTabOptions}
-                  />
-                  {filteredSearchResults.length > 0 ? (
-                    <PosterGrid
-                      key={`search-results-${viewMode}-${resultCategory}`}
-                      className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'
-                    >
-                      {viewMode === 'agg'
-                        ? aggregatedResults.map(([mapKey, group]) => {
-                            const meta = getSearchCardMeta(group[0]);
-                            return (
-                              <div key={`agg-${mapKey}`} className='w-full'>
-                                <VideoCard
-                                  from='search'
-                                  items={group}
-                                  query={
-                                    searchQuery.trim() !== group[0].title
-                                      ? searchQuery.trim()
-                                      : ''
-                                  }
-                                  statusText={meta.statusText}
-                                  typeName={meta.typeChip}
-                                  year={meta.year}
-                                />
-                              </div>
-                            );
-                          })
-                        : filteredSearchResults.map((item) => {
-                            const meta = getSearchCardMeta(item);
-                            return (
-                              <div
-                                key={`all-${item.source}-${item.id}`}
-                                className='w-full'
-                              >
-                                <VideoCard
-                                  id={item.id}
-                                  title={item.title}
-                                  poster={item.poster}
-                                  episodes={item.episodes.length}
-                                  source={item.source}
-                                  source_name={item.source_name}
-                                  douban_id={item.douban_id?.toString()}
-                                  query={
-                                    searchQuery.trim() !== item.title
-                                      ? searchQuery.trim()
-                                      : ''
-                                  }
-                                  year={meta.year}
-                                  from='search'
-                                  type={
-                                    item.episodes.length > 1 ? 'tv' : 'movie'
-                                  }
-                                  typeName={meta.typeChip}
-                                  statusText={meta.statusText}
-                                />
-                              </div>
-                            );
-                          })}
-                    </PosterGrid>
-                  ) : (
-                    <Surface
-                      className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
-                      variant='plain'
-                    >
-                      该分类下暂无结果
-                    </Surface>
-                  )}
-                </>
-              ) : (
-                <Surface
-                  className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
-                  variant='plain'
-                >
-                  未找到相关结果
-                </Surface>
-              )}
-            </section>
-          ) : searchHistory.length > 0 ? (
-            // 搜索历史
-            <section className='space-y-4'>
-              <SectionHeader
-                action={
-                  searchHistory.length > 0 ? (
-                    <ActionLink
-                      onClick={() => {
-                        clearSearchHistory(); // 事件监听会自动更新界面
-                      }}
-                    >
-                      清空
-                    </ActionLink>
-                  ) : null
-                }
-                title={pageSectionLabels.searchHistory}
-              />
-              <Surface className='p-4 sm:p-5' variant='plain'>
-                <div className='flex flex-wrap gap-2'>
-                  {searchHistory.map((item) => (
-                    <div key={item} className='group relative'>
-                      <button
-                        onClick={() => {
-                          router.push(
-                            `/search?q=${encodeURIComponent(item.trim())}`
-                          );
-                        }}
-                        className='rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-[rgb(var(--ui-text))] transition-colors duration-200 hover:bg-white/10'
-                        type='button'
-                      >
-                        {item}
-                      </button>
-                      <button
-                        aria-label='删除搜索历史'
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          deleteSearchHistory(item); // 事件监听会自动更新界面
-                        }}
-                        className='absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-white/25 text-[10px] text-white opacity-0 transition-colors group-hover:opacity-100 hover:bg-red-500'
-                        type='button'
-                      >
-                        <X className='h-3 w-3' />
-                      </button>
+              <AiFindPanel initialQuery={searchQuery} />
+            ) : isLoading ? (
+              <section className='space-y-4'>
+                <SectionHeader
+                  subtitle='正在整理结果与可用线路'
+                  title={pageSectionLabels.searchResults}
+                />
+                <PosterGrid className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
+                  {Array.from({ length: 12 }).map((_, index) => (
+                    <div key={`search-skeleton-${index}`} className='w-full'>
+                      <SkeletonPosterCard
+                        delayIndex={index}
+                        widths={['80%', '58%']}
+                      />
                     </div>
                   ))}
-                </div>
-              </Surface>
-            </section>
-          ) : null}
+                </PosterGrid>
+              </section>
+            ) : showResults ? (
+              <section className='space-y-4'>
+                <SectionHeader
+                  subtitle={`当前显示 ${displayedResultCount} 条${
+                    viewMode === 'agg' ? '聚合结果' : '原始结果'
+                  }`}
+                  title={pageSectionLabels.searchResults}
+                />
+                {shouldShowAiFindGuide ? (
+                  <Surface
+                    className='border-[rgb(var(--ui-success)/0.24)] bg-[linear-gradient(135deg,rgb(var(--ui-success)/0.12),rgb(var(--ui-bg-elevated)/0.58))] p-4 sm:p-5'
+                    variant='plain'
+                  >
+                    <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                      <div>
+                        <p className='text-sm font-semibold text-[rgb(var(--ui-text))]'>
+                          结果较多，可以用 AI 精准找片
+                        </p>
+                        <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
+                          会带入当前关键词，按片名线索重新整理候选结果。
+                        </p>
+                      </div>
+                      <button
+                        type='button'
+                        onClick={() => setSearchMode('ai')}
+                        className='inline-flex min-h-10 items-center justify-center rounded-xl bg-[rgb(var(--ui-success))] px-4 text-sm font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition hover:brightness-110'
+                      >
+                        用 AI 精准找片
+                      </button>
+                    </div>
+                  </Surface>
+                ) : null}
+                {searchResults.length > 0 ? (
+                  <>
+                    <CapsuleSwitch
+                      active={resultCategory}
+                      aria-label='结果分类'
+                      onChange={(value) =>
+                        setResultCategory(value as SearchCategory)
+                      }
+                      options={categoryTabOptions}
+                    />
+                    {filteredSearchResults.length > 0 ? (
+                      <PosterGrid
+                        key={`search-results-${viewMode}-${resultCategory}`}
+                        className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'
+                      >
+                        {viewMode === 'agg'
+                          ? aggregatedResults.map(([mapKey, group]) => {
+                              const meta = getSearchCardMeta(group[0]);
+                              return (
+                                <div key={`agg-${mapKey}`} className='w-full'>
+                                  <VideoCard
+                                    from='search'
+                                    items={group}
+                                    query={
+                                      searchQuery.trim() !== group[0].title
+                                        ? searchQuery.trim()
+                                        : ''
+                                    }
+                                    statusText={meta.statusText}
+                                    typeName={meta.typeChip}
+                                    year={meta.year}
+                                  />
+                                </div>
+                              );
+                            })
+                          : filteredSearchResults.map((item) => {
+                              const meta = getSearchCardMeta(item);
+                              return (
+                                <div
+                                  key={`all-${item.source}-${item.id}`}
+                                  className='w-full'
+                                >
+                                  <VideoCard
+                                    id={item.id}
+                                    title={item.title}
+                                    poster={item.poster}
+                                    episodes={item.episodes.length}
+                                    source={item.source}
+                                    source_name={item.source_name}
+                                    douban_id={item.douban_id?.toString()}
+                                    query={
+                                      searchQuery.trim() !== item.title
+                                        ? searchQuery.trim()
+                                        : ''
+                                    }
+                                    year={meta.year}
+                                    from='search'
+                                    type={
+                                      item.episodes.length > 1 ? 'tv' : 'movie'
+                                    }
+                                    typeName={meta.typeChip}
+                                    statusText={meta.statusText}
+                                  />
+                                </div>
+                              );
+                            })}
+                      </PosterGrid>
+                    ) : (
+                      <Surface
+                        className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
+                        variant='plain'
+                      >
+                        该分类下暂无结果
+                      </Surface>
+                    )}
+                  </>
+                ) : (
+                  <Surface
+                    className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
+                    variant='plain'
+                  >
+                    未找到相关结果
+                  </Surface>
+                )}
+              </section>
+            ) : searchHistory.length > 0 ? (
+              // 搜索历史
+              <section className='space-y-4'>
+                <SectionHeader
+                  action={
+                    searchHistory.length > 0 ? (
+                      <ActionLink
+                        onClick={() => {
+                          clearSearchHistory(); // 事件监听会自动更新界面
+                        }}
+                      >
+                        清空
+                      </ActionLink>
+                    ) : null
+                  }
+                  title={pageSectionLabels.searchHistory}
+                />
+                <Surface className='p-4 sm:p-5' variant='plain'>
+                  <div className='flex flex-wrap gap-2'>
+                    {searchHistory.map((item) => (
+                      <div key={item} className='group relative'>
+                        <button
+                          onClick={() => {
+                            router.push(
+                              `/search?q=${encodeURIComponent(item.trim())}`
+                            );
+                          }}
+                          className='rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-[rgb(var(--ui-text))] transition-colors duration-200 hover:bg-white/10'
+                          type='button'
+                        >
+                          {item}
+                        </button>
+                        <button
+                          aria-label='删除搜索历史'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            deleteSearchHistory(item); // 事件监听会自动更新界面
+                          }}
+                          className='absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-white/25 text-[10px] text-white opacity-0 transition-colors group-hover:opacity-100 hover:bg-red-500'
+                          type='button'
+                        >
+                          <X className='h-3 w-3' />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </Surface>
+              </section>
+            ) : null}
           </div>
         </div>
       </div>

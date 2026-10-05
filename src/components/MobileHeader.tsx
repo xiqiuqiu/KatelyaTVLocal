@@ -1,13 +1,6 @@
 'use client';
 
-import { useSite } from './SiteProvider';
-
-interface MobileHeaderProps {
-  showBackButton?: boolean;
-}
-
-const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
-  const { siteName } = useSite();
+const MobileHeader = () => {
   return (
     <header className='md:hidden relative w-full bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800'>
       <div className='h-12 flex items-center justify-between px-4'>

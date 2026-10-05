@@ -1,8 +1,8 @@
 import {
+  type PlaybackAttemptChannelDecision,
   createPlaybackAttemptReporter,
   preferLogicalPlaybackUrl,
   sanitizePlaybackEvidenceUrl,
-  type PlaybackAttemptChannelDecision,
 } from './index';
 
 describe('Playback Attempt evidence reporter', () => {

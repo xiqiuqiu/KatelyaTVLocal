@@ -24,7 +24,7 @@ jest.mock('@/components/PageLayout', () => ({
 
 jest.mock('@/lib/db.client', () => ({
   clearAllPlayRecords: jest.fn(),
-  deletePlayRecord: jest.fn(),
+  deletePlayRecordByKey: jest.fn(),
   getAllPlayRecords: jest.fn(),
   subscribeToDataUpdates: jest.fn(() => jest.fn()),
 }));
@@ -63,7 +63,7 @@ describe('HistoryPage', () => {
     push.mockReset();
     (Swal.fire as jest.Mock).mockResolvedValue({ isConfirmed: true });
     (dbClient.getAllPlayRecords as jest.Mock).mockResolvedValue(mockRecords());
-    (dbClient.deletePlayRecord as jest.Mock).mockResolvedValue(undefined);
+    (dbClient.deletePlayRecordByKey as jest.Mock).mockResolvedValue(undefined);
     (dbClient.clearAllPlayRecords as jest.Mock).mockResolvedValue(undefined);
     (dbClient.subscribeToDataUpdates as jest.Mock).mockReturnValue(jest.fn());
   });
@@ -93,9 +93,8 @@ describe('HistoryPage', () => {
     fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
 
     await waitFor(() => {
-      expect(dbClient.deletePlayRecord).toHaveBeenCalledWith(
-        'cdp-src',
-        'keep+id&hash#eq=1'
+      expect(dbClient.deletePlayRecordByKey).toHaveBeenCalledWith(
+        'cdp-src+keep+id&hash#eq=1'
       );
     });
     expect(dbClient.clearAllPlayRecords).not.toHaveBeenCalled();
@@ -109,13 +108,12 @@ describe('HistoryPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /删除已选/ }));
 
     await waitFor(() => {
-      expect(dbClient.deletePlayRecord).toHaveBeenCalledTimes(2);
+      expect(dbClient.deletePlayRecordByKey).toHaveBeenCalledTimes(2);
     });
-    expect(dbClient.deletePlayRecord).toHaveBeenCalledWith(
-      'cdp-src',
-      'keep+id&hash#eq=1'
+    expect(dbClient.deletePlayRecordByKey).toHaveBeenCalledWith(
+      'cdp-src+keep+id&hash#eq=1'
     );
-    expect(dbClient.deletePlayRecord).toHaveBeenCalledWith('source-b', '2');
+    expect(dbClient.deletePlayRecordByKey).toHaveBeenCalledWith('source-b+2');
     expect(dbClient.clearAllPlayRecords).not.toHaveBeenCalled();
   });
 
@@ -128,6 +126,6 @@ describe('HistoryPage', () => {
     await waitFor(() => {
       expect(dbClient.clearAllPlayRecords).toHaveBeenCalledTimes(1);
     });
-    expect(dbClient.deletePlayRecord).not.toHaveBeenCalled();
+    expect(dbClient.deletePlayRecordByKey).not.toHaveBeenCalled();
   });
 });

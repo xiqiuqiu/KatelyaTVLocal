@@ -156,7 +156,6 @@ export default function SkipController({
     [duration]
   );
 
-  
   // 使用useMemo缓存计算结果，提升性能
   const activeEndingSegments = useMemo(() => {
     if (!skipConfig?.segments?.length) {
@@ -171,7 +170,7 @@ export default function SkipController({
     console.log('SkipController: 计算片尾片段', {
       totalSegments: skipConfig.segments.length,
       endingSegments: endingSegments.length,
-      segments: endingSegments
+      segments: endingSegments,
     });
 
     return endingSegments;
@@ -182,18 +181,21 @@ export default function SkipController({
   }, [skipConfig]);
 
   // 新增：倒计时消息格式化函数 - 支持预告和跳转两种模式
-  const getCountdownMessage = useCallback((seconds: number, isWarning = false): string => {
-    if (isWarning) {
-      return `${seconds}秒后将跳过片尾`;
-    }
-    
-    if (seconds > 60) {
-      const minutes = Math.floor(seconds / 60);
-      const remainingSeconds = seconds % 60;
-      return `${minutes}分${remainingSeconds}秒后自动播放下一集`;
-    }
-    return `${seconds}秒后自动播放下一集`;
-  }, []);
+  const getCountdownMessage = useCallback(
+    (seconds: number, isWarning = false): string => {
+      if (isWarning) {
+        return `${seconds}秒后将跳过片尾`;
+      }
+
+      if (seconds > 60) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        return `${minutes}分${remainingSeconds}秒后自动播放下一集`;
+      }
+      return `${seconds}秒后自动播放下一集`;
+    },
+    []
+  );
 
   // 初始化加载配置
   useEffect(() => {
@@ -243,7 +245,7 @@ export default function SkipController({
         seconds,
         targetTime,
         isWarning,
-        hasNextEpisode: !!onNextEpisode
+        hasNextEpisode: !!onNextEpisode,
       });
 
       // 清理所有相关状态
@@ -277,7 +279,9 @@ export default function SkipController({
         if (isCountdownPausedRef.current) return;
 
         const next =
-          countdownSecondsRef.current <= 1 ? 0 : countdownSecondsRef.current - 1;
+          countdownSecondsRef.current <= 1
+            ? 0
+            : countdownSecondsRef.current - 1;
         countdownSecondsRef.current = next;
         setCountdownSeconds(next);
 
@@ -315,7 +319,7 @@ export default function SkipController({
         console.log('SkipController: checkEndingCountdown 条件不满足', {
           hasSegments: !!skipConfig?.segments?.length,
           duration,
-          hasNextEpisode: !!onNextEpisode
+          hasNextEpisode: !!onNextEpisode,
         });
         return;
       }
@@ -340,7 +344,11 @@ export default function SkipController({
         const warningTime = Math.max(0, actualStartTime - 5); // 提前5秒
 
         // 当到达警告时间且还未开始倒计时时，启动5秒倒计时
-        if (time >= warningTime && time < actualStartTime && !showCountdownRef.current) {
+        if (
+          time >= warningTime &&
+          time < actualStartTime &&
+          !showCountdownRef.current
+        ) {
           console.log('SkipController: 启动片尾预告倒计时', {
             currentTime: time,
             warningTime,
@@ -648,7 +656,6 @@ export default function SkipController({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-
   useEffect(() => {
     checkSkipSegmentRef.current = checkSkipSegment;
   }, [checkSkipSegment]);
@@ -861,7 +868,11 @@ export default function SkipController({
                 {getCountdownMessage(countdownSeconds, isWarningMode)}
               </span>
               <span className='text-xs text-gray-300'>
-                {isCountdownPaused ? '已暂停' : isWarningMode ? '即将跳过片尾' : '片尾跳转已启用'}
+                {isCountdownPaused
+                  ? '已暂停'
+                  : isWarningMode
+                  ? '即将跳过片尾'
+                  : '片尾跳转已启用'}
               </span>
             </div>
             <div className='flex items-center space-x-2'>
@@ -1646,7 +1657,8 @@ export default function SkipController({
                             {segment.type === 'opening' ? '片头' : '片尾'}
                           </div>
                           <div className='text-sm text-gray-600 dark:text-gray-400 truncate'>
-                            {formatTime(segment.start)} - {formatTime(segment.end)}
+                            {formatTime(segment.start)} -{' '}
+                            {formatTime(segment.end)}
                           </div>
                           {segment.autoSkip && (
                             <div className='inline-flex items-center mt-1 px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-lg text-xs font-medium'>
@@ -1671,13 +1683,14 @@ export default function SkipController({
                       <button
                         type='button'
                         onClick={() => {
+                          if (segment.id == null) return;
                           // 添加触觉反馈
                           if ('vibrate' in navigator) {
                             navigator.vibrate(100);
                           }
                           // 添加确认对话框
                           if (confirm('确定要删除这个跳过片段吗？')) {
-                            handleDeleteSegment(segment.id!);
+                            handleDeleteSegment(segment.id);
                           }
                         }}
                         className='ml-3 flex-shrink-0 rounded-xl bg-red-500 p-3 text-white transition-[background-color,transform] duration-[160ms] ease-out hover:bg-red-600 active:scale-[0.97]'
@@ -1769,113 +1782,12 @@ export default function SkipController({
                 className='skip-desktop-panel max-w-md rounded-2xl border border-gray-200 bg-white/95 shadow-2xl backdrop-blur-sm dark:border-gray-600 dark:bg-gray-800/95'
                 data-open={isDesktopPanelOpen}
               >
-                  <div className='p-5'>
-                    <div className='flex items-center justify-between mb-4'>
-                      <h4 className='text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center'>
-                        <div className='mr-3 flex h-8 w-8 items-center justify-center rounded-xl bg-[rgb(var(--ui-accent))]'>
-                          <svg
-                            className='w-5 h-5 text-white'
-                            fill='none'
-                            stroke='currentColor'
-                            viewBox='0 0 24 24'
-                          >
-                            <path
-                              strokeLinecap='round'
-                              strokeLinejoin='round'
-                              strokeWidth={2}
-                              d='M13 5l7 7-7 7M5 5l7 7-7 7'
-                            />
-                          </svg>
-                        </div>
-                        跳过配置
-                      </h4>
-                      <div className='flex items-center space-x-2'>
-                        <div className='text-xs text-gray-500 dark:text-gray-400'>
-                          {skipConfig.segments.length} 个片段
-                        </div>
-                        <button
-                          type='button'
-                          onClick={() => setIsDesktopPanelOpen(false)}
-                          className='p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors'
-                          aria-label='收起跳过面板'
-                          title='收起面板'
-                        >
-                          <svg
-                            className='w-4 h-4 text-gray-500'
-                            fill='none'
-                            stroke='currentColor'
-                            viewBox='0 0 24 24'
-                          >
-                            <path
-                              strokeLinecap='round'
-                              strokeLinejoin='round'
-                              strokeWidth={2}
-                              d='M19 9l-7 7-7-7'
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-
-                <div className='space-y-3'>
-                  {skipConfig.segments.map((segment) => (
-                    <div
-                      key={segment.id}
-                      className='group flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200'
-                    >
-                      <div className='flex items-center space-x-3 flex-1'>
-                        <div
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                            segment.type === 'opening'
-                              ? 'bg-gradient-to-br from-orange-400 to-red-400'
-                              : 'bg-gradient-to-br from-purple-400 to-pink-400'
-                          }`}
-                        >
-                          <span className='text-lg'>
-                            {segment.type === 'opening' ? '🎬' : '🎭'}
-                          </span>
-                        </div>
-                        <div className='flex-1'>
-                          <div className='font-semibold text-gray-900 dark:text-gray-100'>
-                            {segment.type === 'opening' ? '片头' : '片尾'}
-                          </div>
-                          <div className='text-sm text-gray-600 dark:text-gray-400'>
-                            {formatTime(segment.start)} -{' '}
-                            {formatTime(segment.end)}
-                          </div>
-                          {segment.autoSkip && (
-                            <div className='inline-flex items-center mt-1 px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-lg text-xs font-medium'>
-                              <svg
-                                className='w-3 h-3 mr-1'
-                                fill='none'
-                                stroke='currentColor'
-                                viewBox='0 0 24 24'
-                              >
-                                <path
-                                  strokeLinecap='round'
-                                  strokeLinejoin='round'
-                                  strokeWidth={2}
-                                  d='M5 13l4 4L19 7'
-                                />
-                              </svg>
-                              自动跳过
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        type='button'
-                        onClick={() => {
-                          if (confirm('确定要删除这个跳过片段吗？')) {
-                            handleDeleteSegment(segment.id!);
-                          }
-                        }}
-                        className='rounded-lg bg-red-500 p-2 text-white opacity-0 transition-[background-color,opacity,transform] duration-[160ms] ease-out hover:bg-red-600 group-hover:opacity-100 active:scale-[0.97]'
-                        aria-label='删除跳过片段'
-                        title='删除'
-                      >
+                <div className='p-5'>
+                  <div className='flex items-center justify-between mb-4'>
+                    <h4 className='text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center'>
+                      <div className='mr-3 flex h-8 w-8 items-center justify-center rounded-xl bg-[rgb(var(--ui-accent))]'>
                         <svg
-                          className='w-4 h-4'
+                          className='w-5 h-5 text-white'
                           fill='none'
                           stroke='currentColor'
                           viewBox='0 0 24 24'
@@ -1884,40 +1796,142 @@ export default function SkipController({
                             strokeLinecap='round'
                             strokeLinejoin='round'
                             strokeWidth={2}
-                            d='M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16'
+                            d='M13 5l7 7-7 7M5 5l7 7-7 7'
+                          />
+                        </svg>
+                      </div>
+                      跳过配置
+                    </h4>
+                    <div className='flex items-center space-x-2'>
+                      <div className='text-xs text-gray-500 dark:text-gray-400'>
+                        {skipConfig.segments.length} 个片段
+                      </div>
+                      <button
+                        type='button'
+                        onClick={() => setIsDesktopPanelOpen(false)}
+                        className='p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors'
+                        aria-label='收起跳过面板'
+                        title='收起面板'
+                      >
+                        <svg
+                          className='w-4 h-4 text-gray-500'
+                          fill='none'
+                          stroke='currentColor'
+                          viewBox='0 0 24 24'
+                        >
+                          <path
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                            strokeWidth={2}
+                            d='M19 9l-7 7-7-7'
                           />
                         </svg>
                       </button>
                     </div>
-                  ))}
-                </div>
+                  </div>
 
-                <div className='mt-4 pt-4 border-t border-gray-200 dark:border-gray-600'>
-                  <button
-                    type='button'
-                    onClick={() => onSettingModeChange?.(true)}
-                    className='w-full rounded-xl bg-[rgb(var(--ui-accent))] px-4 py-3 font-semibold text-[rgb(var(--ui-on-accent))] shadow-lg transition-transform duration-[160ms] ease-out active:scale-[0.97]'
-                  >
-                    <div className='flex items-center justify-center space-x-2'>
-                      <svg
-                        className='w-5 h-5'
-                        fill='none'
-                        stroke='currentColor'
-                        viewBox='0 0 24 24'
+                  <div className='space-y-3'>
+                    {skipConfig.segments.map((segment) => (
+                      <div
+                        key={segment.id}
+                        className='group flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200'
                       >
-                        <path
-                          strokeLinecap='round'
-                          strokeLinejoin='round'
-                          strokeWidth={2}
-                          d='M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z'
-                        />
-                      </svg>
-                      <span>修改配置</span>
-                    </div>
-                  </button>
+                        <div className='flex items-center space-x-3 flex-1'>
+                          <div
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                              segment.type === 'opening'
+                                ? 'bg-gradient-to-br from-orange-400 to-red-400'
+                                : 'bg-gradient-to-br from-purple-400 to-pink-400'
+                            }`}
+                          >
+                            <span className='text-lg'>
+                              {segment.type === 'opening' ? '🎬' : '🎭'}
+                            </span>
+                          </div>
+                          <div className='flex-1'>
+                            <div className='font-semibold text-gray-900 dark:text-gray-100'>
+                              {segment.type === 'opening' ? '片头' : '片尾'}
+                            </div>
+                            <div className='text-sm text-gray-600 dark:text-gray-400'>
+                              {formatTime(segment.start)} -{' '}
+                              {formatTime(segment.end)}
+                            </div>
+                            {segment.autoSkip && (
+                              <div className='inline-flex items-center mt-1 px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-lg text-xs font-medium'>
+                                <svg
+                                  className='w-3 h-3 mr-1'
+                                  fill='none'
+                                  stroke='currentColor'
+                                  viewBox='0 0 24 24'
+                                >
+                                  <path
+                                    strokeLinecap='round'
+                                    strokeLinejoin='round'
+                                    strokeWidth={2}
+                                    d='M5 13l4 4L19 7'
+                                  />
+                                </svg>
+                                自动跳过
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type='button'
+                          onClick={() => {
+                            if (segment.id == null) return;
+                            if (confirm('确定要删除这个跳过片段吗？')) {
+                              handleDeleteSegment(segment.id);
+                            }
+                          }}
+                          className='rounded-lg bg-red-500 p-2 text-white opacity-0 transition-[background-color,opacity,transform] duration-[160ms] ease-out hover:bg-red-600 group-hover:opacity-100 active:scale-[0.97]'
+                          aria-label='删除跳过片段'
+                          title='删除'
+                        >
+                          <svg
+                            className='w-4 h-4'
+                            fill='none'
+                            stroke='currentColor'
+                            viewBox='0 0 24 24'
+                          >
+                            <path
+                              strokeLinecap='round'
+                              strokeLinejoin='round'
+                              strokeWidth={2}
+                              d='M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16'
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className='mt-4 pt-4 border-t border-gray-200 dark:border-gray-600'>
+                    <button
+                      type='button'
+                      onClick={() => onSettingModeChange?.(true)}
+                      className='w-full rounded-xl bg-[rgb(var(--ui-accent))] px-4 py-3 font-semibold text-[rgb(var(--ui-on-accent))] shadow-lg transition-transform duration-[160ms] ease-out active:scale-[0.97]'
+                    >
+                      <div className='flex items-center justify-center space-x-2'>
+                        <svg
+                          className='w-5 h-5'
+                          fill='none'
+                          stroke='currentColor'
+                          viewBox='0 0 24 24'
+                        >
+                          <path
+                            strokeLinecap='round'
+                            strokeLinejoin='round'
+                            strokeWidth={2}
+                            d='M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z'
+                          />
+                        </svg>
+                        <span>修改配置</span>
+                      </div>
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
             </div>
           </>
         )}
@@ -1926,8 +1940,7 @@ export default function SkipController({
         .skip-toast {
           opacity: 0;
           transform: translateY(-8px);
-          transition:
-            opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+          transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
             transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
         }
 
@@ -1960,8 +1973,7 @@ export default function SkipController({
           pointer-events: none;
           opacity: 0;
           transform: translateY(8px);
-          transition:
-            opacity 200ms cubic-bezier(0.23, 1, 0.32, 1),
+          transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1),
             transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
         }
 
