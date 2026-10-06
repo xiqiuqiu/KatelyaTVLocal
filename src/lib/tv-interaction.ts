@@ -49,7 +49,11 @@ export function resolveTvBrowseFocusTarget(input: {
       ? next.top < rect.bottom && next.bottom > rect.top
       : next.left < rect.right && next.right > rect.left;
     if (!overlaps && cross > forward) continue;
-    const score = forward + cross * 3 + (overlaps ? 0 : 10000);
+    // Measure alignment to the target's span so wide inputs aren't skipped.
+    const crossGap = horizontal
+      ? Math.max(next.top - y, y - next.bottom, 0)
+      : Math.max(next.left - x, x - next.right, 0);
+    const score = forward + crossGap * 3 + (overlaps ? 0 : 10000);
     if (score < bestScore) {
       best = candidate;
       bestScore = score;

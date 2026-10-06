@@ -237,6 +237,46 @@ describe('TV browse interaction', () => {
     expect(clickB).not.toHaveBeenCalled();
   });
 
+  it.each([1280, 1587])(
+    'reaches the full-width search input from mode and history at width %i',
+    async (width) => {
+      jest
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockImplementation(function (this: HTMLElement) {
+          const key = this.dataset.tvFocusKey;
+          if (key === 'search-mode:normal')
+            return { ...rect(20, 214), width: 122, right: 142 };
+          if (key === 'search-input')
+            return { ...rect(20, 332), width: width - 168, right: width - 148 };
+          if (key === 'search-submit') return rect(width - 132, 333);
+          if (key === 'search-history')
+            return { ...rect(41, 549), width: 66, right: 107 };
+          return rect(0, 0);
+        });
+      const onSearch = jest.fn();
+      render(
+        <AppShell tvMode activePath='/search'>
+          <button data-tv-focus-key='search-mode:normal'>普通搜索</button>
+          <TvSearchForm initialQuery='' onSearch={onSearch} />
+          <button data-tv-focus-key='search-history'>搜索历史影片</button>
+        </AppShell>
+      );
+      const input = screen.getByRole('searchbox');
+      await waitFor(() => expect(input).toHaveFocus());
+      const mode = screen.getByRole('button', { name: '普通搜索' });
+      act(() => mode.focus());
+      fireEvent.keyDown(mode, { key: 'ArrowDown' });
+      expect(input).toHaveFocus();
+      const history = screen.getByRole('button', { name: '搜索历史影片' });
+      act(() => history.focus());
+      fireEvent.keyDown(history, { key: 'ArrowUp' });
+      expect(input).toHaveFocus();
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(input).not.toHaveAttribute('readonly');
+      expect(onSearch).not.toHaveBeenCalled();
+    }
+  );
+
   it('separates TV form navigation from native input editing and protects IME confirmation', async () => {
     const onSearch = jest.fn();
     render(
