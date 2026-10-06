@@ -3,29 +3,30 @@ import { renderToString } from 'react-dom/server';
 
 import AppShell from '@/components/ui/AppShell';
 
-jest.mock('@/components/TopSearchBar', () => ({
-  isSidebarCollapsed,
-  onToggleSidebar,
-}: {
-  isSidebarCollapsed?: boolean;
-  onToggleSidebar?: () => void;
-}) => (
-  <button
-    data-testid='top-search-bar'
-    aria-pressed={!isSidebarCollapsed}
-    onClick={onToggleSidebar}
-  />
-));
-jest.mock('@/components/Sidebar', () => ({
-  collapsed,
-}: {
-  collapsed?: boolean;
-}) => (
-  <div
-    data-testid='desktop-sidebar'
-    data-collapsed={String(collapsed)}
-  />
-));
+jest.mock(
+  '@/components/TopSearchBar',
+  () =>
+    ({
+      isSidebarCollapsed,
+      onToggleSidebar,
+    }: {
+      isSidebarCollapsed?: boolean;
+      onToggleSidebar?: () => void;
+    }) =>
+      (
+        <button
+          data-testid='top-search-bar'
+          aria-pressed={!isSidebarCollapsed}
+          onClick={onToggleSidebar}
+        />
+      )
+);
+jest.mock(
+  '@/components/Sidebar',
+  () =>
+    ({ collapsed }: { collapsed?: boolean }) =>
+      <div data-testid='desktop-sidebar' data-collapsed={String(collapsed)} />
+);
 jest.mock('@/components/MobileBottomNav', () => () => (
   <div data-testid='mobile-bottom-nav' />
 ));
@@ -34,6 +35,25 @@ describe('AppShell', () => {
   beforeEach(() => {
     window.localStorage.clear();
     delete window.__sidebarCollapsed;
+    window.history.replaceState({}, '', '/');
+    document.cookie = 'katelya_tv_mode=; Path=/; Max-Age=0';
+  });
+
+  it('remembers explicit Web mode and clears the override on re-entering TV mode', () => {
+    window.history.replaceState({}, '', '/search?tv=0');
+    const view = render(<AppShell activePath='/search'>search</AppShell>);
+    expect(document.cookie).toContain('katelya_tv_mode=web');
+    window.history.replaceState({}, '', '/search?tv=1');
+    view.rerender(
+      <AppShell activePath='/search' tvMode>
+        search
+      </AppShell>
+    );
+    expect(document.cookie).not.toContain('katelya_tv_mode=web');
+    expect(screen.getByRole('link', { name: '退出电视模式' })).toHaveAttribute(
+      'href',
+      '/search?tv=0'
+    );
   });
 
   it('renders the shared shell regions around page content', () => {
@@ -99,9 +119,9 @@ describe('AppShell', () => {
     );
 
     await waitFor(() => {
-      expect(document.documentElement.classList.contains('play-overscroll-lock')).toBe(
-        true
-      );
+      expect(
+        document.documentElement.classList.contains('play-overscroll-lock')
+      ).toBe(true);
     });
 
     rerender(
@@ -111,14 +131,14 @@ describe('AppShell', () => {
     );
 
     await waitFor(() => {
-      expect(document.documentElement.classList.contains('play-overscroll-lock')).toBe(
-        false
-      );
+      expect(
+        document.documentElement.classList.contains('play-overscroll-lock')
+      ).toBe(false);
     });
 
     unmount();
-    expect(document.documentElement.classList.contains('play-overscroll-lock')).toBe(
-      false
-    );
+    expect(
+      document.documentElement.classList.contains('play-overscroll-lock')
+    ).toBe(false);
   });
 });

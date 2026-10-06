@@ -55,10 +55,11 @@ let mockDefaultPlayerDuration = 120;
 let mockUseRealArtPlayer = false;
 const mockManifestParsedHandlers: Array<() => void> = [];
 const mockMarkPreparationFrameReady = jest.fn();
+const mockRouterBack = jest.fn();
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
-    back: jest.fn(),
+    back: mockRouterBack,
     push: jest.fn(),
   }),
   useSearchParams: () => mockSearchParams,
@@ -236,6 +237,7 @@ jest.mock('artplayer', () => ({
       on: jest.fn((event: string, handler: () => void) => {
         mockArtPlayerEventHandlers.set(event, handler);
       }),
+      off: jest.fn(),
       pause: jest.fn(),
       destroy: jest.fn(),
       video,
@@ -743,6 +745,100 @@ describe('PlayPage source initialization', () => {
       }
     }
   );
+
+  it('navigates real settings with the remote, then returns through menu, fullscreen and page', async () => {
+    mockUseRealArtPlayer = true;
+    mockSearchParams.set('tv', '1');
+    const view = render(<PlayPage />);
+    await settlePlayPage();
+    const player = mockArtPlayerInstance;
+    if (!player?.emit) throw new Error('real player was not created');
+    const element = player.template.$player;
+    const setting = element.querySelector<HTMLElement>('.art-control-setting');
+    if (!setting) throw new Error('setting control was not created');
+    HTMLElement.prototype.scrollIntoView = jest.fn();
+    const press = async (key: string, keyCode = 0) => {
+      await act(async () => {
+        (document.activeElement || element).dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key,
+            keyCode,
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+        await Promise.resolve();
+        jest.advanceTimersByTime(20);
+      });
+    };
+    act(() => {
+      player.emit?.('ready');
+      player.fullscreenWeb = true;
+      jest.advanceTimersByTime(20);
+      setting.focus();
+    });
+    await press('Enter');
+    expect(element).toHaveClass('art-setting-show');
+    expect(document.activeElement).toHaveClass('art-setting-item');
+    act(() => {
+      setting.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, detail: 0 })
+      );
+    });
+    expect(document.activeElement).toHaveTextContent('播放速度');
+    await press('Enter');
+    expect(document.activeElement).toHaveClass('art-current');
+    await press('ArrowDown');
+    expect(document.activeElement).toHaveTextContent('1.3');
+    await press('Enter');
+    expect(
+      (element.querySelector('video') as HTMLVideoElement).playbackRate
+    ).toBe(1.25);
+    expect(document.activeElement).toHaveTextContent('播放速度');
+    await press('Enter');
+    await press('BrowserBack');
+    expect(element).toHaveClass('art-setting-show');
+    expect(document.activeElement).toHaveTextContent('播放速度');
+    await press('Escape');
+    expect(element).not.toHaveClass('art-setting-show');
+    expect(setting).toHaveFocus();
+    expect(player.fullscreenWeb).toBe(true);
+    expect(mockRouterBack).not.toHaveBeenCalled();
+    const dialog = document.createElement('div');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.tabIndex = 0;
+    document.body.appendChild(dialog);
+    act(() => {
+      dialog.focus();
+    });
+    await press('Escape');
+    expect(player.fullscreenWeb).toBe(true);
+    expect(mockRouterBack).not.toHaveBeenCalled();
+    dialog.remove();
+    act(() => {
+      setting.focus();
+    });
+    await press('Unidentified', 4);
+    expect(player.fullscreenWeb).toBe(false);
+    expect(element.querySelector('.art-control-fullscreenWeb')).toHaveFocus();
+    expect(mockRouterBack).not.toHaveBeenCalled();
+    act(() => {
+      setting.focus();
+    });
+    await press('Enter');
+    act(() => {
+      element.querySelector<HTMLElement>('.art-control-volume')?.focus();
+    });
+    expect(element).not.toHaveClass('art-setting-show');
+    expect(setting).toHaveFocus();
+    await press('Escape');
+    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    act(() => {
+      player.fullscreenWeb = true;
+    });
+    view.unmount();
+    expect(element.isConnected).toBe(false);
+  });
 
   it('revives Apple MMS playback after the page returns from the background', async () => {
     mockHlsSupported = true;

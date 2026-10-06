@@ -1,15 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 
 import type { SourceAvailabilityItem } from '@/lib/source-availability/index';
 import type { SearchResult } from '@/lib/types';
-import {
-  getSourceStatusDescription,
-  getSourceStatusLabel,
-} from '@/lib/utils';
+import { getSourceStatusDescription, getSourceStatusLabel } from '@/lib/utils';
 
 interface EpisodeSelectorSourcesProps {
+  tvMode?: boolean;
   sourceSearchLoading: boolean;
   sourceSearchError: string | null;
   availableSourcesCount: number;
@@ -54,6 +52,7 @@ function getStatusClassName(
 }
 
 const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
+  tvMode = false,
   sourceSearchLoading,
   sourceSearchError,
   availableSourcesCount,
@@ -62,6 +61,18 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
   onSourceClick,
   onSearchMismatchClick,
 }) => {
+  const focusedSourceRef = useRef<HTMLButtonElement | null>(null);
+  useLayoutEffect(() => {
+    const focused = focusedSourceRef.current;
+    // Reordering the newly selected row can blur it in TV Chromium.
+    if (
+      tvMode &&
+      focused?.isConnected &&
+      document.activeElement === document.body
+    ) {
+      focused.focus();
+    }
+  }, [tvMode, sourceAvailabilityList]);
   return (
     <div className='mt-1 flex min-h-0 flex-1 flex-col'>
       {sourceSearchLoading && (
@@ -125,21 +136,27 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
                 );
 
                 const sourceStatusText = availability.episode.exists
-                  ? getSourceStatusDescription(
-                      effectiveSourceStatus,
-                      videoInfo
-                    )
+                  ? getSourceStatusDescription(effectiveSourceStatus, videoInfo)
                   : availability.manualSwitch.reason;
 
                 return (
                   <button
                     key={sourceKey}
                     type='button'
-                    disabled={!isClickable}
+                    disabled={!isClickable && !(tvMode && isCurrentSource)}
+                    aria-disabled={!isClickable ? 'true' : undefined}
+                    onFocus={(event) => {
+                      focusedSourceRef.current = event.currentTarget;
+                    }}
+                    onBlur={(event) => {
+                      if (event.relatedTarget instanceof HTMLElement) {
+                        focusedSourceRef.current = null;
+                      }
+                    }}
                     aria-current={isCurrentSource ? 'true' : undefined}
-                    aria-label={`${
-                      isCurrentSource ? '当前线路' : '切换线路'
-                    } ${source.source_name}`}
+                    aria-label={`${isCurrentSource ? '当前线路' : '切换线路'} ${
+                      source.source_name
+                    }`}
                     title={`${source.title} · ${sourceStatusText}`}
                     onClick={() => isClickable && onSourceClick(source)}
                     className={`group relative min-w-0 rounded-ui-md border px-3 py-3 text-left transition-[border-color,background-color,color] duration-200

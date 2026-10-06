@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
+import { isTvBrowser, TV_MODE_PREFERENCE_COOKIE } from '@/lib/tv-interaction';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -24,14 +25,33 @@ export async function middleware(request: NextRequest) {
   }
 
   if (storageType === 'localstorage') {
-    return NextResponse.next();
+    return handleTvMode(request);
   }
 
   if (!authInfo.username) {
     return handleAuthFailure(request, pathname);
   }
 
-  return NextResponse.next();
+  return handleTvMode(request);
+}
+
+function handleTvMode(request: NextRequest): NextResponse {
+  const { pathname, searchParams } = request.nextUrl;
+  if (
+    !['/', '/search', '/history', '/play'].includes(pathname) ||
+    (pathname === '/' && searchParams.get('tab') === 'favorites') ||
+    searchParams.has('tv') ||
+    request.cookies.get(TV_MODE_PREFERENCE_COOKIE)?.value === 'web' ||
+    !isTvBrowser(request.headers.get('user-agent') || '')
+  )
+    return NextResponse.next();
+
+  const target = request.nextUrl.clone();
+  target.searchParams.set('tv', '1');
+  const response = NextResponse.redirect(target);
+  // UA/cookie-dependent redirects must not leak into shared CDN caches.
+  response.headers.set('cache-control', 'private, no-store');
+  return response;
 }
 
 function handleAuthFailure(

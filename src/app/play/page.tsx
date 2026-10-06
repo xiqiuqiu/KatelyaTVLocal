@@ -979,6 +979,23 @@ function PlayPageClient() {
     tvLastPlayerConfirmRef.current = { target: control, at: Date.now() };
   };
 
+  const returnFromTvPlayer = () => {
+    const art = artPlayerRef.current;
+    if (!art) return false;
+    if (art.setting?.show) {
+      const back = (
+        art.template.$player as HTMLElement
+      ).querySelector<HTMLElement>(
+        '.art-setting-panel.art-current .art-setting-item-back'
+      );
+      if (back) activateTvPlayerControl(back);
+      else art.setting.show = false;
+    } else if (art.fullscreenWeb) art.fullscreenWeb = false;
+    else if (art.fullscreen) art.fullscreen = false;
+    else return false;
+    return true;
+  };
+
   const syncTvPlayerControls = () => {
     const art = artPlayerRef.current;
     const player = art?.template?.$player as HTMLElement | undefined;
@@ -989,7 +1006,16 @@ function PlayPageClient() {
     if (tvEnabled) {
       player.dataset.tvMode = 'true';
       art.controls.isHover = false;
-    } else delete player.dataset.tvMode;
+    } else {
+      delete player.dataset.tvMode;
+      player
+        .querySelectorAll<HTMLElement>('[data-tv-player-setting]')
+        .forEach((item) => {
+          item.removeAttribute('tabindex');
+          item.removeAttribute('role');
+          delete item.dataset.tvPlayerSetting;
+        });
+    }
     const controls = player.querySelectorAll<HTMLElement>(
       '.art-controls .art-control:not(.art-control-time), .art-progress .art-control-progress'
     );
@@ -1042,17 +1068,58 @@ function PlayPageClient() {
 
     if (player.dataset.tvPlayerFocusBound !== 'true') {
       player.dataset.tvPlayerFocusBound = 'true';
+      const syncSettingsFocus = () => {
+        if (!isTvModeRef.current || !art.setting.show) return;
+        const panel = player.querySelector<HTMLElement>(
+          '.art-setting-panel.art-current'
+        );
+        if (!panel) return;
+        const items = panel.querySelectorAll<HTMLElement>('.art-setting-item');
+        items.forEach((item) => {
+          item.tabIndex = 0;
+          item.dataset.tvPlayerSetting = 'true';
+          item.setAttribute('role', 'button');
+        });
+        if (!panel.contains(document.activeElement)) {
+          (
+            panel.querySelector<HTMLElement>('.art-setting-item.art-current') ||
+            panel.querySelector<HTMLElement>(
+              '.art-setting-item:not(.art-setting-item-back)'
+            )
+          )?.focus();
+        }
+      };
+      const onSetting = (show: boolean) => {
+        if (!isTvModeRef.current) return;
+        if (show) syncSettingsFocus();
+        else if (document.activeElement?.closest('.art-settings')) {
+          player.querySelector<HTMLElement>('.art-control-setting')?.focus();
+        }
+      };
+      // ArtPlayer renders/caches its own submenu panels; only adapt their focus.
+      const settingsObserver = new MutationObserver(syncSettingsFocus);
+      const settings = player.querySelector('.art-settings');
+      if (settings)
+        settingsObserver.observe(settings, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['class'],
+        });
+      art.on('setting', onSetting);
+      const actionSelector =
+        '[data-tv-player-control="true"], [data-tv-player-setting="true"]';
       const onClick = (event: MouseEvent) => {
         if (!isTvModeRef.current || event.detail !== 0) return;
 
         const eventControl = (event.target as HTMLElement).closest<HTMLElement>(
-          '[data-tv-player-control="true"]'
+          actionSelector
         );
         if (tvPlayerConfirmInFlightRef.current === eventControl) return;
 
         const activeControl = (
           document.activeElement as HTMLElement | null
-        )?.closest<HTMLElement>('[data-tv-player-control="true"]');
+        )?.closest<HTMLElement>(actionSelector);
         const focusedControl =
           activeControl && player.contains(activeControl)
             ? activeControl
@@ -1061,7 +1128,13 @@ function PlayPageClient() {
 
         if (
           focusedControl &&
-          recentConfirm?.target === focusedControl &&
+          recentConfirm &&
+          (recentConfirm.target === focusedControl ||
+            (focusedControl.dataset.tvPlayerSetting === 'true' &&
+              (recentConfirm.target.dataset.tvPlayerSetting === 'true' ||
+                recentConfirm.target.classList.contains(
+                  'art-control-setting'
+                )))) &&
           Date.now() - recentConfirm.at < 500
         ) {
           event.preventDefault();
@@ -1087,6 +1160,34 @@ function PlayPageClient() {
       };
       const onKeyDown = (event: KeyboardEvent) => {
         if (!isTvModeRef.current) return;
+        if (
+          art.setting?.show &&
+          (event.key === 'Enter' || isTvDirectionalKey(event.key))
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          syncSettingsFocus();
+          const items = Array.from(
+            player.querySelectorAll<HTMLElement>(
+              '.art-setting-panel.art-current .art-setting-item'
+            )
+          );
+          const current = document.activeElement as HTMLElement;
+          if (event.key === 'Enter' && items.includes(current)) {
+            activateTvPlayerControl(current);
+            syncSettingsFocus();
+          } else {
+            const direction =
+              event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1;
+            items[
+              Math.max(
+                0,
+                Math.min(items.length - 1, items.indexOf(current) + direction)
+              )
+            ]?.focus();
+          }
+          return;
+        }
 
         const confirmTarget = resolveTvPlayerConfirmTarget({
           key: event.key,
@@ -1184,14 +1285,36 @@ function PlayPageClient() {
         if (event.target !== control) control.focus();
         art.controls.show = true;
       };
+      const onFocusEscape = (event: FocusEvent) => {
+        if (!isTvModeRef.current || !(event.target instanceof HTMLElement))
+          return;
+        if (document.querySelector('[aria-modal="true"]')) return;
+        const target = event.target;
+        const escapedMenu =
+          art.setting?.show &&
+          !target.closest('.art-settings, .art-control-setting');
+        const escapedFullscreen =
+          (art.fullscreenWeb || art.fullscreen) && !player.contains(target);
+        if (!escapedMenu && !escapedFullscreen) return;
+        event.stopPropagation();
+        // Some TV browsers report Back only by moving focus out of the layer.
+        if (art.setting?.show) {
+          art.setting.show = false;
+          player.querySelector<HTMLElement>('.art-control-setting')?.focus();
+        } else returnFromTvPlayer();
+      };
 
       player.addEventListener('click', onClick, true);
       player.addEventListener('keydown', onKeyDown);
       player.addEventListener('focusin', onFocusIn);
+      document.addEventListener('focusin', onFocusEscape, true);
       tvPlayerControlCleanupRef.current = () => {
+        settingsObserver.disconnect();
+        art.off('setting', onSetting);
         player.removeEventListener('click', onClick, true);
         player.removeEventListener('keydown', onKeyDown);
         player.removeEventListener('focusin', onFocusIn);
+        document.removeEventListener('focusin', onFocusEscape, true);
         delete player.dataset.tvPlayerFocusBound;
       };
     }
@@ -1215,7 +1338,12 @@ function PlayPageClient() {
 
     if (fullscreen) {
       const activeElement = document.activeElement as HTMLElement | null;
-      if (activeElement && !player.contains(activeElement)) {
+      if (
+        activeElement &&
+        activeElement !== document.body &&
+        activeElement !== document.documentElement &&
+        !player.contains(activeElement)
+      ) {
         tvFullscreenOriginRef.current = activeElement;
       }
       const activeControl = activeElement?.closest<HTMLElement>(
@@ -1237,7 +1365,9 @@ function PlayPageClient() {
       return;
     }
 
-    const origin = tvFullscreenOriginRef.current;
+    const origin =
+      tvFullscreenOriginRef.current ||
+      player.querySelector<HTMLElement>('.art-control-fullscreenWeb');
     tvFullscreenOriginRef.current = null;
     window.requestAnimationFrame(() => {
       if (origin?.isConnected) origin.focus();
@@ -3719,6 +3849,8 @@ function PlayPageClient() {
 
     if (player) {
       try {
+        // The native destroy only clears its host, not a body-mounted player.
+        if (player.fullscreenWeb) player.fullscreenWeb = false;
         player.destroy();
       } catch (error) {
         console.warn('销毁播放器失败:', error);
@@ -4440,6 +4572,18 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 处理全局快捷键
   const handleKeyboardShortcuts = (e: KeyboardEvent) => {
+    if (
+      isTvModeRef.current &&
+      (e.key === 'Escape' || e.key === 'BrowserBack' || e.keyCode === 4) &&
+      !document.querySelector('[aria-modal="true"]')
+    ) {
+      const art = artPlayerRef.current;
+      if (!art) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!returnFromTvPlayer()) router.back();
+      return;
+    }
     // 忽略输入框中的按键事件
     if (
       (e.target as HTMLElement).tagName === 'INPUT' ||
@@ -6405,6 +6549,7 @@ function PlayPageClient() {
               className={`${isEpisodeSelectorCollapsed ? 'hidden' : 'block'}`}
             >
               <EpisodeSelector
+                tvMode={isTvMode}
                 totalEpisodes={totalEpisodes}
                 value={currentEpisodeIndex + 1}
                 onChange={handleEpisodeChange}

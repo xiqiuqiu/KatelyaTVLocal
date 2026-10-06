@@ -3,7 +3,10 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { buildTvModeHref } from '@/lib/tv-interaction';
+import {
+  buildTvModeHref,
+  TV_MODE_PREFERENCE_COOKIE,
+} from '@/lib/tv-interaction';
 
 import MobileBottomNav from '@/components/MobileBottomNav';
 import Sidebar from '@/components/Sidebar';
@@ -27,6 +30,14 @@ export default function AppShell({
   const rootRef = useRef<HTMLDivElement>(null);
   const browsePage = ['/', '/history', '/search'].includes(activePath);
   useTvBrowseNavigation(rootRef, tvMode && browsePage, activePath);
+
+  useEffect(() => {
+    const mode = new URLSearchParams(window.location.search).get('tv');
+    if (mode !== '0' && mode !== '1') return;
+    document.cookie = `${TV_MODE_PREFERENCE_COOKIE}=${
+      mode === '0' ? 'web' : ''
+    }; Path=/; SameSite=Lax; Max-Age=${mode === '0' ? 31536000 : 0}`;
+  }, [tvMode, modeHref]);
 
   useEffect(() => {
     if (typeof window.__sidebarCollapsed === 'boolean') {

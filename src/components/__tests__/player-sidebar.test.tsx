@@ -72,6 +72,57 @@ describe('EpisodeSelector playback sidebar controls', () => {
     jest.clearAllMocks();
   });
 
+  it.each([true, false])(
+    'keeps the selected source focusable only in TV mode %s',
+    async (tvMode) => {
+      const sources: SearchResult[] = ['a', 'b'].map((id) => ({
+        id,
+        source: id,
+        title: '测试',
+        year: '2026',
+        poster: '',
+        episodes: [`https://example.com/${id}.m3u8`],
+        source_name: id,
+      }));
+      const onSourceChange = jest.fn();
+      const view = render(
+        <EpisodeSelector
+          totalEpisodes={1}
+          value={1}
+          tvMode={tvMode}
+          currentSource='a'
+          currentId='a'
+          availableSources={sources}
+          onSourceChange={onSourceChange}
+        />
+      );
+      fireEvent.click(screen.getByRole('tab', { name: '线路' }));
+      const selected = screen.getByRole('button', { name: '切换线路 b' });
+      selected.focus();
+      // DOM reordering in Chromium can leave body focused without relatedTarget.
+      if (tvMode) selected.blur();
+      view.rerender(
+        <EpisodeSelector
+          totalEpisodes={1}
+          value={1}
+          tvMode={tvMode}
+          currentSource='b'
+          currentId='b'
+          availableSources={sources}
+          onSourceChange={onSourceChange}
+        />
+      );
+      const current = await screen.findByRole('button', { name: '当前线路 b' });
+      if (tvMode) {
+        expect(current).not.toBeDisabled();
+        expect(current).toHaveFocus();
+        expect(current).toHaveAttribute('aria-disabled', 'true');
+      } else expect(current).toBeDisabled();
+      fireEvent.click(current);
+      expect(onSourceChange).not.toHaveBeenCalled();
+    }
+  );
+
   it('shows stable tabs and keeps episode buttons findable by accessible name', async () => {
     const sourceStatuses = new Map<string, SourceStatus>([
       [
@@ -210,9 +261,9 @@ describe('EpisodeSelector playback sidebar controls', () => {
     // sources tab. Deep browser probes on tab open were removed to avoid
     // fighting the active playback session.
     await waitFor(() => {
-      expect(mockedProbeSourcePlayback.mock.calls.length).toBeGreaterThanOrEqual(
-        4
-      );
+      expect(
+        mockedProbeSourcePlayback.mock.calls.length
+      ).toBeGreaterThanOrEqual(4);
     });
     expect(mockedProbeSourcePlayback).toHaveBeenCalledWith(
       'https://example.com/4.m3u8'

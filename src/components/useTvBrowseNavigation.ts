@@ -42,6 +42,7 @@ export default function useTvBrowseNavigation(
   useEffect(() => {
     const root = rootRef.current;
     if (!enabled || !root) return;
+    document.documentElement.classList.add('tv-browse-navigation');
     const storageKey = `tv-browse-focus:${page}`;
     let remembered = '';
     try {
@@ -105,6 +106,7 @@ export default function useTvBrowseNavigation(
         controls.find((control) => control.hasAttribute('data-tv-primary')) ||
         controls[0];
       target?.focus();
+      target?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     };
     const recoverFocus = () => {
       frame = 0;
@@ -142,6 +144,7 @@ export default function useTvBrowseNavigation(
         if (interacted) rememberFocus(event.target);
       }
       log('browse-focus', {
+        href: window.location.pathname + window.location.search,
         focus:
           event.target.dataset.tvFocusKey ||
           event.target.getAttribute('aria-label') ||
@@ -190,6 +193,11 @@ export default function useTvBrowseNavigation(
             })
           : controls[0];
         target?.focus();
+        // Refocusing the same control does not emit focusin after scroll restoration.
+        (target || current)?.scrollIntoView({
+          block: 'nearest',
+          inline: 'nearest',
+        });
         log('browse-direction', { key: event.key });
       } else if (event.key === 'Enter' && current) {
         interacted = true;
@@ -276,10 +284,17 @@ export default function useTvBrowseNavigation(
     window.addEventListener('pointerdown', onPointer, true);
     window.addEventListener('click', onClick, true);
     window.addEventListener('focusin', onFocus, true);
+    if (process.env.NODE_ENV === 'development')
+      log('browse-ready', {
+        href: window.location.pathname + window.location.search,
+        tvMode: root.dataset.tvMode,
+        controls: actions(root).length,
+      });
     scheduleRecovery();
     return () => {
       observer.disconnect();
       cancelAnimationFrame(frame);
+      document.documentElement.classList.remove('tv-browse-navigation');
       delete root.dataset.tvDebugSession;
       window.removeEventListener('keydown', onKey, true);
       window.removeEventListener('pointerdown', onPointer, true);

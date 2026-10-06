@@ -40,8 +40,8 @@ _Avoid_: loading progress wizard; source-search or source-ranking explanation; f
 A user's active attempt to watch one selected title through one playable source and episode position. A Playback Session includes user playback actions, browser video events, source changes, recovery decisions, progress saving, and debug evidence for that active watch attempt.
 
 **TV Mode**:
-An explicit playback-page experience for television browsers and remote controls. It changes presentation and interaction while sharing the same Playback Session, source, episode, recovery, and progress behavior as Web Mode.
-_Avoid_: separate TV player; automatic device guessing; duplicating playback policy
+A television-browser and remote-control experience, enabled by explicit choice or conservative User-Agent detection on supported pages. Explicit mode and a saved Web preference take priority over detection. It changes presentation and interaction while sharing the same Playback Session, source, episode, recovery, and progress behavior as Web Mode.
+_Avoid_: separate TV player; detecting TV from screen size or Android alone; duplicating playback policy
 
 **TV Interaction Baseline**:
 The verified remote-control event and focus behavior of the target television browser that TV Mode must preserve through future changes.

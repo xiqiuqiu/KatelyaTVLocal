@@ -83,6 +83,10 @@
 }
 
 @layer utilities {
+  .tv-browse-navigation {
+    scroll-behavior: auto;
+  }
+
   .animated-underline {
     background-image: linear-gradient(transparent, transparent),
       linear-gradient(
@@ -119,7 +123,11 @@
     box-shadow: 0 0 0 7px rgb(213 255 95 / 22%);
   }
 
-  .art-video-player[data-tv-mode='true'] [data-tv-player-control='true']:focus {
+  .art-video-player[data-tv-mode='true']
+    :is(
+      [data-tv-player-control='true'],
+      [data-tv-player-setting='true']
+    ):focus {
     outline: 4px solid #d5ff5f;
     outline-offset: -4px;
     box-shadow: 0 0 0 7px rgb(213 255 95 / 22%);

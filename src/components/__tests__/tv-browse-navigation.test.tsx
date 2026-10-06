@@ -70,6 +70,41 @@ describe('TV browse interaction', () => {
     </>
   );
 
+  it('reveals the current selection even when a direction has no next target, without activating it', async () => {
+    const view = render(
+      <AppShell tvMode>
+        {cards}
+        <p>加载中</p>
+      </AppShell>
+    );
+    const a = screen.getByRole('button', { name: '影片甲' });
+    await waitFor(() => expect(a).toHaveFocus());
+    expect(document.documentElement).toHaveClass('tv-browse-navigation');
+    const scroll = jest.mocked(HTMLElement.prototype.scrollIntoView);
+    scroll.mockClear();
+    view.rerender(
+      <AppShell tvMode>
+        {cards}
+        <p>
+          <span>加载完成</span>
+        </p>
+      </AppShell>
+    );
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
+    expect(a).toHaveFocus();
+    scroll.mockClear();
+    // Browser scroll restoration can leave the focused control off screen.
+    fireEvent.keyDown(a, { key: 'ArrowLeft' });
+    expect(a).toHaveFocus();
+    expect(scroll).toHaveBeenCalledWith({
+      block: 'nearest',
+      inline: 'nearest',
+    });
+    expect(clickA).not.toHaveBeenCalled();
+    view.unmount();
+    expect(document.documentElement).not.toHaveClass('tv-browse-navigation');
+  });
+
   it('moves focus without acting, confirms once despite the remote virtual click, and preserves navigation links', async () => {
     render(<AppShell tvMode>{cards}</AppShell>);
     const a = screen.getByRole('button', { name: '影片甲' });
@@ -237,6 +272,46 @@ describe('TV browse interaction', () => {
     expect(clickB).not.toHaveBeenCalled();
   });
 
+  it.each([1280, 1587])(
+    'reaches the full-width search input from mode and history at width %i',
+    async (width) => {
+      jest
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockImplementation(function (this: HTMLElement) {
+          const key = this.dataset.tvFocusKey;
+          if (key === 'search-mode:normal')
+            return { ...rect(20, 214), width: 122, right: 142 };
+          if (key === 'search-input')
+            return { ...rect(20, 332), width: width - 168, right: width - 148 };
+          if (key === 'search-submit') return rect(width - 132, 333);
+          if (key === 'search-history')
+            return { ...rect(41, 549), width: 66, right: 107 };
+          return rect(0, 0);
+        });
+      const onSearch = jest.fn();
+      render(
+        <AppShell tvMode activePath='/search'>
+          <button data-tv-focus-key='search-mode:normal'>普通搜索</button>
+          <TvSearchForm initialQuery='' onSearch={onSearch} />
+          <button data-tv-focus-key='search-history'>搜索历史影片</button>
+        </AppShell>
+      );
+      const input = screen.getByRole('searchbox');
+      await waitFor(() => expect(input).toHaveFocus());
+      const mode = screen.getByRole('button', { name: '普通搜索' });
+      act(() => mode.focus());
+      fireEvent.keyDown(mode, { key: 'ArrowDown' });
+      expect(input).toHaveFocus();
+      const history = screen.getByRole('button', { name: '搜索历史影片' });
+      act(() => history.focus());
+      fireEvent.keyDown(history, { key: 'ArrowUp' });
+      expect(input).toHaveFocus();
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(input).not.toHaveAttribute('readonly');
+      expect(onSearch).not.toHaveBeenCalled();
+    }
+  );
+
   it('separates TV form navigation from native input editing and protects IME confirmation', async () => {
     const onSearch = jest.fn();
     render(
@@ -281,7 +356,7 @@ describe('TV browse interaction', () => {
     expect(input).toHaveAttribute('readonly');
     expect(screen.getByRole('link', { name: '退出电视模式' })).toHaveAttribute(
       'href',
-      '/search?q=test'
+      '/search?q=test&tv=0'
     );
     expect(screen.getByRole('link', { name: '搜索' })).toHaveAttribute(
       'href',
