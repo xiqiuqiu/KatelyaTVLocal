@@ -91,6 +91,10 @@ export default function useTvBrowseNavigation(
       Array.from(scope.querySelectorAll<HTMLElement>(ACTIONS)).filter(
         available
       );
+    const modalBack = (modal: HTMLElement) =>
+      Array.from(
+        modal.querySelectorAll<HTMLElement>('[data-tv-back], .swal2-cancel')
+      ).find(available);
     const focusInitial = () => {
       const controls = actions(root);
       const saved = controls.find(
@@ -125,7 +129,9 @@ export default function useTvBrowseNavigation(
       if (!(event.target instanceof HTMLElement)) return;
       const modal = dialog();
       if (modal && !modal.contains(event.target)) {
-        modal.querySelector<HTMLButtonElement>('.swal2-cancel')?.click();
+        lastDialog = modal;
+        const back = modalBack(modal);
+        if (back) activate(back, 'browse-back');
         return;
       }
       if (!root.contains(event.target) && !modal?.contains(event.target))
@@ -142,7 +148,7 @@ export default function useTvBrowseNavigation(
           event.target.textContent,
       });
     };
-    const activate = (target: HTMLElement) => {
+    const activate = (target: HTMLElement, eventType = 'browse-confirm') => {
       rememberFocus(target);
       activating = true;
       try {
@@ -150,7 +156,7 @@ export default function useTvBrowseNavigation(
       } finally {
         activating = false;
       }
-      log('browse-confirm', {
+      log(eventType, {
         focus:
           target.dataset.tvFocusKey ||
           target.getAttribute('aria-label') ||
@@ -199,11 +205,13 @@ export default function useTvBrowseNavigation(
         const back =
           scope === root
             ? root.querySelector<HTMLElement>('[data-tv-back]')
-            : scope.querySelector<HTMLElement>('.swal2-cancel');
+            : modalBack(scope);
         if (!back) return;
         event.preventDefault();
         event.stopImmediatePropagation();
-        back.click();
+        if (scope !== root) lastDialog = scope;
+        pending = null;
+        activate(back, 'browse-back');
       }
     };
     const onPointer = (event: PointerEvent) => {

@@ -63,6 +63,8 @@ function SearchPageClient() {
   // 从 URL 参数获取搜索词
   const searchQuery = searchParams.get('q') || '';
   const searchModeParam = searchParams.get('mode') || '';
+  const [tvDraft, setTvDraft] = useState(searchQuery);
+  const [restoredTvQuery, setRestoredTvQuery] = useState<string | null>(null);
 
   // 获取默认聚合设置：只读取用户本地设置，默认为 true
   const getDefaultAggregate = () => {
@@ -79,6 +81,45 @@ function SearchPageClient() {
     return getDefaultAggregate() ? 'agg' : 'all';
   });
   const [resultCategory, setResultCategory] = useState<SearchCategory>('all');
+
+  useEffect(() => {
+    if (!tvMode) return;
+    setTvDraft(searchQuery);
+    setResultCategory('all');
+    try {
+      // ponytail: keep one last query per tab; add per-query snapshots only if needed.
+      const saved = JSON.parse(
+        sessionStorage.getItem('tv-search:normal') || 'null'
+      );
+      if (saved?.query === searchQuery) {
+        if (typeof saved.draft === 'string') setTvDraft(saved.draft);
+        if (['all', 'movie', 'tv', 'variety'].includes(saved.category))
+          setResultCategory(saved.category);
+        if (saved.viewMode === 'agg' || saved.viewMode === 'all')
+          setViewMode(saved.viewMode);
+      }
+    } catch {
+      /* Keep TV search usable without session storage. */
+    }
+    setRestoredTvQuery(searchQuery);
+  }, [tvMode, searchQuery]);
+
+  useEffect(() => {
+    if (!tvMode || restoredTvQuery !== searchQuery) return;
+    try {
+      sessionStorage.setItem(
+        'tv-search:normal',
+        JSON.stringify({
+          query: searchQuery,
+          draft: tvDraft,
+          category: resultCategory,
+          viewMode,
+        })
+      );
+    } catch {
+      /* A blocked/full WebView store must not prevent searching. */
+    }
+  }, [tvMode, restoredTvQuery, searchQuery, tvDraft, resultCategory, viewMode]);
 
   const categoryTabs = useMemo(
     () => buildSearchCategoryTabs(searchResults),
@@ -202,7 +243,7 @@ function SearchPageClient() {
       try {
         setIsLoading(true);
         setSearchError('');
-        setResultCategory('all');
+        if (!tvMode) setResultCategory('all');
         const response = await fetch(
           `/api/search?q=${encodeURIComponent(query.trim())}`,
           { signal: controller.signal }
@@ -235,7 +276,7 @@ function SearchPageClient() {
       cancelled = true;
       controller.abort();
     };
-  }, [searchQuery, searchMode, searchAttempt]);
+  }, [searchQuery, searchMode, searchAttempt, tvMode]);
 
   const switchSearchMode = (mode: 'normal' | 'ai') => {
     setSearchMode(mode);
@@ -400,6 +441,8 @@ function SearchPageClient() {
             <div className='mb-6'>
               <TvSearchForm
                 initialQuery={searchQuery}
+                value={tvDraft}
+                onQueryChange={setTvDraft}
                 onSearch={submitTvSearch}
               />
             </div>

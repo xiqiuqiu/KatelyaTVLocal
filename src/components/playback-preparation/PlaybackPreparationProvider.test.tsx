@@ -115,9 +115,9 @@ describe('PlaybackPreparationProvider', () => {
     fireEvent.click(screen.getByRole('button', { name: '播放' }));
 
     const copy = screen.getByRole('status').parentElement;
-    expect(Number.parseFloat(copy?.style.top ?? 'Infinity')).toBeLessThanOrEqual(
-      window.innerHeight - 120
-    );
+    expect(
+      Number.parseFloat(copy?.style.top ?? 'Infinity')
+    ).toBeLessThanOrEqual(window.innerHeight - 120);
   });
 
   it('uses a fade without moving the visual when reduced motion is requested', () => {
@@ -220,6 +220,79 @@ describe('PlaybackPreparationProvider', () => {
     });
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it.each([{ key: 'BrowserBack' }, { key: 'Unidentified', keyCode: 4 }])(
+    'cancels TV preparation after arriving on the player via %p, only once',
+    (key) => {
+      window.history.replaceState({}, '', '/search?tv=1');
+      render(
+        <PlaybackPreparationProvider>
+          <Harness href='/play?tv=1' />
+        </PlaybackPreparationProvider>
+      );
+      fireEvent.click(screen.getByRole('button', { name: '播放' }));
+      window.history.replaceState({}, '', '/play?tv=1');
+      act(() => {
+        jest.advanceTimersByTime(60);
+      });
+      fireEvent.keyDown(screen.getByRole('button', { name: '返回' }), key);
+      fireEvent.keyDown(window, key);
+      expect(back).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('handles focus-only TV back during preparation, without reopening or trapping the returning focus', () => {
+    window.history.replaceState({}, '', '/search?tv=1');
+    render(
+      <PlaybackPreparationProvider>
+        <Harness href='/play?tv=1' />
+      </PlaybackPreparationProvider>
+    );
+    const play = screen.getByRole('button', { name: '播放' });
+    fireEvent.click(play);
+    const dialog = screen.getByRole('dialog');
+    act(() => {
+      play.focus();
+    });
+    expect(dialog).not.toHaveAttribute('aria-modal', 'true');
+    act(() => {
+      jest.advanceTimersByTime(340);
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(play).toHaveFocus();
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it('does not intercept TV back once playback is ready or in Web Mode', () => {
+    window.history.replaceState({}, '', '/search?tv=1');
+    const view = render(
+      <PlaybackPreparationProvider>
+        <Harness href='/play?tv=1' />
+      </PlaybackPreparationProvider>
+    );
+    fireEvent.click(screen.getByRole('button', { name: '播放' }));
+    fireEvent.click(screen.getByRole('button', { name: '首帧' }));
+    act(() => {
+      jest.advanceTimersByTime(220);
+    });
+    const key = new KeyboardEvent('keydown', {
+      key: 'BrowserBack',
+      cancelable: true,
+    });
+    fireEvent(window, key);
+    expect(key.defaultPrevented).toBe(false);
+    expect(back).not.toHaveBeenCalled();
+    view.unmount();
+    window.history.replaceState({}, '', '/search');
+    render(
+      <PlaybackPreparationProvider>
+        <Harness />
+      </PlaybackPreparationProvider>
+    );
+    fireEvent.click(screen.getByRole('button', { name: '播放' }));
+    fireEvent.keyDown(window, { key: 'BrowserBack' });
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
   });
 
   it('restores the source card when browser history returns across query-only routes', () => {

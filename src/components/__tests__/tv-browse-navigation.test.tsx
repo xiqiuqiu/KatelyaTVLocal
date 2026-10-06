@@ -50,6 +50,9 @@ describe('TV browse interaction', () => {
   });
 
   afterEach(() => {
+    document
+      .querySelectorAll('[role="dialog"][aria-modal="true"]')
+      .forEach((modal) => modal.remove());
     jest.restoreAllMocks();
     HTMLElement.prototype.scrollIntoView = originalScroll;
   });
@@ -172,6 +175,66 @@ describe('TV browse interaction', () => {
     });
     fireEvent(screen.getByRole('button', { name: '影片甲' }), event);
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it.each([
+    { key: 'BrowserBack' },
+    { key: 'Unidentified', keyCode: 4 },
+    { key: 'Escape' },
+  ])(
+    'dismisses a marked dialog on remote back %p and restores its opener',
+    async (key) => {
+      render(
+        <AppShell tvMode activePath='/search'>
+          {cards}
+        </AppShell>
+      );
+      const a = screen.getByRole('button', { name: '影片甲' });
+      await waitFor(() => expect(a).toHaveFocus());
+      fireEvent.keyDown(a, { key: 'Enter' });
+      const modal = document.createElement('div');
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.innerHTML = '<button data-tv-back>返回</button>';
+      const cancel = modal.querySelector<HTMLButtonElement>('button');
+      if (!cancel) throw new Error('missing cancel button');
+      const cancelled = jest.fn(() => modal.remove());
+      cancel.addEventListener('click', cancelled);
+      act(() => {
+        document.body.appendChild(modal);
+        cancel.focus();
+      });
+      fireEvent.keyDown(cancel, key);
+      expect(cancelled).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(a).toHaveFocus());
+      expect(clickA).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('dismisses a marked dialog on focus-only back even before the mutation recovery runs', async () => {
+    render(
+      <AppShell tvMode activePath='/search'>
+        {cards}
+      </AppShell>
+    );
+    const a = screen.getByRole('button', { name: '影片甲' });
+    const b = screen.getByRole('button', { name: '影片乙' });
+    await waitFor(() => expect(a).toHaveFocus());
+    const modal = document.createElement('div');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.innerHTML = '<button data-tv-back>返回</button>';
+    const cancel = modal.querySelector<HTMLButtonElement>('button');
+    if (!cancel) throw new Error('missing cancel button');
+    cancel.addEventListener('click', () => modal.remove());
+    act(() => {
+      document.body.appendChild(modal);
+      cancel.focus();
+      b.focus();
+    });
+    await waitFor(() => expect(modal).not.toBeInTheDocument());
+    await waitFor(() => expect(a).toHaveFocus());
+    expect(clickB).not.toHaveBeenCalled();
   });
 
   it('separates TV form navigation from native input editing and protects IME confirmation', async () => {

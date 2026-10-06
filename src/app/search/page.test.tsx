@@ -218,6 +218,7 @@ describe('SearchPage', () => {
     mockedGetSearchHistory.mockResolvedValue([]);
     mockedSubscribeToDataUpdates.mockReturnValue(() => undefined);
     window.localStorage.clear();
+    window.sessionStorage.clear();
     (
       global as typeof globalThis & {
         requestAnimationFrame?: (callback: FrameRequestCallback) => number;
@@ -468,6 +469,56 @@ describe('SearchPage', () => {
     expect(screen.getByRole('searchbox')).toHaveValue('港片');
     expect(push).toHaveBeenLastCalledWith('/search?tv=1&q=%E6%B8%AF%E7%89%87');
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains the TV normal search draft across mode switches and page remounts', async () => {
+    mockSearchParams = new URLSearchParams('tv=1');
+    const view = render(<SearchPage />);
+    await act(async () => undefined);
+    fireEvent.change(screen.getByRole('searchbox'), {
+      target: { value: '尚未提交的片名' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'AI 找片' }));
+    fireEvent.click(screen.getByRole('button', { name: '普通搜索' }));
+    expect(screen.getByRole('searchbox')).toHaveValue('尚未提交的片名');
+    view.unmount();
+    await act(async () => {
+      render(<SearchPage />);
+    });
+    expect(screen.getByRole('searchbox')).toHaveValue('尚未提交的片名');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('restores TV result filters on return but resets them for a new query', async () => {
+    mockSearchParams = new URLSearchParams('tv=1&q=庆余年');
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: sampleResults }),
+    });
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
+    const view = render(<SearchPage />);
+    await screen.findByText('电影甲');
+    fireEvent.click(screen.getByRole('button', { name: '聚合：开' }));
+    fireEvent.click(screen.getByRole('button', { name: '电影 1' }));
+    view.unmount();
+    const returning = render(<SearchPage />);
+    await screen.findByText('电影甲');
+    expect(
+      screen.getByRole('button', { name: '聚合：关' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '电影 1' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.queryByText('剧集乙')).not.toBeInTheDocument();
+    mockSearchParams = new URLSearchParams('tv=1&q=新片');
+    returning.rerender(<SearchPage />);
+    await act(async () => undefined);
+    expect(screen.getByRole('searchbox')).toHaveValue('新片');
+    expect(screen.getByRole('button', { name: '全部 3' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
   });
 
   it('keeps TV results navigable through aggregation and category changes without refetching', async () => {

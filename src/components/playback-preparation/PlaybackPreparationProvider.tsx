@@ -19,6 +19,7 @@ import {
   createPlaybackPreparationState,
   reducePlaybackPreparationTransition,
 } from '@/lib/playback-preparation-transition';
+import { isTvMode } from '@/lib/tv-interaction';
 import { processImageUrl } from '@/lib/utils';
 
 type StartPlaybackPreparationInput = Omit<PlaybackPreparationIntent, 'origin'>;
@@ -67,8 +68,8 @@ function hrefMatchesTarget(current: string, target: string): boolean {
   if (currentUrl.pathname !== targetUrl.pathname) return false;
   if (targetUrl.hash && currentUrl.hash !== targetUrl.hash) return false;
 
-  return Array.from(targetUrl.searchParams.entries()).every(
-    ([key, value]) => currentUrl.searchParams.getAll(key).includes(value)
+  return Array.from(targetUrl.searchParams.entries()).every(([key, value]) =>
+    currentUrl.searchParams.getAll(key).includes(value)
   );
 }
 
@@ -195,7 +196,8 @@ function PlaybackPreparationOverlay({
   return (
     <div
       aria-label={`正在准备播放 ${intent.title}`}
-      aria-modal='true'
+      aria-modal={!ready && !returning}
+      data-playback-preparation-overlay
       className={`fixed inset-0 z-[10040] transition-opacity ${
         ready ? 'pointer-events-none opacity-0' : 'opacity-100'
       }`}
@@ -273,6 +275,7 @@ function PlaybackPreparationOverlay({
           </div>
         </div>
         <button
+          data-tv-back
           className='rounded-full border border-white/25 bg-black/45 px-4 py-2 text-sm text-white backdrop-blur-md transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white'
           onClick={onCancel}
           ref={cancelButtonRef}
@@ -304,6 +307,7 @@ export default function PlaybackPreparationProvider({
   const generationRef = useRef(0);
   const stateRef = useRef(state);
   const visitedTargetRef = useRef(false);
+  const cancellingGenerationRef = useRef<number | null>(null);
   const cancelledNavigationRef = useRef<{
     generation: number;
     href: string;
@@ -365,7 +369,8 @@ export default function PlaybackPreparationProvider({
       return;
     }
     if (
-      pathnameOf(current.intent.origin.href) === pathnameOf(current.intent.href) &&
+      pathnameOf(current.intent.origin.href) ===
+        pathnameOf(current.intent.href) &&
       !hrefMatchesTarget(currentHref(), current.intent.href)
     ) {
       return;
@@ -387,7 +392,8 @@ export default function PlaybackPreparationProvider({
       return;
     }
     if (
-      pathnameOf(current.intent.origin.href) === pathnameOf(current.intent.href) &&
+      pathnameOf(current.intent.origin.href) ===
+        pathnameOf(current.intent.href) &&
       !hrefMatchesTarget(currentHref(), current.intent.href)
     ) {
       return;
@@ -403,6 +409,8 @@ export default function PlaybackPreparationProvider({
   const cancel = useCallback(() => {
     const current = stateRef.current;
     if (!current.intent || current.phase === 'idle') return;
+    if (cancellingGenerationRef.current === current.generation) return;
+    cancellingGenerationRef.current = current.generation;
     clearFinishTimer();
     setOverlayDismissed(false);
     dispatch({ type: 'cancel', generation: current.generation });
@@ -457,10 +465,7 @@ export default function PlaybackPreparationProvider({
         if (!cancelledNavigationRef.current) stop();
         return;
       }
-      if (
-        visitedTargetRef.current &&
-        href === current.intent.origin.href
-      ) {
+      if (visitedTargetRef.current && href === current.intent.origin.href) {
         visitedTargetRef.current = false;
         stop();
         restoreOrigin(current.intent);
@@ -476,12 +481,33 @@ export default function PlaybackPreparationProvider({
   }, [finishReturn, router, state.generation, state.phase]);
 
   useEffect(() => {
+    const isTvPreparing = () => {
+      const current = stateRef.current;
+      return (
+        current.intent &&
+        !overlayDismissed &&
+        (current.phase === 'entering' || current.phase === 'preparing') &&
+        isTvMode(
+          new URL(current.intent.href, window.location.origin).searchParams
+        )
+      );
+    };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      const remoteBack = event.key === 'BrowserBack' || event.keyCode === 4;
+      const tvPreparing = isTvPreparing();
+      if (event.key !== 'Escape' && !(remoteBack && tvPreparing)) return;
       const current = stateRef.current;
       if (!current.intent || current.phase === 'idle') return;
       event.preventDefault();
+      if (tvPreparing) event.stopImmediatePropagation();
       cancel();
+    };
+    const onFocus = (event: FocusEvent) => {
+      if (!isTvPreparing() || !(event.target instanceof HTMLElement)) return;
+      const modal = document.querySelector(
+        '[data-playback-preparation-overlay][aria-modal="true"]'
+      );
+      if (modal && !modal.contains(event.target)) cancel();
     };
     const onPopState = () => {
       const current = stateRef.current;
@@ -498,12 +524,14 @@ export default function PlaybackPreparationProvider({
       finishReturn(current.intent, current.generation);
     };
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('focusin', onFocus, true);
     window.addEventListener('popstate', onPopState);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('focusin', onFocus, true);
       window.removeEventListener('popstate', onPopState);
     };
-  }, [cancel, finishReturn]);
+  }, [cancel, finishReturn, overlayDismissed]);
 
   useEffect(
     () => () => {
