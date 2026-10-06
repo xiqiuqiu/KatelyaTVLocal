@@ -1,4 +1,12 @@
 export const TV_MODE_QUERY_PARAM = 'tv';
+export const TV_MODE_PREFERENCE_COOKIE = 'katelya_tv_mode';
+
+export function isTvBrowser(userAgent: string): boolean {
+  // Q7F Pro's WebView has no generic TV marker; use its verified device ID.
+  return /\b(?:8R710_Q7FP|smart[-_ ]?tv|android[-_ ]?tv|google[-_ ]?tv|hbbtv|netcast|web0s|webos\.tv|vidaa|viera|roku|crkey|AFT[A-Z0-9]+)\b/i.test(
+    userAgent
+  );
+}
 
 const TV_ACTION_SELECTOR =
   'button:not(:disabled), a[href], [role="button"]:not([aria-disabled="true"]), [role="slider"]:not([aria-disabled="true"])';
@@ -11,9 +19,7 @@ export function buildTvModeHref(href: string, enabled: boolean): string {
   const url = new URL(href, 'https://tv.local');
   if (enabled) {
     url.searchParams.set(TV_MODE_QUERY_PARAM, '1');
-  } else {
-    url.searchParams.delete(TV_MODE_QUERY_PARAM);
-  }
+  } else url.searchParams.set(TV_MODE_QUERY_PARAM, '0');
   return `${url.pathname}${url.search}${url.hash}`;
 }
 

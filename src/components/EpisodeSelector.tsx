@@ -52,10 +52,7 @@ function mergeVideoInfoMaps(
     }
 
     // Local browser metrics win over backend (same rule as preference merge).
-    if (
-      value.speedSource === 'browser' &&
-      existing.speedSource === 'backend'
-    ) {
+    if (value.speedSource === 'browser' && existing.speedSource === 'backend') {
       next.set(key, value);
     }
   });
@@ -117,6 +114,7 @@ function mergeStatusMaps(
 }
 
 interface EpisodeSelectorProps {
+  tvMode?: boolean;
   /** 总集数 */
   totalEpisodes: number;
   /** 每页显示多少集，默认 10 */
@@ -146,6 +144,7 @@ interface EpisodeSelectorProps {
  * 选集组件，支持分页、自动滚动聚焦当前分页标签，以及换源功能。
  */
 const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
+  tvMode = false,
   totalEpisodes,
   episodesPerPage = 10,
   value = 1,
@@ -1109,6 +1108,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
       {activeTab === 'sources' && (
         <EpisodeSelectorSources
+          tvMode={tvMode}
           sourceSearchLoading={sourceSearchLoading}
           sourceSearchError={sourceSearchError}
           availableSourcesCount={availableSources.length}

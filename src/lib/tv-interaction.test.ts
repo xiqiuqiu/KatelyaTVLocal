@@ -1,6 +1,7 @@
 import {
   buildTvModeHref,
   getTvSeekTime,
+  isTvBrowser,
   isTvDirectionalKey,
   isTvMode,
   resolveTvPlayerActivationTarget,
@@ -20,8 +21,26 @@ describe('TV interaction baseline', () => {
     expect(href).toBe('/play?source=a&id=1&tv=1#player');
     expect(isTvMode(new URLSearchParams('source=a&tv=1'))).toBe(true);
     expect(buildTvModeHref(`https://example.com${href}`, false)).toBe(
-      '/play?source=a&id=1#player'
+      '/play?source=a&id=1&tv=0#player'
     );
+  });
+
+  it.each([
+    [
+      'Mozilla/5.0 (Linux; Android 13; 8R710_Q7FP Build/TQ1A.230205.002; wv) Chrome/101.0.4951.61',
+      true,
+    ],
+    ['Mozilla/5.0 (SMART-TV; Linux; Tizen 7.0) AppleWebKit/537.36', true],
+    ['Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36', true],
+    ['Mozilla/5.0 (Linux; Android 12; Android TV) Chrome/101.0', true],
+    [
+      'Mozilla/5.0 (Linux; Android 13; SAMSUNG SM-S9180) Chrome/120.0 Mobile Safari/537.36',
+      false,
+    ],
+    ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/140.0', false],
+    ['', false],
+  ])('detects television markers conservatively: %s', (ua, expected) => {
+    expect(isTvBrowser(ua)).toBe(expected);
   });
 
   it('redirects an empty-pointerType virtual click to the focused control', () => {

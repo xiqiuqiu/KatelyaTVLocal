@@ -498,6 +498,13 @@ export default function PlaybackPreparationProvider({
       if (event.key !== 'Escape' && !(remoteBack && tvPreparing)) return;
       const current = stateRef.current;
       if (!current.intent || current.phase === 'idle') return;
+      if (
+        !tvPreparing &&
+        isTvMode(
+          new URL(current.intent.href, window.location.origin).searchParams
+        )
+      )
+        return;
       event.preventDefault();
       if (tvPreparing) event.stopImmediatePropagation();
       cancel();

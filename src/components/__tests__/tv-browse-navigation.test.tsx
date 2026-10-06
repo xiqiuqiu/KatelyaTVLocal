@@ -70,6 +70,41 @@ describe('TV browse interaction', () => {
     </>
   );
 
+  it('reveals the current selection even when a direction has no next target, without activating it', async () => {
+    const view = render(
+      <AppShell tvMode>
+        {cards}
+        <p>加载中</p>
+      </AppShell>
+    );
+    const a = screen.getByRole('button', { name: '影片甲' });
+    await waitFor(() => expect(a).toHaveFocus());
+    expect(document.documentElement).toHaveClass('tv-browse-navigation');
+    const scroll = jest.mocked(HTMLElement.prototype.scrollIntoView);
+    scroll.mockClear();
+    view.rerender(
+      <AppShell tvMode>
+        {cards}
+        <p>
+          <span>加载完成</span>
+        </p>
+      </AppShell>
+    );
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
+    expect(a).toHaveFocus();
+    scroll.mockClear();
+    // Browser scroll restoration can leave the focused control off screen.
+    fireEvent.keyDown(a, { key: 'ArrowLeft' });
+    expect(a).toHaveFocus();
+    expect(scroll).toHaveBeenCalledWith({
+      block: 'nearest',
+      inline: 'nearest',
+    });
+    expect(clickA).not.toHaveBeenCalled();
+    view.unmount();
+    expect(document.documentElement).not.toHaveClass('tv-browse-navigation');
+  });
+
   it('moves focus without acting, confirms once despite the remote virtual click, and preserves navigation links', async () => {
     render(<AppShell tvMode>{cards}</AppShell>);
     const a = screen.getByRole('button', { name: '影片甲' });
@@ -321,7 +356,7 @@ describe('TV browse interaction', () => {
     expect(input).toHaveAttribute('readonly');
     expect(screen.getByRole('link', { name: '退出电视模式' })).toHaveAttribute(
       'href',
-      '/search?q=test'
+      '/search?q=test&tv=0'
     );
     expect(screen.getByRole('link', { name: '搜索' })).toHaveAttribute(
       'href',

@@ -276,12 +276,14 @@ describe('PlaybackPreparationProvider', () => {
     act(() => {
       jest.advanceTimersByTime(220);
     });
-    const key = new KeyboardEvent('keydown', {
-      key: 'BrowserBack',
-      cancelable: true,
-    });
-    fireEvent(window, key);
-    expect(key.defaultPrevented).toBe(false);
+    for (const keyName of ['BrowserBack', 'Escape']) {
+      const key = new KeyboardEvent('keydown', {
+        key: keyName,
+        cancelable: true,
+      });
+      fireEvent(window, key);
+      expect(key.defaultPrevented).toBe(false);
+    }
     expect(back).not.toHaveBeenCalled();
     view.unmount();
     window.history.replaceState({}, '', '/search');
