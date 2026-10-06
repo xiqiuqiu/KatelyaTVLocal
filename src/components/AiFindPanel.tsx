@@ -141,6 +141,8 @@ export default function AiFindPanel({
   const [activeSavedRecordId, setActiveSavedRecordId] = useState<string | null>(
     null
   );
+  const [restoredTvQuery, setRestoredTvQuery] = useState<string | null>(null);
+  const [restoreNotice, setRestoreNotice] = useState('');
   const [, setTick] = useState(0);
   const lastSearchQueryRef = useRef(searchParams.get('q') || '');
   const activeRunRef = useRef<string | null>(null);
@@ -176,6 +178,81 @@ export default function AiFindPanel({
     lastInitialQueryRef.current = nextInitialQuery;
     setQuery((current) => (current.trim() ? current : nextInitialQuery));
   }, [initialQuery]);
+
+  useEffect(() => {
+    if (!tvMode) return;
+    let mounted = true;
+    activeRunRef.current = null;
+    activeSavedRecordIdRef.current = null;
+    activeSavedRecordCreatedAtRef.current = null;
+    activeSavedRecordQueryRef.current = null;
+    window.clearInterval(loadingIntervalRef.current);
+    setQuery(initialQuery);
+    setResult(null);
+    setActiveSavedRecordId(null);
+    setLoading(false);
+    setLoadingGroups([]);
+    setGroupErrors({});
+    setError(null);
+    setRestoreNotice('');
+    try {
+      const saved = JSON.parse(
+        sessionStorage.getItem('tv-search:ai') || 'null'
+      );
+      if (saved?.pageQuery === initialQuery) {
+        if (typeof saved.draft === 'string') setQuery(saved.draft);
+        if (typeof saved.recordId === 'string' && saved.recordId) {
+          const recordId = saved.recordId;
+          activeSavedRecordIdRef.current = recordId;
+          setActiveSavedRecordId(recordId);
+          // Restore saved results, never rerun the AI or steal the returning focus.
+          void getAiFindSavedRecord(recordId)
+            .catch(() => null)
+            .then((record) => {
+              if (
+                !mounted ||
+                activeRunRef.current !== null ||
+                activeSavedRecordIdRef.current !== recordId
+              )
+                return;
+              if (!record) {
+                activeSavedRecordIdRef.current = null;
+                setActiveSavedRecordId(null);
+                setRestoreNotice(
+                  '上次结果未能恢复，可从最近 AI 找片重新打开。'
+                );
+                return;
+              }
+              activeSavedRecordCreatedAtRef.current = record.createdAt;
+              activeSavedRecordQueryRef.current = record.query;
+              setResult(record.response);
+            });
+        }
+      }
+    } catch {
+      /* Keep the form usable when session storage is unavailable or corrupt. */
+    }
+    setRestoredTvQuery(initialQuery);
+    return () => {
+      mounted = false;
+    };
+  }, [tvMode, initialQuery]);
+
+  useEffect(() => {
+    if (!tvMode || restoredTvQuery !== initialQuery) return;
+    try {
+      sessionStorage.setItem(
+        'tv-search:ai',
+        JSON.stringify({
+          pageQuery: initialQuery,
+          draft: query,
+          recordId: activeSavedRecordId,
+        })
+      );
+    } catch {
+      /* Saved records remain available even if the WebView cannot store a draft. */
+    }
+  }, [tvMode, restoredTvQuery, initialQuery, query, activeSavedRecordId]);
 
   useEffect(() => {
     let mounted = true;
@@ -408,6 +485,7 @@ export default function AiFindPanel({
   const submitQuery = async (rawQuery = query) => {
     const trimmedQuery = rawQuery.trim();
     if (!trimmedQuery) return;
+    setRestoreNotice('');
     setQuery(trimmedQuery);
 
     const debugEnabled = isClientDebugEnabled(searchParams);
@@ -420,6 +498,12 @@ export default function AiFindPanel({
     const shouldUpdateActiveRecord =
       activeSavedRecordIdRef.current !== null &&
       activeSavedRecordQueryRef.current === trimmedQuery;
+    if (tvMode && !shouldUpdateActiveRecord) {
+      activeSavedRecordIdRef.current = null;
+      activeSavedRecordCreatedAtRef.current = null;
+      activeSavedRecordQueryRef.current = null;
+      setActiveSavedRecordId(null);
+    }
 
     logAiFindClientDebug(debugEnabled, clientRequestId, 'submit started', {
       query: sanitizeAiFindDebugText(trimmedQuery),
@@ -594,6 +678,8 @@ export default function AiFindPanel({
     const saved = await getAiFindSavedRecord(recordId);
     if (!saved) return;
 
+    setRestoreNotice('');
+
     setQuery(saved.query);
     setResult(saved.response);
     setActiveSavedRecordId(saved.id);
@@ -677,6 +763,7 @@ export default function AiFindPanel({
               ? '正在查询候选影片，已找到的影片可以直接播放。'
               : '结果会自动保存，下次可从最近 AI 找片直接打开。'}
           </p>
+          {restoreNotice ? <p role='alert'>{restoreNotice}</p> : null}
           {error ? (
             <div className='space-y-3'>
               <p

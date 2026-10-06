@@ -142,6 +142,7 @@ describe('AiFindPanel', () => {
     createAiFindRequestId as jest.MockedFunction<typeof createAiFindRequestId>;
 
   beforeEach(() => {
+    sessionStorage.clear();
     mockedListAiFindSavedRecords.mockResolvedValue([]);
     mockedGetAiFindSavedRecord.mockResolvedValue(null);
     mockedCreateAiFindRequestId.mockReturnValue('req_test');
@@ -150,6 +151,150 @@ describe('AiFindPanel', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('restores the TV draft after leaving without issuing an AI request', async () => {
+    const view = render(<AiFindPanel tvMode />);
+    await act(async () => undefined);
+    fireEvent.change(screen.getByRole('searchbox'), {
+      target: { value: '想找一部轻松的喜剧' },
+    });
+    view.unmount();
+    await act(async () => {
+      render(<AiFindPanel tvMode />);
+    });
+    expect(screen.getByRole('searchbox')).toHaveValue('想找一部轻松的喜剧');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('reopens the current TV saved result on return while retaining an edited draft', async () => {
+    mockedListAiFindSavedRecords.mockResolvedValue([
+      {
+        id: 'rec_return',
+        query: '港片动作片',
+        answer: '',
+        candidateCount: 1,
+        foundGroupCount: 1,
+        status: 'complete',
+        createdAt: 1,
+        updatedAt: 2,
+        lastOpenedAt: 2,
+        openedCount: 0,
+      },
+    ]);
+    mockedGetAiFindSavedRecord.mockResolvedValue({
+      id: 'rec_return',
+      userName: 'alice',
+      query: '港片动作片',
+      response: savedResponse,
+      status: 'complete',
+      createdAt: 1,
+      updatedAt: 2,
+      lastOpenedAt: 2,
+      openedCount: 0,
+    });
+    const view = render(<AiFindPanel tvMode />);
+    fireEvent.click(await screen.findByRole('button', { name: '港片动作片' }));
+    await screen.findByTestId('ai-video-card');
+    fireEvent.change(screen.getByRole('searchbox'), {
+      target: { value: '下一部想看喜剧' },
+    });
+    view.unmount();
+    render(<AiFindPanel tvMode />);
+    expect(await screen.findByTestId('ai-video-card')).toHaveTextContent(
+      '英雄本色'
+    );
+    expect(screen.getByRole('searchbox')).toHaveValue('下一部想看喜剧');
+    expect(mockedGetAiFindSavedRecord).toHaveBeenCalledTimes(2);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('ignores a late restored result after a newer query starts', async () => {
+    sessionStorage.setItem(
+      'tv-search:ai',
+      JSON.stringify({
+        pageQuery: '',
+        draft: '旧查询',
+        recordId: 'old_record',
+      })
+    );
+    let resolveRecord: (
+      value: Awaited<ReturnType<typeof getAiFindSavedRecord>>
+    ) => void = () => undefined;
+    mockedGetAiFindSavedRecord.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRecord = resolve;
+      })
+    );
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      headers: mockHeaders(),
+      json: async () => ({ error: '新查询失败' }),
+    });
+    (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
+    render(<AiFindPanel tvMode />);
+    fireEvent.change(screen.getByRole('searchbox'), {
+      target: { value: '新查询' },
+    });
+    fireEvent.submit(screen.getByRole('search'));
+    await screen.findByRole('alert');
+    await act(async () => {
+      resolveRecord({
+        id: 'old_record',
+        userName: 'alice',
+        query: '旧查询',
+        response: savedResponse,
+        status: 'complete',
+        createdAt: 1,
+        updatedAt: 2,
+        lastOpenedAt: 2,
+        openedCount: 0,
+      });
+    });
+    expect(screen.queryByTestId('ai-video-card')).not.toBeInTheDocument();
+    expect(screen.getByRole('searchbox')).toHaveValue('新查询');
+    expect(
+      JSON.parse(sessionStorage.getItem('tv-search:ai') || '{}').recordId
+    ).toBeNull();
+  });
+
+  it('keeps the draft when saved-result restoration fails and does not rerun AI', async () => {
+    sessionStorage.setItem(
+      'tv-search:ai',
+      JSON.stringify({ pageQuery: '', draft: '港片', recordId: 'missing' })
+    );
+    mockedGetAiFindSavedRecord.mockRejectedValue(new Error('offline'));
+    render(<AiFindPanel tvMode />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '上次结果未能恢复'
+    );
+    expect(screen.getByRole('searchbox')).toHaveValue('港片');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not reuse another URL query or corrupt TV storage in Web Mode', async () => {
+    sessionStorage.setItem(
+      'tv-search:ai',
+      JSON.stringify({
+        pageQuery: '旧词',
+        draft: '旧草稿',
+        recordId: 'old_record',
+      })
+    );
+    const view = render(<AiFindPanel tvMode initialQuery='新词' />);
+    await act(async () => undefined);
+    expect(screen.getByRole('searchbox')).toHaveValue('新词');
+    expect(mockedGetAiFindSavedRecord).not.toHaveBeenCalled();
+    view.unmount();
+    sessionStorage.setItem('tv-search:ai', '{broken');
+    const web = render(<AiFindPanel initialQuery='网页查询' />);
+    await act(async () => undefined);
+    expect(screen.getByLabelText('AI 找片描述')).toHaveValue('网页查询');
+    expect(sessionStorage.getItem('tv-search:ai')).toBe('{broken');
+    web.unmount();
+    render(<AiFindPanel tvMode initialQuery='电视查询' />);
+    await act(async () => undefined);
+    expect(screen.getByRole('searchbox')).toHaveValue('电视查询');
   });
 
   it('uses the shared AI and progressive group pipeline in TV mode, with results usable while other candidates load', async () => {
