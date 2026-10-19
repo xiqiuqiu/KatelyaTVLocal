@@ -164,6 +164,7 @@ describe('UserMenu', () => {
     render(<UserMenu />);
 
     fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+    fireEvent.click(screen.getByRole('button', { name: '账号与安全' }));
     fireEvent.click(await screen.findByText('修改密码'));
     expect(await screen.findByText('确认修改')).toBeInTheDocument();
 
@@ -178,16 +179,19 @@ describe('UserMenu', () => {
     trigger.focus();
     fireEvent.click(trigger);
     const dialog = await screen.findByRole('dialog', { name: '设置与账号' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '观看与收藏' }));
     expect(
       within(dialog).getByRole('link', { name: '我的收藏' })
     ).toHaveAttribute('href', '/?tab=favorites&tv=1');
     expect(
       within(dialog).getByRole('link', { name: '播放历史' })
     ).toHaveAttribute('href', '/history?tv=1');
+    fireEvent.click(within(dialog).getByRole('button', { name: '外观与设备' }));
     expect(
       within(dialog).getByRole('link', { name: '退出电视模式' })
     ).toHaveAttribute('href', '/search?q=test&tv=0');
     expect(within(dialog).queryByText('管理面板')).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: '账号与安全' }));
     const last = within(dialog).getByRole('button', { name: '退出登录' });
     last.focus();
     fireEvent.keyDown(last, { key: 'Tab' });
@@ -201,37 +205,27 @@ describe('UserMenu', () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
-  it('groups existing settings and moves category focus to its first available control', async () => {
-    const originalScroll = HTMLElement.prototype.scrollIntoView;
-    HTMLElement.prototype.scrollIntoView = jest.fn();
-    try {
-      render(<UserMenu />);
-      fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
-      const dialog = await screen.findByRole('dialog', { name: '设置与账号' });
-      expect(
-        within(dialog).getByRole('region', { name: '观看与收藏' })
-      ).toBeInTheDocument();
-      expect(
-        within(dialog).getByRole('region', { name: '外观与设备' })
-      ).toBeInTheDocument();
-      expect(
-        within(dialog).getByRole('region', { name: '账号与安全' })
-      ).toHaveTextContent('tester');
-      fireEvent.click(
-        within(dialog).getByRole('button', { name: '观看与收藏' })
-      );
-      expect(
-        within(dialog).getByRole('link', { name: '我的收藏' })
-      ).toHaveFocus();
-      fireEvent.click(
-        within(dialog).getByRole('button', { name: '账号与安全' })
-      );
-      expect(
-        within(dialog).getByRole('button', { name: '修改密码' })
-      ).toHaveFocus();
-    } finally {
-      HTMLElement.prototype.scrollIntoView = originalScroll;
-    }
+  it('shows only the selected settings category and keeps its menu visible', async () => {
+    render(<UserMenu />);
+    fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+    const dialog = await screen.findByRole('dialog', { name: '设置与账号' });
+    expect(
+      within(dialog).getByRole('region', { name: '外观与设备' })
+    ).toBeVisible();
+    expect(
+      within(dialog).queryByRole('region', { name: '账号与安全' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: '账号与安全' }));
+    expect(
+      within(dialog).getByRole('region', { name: '账号与安全' })
+    ).toHaveTextContent('tester');
+    expect(
+      within(dialog).queryByRole('region', { name: '外观与设备' })
+    ).not.toBeInTheDocument();
+    expect(within(dialog).getAllByRole('region')).toHaveLength(1);
+    expect(
+      within(dialog).getByRole('button', { name: '账号与安全' })
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 
   it.each([
@@ -268,6 +262,7 @@ describe('UserMenu', () => {
         ).not.toBeInTheDocument();
         return;
       }
+      fireEvent.click(within(dialog).getByRole('button', { name: '站点管理' }));
       const managementRegion = await within(dialog).findByRole('region', {
         name: '站点管理',
       });
@@ -276,7 +271,7 @@ describe('UserMenu', () => {
         within(managementRegion).getByRole('button', { name: '管理面板' })
       ).toBeInTheDocument();
       expect(
-        within(dialog).getByRole('region', { name: '账号与安全' })
+        document.getElementById('user-settings-account')
       ).not.toContainElement(management);
       for (const [id, label] of [
         ['siteConfig', '站点配置'],
@@ -311,6 +306,7 @@ describe('UserMenu', () => {
   it('keeps keyboard focus inside the password dialog', async () => {
     render(<UserMenu />);
     fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+    fireEvent.click(screen.getByRole('button', { name: '账号与安全' }));
     fireEvent.click(await screen.findByText('修改密码'));
     const dialog = await screen.findByRole('dialog', { name: '修改密码' });
     fireEvent.change(within(dialog).getByLabelText('新密码'), {
@@ -370,6 +366,7 @@ describe('UserMenu', () => {
     const view = render(<TvAccount />);
     try {
       fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+      fireEvent.click(screen.getByRole('button', { name: '账号与安全' }));
       fireEvent.click(await screen.findByText('修改密码'));
       const dialog = await screen.findByRole('dialog', { name: '修改密码' });
       await waitFor(() =>

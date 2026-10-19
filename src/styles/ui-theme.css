@@ -1301,3 +1301,110 @@
 .ui-admin-page[data-tv-mode='true'] input[type='file'] + span {
   min-height: 64px;
 }
+
+/* Settings use one category at a time; hidden forms keep unsaved input. */
+.ui-settings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 4px;
+}
+.ui-settings-nav > button {
+  width: auto;
+}
+.ui-settings-nav > button[data-active='true'] {
+  background: rgb(var(--ui-surface-strong));
+  color: rgb(var(--ui-text));
+}
+.ui-settings-group[hidden],
+.ui-admin-section[hidden] {
+  display: none;
+}
+.ui-settings-content > .ui-settings-group {
+  margin-top: 0;
+}
+.ui-settings-management-links {
+  grid-template-columns: minmax(0, 1fr);
+}
+.ui-admin-section-heading {
+  padding: 24px 24px 0;
+}
+.ui-admin-section-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+.ui-admin-section-heading p {
+  margin: 8px 0 0;
+  color: rgb(var(--ui-text-muted));
+}
+.ui-admin-nav {
+  gap: 16px;
+}
+@media (min-width: 768px) {
+  .ui-settings-nav {
+    flex-direction: column;
+    border-right: 1px solid rgb(var(--ui-border));
+    padding-right: 12px;
+  }
+  .ui-settings-nav > button {
+    width: 100%;
+  }
+  .ui-settings-management-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.ui-admin-page[data-tv-mode='true'] .ui-admin-section-heading h2 {
+  font-size: 30px;
+}
+[data-tv-mode='true'] .ui-initial-player-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+[data-tv-mode='true'] .ui-initial-player-sidebar {
+  display: none;
+}
+.ui-admin-field-group {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.ui-admin-field-group + .ui-admin-field-group {
+  padding-top: 16px;
+  border-top: 1px solid rgb(var(--ui-border));
+}
+.ui-admin-field-group legend {
+  margin-bottom: 12px;
+  padding: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+[data-tv-mode='true'] .ui-admin-field-group legend {
+  font-size: 26px;
+}
+.ui-admin-mobile-menu {
+  display: grid;
+  gap: 8px;
+  font-weight: 500;
+}
+.ui-admin-mobile-menu select {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-sm);
+  padding: 10px 12px;
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-text));
+}
+@media (max-width: 1023px) {
+  .ui-admin-nav {
+    display: none;
+  }
+}
+@media (min-width: 1024px) {
+  .ui-admin-mobile-menu {
+    display: none;
+  }
+}

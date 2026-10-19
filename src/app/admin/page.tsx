@@ -34,7 +34,7 @@ import {
   Video,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Suspense,
   useCallback,
@@ -187,52 +187,6 @@ interface RegistrationInvite {
   createdAt: number;
   updatedAt: number;
 }
-
-// 可折叠标签组件
-interface CollapsibleTabProps {
-  id: string;
-  title: string;
-  icon?: React.ReactNode;
-  isExpanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}
-
-const CollapsibleTab = ({
-  id,
-  title,
-  icon,
-  isExpanded,
-  onToggle,
-  children,
-}: CollapsibleTabProps) => {
-  return (
-    <section id={`admin-${id}`} className='ui-admin-section'>
-      <button
-        onClick={onToggle}
-        aria-expanded={isExpanded}
-        aria-controls={`admin-panel-${id}`}
-        className='ui-admin-section-toggle'
-      >
-        <div className='flex items-center gap-3'>
-          {icon}
-          <h3 className='text-lg font-medium text-[rgb(var(--ui-text))]'>
-            {title}
-          </h3>
-        </div>
-        <div className='text-[rgb(var(--ui-text-muted))]'>
-          {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-        </div>
-      </button>
-
-      {isExpanded && (
-        <div id={`admin-panel-${id}`} className='ui-admin-section-body'>
-          {children}
-        </div>
-      )}
-    </section>
-  );
-};
 
 // 用户配置组件
 interface UserConfigProps {
@@ -1944,255 +1898,264 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
 
   return (
     <div className='space-y-6'>
-      {/* 站点名称 */}
-      <div>
-        <label
-          htmlFor='admin-site-name'
-          className={`block text-sm font-medium text-[rgb(var(--ui-text))]  mb-2 ${
-            isD1Storage || isUpstashStorage ? 'opacity-50' : ''
-          }`}
-        >
-          站点名称
-          {isD1Storage && (
-            <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-              (D1 环境下请通过环境变量修改)
-            </span>
-          )}
-          {isUpstashStorage && (
-            <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-              (Upstash 环境下请通过环境变量修改)
-            </span>
-          )}
-        </label>
-        <input
-          type='text'
-          id='admin-site-name'
-          aria-label='站点名称'
-          value={siteSettings.SiteName}
-          onChange={(e) =>
-            !isD1Storage &&
-            !isUpstashStorage &&
-            setSiteSettings((prev) => ({ ...prev, SiteName: e.target.value }))
-          }
-          disabled={isD1Storage || isUpstashStorage}
-          className={`w-full px-3 py-2 border border-[rgb(var(--ui-border))]  rounded-lg bg-[rgb(var(--ui-surface))]  text-[rgb(var(--ui-text))]  focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent ${
-            isD1Storage || isUpstashStorage
-              ? 'opacity-50 cursor-not-allowed'
-              : ''
-          }`}
-        />
-      </div>
-
-      {/* 站点公告 */}
-      <div>
-        <label
-          htmlFor='admin-site-announcement'
-          className={`block text-sm font-medium text-[rgb(var(--ui-text))]  mb-2 ${
-            isD1Storage || isUpstashStorage ? 'opacity-50' : ''
-          }`}
-        >
-          站点公告
-          {isD1Storage && (
-            <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-              (D1 环境下请通过环境变量修改)
-            </span>
-          )}
-          {isUpstashStorage && (
-            <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-              (Upstash 环境下请通过环境变量修改)
-            </span>
-          )}
-        </label>
-        <textarea
-          id='admin-site-announcement'
-          aria-label='站点公告'
-          value={siteSettings.Announcement}
-          onChange={(e) =>
-            !isD1Storage &&
-            !isUpstashStorage &&
-            setSiteSettings((prev) => ({
-              ...prev,
-              Announcement: e.target.value,
-            }))
-          }
-          disabled={isD1Storage || isUpstashStorage}
-          rows={3}
-          className={`w-full px-3 py-2 border border-[rgb(var(--ui-border))]  rounded-lg bg-[rgb(var(--ui-surface))]  text-[rgb(var(--ui-text))]  focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent ${
-            isD1Storage || isUpstashStorage
-              ? 'opacity-50 cursor-not-allowed'
-              : ''
-          }`}
-        />
-      </div>
-
-      {/* 搜索接口可拉取最大页数 */}
-      <div>
-        <label
-          htmlFor='admin-search-max-pages'
-          className='block text-sm font-medium text-[rgb(var(--ui-text))] mb-2'
-        >
-          搜索接口可拉取最大页数
-        </label>
-        <input
-          type='number'
-          min={1}
-          id='admin-search-max-pages'
-          aria-label='搜索下游最大页数'
-          value={siteSettings.SearchDownstreamMaxPage}
-          onChange={(e) =>
-            setSiteSettings((prev) => ({
-              ...prev,
-              SearchDownstreamMaxPage: Number(e.target.value),
-            }))
-          }
-          className='w-full px-3 py-2 border border-[rgb(var(--ui-border))] rounded-lg bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text))] focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent'
-        />
-      </div>
-
-      {/* 站点接口缓存时间 */}
-      <div>
-        <label
-          htmlFor='admin-site-cache-time'
-          className='block text-sm font-medium text-[rgb(var(--ui-text))] mb-2'
-        >
-          站点接口缓存时间（秒）
-        </label>
-        <input
-          type='number'
-          min={1}
-          id='admin-site-cache-time'
-          aria-label='站点接口缓存时间'
-          value={siteSettings.SiteInterfaceCacheTime}
-          onChange={(e) =>
-            setSiteSettings((prev) => ({
-              ...prev,
-              SiteInterfaceCacheTime: Number(e.target.value),
-            }))
-          }
-          className='w-full px-3 py-2 border border-[rgb(var(--ui-border))] rounded-lg bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text))] focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent'
-        />
-      </div>
-
-      {/* 图片代理 */}
-      <div>
-        <label
-          htmlFor='admin-image-proxy'
-          className={`block text-sm font-medium text-[rgb(var(--ui-text))]  mb-2 ${
-            isD1Storage || isUpstashStorage ? 'opacity-50' : ''
-          }`}
-        >
-          图片代理前缀
-          {isD1Storage && (
-            <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-              (D1 环境下请通过环境变量修改)
-            </span>
-          )}
-          {isUpstashStorage && (
-            <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-              (Upstash 环境下请通过环境变量修改)
-            </span>
-          )}
-        </label>
-        <input
-          type='text'
-          placeholder='例如: https://imageproxy.example.com/?url='
-          id='admin-image-proxy'
-          aria-label='图片代理'
-          value={siteSettings.ImageProxy}
-          onChange={(e) =>
-            !isD1Storage &&
-            !isUpstashStorage &&
-            setSiteSettings((prev) => ({
-              ...prev,
-              ImageProxy: e.target.value,
-            }))
-          }
-          disabled={isD1Storage || isUpstashStorage}
-          className={`w-full px-3 py-2 border border-[rgb(var(--ui-border))]  rounded-lg bg-[rgb(var(--ui-surface))]  text-[rgb(var(--ui-text))]  focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent ${
-            isD1Storage || isUpstashStorage
-              ? 'opacity-50 cursor-not-allowed'
-              : ''
-          }`}
-        />
-        <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-          用于代理图片访问，解决跨域或访问限制问题。留空则不使用代理。
-        </p>
-      </div>
-
-      {/* 豆瓣代理设置 */}
-      <div>
-        <label
-          htmlFor='admin-douban-proxy'
-          className={`block text-sm font-medium text-[rgb(var(--ui-text))]  mb-2 ${
-            isD1Storage || isUpstashStorage ? 'opacity-50' : ''
-          }`}
-        >
-          豆瓣代理地址
-          {isD1Storage && (
-            <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-              (D1 环境下请通过环境变量修改)
-            </span>
-          )}
-          {isUpstashStorage && (
-            <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-              (Upstash 环境下请通过环境变量修改)
-            </span>
-          )}
-        </label>
-        <input
-          type='text'
-          placeholder='例如: https://proxy.example.com/fetch?url='
-          id='admin-douban-proxy'
-          aria-label='豆瓣代理'
-          value={siteSettings.DoubanProxy}
-          onChange={(e) =>
-            !isD1Storage &&
-            !isUpstashStorage &&
-            setSiteSettings((prev) => ({
-              ...prev,
-              DoubanProxy: e.target.value,
-            }))
-          }
-          disabled={isD1Storage || isUpstashStorage}
-          className={`w-full px-3 py-2 border border-[rgb(var(--ui-border))]  rounded-lg bg-[rgb(var(--ui-surface))]  text-[rgb(var(--ui-text))]  focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent ${
-            isD1Storage || isUpstashStorage
-              ? 'opacity-50 cursor-not-allowed'
-              : ''
-          }`}
-        />
-        <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-          用于代理豆瓣数据访问，解决跨域或访问限制问题。留空则使用服务端API。
-        </p>
-      </div>
-
-      {/* 播放调试模式 */}
-      <div className='rounded-lg border border-[rgb(var(--ui-accent-warm))] bg-[rgb(var(--ui-accent-warm)/0.1)] p-4'>
-        <label
-          htmlFor='admin-playback-debug'
-          className='flex cursor-pointer items-start gap-3'
-        >
+      <fieldset className='ui-admin-field-group space-y-4'>
+        <legend>站点信息</legend>
+        {/* 站点名称 */}
+        <div>
+          <label
+            htmlFor='admin-site-name'
+            className={`block text-sm font-medium text-[rgb(var(--ui-text))]  mb-2 ${
+              isD1Storage || isUpstashStorage ? 'opacity-50' : ''
+            }`}
+          >
+            站点名称
+            {isD1Storage && (
+              <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
+                (D1 环境下请通过环境变量修改)
+              </span>
+            )}
+            {isUpstashStorage && (
+              <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
+                (Upstash 环境下请通过环境变量修改)
+              </span>
+            )}
+          </label>
           <input
-            type='checkbox'
-            id='admin-playback-debug'
-            checked={Boolean(siteSettings.PlaybackDebugEnabled)}
+            type='text'
+            id='admin-site-name'
+            aria-label='站点名称'
+            value={siteSettings.SiteName}
+            onChange={(e) =>
+              !isD1Storage &&
+              !isUpstashStorage &&
+              setSiteSettings((prev) => ({ ...prev, SiteName: e.target.value }))
+            }
+            disabled={isD1Storage || isUpstashStorage}
+            className={`w-full px-3 py-2 border border-[rgb(var(--ui-border))]  rounded-lg bg-[rgb(var(--ui-surface))]  text-[rgb(var(--ui-text))]  focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent ${
+              isD1Storage || isUpstashStorage
+                ? 'opacity-50 cursor-not-allowed'
+                : ''
+            }`}
+          />
+        </div>
+
+        {/* 站点公告 */}
+        <div>
+          <label
+            htmlFor='admin-site-announcement'
+            className={`block text-sm font-medium text-[rgb(var(--ui-text))]  mb-2 ${
+              isD1Storage || isUpstashStorage ? 'opacity-50' : ''
+            }`}
+          >
+            站点公告
+            {isD1Storage && (
+              <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
+                (D1 环境下请通过环境变量修改)
+              </span>
+            )}
+            {isUpstashStorage && (
+              <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
+                (Upstash 环境下请通过环境变量修改)
+              </span>
+            )}
+          </label>
+          <textarea
+            id='admin-site-announcement'
+            aria-label='站点公告'
+            value={siteSettings.Announcement}
+            onChange={(e) =>
+              !isD1Storage &&
+              !isUpstashStorage &&
+              setSiteSettings((prev) => ({
+                ...prev,
+                Announcement: e.target.value,
+              }))
+            }
+            disabled={isD1Storage || isUpstashStorage}
+            rows={3}
+            className={`w-full px-3 py-2 border border-[rgb(var(--ui-border))]  rounded-lg bg-[rgb(var(--ui-surface))]  text-[rgb(var(--ui-text))]  focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent ${
+              isD1Storage || isUpstashStorage
+                ? 'opacity-50 cursor-not-allowed'
+                : ''
+            }`}
+          />
+        </div>
+      </fieldset>
+      <fieldset className='ui-admin-field-group space-y-4'>
+        <legend>搜索与缓存</legend>
+        {/* 搜索接口可拉取最大页数 */}
+        <div>
+          <label
+            htmlFor='admin-search-max-pages'
+            className='block text-sm font-medium text-[rgb(var(--ui-text))] mb-2'
+          >
+            搜索接口可拉取最大页数
+          </label>
+          <input
+            type='number'
+            min={1}
+            id='admin-search-max-pages'
+            aria-label='搜索下游最大页数'
+            value={siteSettings.SearchDownstreamMaxPage}
             onChange={(e) =>
               setSiteSettings((prev) => ({
                 ...prev,
-                PlaybackDebugEnabled: e.target.checked,
+                SearchDownstreamMaxPage: Number(e.target.value),
               }))
             }
-            className='mt-1 h-4 w-4 rounded border-[rgb(var(--ui-border))] text-[rgb(var(--ui-accent-warm))] focus:ring-[rgb(var(--ui-accent-warm))]'
+            className='w-full px-3 py-2 border border-[rgb(var(--ui-border))] rounded-lg bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text))] focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent'
           />
-          <span>
-            <span className='block text-sm font-medium text-[rgb(var(--ui-text))]'>
-              播放调试模式
+        </div>
+
+        {/* 站点接口缓存时间 */}
+        <div>
+          <label
+            htmlFor='admin-site-cache-time'
+            className='block text-sm font-medium text-[rgb(var(--ui-text))] mb-2'
+          >
+            站点接口缓存时间（秒）
+          </label>
+          <input
+            type='number'
+            min={1}
+            id='admin-site-cache-time'
+            aria-label='站点接口缓存时间'
+            value={siteSettings.SiteInterfaceCacheTime}
+            onChange={(e) =>
+              setSiteSettings((prev) => ({
+                ...prev,
+                SiteInterfaceCacheTime: Number(e.target.value),
+              }))
+            }
+            className='w-full px-3 py-2 border border-[rgb(var(--ui-border))] rounded-lg bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text))] focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent'
+          />
+        </div>
+      </fieldset>
+      <fieldset className='ui-admin-field-group space-y-4'>
+        <legend>图片与豆瓣服务</legend>
+        {/* 图片代理 */}
+        <div>
+          <label
+            htmlFor='admin-image-proxy'
+            className={`block text-sm font-medium text-[rgb(var(--ui-text))]  mb-2 ${
+              isD1Storage || isUpstashStorage ? 'opacity-50' : ''
+            }`}
+          >
+            图片代理前缀
+            {isD1Storage && (
+              <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
+                (D1 环境下请通过环境变量修改)
+              </span>
+            )}
+            {isUpstashStorage && (
+              <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
+                (Upstash 环境下请通过环境变量修改)
+              </span>
+            )}
+          </label>
+          <input
+            type='text'
+            placeholder='例如: https://imageproxy.example.com/?url='
+            id='admin-image-proxy'
+            aria-label='图片代理'
+            value={siteSettings.ImageProxy}
+            onChange={(e) =>
+              !isD1Storage &&
+              !isUpstashStorage &&
+              setSiteSettings((prev) => ({
+                ...prev,
+                ImageProxy: e.target.value,
+              }))
+            }
+            disabled={isD1Storage || isUpstashStorage}
+            className={`w-full px-3 py-2 border border-[rgb(var(--ui-border))]  rounded-lg bg-[rgb(var(--ui-surface))]  text-[rgb(var(--ui-text))]  focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent ${
+              isD1Storage || isUpstashStorage
+                ? 'opacity-50 cursor-not-allowed'
+                : ''
+            }`}
+          />
+          <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
+            用于代理图片访问，解决跨域或访问限制问题。留空则不使用代理。
+          </p>
+        </div>
+
+        {/* 豆瓣代理设置 */}
+        <div>
+          <label
+            htmlFor='admin-douban-proxy'
+            className={`block text-sm font-medium text-[rgb(var(--ui-text))]  mb-2 ${
+              isD1Storage || isUpstashStorage ? 'opacity-50' : ''
+            }`}
+          >
+            豆瓣代理地址
+            {isD1Storage && (
+              <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
+                (D1 环境下请通过环境变量修改)
+              </span>
+            )}
+            {isUpstashStorage && (
+              <span className='ml-2 text-xs text-[rgb(var(--ui-text-muted))]'>
+                (Upstash 环境下请通过环境变量修改)
+              </span>
+            )}
+          </label>
+          <input
+            type='text'
+            placeholder='例如: https://proxy.example.com/fetch?url='
+            id='admin-douban-proxy'
+            aria-label='豆瓣代理'
+            value={siteSettings.DoubanProxy}
+            onChange={(e) =>
+              !isD1Storage &&
+              !isUpstashStorage &&
+              setSiteSettings((prev) => ({
+                ...prev,
+                DoubanProxy: e.target.value,
+              }))
+            }
+            disabled={isD1Storage || isUpstashStorage}
+            className={`w-full px-3 py-2 border border-[rgb(var(--ui-border))]  rounded-lg bg-[rgb(var(--ui-surface))]  text-[rgb(var(--ui-text))]  focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:border-transparent ${
+              isD1Storage || isUpstashStorage
+                ? 'opacity-50 cursor-not-allowed'
+                : ''
+            }`}
+          />
+          <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
+            用于代理豆瓣数据访问，解决跨域或访问限制问题。留空则使用服务端API。
+          </p>
+        </div>
+      </fieldset>
+      <fieldset className='ui-admin-field-group space-y-4'>
+        <legend>诊断记录</legend>
+        {/* 播放调试模式 */}
+        <div>
+          <label
+            htmlFor='admin-playback-debug'
+            className='flex cursor-pointer items-start gap-3'
+          >
+            <input
+              type='checkbox'
+              id='admin-playback-debug'
+              checked={Boolean(siteSettings.PlaybackDebugEnabled)}
+              onChange={(e) =>
+                setSiteSettings((prev) => ({
+                  ...prev,
+                  PlaybackDebugEnabled: e.target.checked,
+                }))
+              }
+              className='mt-1 h-4 w-4 rounded border-[rgb(var(--ui-border))] text-[rgb(var(--ui-accent-warm))] focus:ring-[rgb(var(--ui-accent-warm))]'
+            />
+            <span>
+              <span className='block text-sm font-medium text-[rgb(var(--ui-text))]'>
+                播放调试模式
+              </span>
+              <span className='mt-1 block text-xs leading-5 text-[rgb(var(--ui-text-muted))]'>
+                开启后，管理员播放页会显示调试面板，并把卡顿、恢复、播放策略等信息写入后台日志表。关闭后不会记录。
+              </span>
             </span>
-            <span className='mt-1 block text-xs leading-5 text-[rgb(var(--ui-text-muted))]'>
-              开启后，管理员播放页会显示调试面板，并把卡顿、恢复、播放策略等信息写入后台日志表。关闭后不会记录。
-            </span>
-          </span>
-        </label>
-      </div>
+          </label>
+        </div>
+      </fieldset>
 
       {/* 操作按钮 */}
       <div className='flex justify-end'>
@@ -2678,33 +2641,38 @@ const PlaybackDebugLogs = () => {
 };
 
 function AdminPageClient() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const tvMode = isTvMode(searchParams);
   const requestedSection = searchParams.get('section');
   const section = managementSettingsGroups
     .flatMap((group) => group.items.map((item) => item.id))
     .find((id) => id === requestedSection);
-  const modeHref = section
-    ? `/admin?section=${section}#admin-${section}`
-    : '/admin';
+
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [role, setRole] = useState<'owner' | 'admin' | null>(null);
-  const [expandedTabs, setExpandedTabs] = useState<{ [key: string]: boolean }>({
+  const [activeSection, setActiveSection] = useState(section || 'siteConfig');
+  const [mountedSections, setMountedSections] = useState<{
+    [key: string]: boolean;
+  }>({
     userConfig: false,
     inviteConfig: false,
     videoSource: false,
     siteConfig: false,
     aiUsage: false,
     playbackDebug: false,
+    [section || 'siteConfig']: true,
   });
 
   useEffect(() => {
-    if (section) {
-      setExpandedTabs((prev) => ({ ...prev, [section]: true }));
-    }
+    const next = section || 'siteConfig';
+    setActiveSection(next);
+    setMountedSections((prev) => ({ ...prev, [next]: true }));
   }, [section]);
+
+  const modeHref = `/admin?section=${activeSection}#admin-${activeSection}`;
 
   // 获取管理员配置
   // showLoading 用于控制是否在请求期间显示整体加载骨架。
@@ -2739,14 +2707,6 @@ function AdminPageClient() {
     // 首次加载时显示骨架
     fetchConfig(true);
   }, [fetchConfig]);
-
-  // 切换标签展开状态
-  const toggleTab = (tabKey: string) => {
-    setExpandedTabs((prev) => ({
-      ...prev,
-      [tabKey]: !prev[tabKey],
-    }));
-  };
 
   // 新增: 重置配置处理函数
   const handleResetConfig = async () => {
@@ -2864,6 +2824,38 @@ function AdminPageClient() {
             )}
           </div>
 
+          <label className='ui-admin-mobile-menu'>
+            <span>管理栏目</span>
+            <select
+              aria-label='管理栏目'
+              value={activeSection}
+              onChange={(event) => {
+                const next = managementSettingsGroups
+                  .flatMap((group) => [...group.items])
+                  .find((item) => item.id === event.target.value)?.id;
+                if (!next) return;
+                setActiveSection(next);
+                setMountedSections((prev) => ({ ...prev, [next]: true }));
+                router.push(
+                  buildTvModeHref(
+                    `/admin?section=${next}#admin-${next}`,
+                    tvMode
+                  ),
+                  { scroll: false }
+                );
+              }}
+            >
+              {managementSettingsGroups.map((group) => (
+                <optgroup key={group.id} label={group.label}>
+                  {group.items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
           <nav className='ui-admin-nav' aria-label='管理分类'>
             {managementSettingsGroups.map((group) => (
               <div className='ui-admin-nav-group' key={group.id}>
@@ -2875,10 +2867,17 @@ function AdminPageClient() {
                       `/admin?section=${item.id}#admin-${item.id}`,
                       tvMode
                     )}
-                    data-active={expandedTabs[item.id] || undefined}
-                    onClick={() =>
-                      setExpandedTabs((prev) => ({ ...prev, [item.id]: true }))
+                    data-active={activeSection === item.id || undefined}
+                    aria-current={
+                      activeSection === item.id ? 'page' : undefined
                     }
+                    onClick={() => {
+                      setActiveSection(item.id);
+                      setMountedSections((prev) => ({
+                        ...prev,
+                        [item.id]: true,
+                      }));
+                    }}
                   >
                     {item.label}
                   </Link>
@@ -2887,35 +2886,30 @@ function AdminPageClient() {
             ))}
           </nav>
           <div className='ui-admin-content'>
-            {managementSettingsGroups.map((group) => (
-              <section
-                key={group.id}
-                className='ui-admin-content-group'
-                aria-labelledby={`admin-group-${group.id}`}
-              >
-                <h2
-                  id={`admin-group-${group.id}`}
-                  className='ui-admin-group-title'
-                >
-                  {group.label}
-                </h2>
-                {group.items.map((item) => {
-                  const panel = panels[item.id];
-                  return (
-                    <CollapsibleTab
-                      key={item.id}
-                      id={item.id}
-                      title={item.label}
-                      icon={panel.icon}
-                      isExpanded={expandedTabs[item.id]}
-                      onToggle={() => toggleTab(item.id)}
-                    >
-                      {panel.content}
-                    </CollapsibleTab>
-                  );
-                })}
-              </section>
-            ))}
+            {managementSettingsGroups
+              .flatMap((group) => [...group.items])
+              .map((item) =>
+                mountedSections[item.id] ? (
+                  <section
+                    key={item.id}
+                    id={`admin-${item.id}`}
+                    hidden={activeSection !== item.id}
+                    className='ui-admin-section'
+                    aria-labelledby={`admin-title-${item.id}`}
+                  >
+                    <header className='ui-admin-section-heading'>
+                      <h2 id={`admin-title-${item.id}`}>
+                        {panels[item.id].icon}
+                        {item.label}
+                      </h2>
+                      <p>{item.description}</p>
+                    </header>
+                    <div className='ui-admin-section-body'>
+                      {panels[item.id].content}
+                    </div>
+                  </section>
+                ) : null
+              )}
           </div>
         </div>
       </div>

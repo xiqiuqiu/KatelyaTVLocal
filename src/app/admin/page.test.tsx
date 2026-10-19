@@ -15,8 +15,10 @@ import AdminPage from './page';
 
 let mockSearchParams = new URLSearchParams();
 let mockRole: 'owner' | 'admin' = 'admin';
+const push = jest.fn();
 
 jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push }),
   useSearchParams: () => mockSearchParams,
 }));
 
@@ -86,10 +88,13 @@ afterEach(() => jest.restoreAllMocks());
 it('reorders sources with buttons and keeps the original explicit save contract', async () => {
   const consoleError = jest.spyOn(console, 'error');
   render(<AdminPage />);
-  fireEvent.click(await screen.findByRole('button', { name: '视频源配置' }));
+  fireEvent.click(await screen.findByRole('link', { name: '视频源配置' }));
 
   expect(screen.getByRole('main')).toHaveAttribute('data-tv-mode', 'true');
-  expect(screen.getByRole('main')).toHaveAttribute('data-mode-href', '/admin');
+  expect(screen.getByRole('main')).toHaveAttribute(
+    'data-mode-href',
+    '/admin?section=videoSource#admin-videoSource'
+  );
   expect(screen.getByRole('button', { name: '上移 来源甲' })).toBeDisabled();
   expect(screen.getByRole('button', { name: '下移 来源乙' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: '下移 来源甲' }));
@@ -116,7 +121,7 @@ it('reorders sources with buttons and keeps the original explicit save contract'
 
 it('keeps owner and peer administrator operations hidden from an administrator', async () => {
   render(<AdminPage />);
-  fireEvent.click(await screen.findByRole('button', { name: '用户配置' }));
+  fireEvent.click(await screen.findByRole('link', { name: '用户配置' }));
 
   expect(
     screen.queryByRole('button', { name: '重置配置' })
@@ -170,8 +175,8 @@ it('shows a retryable error without rendering administration controls after a re
 
 it('associates visible site and registration labels with their actual controls', async () => {
   render(<AdminPage />);
-  fireEvent.click(await screen.findByRole('button', { name: '站点配置' }));
-  fireEvent.click(screen.getByRole('button', { name: '用户配置' }));
+  fireEvent.click(await screen.findByRole('link', { name: '站点配置' }));
+  fireEvent.click(screen.getByRole('link', { name: '用户配置' }));
 
   for (const id of [
     'admin-allow-register',
@@ -192,34 +197,37 @@ it('associates visible site and registration labels with their actual controls',
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
-it('organizes all six existing panels into the same navigation and content groups', async () => {
+it('offers six direct menu items and shows exactly one configuration panel at a time', async () => {
   render(<AdminPage />);
   const navigation = await screen.findByRole('navigation', {
     name: '管理分类',
   });
-  const labels = managementSettingsGroups.flatMap((group) =>
-    group.items.map((item) => item.label)
-  );
-
+  const items = managementSettingsGroups.flatMap((group) => [...group.items]);
   expect(
     within(navigation)
       .getAllByRole('link')
       .map((link) => link.textContent)
-  ).toEqual(labels);
-  for (const group of managementSettingsGroups) {
-    const content = screen.getByRole('region', { name: group.label });
-    for (const item of group.items) {
-      expect(
-        within(navigation).getByRole('link', { name: item.label })
-      ).toHaveAttribute(
-        'href',
-        `/admin?section=${item.id}&tv=1#admin-${item.id}`
-      );
-      expect(
-        within(content).getByRole('button', { name: item.label })
-      ).toHaveAttribute('aria-expanded', 'false');
-    }
+  ).toEqual(items.map((item) => item.label));
+  for (const item of items) {
+    expect(
+      within(navigation).getByRole('link', { name: item.label })
+    ).toHaveAttribute(
+      'href',
+      `/admin?section=${item.id}&tv=1#admin-${item.id}`
+    );
   }
+  expect(screen.getByRole('region', { name: '站点配置' })).toBeVisible();
+  fireEvent.click(within(navigation).getByRole('link', { name: '视频源配置' }));
+  expect(screen.getByRole('region', { name: '视频源配置' })).toBeVisible();
+  expect(
+    screen.queryByRole('region', { name: '站点配置' })
+  ).not.toBeInTheDocument();
+  expect(
+    within(navigation).getByRole('link', { name: '视频源配置' })
+  ).toHaveAttribute('aria-current', 'page');
+  expect(
+    within(navigation).getByRole('link', { name: '站点配置' })
+  ).not.toHaveAttribute('aria-current');
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
@@ -236,17 +244,15 @@ it('opens an allowed deep link and preserves an unsaved form when the query sele
   mockSearchParams = new URLSearchParams('tv=1&section=videoSource');
   rerender(<AdminPage />);
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: '视频源配置' })).toHaveAttribute(
-      'aria-expanded',
-      'true'
-    )
+    expect(screen.getByRole('region', { name: '视频源配置' })).toBeVisible()
   );
   expect(screen.getByLabelText('站点名称')).toBe(siteName);
   expect(siteName).toHaveValue('未保存站点名称');
-  expect(screen.getByRole('button', { name: '站点配置' })).toHaveAttribute(
-    'aria-expanded',
-    'true'
-  );
+  expect(siteName.closest('section')).toHaveAttribute('hidden');
+  fireEvent.click(screen.getByRole('link', { name: '站点配置' }));
+  expect(siteName).toBeVisible();
+  expect(siteName).toHaveValue('未保存站点名称');
+  fireEvent.click(screen.getByRole('link', { name: '视频源配置' }));
   expect(screen.getByRole('main')).toHaveAttribute(
     'data-mode-href',
     '/admin?section=videoSource#admin-videoSource'
@@ -254,20 +260,33 @@ it('opens an allowed deep link and preserves an unsaved form when the query sele
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
-it('ignores unknown section values without mounting any administration form', async () => {
+it('falls back to site settings for unknown section values without exposing another panel', async () => {
   mockSearchParams = new URLSearchParams('tv=1&section=unknown');
   render(<AdminPage />);
-  await screen.findByRole('navigation', { name: '管理分类' });
+  expect(await screen.findByRole('region', { name: '站点配置' })).toBeVisible();
+  expect(
+    screen.queryByRole('region', { name: '视频源配置' })
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole('main')).toHaveAttribute(
+    'data-mode-href',
+    '/admin?section=siteConfig#admin-siteConfig'
+  );
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
 
-  for (const group of managementSettingsGroups) {
-    for (const item of group.items) {
-      expect(screen.getByRole('button', { name: item.label })).toHaveAttribute(
-        'aria-expanded',
-        'false'
-      );
-    }
-  }
-  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-  expect(screen.getByRole('main')).toHaveAttribute('data-mode-href', '/admin');
+it('switches the mobile category directly without resetting an unsaved site form', async () => {
+  render(<AdminPage />);
+  const name = await screen.findByLabelText('站点名称');
+  fireEvent.change(name, { target: { value: '未保存' } });
+  const menu = screen.getByRole('combobox', { name: '管理栏目' });
+  fireEvent.change(menu, { target: { value: 'videoSource' } });
+  expect(screen.getByRole('region', { name: '视频源配置' })).toBeVisible();
+  expect(push).toHaveBeenCalledWith(
+    '/admin?section=videoSource&tv=1#admin-videoSource',
+    { scroll: false }
+  );
+  fireEvent.change(menu, { target: { value: 'siteConfig' } });
+  expect(name).toBeVisible();
+  expect(name).toHaveValue('未保存');
   expect(fetch).toHaveBeenCalledTimes(1);
 });

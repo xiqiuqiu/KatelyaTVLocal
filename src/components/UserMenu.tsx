@@ -52,6 +52,7 @@ interface UserMenuProps {
 }
 
 function UserMenuPanel({ session }: { session: UserMenuSession }) {
+  const [category, setCategory] = useState('device');
   return (
     <>
       {/* 背景遮罩 - 普通菜单无需模糊 */}
@@ -79,7 +80,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
             event.currentTarget.querySelectorAll<HTMLElement>(
               'button:not(:disabled), a[href]'
             )
-          );
+          ).filter((control) => !control.closest('[hidden]'));
           const first = controls[0];
           const last = controls[controls.length - 1];
           if (event.shiftKey && document.activeElement === first) {
@@ -105,10 +106,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
           </button>
         </div>
         <div className='ui-settings-layout grid min-h-0 gap-6 md:grid-cols-[9rem_minmax(0,1fr)]'>
-          <nav
-            aria-label='设置分类'
-            className='ui-settings-nav hidden space-y-2 border-r border-[rgb(var(--ui-border))] pr-3 md:block'
-          >
+          <nav aria-label='设置分类' className='ui-settings-nav'>
             {[
               { id: 'library', label: '观看与收藏', icon: History },
               { id: 'device', label: '外观与设备', icon: Palette },
@@ -120,16 +118,15 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
               <button
                 key={id}
                 type='button'
+                aria-pressed={category === id}
+                aria-controls={`user-settings-${id}`}
+                data-active={category === id || undefined}
                 className={menuItemClassName}
                 onClick={() => {
-                  const section = document.getElementById(
-                    `user-settings-${id}`
-                  );
-                  section?.scrollIntoView({
-                    block: 'nearest',
-                    behavior: 'auto',
-                  });
-                  section?.querySelector<HTMLElement>('button, a')?.focus();
+                  setCategory(id);
+                  document
+                    .querySelector('.ui-settings-content')
+                    ?.scrollTo?.({ top: 0 });
                 }}
               >
                 <Icon aria-hidden className='h-5 w-5 shrink-0' />
@@ -140,6 +137,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
           <div className='ui-settings-content min-h-0 min-w-0 space-y-6 overflow-y-auto px-1 pb-2'>
             <section
               id='user-settings-library'
+              hidden={category !== 'library'}
               aria-labelledby='user-settings-library-title'
               className='ui-settings-group scroll-mt-4'
             >
@@ -177,8 +175,9 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
 
             <section
               id='user-settings-device'
+              hidden={category !== 'device'}
               aria-labelledby='user-settings-device-title'
-              className='ui-settings-group scroll-mt-4 border-t border-[rgb(var(--ui-border))] pt-5'
+              className='ui-settings-group'
             >
               <h3
                 id='user-settings-device-title'
@@ -219,8 +218,9 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
 
             <section
               id='user-settings-account'
+              hidden={category !== 'account'}
               aria-labelledby='user-settings-account-title'
-              className='ui-settings-group scroll-mt-4 border-t border-[rgb(var(--ui-border))] pt-5'
+              className='ui-settings-group'
             >
               <h3
                 id='user-settings-account-title'
@@ -265,8 +265,9 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
             {session.showAdminPanel && (
               <section
                 id='user-settings-management'
+                hidden={category !== 'management'}
                 aria-labelledby='user-settings-management-title'
-                className='ui-settings-group scroll-mt-4 border-t border-[rgb(var(--ui-border))] pt-5'
+                className='ui-settings-group'
               >
                 <h3
                   id='user-settings-management-title'

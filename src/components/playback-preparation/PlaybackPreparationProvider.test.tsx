@@ -74,6 +74,43 @@ describe('PlaybackPreparationProvider', () => {
     jest.useRealTimers();
   });
 
+  it('hands off to the mounted player surface without waiting for media or source preparation', async () => {
+    render(
+      <PlaybackPreparationProvider>
+        <Harness />
+      </PlaybackPreparationProvider>
+    );
+    fireEvent.click(screen.getByRole('button', { name: '播放' }));
+    window.history.replaceState(
+      {},
+      '',
+      '/play?title=%E5%BA%86%E4%BD%99%E5%B9%B4'
+    );
+    const target = document.createElement('div');
+    target.dataset.playbackPreparationTarget = '';
+    target.getBoundingClientRect = () => ({
+      top: 96,
+      left: 240,
+      width: 800,
+      height: 450,
+      right: 1040,
+      bottom: 546,
+      x: 240,
+      y: 96,
+      toJSON: () => ({}),
+    });
+    await act(async () => {
+      document.body.appendChild(target);
+      await Promise.resolve();
+    });
+    act(() => {
+      jest.advanceTimersByTime(600);
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(back).not.toHaveBeenCalled();
+    target.remove();
+  });
+
   it('navigates immediately, shows one neutral preparation state, and leaves on the first frame', () => {
     render(
       <PlaybackPreparationProvider>
@@ -137,7 +174,7 @@ describe('PlaybackPreparationProvider', () => {
     const visual = screen.getByTestId('playback-preparation-visual');
     expect(visual).toHaveStyle({ opacity: '0' });
     expect(visual.style.transition).toBe('opacity 120ms linear');
-    expect(visual.style.top).not.toBe('120px');
+    expect(visual.style.transform).toBe('none');
   });
 
   it('remeasures the real player frame when it mounts after navigation', async () => {
@@ -170,10 +207,11 @@ describe('PlaybackPreparationProvider', () => {
     });
 
     expect(screen.getByTestId('playback-preparation-visual')).toHaveStyle({
-      top: '96px',
-      left: '240px',
-      width: '800px',
-      height: '450px',
+      top: '120px',
+      left: '80px',
+      width: '160px',
+      height: '240px',
+      transform: 'translate3d(160px, -24px, 0) scale(5, 1.875)',
     });
     target.remove();
   });
