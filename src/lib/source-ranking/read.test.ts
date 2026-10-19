@@ -306,4 +306,65 @@ describe('source ranking read', () => {
       }),
     ]);
   });
+
+  it('bounds repeated feedback influence on a source rank', async () => {
+    const repeatedFailures = Array.from({ length: 100 }, (_, index) => ({
+      sourceKey: 'alpha',
+      playbackDomain: 'feedback.example',
+      startupSuccess: 0,
+      startupTimeMs: 9000,
+      switchedToProxy: 1,
+      browserQuality: null,
+      browserPingMs: null,
+      browserSpeedLabel: null,
+      sessionError: 'startup failed',
+      recordedAt: 1710000300000 - index,
+    }));
+    const repeatedSuccesses = Array.from({ length: 100 }, (_, index) => ({
+      sourceKey: 'beta',
+      playbackDomain: 'feedback.example',
+      startupSuccess: 1,
+      startupTimeMs: 1000,
+      switchedToProxy: 0,
+      browserQuality: null,
+      browserPingMs: null,
+      browserSpeedLabel: null,
+      sessionError: null,
+      recordedAt: 1710000300000 - index,
+    }));
+    const all = jest
+      .fn()
+      .mockResolvedValueOnce({
+        results: ['alpha', 'beta'].map((sourceKey) => ({
+          sourceKey,
+          playbackDomain: 'rank.example',
+          finalScore: 80,
+          successRate: 90,
+          directRate: 90,
+          proxyRate: 0,
+          unavailableRate: 0,
+          updatedAt: 1710000000000,
+        })),
+      })
+      .mockResolvedValueOnce({ results: [] })
+      .mockResolvedValueOnce({
+        results: [...repeatedFailures, ...repeatedSuccesses],
+      });
+    const bind = jest.fn().mockReturnValue({ all });
+    const prepare = jest.fn().mockReturnValue({ bind });
+
+    const results = await readLatestSourceRanks(
+      { DB: { prepare } },
+      ['alpha', 'beta'],
+      '24h',
+      1710000400000
+    );
+
+    expect(
+      results.find((result) => result.sourceKey === 'alpha')?.rankScore
+    ).toBe(40);
+    expect(
+      results.find((result) => result.sourceKey === 'beta')?.rankScore
+    ).toBe(100);
+  });
 });

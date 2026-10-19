@@ -1,14 +1,33 @@
 import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 
-import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
+import { getAuthInfoFromCookie } from '@/lib/auth';
 import { savePlaybackFeedback } from '@/lib/source-ranking/feedback';
 import { getSourceRankingRuntime } from '@/lib/source-ranking/runtime';
-import { PlaybackFeedbackInput } from '@/lib/types';
 
 export const runtime = 'edge';
 
 type RuntimeSource = Record<string, unknown>;
+
+const playbackFeedbackSchema = z
+  .object({
+    sourceKey: z.string().trim().min(1).max(512),
+    platform: z
+      .enum(['apple-hlsjs', 'android-hlsjs', 'desktop-hlsjs'])
+      .optional(),
+    playbackDomain: z.string().trim().max(255).nullable().optional(),
+    title: z.string().trim().max(256).optional(),
+    playbackMode: z.enum(['direct', 'proxy']),
+    startupSuccess: z.boolean(),
+    startupTimeMs: z.number().finite().min(0).max(600_000).optional(),
+    switchedToProxy: z.boolean().optional(),
+    browserQuality: z.string().trim().max(64).optional(),
+    browserPingMs: z.number().finite().min(0).max(600_000).optional(),
+    browserSpeedLabel: z.string().trim().max(64).optional(),
+    sessionError: z.string().trim().max(256).optional(),
+  })
+  .strict();
 
 function resolveSourceRankingEnv(): RuntimeSource | undefined {
   try {
@@ -19,30 +38,31 @@ function resolveSourceRankingEnv(): RuntimeSource | undefined {
   }
 }
 
-export async function OPTIONS() {
-  return handleOptionsRequest();
-}
-
 export async function POST(request: Request) {
-  let payload: PlaybackFeedbackInput | null = null;
+  const authInfo = await getAuthInfoFromCookie(request as NextRequest);
+  if (!authInfo?.username) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  let rawPayload: unknown;
 
   try {
-    payload = (await request.json()) as PlaybackFeedbackInput;
+    rawPayload = await request.json();
   } catch {
-    const response = NextResponse.json(
+    return NextResponse.json(
       { error: 'Invalid JSON payload' },
       { status: 400 }
     );
-    return addCorsHeaders(response);
   }
 
-  if (!payload?.sourceKey || !payload.playbackMode) {
-    const response = NextResponse.json(
-      { error: 'Missing playback feedback fields' },
+  const parsedPayload = playbackFeedbackSchema.safeParse(rawPayload);
+  if (!parsedPayload.success) {
+    return NextResponse.json(
+      { error: 'Invalid playback feedback' },
       { status: 400 }
     );
-    return addCorsHeaders(response);
   }
+  const payload = parsedPayload.data;
 
   const rankingEnv = resolveSourceRankingEnv();
   const runtimeState = getSourceRankingRuntime(
@@ -50,14 +70,13 @@ export async function POST(request: Request) {
   );
 
   if (!runtimeState.enabled || !runtimeState.hasD1) {
-    const response = NextResponse.json(
+    return NextResponse.json(
       {
         saved: false,
         skipped: true,
       },
       { status: 202 }
     );
-    return addCorsHeaders(response);
   }
 
   try {
@@ -65,17 +84,12 @@ export async function POST(request: Request) {
       rankingEnv || (process.env as unknown as RuntimeSource),
       payload
     );
-    const response = NextResponse.json(
-      { saved },
-      { status: saved ? 200 : 202 }
-    );
-    return addCorsHeaders(response);
+    return NextResponse.json({ saved }, { status: saved ? 200 : 202 });
   } catch {
     // Missing D1 migrations (e.g. platform column) must not 500 the play page.
-    const response = NextResponse.json(
+    return NextResponse.json(
       { saved: false, skipped: true, error: 'feedback-persist-failed' },
       { status: 202 }
     );
-    return addCorsHeaders(response);
   }
 }

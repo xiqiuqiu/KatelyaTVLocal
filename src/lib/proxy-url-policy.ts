@@ -41,11 +41,29 @@ function isPrivateIpv4(hostname: string): boolean {
   );
 }
 
+function getMappedIpv4Address(hostname: string): string | null {
+  const match = normalizeHostname(hostname).match(
+    /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/
+  );
+  if (!match) {
+    return null;
+  }
+
+  const high = Number.parseInt(match[1], 16);
+  const low = Number.parseInt(match[2], 16);
+  return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
+}
+
 function isPrivateIpv6(hostname: string): boolean {
   const normalized = normalizeHostname(hostname);
 
   if (!normalized.includes(':')) {
     return false;
+  }
+
+  const mappedIpv4 = getMappedIpv4Address(normalized);
+  if (mappedIpv4) {
+    return isPrivateIpv4(mappedIpv4);
   }
 
   return (
@@ -113,7 +131,11 @@ export async function fetchWithValidatedRedirects(
   const maxRedirects = options?.maxRedirects ?? 2;
   let currentUrl = input;
 
-  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+  for (
+    let redirectCount = 0;
+    redirectCount <= maxRedirects;
+    redirectCount += 1
+  ) {
     const response = await fetch(currentUrl, {
       ...init,
       redirect: 'manual',

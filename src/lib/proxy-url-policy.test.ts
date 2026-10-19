@@ -88,6 +88,30 @@ describe('validateProxyTargetUrl', () => {
     });
   });
 
+  it('rejects private IPv4 addresses encoded as IPv4-mapped IPv6', () => {
+    expect(validateProxyTargetUrl('http://[::ffff:127.0.0.1]/')).toEqual({
+      ok: false,
+      reason: 'Blocked host',
+    });
+    expect(validateProxyTargetUrl('http://[::ffff:169.254.169.254]/')).toEqual({
+      ok: false,
+      reason: 'Blocked host',
+    });
+    expect(validateProxyTargetUrl('http://[::ffff:10.0.0.5]/')).toEqual({
+      ok: false,
+      reason: 'Blocked host',
+    });
+  });
+
+  it('keeps public IPv4-mapped IPv6 addresses available', () => {
+    const result = validateProxyTargetUrl('https://[::ffff:8.8.8.8]/media');
+
+    expect(result).toEqual({
+      ok: true,
+      url: new URL('https://[::ffff:8.8.8.8]/media'),
+    });
+  });
+
   it('rejects cloud metadata hostnames', () => {
     expect(
       validateProxyTargetUrl(
@@ -162,6 +186,20 @@ describe('fetchWithValidatedRedirects', () => {
     await expect(
       fetchWithValidatedRedirects('https://img.example.com/poster.jpg', {})
     ).rejects.toThrow(ProxyRedirectError);
+  });
+
+  it('rejects redirects to private IPv4-mapped IPv6 hosts', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      new MockResponse(null, {
+        status: 302,
+        headers: { Location: 'http://[::ffff:127.0.0.1]/internal' },
+      })
+    );
+
+    await expect(
+      fetchWithValidatedRedirects('https://img.example.com/poster.jpg', {})
+    ).rejects.toThrow(ProxyRedirectError);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('rejects redirect chains that exceed the hop limit', async () => {

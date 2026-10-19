@@ -56,6 +56,9 @@ interface PlaybackFeedbackRow {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SNAPSHOT_LOOKBACK_MS = 7 * DAY_MS;
 const FEEDBACK_ONLY_BASE_RANK_SCORE = 50;
+const MAX_FEEDBACK_SAMPLES_PER_SOURCE = 20;
+const MIN_FEEDBACK_RANK_ADJUSTMENT = -40;
+const MAX_FEEDBACK_RANK_ADJUSTMENT = 20;
 
 function getSourceRankingDatabase(env?: RuntimeSource): D1DatabaseLike | null {
   const source = env || (process.env as unknown as RuntimeSource);
@@ -91,30 +94,37 @@ function dedupeLatestByKey<T extends { sourceKey: string }>(
 }
 
 function getFeedbackRankAdjustment(rows: PlaybackFeedbackRow[]): number {
-  return rows.reduce((score, row) => {
-    let next = score;
-    if (row.startupSuccess) {
-      next += 4;
-    } else {
-      next -= 14;
-    }
-
-    if (typeof row.startupTimeMs === 'number') {
-      if (row.startupSuccess && row.startupTimeMs < 2500) {
+  const score = rows
+    .slice(0, MAX_FEEDBACK_SAMPLES_PER_SOURCE)
+    .reduce((currentScore, row) => {
+      let next = currentScore;
+      if (row.startupSuccess) {
         next += 4;
+      } else {
+        next -= 14;
       }
 
-      if (row.startupTimeMs > 5000) {
-        next -= 6;
+      if (typeof row.startupTimeMs === 'number') {
+        if (row.startupSuccess && row.startupTimeMs < 2500) {
+          next += 4;
+        }
+
+        if (row.startupTimeMs > 5000) {
+          next -= 6;
+        }
       }
-    }
 
-    if (row.switchedToProxy) {
-      next -= 4;
-    }
+      if (row.switchedToProxy) {
+        next -= 4;
+      }
 
-    return next;
-  }, 0);
+      return next;
+    }, 0);
+
+  return Math.max(
+    MIN_FEEDBACK_RANK_ADJUSTMENT,
+    Math.min(MAX_FEEDBACK_RANK_ADJUSTMENT, score)
+  );
 }
 
 function getFreshnessRankAdjustment(updatedAt: number, now: number): number {
