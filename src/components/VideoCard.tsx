@@ -1,8 +1,10 @@
 import {
   CheckCircle,
+  Film,
   Heart,
   Link,
   Loader2,
+  Play,
   PlayCircleIcon,
 } from 'lucide-react';
 import Image from 'next/image';
@@ -52,10 +54,13 @@ interface VideoCardProps {
   type?: string;
   typeName?: string;
   statusText?: string;
+  description?: string;
+  showFavoriteAction?: boolean;
   size?: 'default' | 'small';
   imagePriority?: boolean;
   imageSize?: ImageProxyOptions;
   tvMode?: boolean;
+  layout?: 'poster' | 'landscape' | 'result';
 }
 
 interface FavoriteHeartButtonProps {
@@ -138,7 +143,275 @@ function FavoriteHeartButton({
   );
 }
 
-export default function VideoCard({
+const videoCardIconButtonClass =
+  'inline-flex h-11 w-11 items-center justify-center rounded-ui-sm bg-black/80 text-white transition-colors duration-150 hover:bg-black focus-visible:outline-white';
+const videoCardDoubanLinkClass =
+  'absolute left-2 top-2 z-20 inline-flex h-11 w-11 items-center justify-center rounded-ui-sm bg-black/80 text-white transition-colors duration-150 hover:bg-black';
+
+function buildVideoCardFacts({
+  id,
+  title,
+  query,
+  poster,
+  episodes,
+  source,
+  source_name,
+  progress,
+  year,
+  from,
+  currentEpisode,
+  douban_id,
+  rate,
+  items,
+  type,
+  typeName,
+  statusText,
+  description,
+  showFavoriteAction,
+  size,
+  imagePriority,
+  imageSize,
+  tvMode,
+  layout,
+  aggregateData,
+  imageState,
+  showOpeningState,
+  sourcesOpen,
+  isAggregate,
+}: {
+  id?: string;
+  title: string;
+  query: string;
+  poster: string;
+  episodes?: number;
+  source?: string;
+  source_name?: string;
+  progress: number;
+  year?: string;
+  from: VideoCardProps['from'];
+  currentEpisode?: number;
+  douban_id?: string;
+  rate?: string;
+  items?: SearchResult[];
+  type: string;
+  typeName?: string;
+  statusText?: string;
+  description?: string;
+  showFavoriteAction: boolean;
+  size: 'default' | 'small';
+  imagePriority: boolean;
+  imageSize?: ImageProxyOptions;
+  tvMode: boolean;
+  layout: 'poster' | 'landscape' | 'result';
+  aggregateData: {
+    first: SearchResult;
+    mostFrequentDoubanId?: string | number;
+    mostFrequentEpisodes: number;
+  } | null;
+  imageState: { poster: string; status: 'loaded' | 'error' } | null;
+  showOpeningState: boolean;
+  sourcesOpen: boolean;
+  isAggregate: boolean;
+}) {
+  const actualTitle = aggregateData?.first.title ?? title;
+  const actualPoster = aggregateData?.first.poster ?? poster;
+  const hasImageLoaded = imageState?.poster === actualPoster;
+  const hasImageError = hasImageLoaded && imageState?.status === 'error';
+  const actualSource = aggregateData?.first.source ?? source;
+  const actualId = aggregateData?.first.id ?? id;
+  const resolvedDoubanId = aggregateData?.mostFrequentDoubanId ?? douban_id;
+  const actualDoubanId =
+    resolvedDoubanId && String(resolvedDoubanId) !== '0'
+      ? String(resolvedDoubanId)
+      : '';
+  const actualEpisodes = aggregateData?.mostFrequentEpisodes ?? episodes;
+  const actualYear = aggregateData?.first.year ?? year;
+  const displayYear =
+    (year && year !== 'unknown' ? year : undefined) ||
+    (actualYear && actualYear !== 'unknown' ? actualYear : undefined);
+  const actualQuery = query || '';
+  const actualSearchType = isAggregate
+    ? aggregateData?.first.episodes?.length === 1
+      ? 'movie'
+      : 'tv'
+    : type;
+  const favoriteStorageKey =
+    from !== 'douban' && actualSource && actualId
+      ? generateStorageKey(actualSource, actualId)
+      : null;
+  const playbackCardKey = `${from}:${actualSource || 'douban'}:${
+    actualId || actualDoubanId || actualTitle
+  }`;
+  const config = {
+    playrecord: {
+      showSourceName: true,
+      showProgress: true,
+      showPlayButton: true,
+      showHeart: true,
+      showCheckCircle: true,
+      showDoubanLink: false,
+      showRating: false,
+    },
+    favorite: {
+      showSourceName: true,
+      showProgress: false,
+      showPlayButton: true,
+      showHeart: true,
+      showCheckCircle: false,
+      showDoubanLink: false,
+      showRating: false,
+    },
+    search: {
+      showSourceName: true,
+      showProgress: false,
+      showPlayButton: true,
+      showHeart: !isAggregate,
+      showCheckCircle: false,
+      showDoubanLink: !!actualDoubanId,
+      showRating: false,
+    },
+    douban: {
+      showSourceName: false,
+      showProgress: false,
+      showPlayButton: true,
+      showHeart: false,
+      showCheckCircle: false,
+      showDoubanLink: true,
+      showRating: !!rate,
+    },
+  }[from] || {
+    showSourceName: true,
+    showProgress: false,
+    showPlayButton: true,
+    showHeart: !isAggregate,
+    showCheckCircle: false,
+    showDoubanLink: !!actualDoubanId,
+    showRating: false,
+  };
+  const isSmall = size === 'small';
+  const isLandscape = layout === 'landscape';
+  const isResult = layout === 'result';
+  const defaultImageSize = isSmall
+    ? { width: 240, height: 360, quality: 76 }
+    : { width: 360, height: 540, quality: 78 };
+  const resolvedImageSize =
+    imageSize ||
+    (isLandscape ? { width: 640, height: 360, quality: 78 } : defaultImageSize);
+  const cappedProgress = Math.min(Math.max(progress, 0), 100);
+
+  return {
+    actualDoubanId,
+    actualEpisodes,
+    actualId,
+    actualPoster,
+    actualQuery,
+    actualSearchType,
+    actualSource,
+    actualTitle,
+    actualYear,
+    aggregateCountText: `${items?.length ?? 0} 个来源`,
+    articleClass: `group relative w-full ${
+      isLandscape ? 'ui-resume-card' : ''
+    } ${isResult ? 'ui-search-card' : ''}`,
+    aspectRatio: isLandscape ? 'aspect-video' : 'aspect-[2/3]',
+    badgeSizeClass: isSmall ? 'text-[10px] px-2 py-1' : 'text-xs px-2.5 py-1',
+    continueLabel: showOpeningState ? '正在打开' : '继续播放',
+    description,
+    displayYear,
+    doubanLinkClass: videoCardDoubanLinkClass,
+    episodeBadgeText: currentEpisode
+      ? `${currentEpisode}/${actualEpisodes}`
+      : `${actualEpisodes ?? ''}`,
+    favoriteBarClass: tvMode ? '!opacity-100' : '',
+    favoriteStorageKey,
+    hasImageError,
+    hasImageLoaded,
+    iconButtonClass: videoCardIconButtonClass,
+    imageLoading: imagePriority ? undefined : ('lazy' as const),
+    imagePriority,
+    imageSizes: isLandscape
+      ? '(max-width: 640px) 78vw, 320px'
+      : isSmall
+      ? '(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 180px'
+      : '(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 240px',
+    imageSrc: processImageUrl(actualPoster, resolvedImageSize),
+    isAggregate,
+    isResult,
+    isSmall,
+    items,
+    landscapeStatusText: `${
+      currentEpisode ? `第 ${currentEpisode} 集 · ` : ''
+    }已看 ${Math.round(cappedProgress)}%${
+      source_name ? ` · ${source_name}` : ''
+    }`,
+    linkIconSize: isSmall ? 14 : 16,
+    metaClass: `ui-video-meta text-left ${
+      isResult ? 'ui-search-meta' : isSmall ? 'mt-2' : 'mt-3'
+    }`,
+    playIconSize: isSmall ? 34 : 52,
+    playOverlayClass: `pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-150 ease ${
+      showOpeningState
+        ? 'opacity-100'
+        : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+    }`,
+    playbackCardKey,
+    posterActionLabel: `打开 ${actualTitle} 海报`,
+    posterCardPrimary: (tvMode && !isLandscape && !isResult) || undefined,
+    posterFocusKey:
+      !isLandscape && !isResult ? `play:${playbackCardKey}` : undefined,
+    posterTabIndex: tvMode && (isLandscape || isResult) ? -1 : undefined,
+    primaryActionLabel: showOpeningState ? '正在打开' : '查看并播放',
+    progressScale: cappedProgress / 100,
+    query,
+    rate,
+    resultDescription: description || aggregateData?.first.desc || '',
+    searchMetaClass: `mt-1.5 flex flex-wrap items-center gap-1.5 text-[rgb(var(--ui-text-muted))] ${
+      isSmall ? 'text-[10px]' : 'text-xs'
+    }`,
+    showAggregateCount: isResult && isAggregate,
+    showAggregateToggle: isResult && isAggregate,
+    showCheckCircle: config.showCheckCircle,
+    showContinue: isLandscape,
+    showDoubanLink: !tvMode && config.showDoubanLink && !!actualDoubanId,
+    showEpisodeBadge: !!actualEpisodes && actualEpisodes > 1,
+    showFavoriteBar: config.showHeart || config.showCheckCircle,
+    showHeartButton: !!(
+      config.showHeart &&
+      showFavoriteAction &&
+      favoriteStorageKey &&
+      actualSource &&
+      actualId
+    ),
+    showLandscapeStatus: isLandscape,
+    showOpeningState,
+    showPlayOverlay: config.showPlayButton || showOpeningState,
+    showProgress: config.showProgress,
+    showRating: !!(config.showRating && rate),
+    showResultDescription: !!(description || aggregateData?.first.desc),
+    showSearchMeta:
+      from === 'search' && !!(typeName || displayYear || statusText),
+    showSourceChip: !!(config.showSourceName && source_name && !isLandscape),
+    showSourceList: isResult && isAggregate && sourcesOpen,
+    smallIconSize: isSmall ? 18 : 20,
+    sourceChipClass: `mt-1 block text-[rgb(var(--ui-text-muted))] ${
+      isSmall ? 'text-[10px]' : 'text-xs'
+    }`,
+    source_name,
+    sourcesOpen,
+    sourcesToggleLabel: sourcesOpen ? '收起来源' : '展开来源',
+    statusText,
+    surfaceClass: `relative overflow-hidden ${
+      isResult ? 'ui-search-poster' : ''
+    }`,
+    titleActionLabel: `打开 ${actualTitle}`,
+    titleTabIndex: tvMode ? -1 : undefined,
+    tvCardPrimary: tvMode || undefined,
+    tvMode,
+    typeName,
+  };
+}
+
+function useVideoCardModel({
   id,
   title = '',
   query = '',
@@ -158,19 +431,25 @@ export default function VideoCard({
   type = '',
   typeName,
   statusText,
+  description,
+  showFavoriteAction = true,
   size = 'default',
   imagePriority = false,
   imageSize,
   tvMode = false,
+  layout = 'poster',
 }: VideoCardProps) {
   const router = useRouter();
   const posterRef = useRef<HTMLDivElement>(null);
   const playbackPreparation = usePlaybackPreparation();
-  const [hasImageLoaded, setHasImageLoaded] = useState(false);
+  const [imageState, setImageState] = useState<{
+    poster: string;
+    status: 'loaded' | 'error';
+  } | null>(null);
   const [isOpening, setIsOpening] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const [isNavigationPending, startNavigationTransition] = useTransition();
   const showOpeningState = isOpening || isNavigationPending;
-
   const isAggregate = from === 'search' && !!items?.length;
 
   const aggregateData = useMemo(() => {
@@ -213,29 +492,48 @@ export default function VideoCard({
     };
   }, [isAggregate, items]);
 
-  const actualTitle = aggregateData?.first.title ?? title;
-  const actualPoster = aggregateData?.first.poster ?? poster;
-  const actualSource = aggregateData?.first.source ?? source;
-  const actualId = aggregateData?.first.id ?? id;
-  const actualDoubanId = String(
-    aggregateData?.mostFrequentDoubanId ?? douban_id
-  );
-  const actualEpisodes = aggregateData?.mostFrequentEpisodes ?? episodes;
-  const actualYear = aggregateData?.first.year ?? year;
-  const displayYear =
-    (year && year !== 'unknown' ? year : undefined) ||
-    (actualYear && actualYear !== 'unknown' ? actualYear : undefined);
-  const actualQuery = query || '';
-  const actualSearchType = isAggregate
-    ? aggregateData?.first.episodes?.length === 1
-      ? 'movie'
-      : 'tv'
-    : type;
-
-  const favoriteStorageKey =
-    from !== 'douban' && actualSource && actualId
-      ? generateStorageKey(actualSource, actualId)
-      : null;
+  const facts = buildVideoCardFacts({
+    aggregateData,
+    currentEpisode,
+    description,
+    douban_id,
+    episodes,
+    from,
+    id,
+    imagePriority,
+    imageSize,
+    imageState,
+    isAggregate,
+    items,
+    layout,
+    poster,
+    progress,
+    query,
+    rate,
+    showFavoriteAction,
+    showOpeningState,
+    size,
+    source,
+    source_name,
+    sourcesOpen,
+    statusText,
+    title,
+    tvMode,
+    type,
+    typeName,
+    year,
+  });
+  const {
+    actualId,
+    actualPoster,
+    actualQuery,
+    actualSearchType,
+    actualSource,
+    actualTitle,
+    actualYear,
+    isAggregate: aggregateCard,
+    playbackCardKey,
+  } = facts;
 
   const handleDeleteRecord = useCallback(
     async (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -258,10 +556,6 @@ export default function VideoCard({
     [actualId, actualSource, from, onDelete, onDeleteRecord]
   );
 
-  const playbackCardKey = `${from}:${actualSource || 'douban'}:${
-    actualId || actualDoubanId || actualTitle
-  }`;
-
   const handleClick = useCallback(() => {
     if (showOpeningState) return;
 
@@ -282,7 +576,7 @@ export default function VideoCard({
       params.set('id', actualId);
       params.set('title', actualTitle);
       if (actualYear) params.set('year', actualYear);
-      if (isAggregate) params.set('prefer', 'true');
+      if (aggregateCard) params.set('prefer', 'true');
       if (actualQuery) params.set('stitle', actualQuery.trim());
       if (actualSearchType) params.set('stype', actualSearchType);
       if (from === 'playrecord') params.set('from', 'playrecord');
@@ -321,8 +615,8 @@ export default function VideoCard({
     actualSource,
     actualTitle,
     actualYear,
+    aggregateCard,
     from,
-    isAggregate,
     playbackCardKey,
     playbackPreparation,
     router,
@@ -330,266 +624,391 @@ export default function VideoCard({
     tvMode,
   ]);
 
-  const config = useMemo(() => {
-    const configs = {
-      playrecord: {
-        showSourceName: true,
-        showProgress: true,
-        showPlayButton: true,
-        showHeart: true,
-        showCheckCircle: true,
-        showDoubanLink: false,
-        showRating: false,
-      },
-      favorite: {
-        showSourceName: true,
-        showProgress: false,
-        showPlayButton: true,
-        showHeart: true,
-        showCheckCircle: false,
-        showDoubanLink: false,
-        showRating: false,
-      },
-      search: {
-        showSourceName: true,
-        showProgress: false,
-        showPlayButton: true,
-        showHeart: !isAggregate,
-        showCheckCircle: false,
-        showDoubanLink: !!actualDoubanId,
-        showRating: false,
-      },
-      douban: {
-        showSourceName: false,
-        showProgress: false,
-        showPlayButton: true,
-        showHeart: false,
-        showCheckCircle: false,
-        showDoubanLink: true,
-        showRating: !!rate,
-      },
-    };
+  return {
+    ...facts,
+    handleClick,
+    handleDeleteRecord,
+    posterRef,
+    setImageState,
+    setSourcesOpen,
+  };
+}
 
-    return configs[from] || configs.search;
-  }, [actualDoubanId, from, isAggregate, rate]);
+type VideoCardModel = ReturnType<typeof useVideoCardModel>;
 
-  const isSmall = size === 'small';
-  const badgeSizeClass = isSmall
-    ? 'text-[10px] px-2 py-1'
-    : 'text-xs px-2.5 py-1';
-  const iconButtonClass =
-    'inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.46)] bg-[rgb(var(--ui-bg)/0.45)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition-[border-color,background-color,transform] duration-200 ease-out hover:border-[rgb(var(--ui-accent)/0.32)] hover:bg-[rgb(var(--ui-surface-strong)/0.62)] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
-  const doubanLinkClass =
-    'absolute left-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-bg)/0.48)] text-[rgb(var(--ui-success))] shadow-ui-glass backdrop-blur-xl transition-[border-color,background-color,transform] duration-200 ease-out hover:border-[rgb(var(--ui-success)/0.48)] hover:bg-[rgb(var(--ui-surface-strong)/0.68)] hover:text-[rgb(var(--ui-on-accent))] active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
-  const posterActionLabel = `打开 ${actualTitle} 海报`;
-  const titleActionLabel = `打开 ${actualTitle}`;
-  const defaultImageSize = isSmall
-    ? { width: 240, height: 360, quality: 76 }
-    : { width: 360, height: 540, quality: 78 };
-  const resolvedImageSize = imageSize || defaultImageSize;
+function VideoCardImage({ model }: { model: VideoCardModel }) {
+  if (!model.hasImageLoaded) {
+    return (
+      <>
+        <ImagePlaceholder aspectRatio={model.aspectRatio} />
+        <Image
+          alt={model.actualTitle}
+          className='object-cover'
+          fill
+          loading={model.imageLoading}
+          onLoad={() =>
+            model.setImageState({
+              poster: model.actualPoster,
+              status: 'loaded',
+            })
+          }
+          onError={() =>
+            model.setImageState({ poster: model.actualPoster, status: 'error' })
+          }
+          priority={model.imagePriority}
+          referrerPolicy='no-referrer'
+          sizes={model.imageSizes}
+          src={model.imageSrc}
+        />
+      </>
+    );
+  }
+
+  if (model.hasImageError) {
+    return (
+      <div
+        role='img'
+        aria-label={`${model.actualTitle} 海报暂不可用`}
+        className='absolute inset-0 flex items-center justify-center bg-[rgb(var(--ui-surface-strong))] text-[rgb(var(--ui-text-muted))]'
+      >
+        <Film aria-hidden className='h-8 w-8' />
+      </div>
+    );
+  }
 
   return (
-    <article
-      className={`group relative w-full hover:z-[500] ${
-        isSmall ? 'origin-top-left scale-75' : ''
-      }`}
-      data-playback-preparation-card={playbackCardKey}
+    <Image
+      alt={model.actualTitle}
+      className='object-cover'
+      fill
+      loading={model.imageLoading}
+      onLoad={() =>
+        model.setImageState({ poster: model.actualPoster, status: 'loaded' })
+      }
+      onError={() =>
+        model.setImageState({ poster: model.actualPoster, status: 'error' })
+      }
+      priority={model.imagePriority}
+      referrerPolicy='no-referrer'
+      sizes={model.imageSizes}
+      src={model.imageSrc}
+    />
+  );
+}
+
+function VideoCardHitTarget({ model }: { model: VideoCardModel }) {
+  return (
+    <button
+      data-tv-focus-key={model.posterFocusKey}
+      data-tv-card-primary={model.posterCardPrimary}
+      aria-label={model.posterActionLabel}
+      aria-busy={model.showOpeningState}
+      tabIndex={model.posterTabIndex}
+      className='absolute inset-0 z-10 rounded-[inherit]'
+      disabled={model.showOpeningState}
+      onClick={model.handleClick}
+      type='button'
+    />
+  );
+}
+
+function VideoCardPlayOverlay({ model }: { model: VideoCardModel }) {
+  if (!model.showPlayOverlay) return null;
+  return (
+    <div className={model.playOverlayClass}>
+      {model.showOpeningState ? (
+        <span className='inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/55 px-3 py-2 text-xs font-medium text-white shadow-ui-soft backdrop-blur-md'>
+          <Loader2 className='animate-spin' size={16} />
+          正在打开
+        </span>
+      ) : (
+        <PlayCircleIcon
+          className='fill-black/50 text-white drop-shadow-md'
+          size={model.playIconSize}
+          strokeWidth={0.9}
+        />
+      )}
+    </div>
+  );
+}
+
+function VideoCardDoubanLink({ model }: { model: VideoCardModel }) {
+  if (!model.showDoubanLink || !model.actualDoubanId) return null;
+  return (
+    <a
+      aria-label='打开豆瓣页面'
+      className={model.doubanLinkClass}
+      href={`https://movie.douban.com/subject/${model.actualDoubanId}`}
+      onClick={(event) => event.stopPropagation()}
+      rel='noopener noreferrer'
+      target='_blank'
     >
-      <Surface className='relative overflow-hidden' variant='raised'>
-        <div
-          className='relative aspect-[2/3] overflow-hidden rounded-[inherit]'
-          ref={posterRef}
+      <Link size={model.linkIconSize} />
+    </a>
+  );
+}
+
+function VideoCardBadges({ model }: { model: VideoCardModel }) {
+  return (
+    <div className='absolute right-3 top-3 z-20 flex flex-col items-end gap-2'>
+      {model.showRating ? (
+        <span
+          className={`inline-flex items-center justify-center rounded-md bg-black/80 font-semibold text-amber-200 ${model.badgeSizeClass}`}
         >
-          {!hasImageLoaded ? (
-            <ImagePlaceholder aspectRatio='aspect-[2/3]' />
-          ) : null}
-
-          <Image
-            alt={actualTitle}
-            className='object-cover'
-            fill
-            loading={imagePriority ? undefined : 'lazy'}
-            onLoad={() => setHasImageLoaded(true)}
-            priority={imagePriority}
-            referrerPolicy='no-referrer'
-            sizes={
-              isSmall
-                ? '(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 180px'
-                : '(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 240px'
-            }
-            src={processImageUrl(actualPoster, resolvedImageSize)}
-          />
-
-          <button
-            data-tv-focus-key={`play:${playbackCardKey}`}
-            data-tv-card-primary={tvMode || undefined}
-            data-tv-primary={(tvMode && from === 'playrecord') || undefined}
-            aria-label={posterActionLabel}
-            aria-busy={showOpeningState}
-            className='absolute inset-0 z-10 rounded-[inherit]'
-            disabled={showOpeningState}
-            onClick={handleClick}
-            type='button'
-          />
-
-          <div
-            className={`pointer-events-none absolute inset-0 bg-gradient-to-t from-[rgb(var(--ui-bg)/0.9)] via-[rgb(var(--ui-bg)/0.2)] to-transparent transition-opacity duration-150 ease group-hover:opacity-100 ${
-              showOpeningState ? 'opacity-100' : 'opacity-80'
-            }`}
-          />
-
-          {config.showPlayButton || showOpeningState ? (
-            <div
-              className={`pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-150 ease ${
-                showOpeningState
-                  ? 'opacity-100'
-                  : 'opacity-0 group-hover:opacity-100'
-              }`}
-            >
-              {showOpeningState ? (
-                <span className='inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/55 px-3 py-2 text-xs font-medium text-white shadow-ui-soft backdrop-blur-md'>
-                  <Loader2 className='animate-spin' size={16} />
-                  正在打开
-                </span>
-              ) : (
-                <PlayCircleIcon
-                  className='fill-transparent text-[rgb(var(--ui-text))] drop-shadow-[0_8px_20px_rgba(0,0,0,0.45)]'
-                  size={isSmall ? 34 : 52}
-                  strokeWidth={0.9}
-                />
-              )}
-            </div>
-          ) : null}
-
-          {!tvMode && config.showDoubanLink && actualDoubanId ? (
-            <a
-              aria-label='打开豆瓣页面'
-              className={doubanLinkClass}
-              href={`https://movie.douban.com/subject/${actualDoubanId}`}
-              onClick={(event) => event.stopPropagation()}
-              rel='noopener noreferrer'
-              target='_blank'
-            >
-              <Link size={isSmall ? 14 : 16} />
-            </a>
-          ) : null}
-
-          <div className='absolute right-3 top-3 z-20 flex flex-col items-end gap-2'>
-            {config.showRating && rate ? (
-              <span
-                className={`inline-flex items-center justify-center rounded-full bg-[rgb(var(--ui-accent-warm))] font-semibold text-[rgb(var(--ui-bg))] shadow-ui-soft ${badgeSizeClass}`}
-              >
-                {rate}
-              </span>
-            ) : null}
-
-            {actualEpisodes && actualEpisodes > 1 ? (
-              <span
-                className={`inline-flex items-center justify-center rounded-full bg-[rgb(var(--ui-success)/0.9)] font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft ${badgeSizeClass}`}
-              >
-                {currentEpisode
-                  ? `${currentEpisode}/${actualEpisodes}`
-                  : actualEpisodes}
-              </span>
-            ) : null}
-          </div>
-
-          {config.showHeart || config.showCheckCircle ? (
-            <CardActions className={tvMode ? '!opacity-100' : ''}>
-              {config.showCheckCircle ? (
-                <button
-                  aria-label='删除播放记录'
-                  className={iconButtonClass}
-                  onClick={handleDeleteRecord}
-                  type='button'
-                >
-                  <CheckCircle size={isSmall ? 18 : 20} />
-                </button>
-              ) : null}
-
-              {config.showHeart &&
-              favoriteStorageKey &&
-              actualSource &&
-              actualId ? (
-                <FavoriteHeartButton
-                  actualEpisodes={actualEpisodes}
-                  actualId={actualId}
-                  actualPoster={actualPoster}
-                  actualSource={actualSource}
-                  actualTitle={actualTitle}
-                  actualYear={actualYear}
-                  iconButtonClass={iconButtonClass}
-                  isSmall={isSmall}
-                  source_name={source_name}
-                  storageKey={favoriteStorageKey}
-                />
-              ) : null}
-            </CardActions>
-          ) : null}
-        </div>
-      </Surface>
-
-      {config.showProgress ? (
-        <div className='mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10'>
-          <div
-            className='h-full w-full origin-left rounded-full bg-[rgb(var(--ui-accent))] transition-transform duration-200 ease-out'
-            style={{
-              transform: `scaleX(${
-                Math.min(Math.max(progress, 0), 100) / 100
-              })`,
-            }}
-          />
-        </div>
+          {model.rate}
+        </span>
       ) : null}
+      {model.showEpisodeBadge ? (
+        <span
+          className={`inline-flex items-center justify-center rounded-md bg-black/80 font-semibold text-white ${model.badgeSizeClass}`}
+        >
+          {model.episodeBadgeText}
+        </span>
+      ) : null}
+    </div>
+  );
+}
 
-      <div className={`text-center ${isSmall ? 'mt-2' : 'mt-3'}`}>
+function VideoCardFavoriteActions({ model }: { model: VideoCardModel }) {
+  if (!model.showFavoriteBar) return null;
+  return (
+    <CardActions className={model.favoriteBarClass}>
+      {model.showCheckCircle ? (
         <button
-          tabIndex={tvMode ? -1 : undefined}
-          aria-label={titleActionLabel}
-          className={`block w-full truncate font-semibold text-[rgb(var(--ui-text))] transition-colors duration-300 hover:text-[rgb(var(--ui-success))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent ${
-            isSmall ? 'text-lg leading-6' : 'text-base leading-5'
-          }`}
-          disabled={showOpeningState}
-          onClick={handleClick}
-          title={actualTitle}
+          aria-label='删除播放记录'
+          className={model.iconButtonClass}
+          onClick={model.handleDeleteRecord}
           type='button'
         >
-          <span className='inline-flex min-w-0 items-center justify-center gap-1.5'>
-            {showOpeningState ? (
-              <Loader2 className='shrink-0 animate-spin' size={14} />
-            ) : null}
-            <span className='truncate'>{actualTitle}</span>
-          </span>
+          <CheckCircle size={model.smallIconSize} />
         </button>
+      ) : null}
+      {model.showHeartButton &&
+      model.favoriteStorageKey &&
+      model.actualSource &&
+      model.actualId ? (
+        <FavoriteHeartButton
+          actualEpisodes={model.actualEpisodes}
+          actualId={model.actualId}
+          actualPoster={model.actualPoster}
+          actualSource={model.actualSource}
+          actualTitle={model.actualTitle}
+          actualYear={model.actualYear}
+          iconButtonClass={model.iconButtonClass}
+          isSmall={model.isSmall}
+          source_name={model.source_name}
+          storageKey={model.favoriteStorageKey}
+        />
+      ) : null}
+    </CardActions>
+  );
+}
 
-        {from === 'search' && (typeName || displayYear || statusText) ? (
-          <div
-            className={`mt-1.5 flex flex-wrap items-center justify-center gap-1.5 text-[rgb(var(--ui-text-muted))] ${
-              isSmall ? 'text-[10px]' : 'text-xs'
-            }`}
-          >
-            {typeName ? (
-              <span className='inline-flex items-center rounded-md border border-white/10 bg-white/5 px-2 py-0.5'>
-                {typeName}
-              </span>
-            ) : null}
-            {displayYear ? <span>{displayYear}</span> : null}
-            {statusText ? <span>{statusText}</span> : null}
-          </div>
+function VideoCardPoster({ model }: { model: VideoCardModel }) {
+  return (
+    <Surface className={model.surfaceClass} variant='raised'>
+      <div
+        className={`relative ${model.aspectRatio} overflow-hidden rounded-[inherit]`}
+        ref={model.posterRef}
+      >
+        <VideoCardImage model={model} />
+        <VideoCardHitTarget model={model} />
+        <VideoCardPlayOverlay model={model} />
+        <VideoCardDoubanLink model={model} />
+        <VideoCardBadges model={model} />
+        <VideoCardFavoriteActions model={model} />
+      </div>
+    </Surface>
+  );
+}
+
+function VideoCardProgress({ model }: { model: VideoCardModel }) {
+  if (!model.showProgress) return null;
+  return (
+    <div className='ui-video-progress mt-3 h-1 w-full overflow-hidden rounded-full bg-[rgb(var(--ui-surface-strong))]'>
+      <div
+        className='h-full w-full origin-left rounded-full bg-[rgb(var(--ui-accent))] transition-transform duration-200 ease-out'
+        style={{ transform: `scaleX(${model.progressScale})` }}
+      />
+    </div>
+  );
+}
+
+function VideoCardTitle({ model }: { model: VideoCardModel }) {
+  return (
+    <button
+      tabIndex={model.titleTabIndex}
+      aria-label={model.titleActionLabel}
+      className='ui-video-title w-full text-base font-semibold text-[rgb(var(--ui-text))] transition-colors duration-150 hover:text-[rgb(var(--ui-accent))]'
+      disabled={model.showOpeningState}
+      onClick={model.handleClick}
+      title={model.actualTitle}
+      type='button'
+    >
+      <span className='inline-flex min-w-0 items-center gap-1.5'>
+        {model.showOpeningState ? (
+          <Loader2 className='shrink-0 animate-spin' size={14} />
         ) : null}
+        <span>{model.actualTitle}</span>
+      </span>
+    </button>
+  );
+}
 
-        {config.showSourceName && source_name ? (
-          <span
-            className={`mt-1 block text-[rgb(var(--ui-text-muted))] ${
-              isSmall ? 'text-[10px]' : 'text-xs'
-            }`}
+function VideoCardSearchMeta({ model }: { model: VideoCardModel }) {
+  if (!model.showSearchMeta) return null;
+  return (
+    <div className={model.searchMetaClass}>
+      {model.typeName ? (
+        <span className='inline-flex items-center rounded-md border border-white/10 bg-white/5 px-2 py-0.5'>
+          {model.typeName}
+        </span>
+      ) : null}
+      {model.displayYear ? <span>{model.displayYear}</span> : null}
+      {model.statusText ? <span>{model.statusText}</span> : null}
+    </div>
+  );
+}
+
+function VideoCardLandscapeStatus({ model }: { model: VideoCardModel }) {
+  if (!model.showLandscapeStatus) return null;
+  return (
+    <p className='mt-1 text-sm text-[rgb(var(--ui-text-muted))]'>
+      {model.landscapeStatusText}
+    </p>
+  );
+}
+
+function VideoCardSourceChip({ model }: { model: VideoCardModel }) {
+  if (!model.showSourceChip) return null;
+  return (
+    <span className={model.sourceChipClass}>
+      <span className='inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 transition-colors duration-300 group-hover:border-[rgba(var(--ui-success),0.3)] group-hover:text-[rgb(var(--ui-success))]'>
+        {model.source_name}
+      </span>
+    </span>
+  );
+}
+
+function VideoCardResultPanel({ model }: { model: VideoCardModel }) {
+  if (!model.isResult) return null;
+  return (
+    <>
+      {model.showAggregateCount ? (
+        <p className='mt-2 text-sm text-[rgb(var(--ui-text-muted))]'>
+          {model.aggregateCountText}
+        </p>
+      ) : null}
+      {model.showResultDescription ? (
+        <p className='ui-search-description'>{model.resultDescription}</p>
+      ) : null}
+      <div className='mt-4 flex flex-wrap gap-2'>
+        <button
+          type='button'
+          aria-label={`查看并播放 ${model.actualTitle}`}
+          aria-busy={model.showOpeningState}
+          disabled={model.showOpeningState}
+          onClick={model.handleClick}
+          data-tv-focus-key={`play:${model.playbackCardKey}`}
+          data-tv-card-primary={model.tvCardPrimary}
+          className='ui-primary-button'
+        >
+          {model.showOpeningState ? (
+            <Loader2 aria-hidden className='h-4 w-4 animate-spin' />
+          ) : (
+            <Play aria-hidden className='h-4 w-4' />
+          )}
+          {model.primaryActionLabel}
+        </button>
+        {model.showAggregateToggle ? (
+          <button
+            type='button'
+            aria-expanded={model.sourcesOpen}
+            aria-controls={`sources-${model.playbackCardKey}`}
+            onClick={() => model.setSourcesOpen(!model.sourcesOpen)}
+            className='ui-secondary-button'
           >
-            <span className='inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 transition-colors duration-300 group-hover:border-[rgba(var(--ui-success),0.3)] group-hover:text-[rgb(var(--ui-success))]'>
-              {source_name}
-            </span>
-          </span>
+            {model.sourcesToggleLabel}
+          </button>
         ) : null}
       </div>
+    </>
+  );
+}
+
+function VideoCardContinue({ model }: { model: VideoCardModel }) {
+  if (!model.showContinue) return null;
+  return (
+    <button
+      type='button'
+      aria-label={`继续播放 ${model.actualTitle}`}
+      aria-busy={model.showOpeningState}
+      disabled={model.showOpeningState}
+      onClick={model.handleClick}
+      data-tv-focus-key={`play:${model.playbackCardKey}`}
+      data-tv-card-primary={model.tvCardPrimary}
+      data-tv-primary={model.tvCardPrimary}
+      className='mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-2 text-sm font-semibold text-[rgb(var(--ui-on-accent))] transition-[filter] duration-150 hover:brightness-110 disabled:opacity-60'
+    >
+      {model.showOpeningState ? (
+        <Loader2 aria-hidden className='h-4 w-4 animate-spin' />
+      ) : (
+        <Play aria-hidden className='h-4 w-4 fill-current' />
+      )}
+      {model.continueLabel}
+    </button>
+  );
+}
+
+function VideoCardMeta({ model }: { model: VideoCardModel }) {
+  return (
+    <div className={model.metaClass}>
+      <VideoCardTitle model={model} />
+      <VideoCardSearchMeta model={model} />
+      <VideoCardLandscapeStatus model={model} />
+      <VideoCardSourceChip model={model} />
+      <VideoCardResultPanel model={model} />
+      <VideoCardContinue model={model} />
+    </div>
+  );
+}
+
+function VideoCardSourceList({ model }: { model: VideoCardModel }) {
+  if (!model.showSourceList) return null;
+  return (
+    <div className='ui-search-sources' id={`sources-${model.playbackCardKey}`}>
+      {model.items?.map((item) => (
+        <VideoCard
+          key={`${item.source}:${item.id}`}
+          from='search'
+          layout='result'
+          tvMode={model.tvMode}
+          id={item.id}
+          source={item.source}
+          source_name={item.source_name}
+          title={item.title}
+          poster={item.poster}
+          episodes={item.episodes.length}
+          year={item.year}
+          query={model.query}
+          type={item.episodes.length > 1 ? 'tv' : 'movie'}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function VideoCard(props: VideoCardProps) {
+  const model = useVideoCardModel(props);
+  return (
+    <article
+      className={model.articleClass}
+      data-playback-preparation-card={model.playbackCardKey}
+    >
+      <VideoCardPoster model={model} />
+      <VideoCardProgress model={model} />
+      <VideoCardMeta model={model} />
+      <VideoCardSourceList model={model} />
     </article>
   );
 }

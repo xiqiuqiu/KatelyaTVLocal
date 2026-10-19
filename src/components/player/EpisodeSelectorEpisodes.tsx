@@ -15,11 +15,11 @@ interface EpisodeSelectorEpisodesProps {
 }
 
 const stateActiveClass =
-  'border-[rgb(var(--ui-accent))] bg-[rgba(var(--ui-accent),0.1)] text-[rgb(var(--ui-text))] shadow-[inset_0_1px_0_rgba(var(--ui-text),0.08),0_8px_20px_rgba(0,0,0,0.18)]';
+  'border-[rgb(var(--ui-accent))] bg-[rgba(var(--ui-accent),0.1)] text-[rgb(var(--ui-accent))]';
 const stateIdleClass =
   'border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] hover:border-[rgba(var(--ui-accent),0.45)] hover:bg-[rgba(var(--ui-surface-strong),0.82)] hover:text-[rgb(var(--ui-text))]';
 const currentChipClass =
-  'rounded-full bg-[rgb(var(--ui-border))] px-1.5 py-0.5 text-[9px] font-bold leading-none text-[rgb(var(--ui-text))] ring-1 ring-[rgba(var(--ui-text),0.1)]';
+  'rounded px-1.5 py-0.5 text-xs font-semibold leading-none text-[rgb(var(--ui-accent))]';
 
 function buildCategories(
   pageCount: number,
@@ -111,7 +111,7 @@ const EpisodeSelectorEpisodes: React.FC<EpisodeSelectorEpisodesProps> = ({
               WebkitOverflowScrolling: 'touch',
             }}
           >
-            <div className='flex min-w-max gap-1.5 px-1.5 py-1.5'>
+            <div className='ui-player-category-list flex min-w-max gap-1.5 px-1.5 py-1.5'>
               {categories.map((label, idx) => {
                 const isActive = idx === currentPage;
                 const getButtonWidth = (text: string) => {
@@ -134,7 +134,7 @@ const EpisodeSelectorEpisodes: React.FC<EpisodeSelectorEpisodesProps> = ({
                     }}
                     onClick={() => onCategoryClick(idx)}
                     aria-current={isActive ? 'true' : undefined}
-                    className={`${buttonWidth} relative flex-shrink-0 whitespace-nowrap rounded-ui-sm border px-2.5 py-2 text-center text-xs font-semibold transition-[border-color,background-color,color] duration-200
+                    className={`${buttonWidth} relative flex-shrink-0 whitespace-nowrap rounded-ui-sm border min-h-11 px-2.5 py-2 text-center text-sm font-semibold transition-[border-color,background-color,color] duration-150
                           ${isActive ? stateActiveClass : stateIdleClass}
                         `.trim()}
                     title={`第 ${idx * episodesPerPage + 1}-${Math.min(
@@ -157,7 +157,7 @@ const EpisodeSelectorEpisodes: React.FC<EpisodeSelectorEpisodesProps> = ({
           </div>
         </div>
         <button
-          className='flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] transition-[border-color,background-color,color] duration-200 hover:border-[rgba(var(--ui-accent),0.45)] hover:bg-[rgba(var(--ui-surface-strong),0.82)] hover:text-[rgb(var(--ui-text))]'
+          className='flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] transition-[border-color,background-color,color] duration-150 hover:border-[rgba(var(--ui-accent),0.45)] hover:bg-[rgba(var(--ui-surface-strong),0.82)] hover:text-[rgb(var(--ui-text))]'
           aria-label='切换集数排序'
           title={descending ? '切换为正序' : '切换为倒序'}
           onClick={onToggleDescending}
@@ -179,7 +179,7 @@ const EpisodeSelectorEpisodes: React.FC<EpisodeSelectorEpisodesProps> = ({
         </button>
       </div>
 
-      <div className='grid flex-1 grid-cols-[repeat(auto-fill,minmax(44px,1fr))] justify-center gap-2 overflow-y-auto pb-1 pr-0.5 sm:grid-cols-[repeat(auto-fill,minmax(48px,1fr))]'>
+      <div className='ui-player-episode-grid grid flex-1 grid-cols-[repeat(auto-fill,minmax(44px,1fr))] justify-center gap-2 overflow-y-auto pb-1 pr-0.5 sm:grid-cols-[repeat(auto-fill,minmax(48px,1fr))]'>
         {episodes.map((episodeNumber) => {
           const isActive = episodeNumber === value;
           return (
@@ -190,13 +190,14 @@ const EpisodeSelectorEpisodes: React.FC<EpisodeSelectorEpisodesProps> = ({
                 e.stopPropagation();
                 onEpisodeClick(episodeNumber);
               }}
-              className={`flex h-10 w-full cursor-pointer items-center justify-center rounded-ui-sm border text-sm font-medium transition-[border-color,background-color,color] duration-200
+              className={`flex h-11 w-full cursor-pointer items-center justify-center rounded-ui-sm border text-sm font-medium transition-[border-color,background-color,color] duration-150
                     ${
                       isActive
-                        ? 'border border-[rgb(var(--ui-accent))] bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
+                        ? 'border border-[rgb(var(--ui-accent))] bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))]'
                         : stateIdleClass
                     }`.trim()}
               type='button'
+              aria-current={isActive ? 'true' : undefined}
               aria-label={`第${episodeNumber}集`}
             >
               {episodeNumber}

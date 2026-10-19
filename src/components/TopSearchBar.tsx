@@ -1,34 +1,45 @@
 'use client';
 
-import { Menu, Search } from 'lucide-react';
+import { Menu, Search, Tv, User } from 'lucide-react';
 import Image from 'next/image';
-import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
+
+import { buildTvModeHref } from '@/lib/tv-interaction';
 
 import { useSite } from './SiteProvider';
 import { ThemeToggle } from './ThemeToggle';
-import { UserMenu } from './UserMenu';
 
 interface TopSearchBarProps {
   isSidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
+  onOpenMenu?: () => void;
+  menuOpen?: boolean;
+  modeHref?: string;
 }
 
 const TopSearchBar = ({
-  isSidebarCollapsed = true,
+  isSidebarCollapsed = false,
   onToggleSidebar,
+  onOpenMenu,
+  menuOpen = false,
+  modeHref,
 }: TopSearchBarProps) => {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { siteName } = useSite();
   const [query, setQuery] = useState('');
+  const currentHref = modeHref || `${pathname}?${searchParams.toString()}`;
+  const canEnterTvMode = ['/', '/search', '/history'].includes(pathname);
 
   useEffect(() => {
     setQuery(searchParams.get('q') ?? '');
   }, [searchParams]);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSearch = (event: React.FormEvent) => {
+    event.preventDefault();
     if (query.trim()) {
       router.push(`/search?q=${encodeURIComponent(query.trim())}`);
     }
@@ -36,65 +47,77 @@ const TopSearchBar = ({
 
   return (
     <header
-      className='ui-topbar-glass fixed inset-x-0 top-0 z-[9999]'
+      className='ui-topbar-glass fixed inset-x-0 top-0 z-50'
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
-      <div className='relative z-10 grid h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 md:block md:px-0'>
-        <div className='flex flex-shrink-0 justify-center md:absolute md:left-0 md:top-0 md:h-16 md:w-20 md:items-center'>
+      <div className='ui-topbar-content'>
+        <div className='flex min-w-0 items-center gap-2'>
           <button
+            type='button'
             onClick={onToggleSidebar}
             aria-pressed={!isSidebarCollapsed}
             aria-label={isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-            className='inline-flex h-11 w-11 items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-surface)/0.42)] text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md transition-[border-color,background-color,color,transform] duration-150 ease ui-hover-lift hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.52)] hover:text-[rgb(var(--ui-text))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent'
+            className='ui-icon-button hidden md:inline-flex'
           >
-            <Menu size={20} />
+            <Menu aria-hidden size={20} />
           </button>
-        </div>
-
-        <div className='hidden min-w-0 flex-shrink-0 md:absolute md:left-24 md:top-1/2 md:flex md:-translate-y-1/2'>
-          <button
-            onClick={() => router.push('/')}
-            className='inline-flex items-center gap-2 rounded-full px-2 py-1 text-sm font-semibold tracking-[0.08em] text-[rgb(var(--ui-text))] transition hover:bg-[rgb(var(--ui-surface)/0.42)] hover:text-[rgb(var(--ui-accent))]'
-          >
+          <Link href='/' className='ui-brand'>
             <Image
               src='/logo.png'
               alt=''
               width={28}
               height={28}
-              className='h-7 w-7 rounded-ui-xs object-cover'
-              aria-hidden='true'
+              aria-hidden
+              className='h-7 w-7 shrink-0 rounded-md'
             />
-            <span>{siteName}</span>
-          </button>
+            <span className='truncate'>{siteName}</span>
+          </Link>
         </div>
-
         <form
           role='search'
+          aria-label='全站搜索'
           onSubmit={handleSearch}
-          className='flex min-w-0 items-center rounded-full border border-[rgb(var(--ui-border)/0.58)] bg-[rgb(var(--ui-surface)/0.42)] p-1 shadow-ui-soft backdrop-blur-xl transition duration-300 focus-within:border-[rgb(var(--ui-accent)/0.44)] focus-within:bg-[rgb(var(--ui-surface-strong)/0.5)] md:absolute md:left-1/2 md:top-1/2 md:w-[min(56rem,calc(100vw-32rem))] md:-translate-x-1/2 md:-translate-y-1/2'
+          className='ui-topbar-search'
         >
-          <div className='flex-1'>
-            <input
-              type='text'
-              aria-label='搜索影片、电视剧、综艺'
-              placeholder='搜索影片、电视剧、综艺...'
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className='h-11 w-full rounded-full border-0 bg-transparent px-5 text-base text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))] focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.44)]'
-            />
-          </div>
+          <input
+            type='search'
+            aria-label='搜索影片、电视剧、综艺'
+            placeholder='搜索影片、电视剧、综艺'
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className='h-11 min-w-0 flex-1 rounded-ui-sm border-0 bg-transparent px-3 text-base text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))] focus:outline-none focus:ring-0'
+          />
           <button
             type='submit'
             aria-label='提交搜索'
-            className='inline-flex h-9 w-9 items-center justify-center rounded-full bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] transition-[filter,transform] duration-150 ease ui-hover-scale-md hover:brightness-110'
+            className='ui-icon-button bg-[rgb(var(--ui-accent))] !text-[rgb(var(--ui-on-accent))] hover:!bg-[rgb(var(--ui-accent))]'
           >
-            <Search size={18} />
+            <Search aria-hidden size={20} />
           </button>
         </form>
-
-        <div className='flex flex-shrink-0 items-center gap-1 sm:gap-2 md:absolute md:right-8 md:top-1/2 md:-translate-y-1/2'>
+        <div className='flex shrink-0 items-center gap-1'>
+          {canEnterTvMode && (
+            <Link
+              href={buildTvModeHref(currentHref, true)}
+              className='ui-icon-button md:w-auto md:gap-2 md:px-3'
+              aria-label='进入电视模式'
+              title='进入电视模式'
+            >
+              <Tv aria-hidden className='h-5 w-5 shrink-0' />
+              <span className='hidden text-sm lg:inline'>电视模式</span>
+            </Link>
+          )}
           <ThemeToggle />
-          <UserMenu />
+          <button
+            type='button'
+            onClick={onOpenMenu}
+            aria-label='账号菜单'
+            aria-haspopup='dialog'
+            aria-expanded={menuOpen}
+            className='ui-icon-button hidden md:inline-flex'
+          >
+            <User aria-hidden className='h-5 w-5' />
+          </button>
         </div>
       </div>
     </header>

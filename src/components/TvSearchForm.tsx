@@ -91,7 +91,7 @@ export default function TvSearchForm({
             }
           }}
           placeholder={placeholder}
-          className='min-h-12 min-w-0 flex-1 rounded-ui-sm border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-4 py-3 !text-xl text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))]'
+          className='min-h-12 min-w-0 flex-1 rounded-ui-sm border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-4 py-3 !text-[26px] text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))]'
         />
         <button
           type='submit'

@@ -1,16 +1,23 @@
 'use client';
 
+import { Compass, Heart, History, Home, Search, Settings } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   buildTvModeHref,
   TV_MODE_PREFERENCE_COOKIE,
 } from '@/lib/tv-interaction';
+import {
+  catalogNavigationItems,
+  isNavigationItemActive,
+} from '@/lib/ui/navigation';
 
 import MobileBottomNav from '@/components/MobileBottomNav';
 import Sidebar from '@/components/Sidebar';
+import { useSite } from '@/components/SiteProvider';
 import TopSearchBar from '@/components/TopSearchBar';
+import { UserMenu } from '@/components/UserMenu';
 import useTvBrowseNavigation from '@/components/useTvBrowseNavigation';
 
 interface AppShellProps {
@@ -20,16 +27,34 @@ interface AppShellProps {
   modeHref?: string;
 }
 
+const tvNavigation = [
+  { href: '/', label: '首页', key: 'home', icon: Home },
+  { href: '/douban?type=movie', label: '发现', key: 'discover', icon: Compass },
+  { href: '/search', label: '搜索', key: 'search', icon: Search },
+  { href: '/?tab=favorites', label: '收藏夹', key: 'favorites', icon: Heart },
+  { href: '/history', label: '播放历史', key: 'history', icon: History },
+];
+
 export default function AppShell({
   children,
   activePath = '/',
   tvMode = false,
-  modeHref = activePath,
+  modeHref,
 }: AppShellProps) {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const browsePage = ['/', '/history', '/search'].includes(activePath);
-  useTvBrowseNavigation(rootRef, tvMode && browsePage, activePath);
+  const { siteName } = useSite();
+  const browsePage =
+    ['/', '/?tab=favorites', '/history', '/search', '/admin'].includes(
+      activePath
+    ) || activePath.startsWith('/douban');
+  useTvBrowseNavigation(
+    rootRef,
+    tvMode && browsePage,
+    activePath,
+    activePath === '/admin'
+  );
 
   useEffect(() => {
     const mode = new URLSearchParams(window.location.search).get('tv');
@@ -44,12 +69,8 @@ export default function AppShell({
       setIsSidebarCollapsed(window.__sidebarCollapsed);
       return;
     }
-
     const saved = window.localStorage.getItem('sidebarCollapsed');
-    if (saved === null) {
-      return;
-    }
-
+    if (saved === null) return;
     try {
       const parsed = JSON.parse(saved);
       if (typeof parsed === 'boolean') {
@@ -67,16 +88,11 @@ export default function AppShell({
       root.classList.remove('play-overscroll-lock');
       return;
     }
-
     root.classList.add('play-overscroll-lock');
     return () => {
       root.classList.remove('play-overscroll-lock');
     };
   }, [activePath]);
-
-  const desktopOffsetClass = useMemo(() => {
-    return isSidebarCollapsed ? 'md:pl-20' : 'md:pl-64';
-  }, [isSidebarCollapsed]);
 
   const handleToggleSidebar = () => {
     const next = !isSidebarCollapsed;
@@ -90,19 +106,18 @@ export default function AppShell({
       ref={rootRef}
       data-tv-mode={tvMode}
       data-tv-browse={tvMode && browsePage}
-      className='ui-app-bg ui-breathing-canvas min-h-dvh text-[rgb(var(--ui-text))]'
+      className='ui-app-bg min-h-dvh text-[rgb(var(--ui-text))]'
     >
       {!tvMode && (
         <TopSearchBar
           isSidebarCollapsed={isSidebarCollapsed}
           onToggleSidebar={handleToggleSidebar}
+          onOpenMenu={() => setMenuOpen(true)}
+          menuOpen={menuOpen}
+          modeHref={modeHref}
         />
       )}
-      <div
-        className={`relative z-10 min-h-dvh overflow-x-hidden ${
-          tvMode ? '' : 'pt-[calc(4rem+env(safe-area-inset-top))]'
-        }`}
-      >
+      <div className={`relative min-h-dvh ${tvMode ? '' : 'ui-shell-body'}`}>
         {!tvMode && (
           <div className='hidden md:block'>
             <Sidebar
@@ -110,79 +125,103 @@ export default function AppShell({
               onToggle={setIsSidebarCollapsed}
               collapsed={isSidebarCollapsed}
               showCollapseToggle={false}
+              onOpenMenu={() => setMenuOpen(true)}
             />
           </div>
         )}
-        <main className={`min-w-0 ${tvMode ? '' : desktopOffsetClass}`}>
-          <div
-            className={`ui-reveal mx-auto w-full max-w-[1600px] ${
-              tvMode ? 'px-5 py-5' : 'px-4 py-4 md:px-6 md:py-6 lg:px-8 lg:py-8'
-            }`}
-            style={{
-              paddingBottom: tvMode
-                ? '1.25rem'
-                : 'calc(5rem + env(safe-area-inset-bottom))',
-            }}
-          >
-            {tvMode ? (
-              <nav
-                aria-label='电视导航'
-                className='mb-6 flex flex-wrap items-center gap-4'
-              >
-                <Link
-                  href='/?tv=1'
-                  data-tv-focus-key='nav-home'
-                  data-tv-back={(browsePage && activePath !== '/') || undefined}
-                  aria-current={activePath === '/' ? 'page' : undefined}
-                  className='inline-flex min-h-12 items-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.28)] px-5 text-lg font-semibold'
-                >
-                  首页
-                </Link>
-                <Link
-                  href='/history?tv=1'
-                  data-tv-focus-key='nav-history'
-                  aria-current={activePath === '/history' ? 'page' : undefined}
-                  className='inline-flex min-h-12 items-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.28)] px-5 text-lg font-semibold'
-                >
-                  播放历史
-                </Link>
-                <Link
-                  href='/search?tv=1'
-                  data-tv-focus-key='nav-search'
-                  aria-current={activePath === '/search' ? 'page' : undefined}
-                  className='inline-flex min-h-12 items-center rounded-ui-sm border border-[rgb(var(--ui-border)/0.28)] px-5 text-lg font-semibold'
-                >
-                  搜索
-                </Link>
+        <main
+          id='main-content'
+          className={`min-w-0 ${
+            tvMode ? '' : isSidebarCollapsed ? 'md:pl-20' : 'md:pl-44'
+          }`}
+        >
+          <div className='ui-shell-content'>
+            {tvMode && (
+              <nav aria-label='电视导航' className='ui-tv-nav'>
+                <span className='ui-brand'>{siteName}</span>
+                {tvNavigation.map(({ href, label, key, icon: Icon }) => (
+                  <Link
+                    key={key}
+                    href={buildTvModeHref(href, true)}
+                    data-tv-focus-key={`nav-${key}`}
+                    data-tv-back={
+                      (key === 'home' && browsePage && activePath !== '/') ||
+                      undefined
+                    }
+                    aria-current={
+                      isNavigationItemActive(activePath, href)
+                        ? 'page'
+                        : undefined
+                    }
+                    data-active={isNavigationItemActive(activePath, href)}
+                    className='ui-nav-item'
+                  >
+                    <Icon aria-hidden className='h-6 w-6' />
+                    {label}
+                  </Link>
+                ))}
+                {browsePage && (
+                  <button
+                    type='button'
+                    className='ui-nav-item'
+                    aria-haspopup='dialog'
+                    aria-expanded={menuOpen}
+                    data-tv-focus-key='nav-settings'
+                    onClick={() => setMenuOpen(true)}
+                  >
+                    <Settings aria-hidden className='h-6 w-6' />
+                    设置
+                  </button>
+                )}
                 {browsePage && (
                   <Link
-                    href={buildTvModeHref(modeHref, false)}
+                    href={buildTvModeHref(modeHref || activePath, false)}
                     data-tv-focus-key='nav-exit'
-                    className='ml-auto inline-flex min-h-12 items-center rounded-ui-sm px-5 text-lg'
+                    className='ui-nav-item ml-auto'
                   >
                     退出电视模式
                   </Link>
                 )}
               </nav>
-            ) : browsePage ? (
-              <div className='mb-4 flex justify-end'>
-                <Link
-                  href={buildTvModeHref(modeHref, true)}
-                  className='inline-flex min-h-11 items-center rounded-full border border-[rgb(var(--ui-border)/0.28)] px-4 text-sm font-semibold'
-                >
-                  电视模式
-                </Link>
-              </div>
-            ) : null}
+            )}
+            {activePath.startsWith('/douban') && (
+              <nav aria-label='影片分类' className='mb-6 flex flex-wrap gap-2'>
+                {catalogNavigationItems.map((item) => (
+                  <Link
+                    key={item.key}
+                    href={buildTvModeHref(item.href, tvMode)}
+                    data-active={isNavigationItemActive(activePath, item.href)}
+                    aria-current={
+                      isNavigationItemActive(activePath, item.href)
+                        ? 'page'
+                        : undefined
+                    }
+                    className='ui-nav-item'
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
+            )}
             {children}
           </div>
         </main>
       </div>
       {!tvMode && (
         <div className='md:hidden'>
-          <MobileBottomNav activePath={activePath} />
+          <MobileBottomNav
+            activePath={activePath}
+            onOpenMenu={() => setMenuOpen(true)}
+            menuOpen={menuOpen}
+          />
         </div>
       )}
+      <UserMenu
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        tvMode={tvMode}
+        modeHref={modeHref}
+      />
     </div>
   );
 }

@@ -11,7 +11,7 @@ function FavoriteIcon({ filled }: { filled: boolean }) {
   if (filled) {
     return (
       <svg
-        className='h-7 w-7 text-[rgb(var(--ui-critical))]'
+        className='h-5 w-5 text-[rgb(var(--ui-critical))]'
         viewBox='0 0 24 24'
         xmlns='http://www.w3.org/2000/svg'
       >
@@ -28,7 +28,7 @@ function FavoriteIcon({ filled }: { filled: boolean }) {
   }
 
   return (
-    <Heart className='h-7 w-7 stroke-[1] text-[rgb(var(--ui-text-muted))]' />
+    <Heart className='h-5 w-5 stroke-[1] text-[rgb(var(--ui-text-muted))]' />
   );
 }
 
@@ -42,7 +42,8 @@ export default function PlayFavoriteButton({
         e.stopPropagation();
         onToggle();
       }}
-      className='inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-[rgb(var(--ui-text))] transition hover:bg-white/10'
+      className='inline-flex min-h-11 items-center gap-2 rounded-ui-sm border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-4 py-2 text-sm font-medium text-[rgb(var(--ui-text))] transition-colors hover:bg-[rgb(var(--ui-surface-strong))]'
+      aria-pressed={favorited}
       aria-label={favorited ? '取消收藏' : '收藏影片'}
       type='button'
     >

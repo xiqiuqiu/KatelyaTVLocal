@@ -403,7 +403,473 @@ function useLazyRef<T>(initializer: () => T): { current: T } {
   return ref as { current: T };
 }
 
+function PlayLoadingView({
+  session,
+}: {
+  session: Extract<ReturnType<typeof usePlayPageSession>, { phase: 'loading' }>;
+}) {
+  return (
+    <PageLayout activePath='/play' tvMode={session.isTvMode}>
+      <InitialLoadingOverlay title={session.videoTitle || undefined} />
+    </PageLayout>
+  );
+}
+
+function PlayErrorView({
+  session,
+}: {
+  session: Extract<ReturnType<typeof usePlayPageSession>, { phase: 'error' }>;
+}) {
+  const errorCopy: Record<
+    PlaybackErrorKind,
+    { title: string; description: string; eyebrow: string }
+  > = {
+    'missing-params': {
+      eyebrow: '播放参数缺失',
+      title: '缺少必要播放信息',
+      description: '当前链接没有提供可用于定位影片的片名或播放源。',
+    },
+    'not-found': {
+      eyebrow: '资源未命中',
+      title: '未找到匹配结果',
+      description: '当前片名或播放源没有匹配到可播放资源，可以重新搜索片名。',
+    },
+    'history-expired': {
+      eyebrow: '历史记录已过期',
+      title: '旧播放记录暂时不可用',
+      description:
+        '这条历史记录对应的资源站资源可能已经下架或更换编号，当前也没有找到可替代线路。',
+    },
+    'device-unsupported': {
+      eyebrow: '设备不受支持',
+      title: '当前 Apple 播放环境不可用',
+      description:
+        '请升级到支持 ManagedMediaSource 的 iOS 或 iPadOS 版本后重试。',
+    },
+    'source-unavailable': {
+      eyebrow: '线路不可用',
+      title: '当前播放源不可用',
+      description: '可以重新尝试，或返回搜索页选择其他播放源。',
+    },
+    player: {
+      eyebrow: '播放器异常',
+      title: '播放器初始化失败',
+      description: '播放环境没有正常创建，可以刷新后重试。',
+    },
+    generic: {
+      eyebrow: '播放异常',
+      title: '播放遇到问题',
+      description: '请检查网络连接，或稍后重新尝试。',
+    },
+  };
+  const copy = errorCopy[session.errorKind] || errorCopy.generic;
+  const searchTarget = session.searchTitle || session.videoTitle;
+
+  return (
+    <PageLayout activePath='/play' tvMode={session.isTvMode}>
+      <div className='flex min-h-[70vh] items-center justify-center px-3'>
+        <Surface
+          variant='plain'
+          className='ui-loading-panel mx-auto w-full max-w-xl px-6 py-8 text-center sm:px-8 sm:py-10'
+        >
+          <div className='mx-auto flex h-20 w-20 items-center justify-center rounded-ui-md bg-[rgba(var(--ui-critical),0.12)] text-[rgb(var(--ui-critical))]'>
+            <AlertCircle className='h-10 w-10' strokeWidth={1.6} />
+          </div>
+
+          <div className='mt-6 space-y-3'>
+            <h2 className='text-2xl font-semibold tracking-tight text-[rgb(var(--ui-text))] sm:text-3xl'>
+              {copy.title}
+            </h2>
+            <p className='mx-auto max-w-md text-sm leading-6 text-[rgb(var(--ui-text-muted))]'>
+              {copy.description}
+            </p>
+          </div>
+
+          <div className='mt-7 rounded-ui-md border border-[rgba(var(--ui-critical),0.22)] bg-[rgba(var(--ui-critical),0.08)] px-4 py-3 text-sm font-medium text-[rgb(var(--ui-text))]'>
+            <p className='font-semibold text-[rgb(var(--ui-critical))]'>
+              {copy.eyebrow}
+            </p>
+            <p className='mt-1'>{session.error}</p>
+          </div>
+
+          <div className='mt-8 grid gap-3 sm:grid-cols-3'>
+            <button
+              type='button'
+              onClick={() => window.location.reload()}
+              className='ui-primary-button'
+            >
+              <RefreshCw className='h-4 w-4' />
+              重新尝试
+            </button>
+
+            {searchTarget ? (
+              <button
+                type='button'
+                onClick={() =>
+                  session.router.push(
+                    `/search?q=${encodeURIComponent(searchTarget)}`
+                  )
+                }
+                className='ui-secondary-button'
+              >
+                <Search className='h-4 w-4' />
+                搜索片名
+              </button>
+            ) : null}
+
+            <button
+              type='button'
+              onClick={() => session.router.back()}
+              className='ui-secondary-button'
+            >
+              <ArrowLeft className='h-4 w-4' />
+              返回上页
+            </button>
+          </div>
+        </Surface>
+      </div>
+    </PageLayout>
+  );
+}
+
+function PlayPageHeading({
+  session,
+}: {
+  session: Extract<ReturnType<typeof usePlayPageSession>, { phase: 'ready' }>;
+}) {
+  return (
+    <PlayerHeader
+      title={session.videoTitle || '影片标题'}
+      subtitle={[
+        session.totalEpisodes > 1
+          ? `第 ${session.currentEpisodeIndex + 1} 集`
+          : null,
+        session.detail?.source_name || null,
+        session.detail?.year || session.videoYear || null,
+      ]
+        .filter(Boolean)
+        .join(' · ')}
+      actions={
+        <>
+          <button
+            type='button'
+            aria-pressed={session.isTvMode}
+            onClick={() => {
+              session.router.replace(
+                buildTvModeHref(window.location.href, !session.isTvMode),
+                { scroll: false }
+              );
+            }}
+            className='inline-flex min-h-11 items-center rounded-ui-sm border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-4 text-sm font-semibold text-[rgb(var(--ui-text))] transition hover:bg-[rgb(var(--ui-surface-strong))]'
+          >
+            {session.isTvMode ? '退出电视模式' : '电视模式'}
+          </button>
+          <PlayFavoriteButton
+            favorited={session.favorited}
+            onToggle={session.handleToggleFavorite}
+          />
+        </>
+      }
+    />
+  );
+}
+
+function PlayVideoSurface({
+  session,
+}: {
+  session: Extract<ReturnType<typeof usePlayPageSession>, { phase: 'ready' }>;
+}) {
+  return (
+    <Surface
+      variant='plain'
+      className='min-w-0 self-start overflow-hidden bg-black'
+    >
+      <div className='relative aspect-video w-full overflow-hidden'>
+        <div
+          data-playback-preparation-target
+          ref={session.artRef}
+          className='play-page-player h-full w-full overflow-hidden rounded-ui-md bg-black'
+        ></div>
+
+        {/* 跳过片头片尾控制器 */}
+        {session.currentSource && session.currentId && session.videoTitle && (
+          <SkipController
+            source={session.currentSource}
+            id={session.currentId}
+            title={session.videoTitle}
+            artPlayerRef={session.artPlayerRef}
+            playerBindingKey={session.videoUrl}
+            duration={session.videoDuration}
+            isSettingMode={session.isSkipSettingMode}
+            onSettingModeChange={session.setIsSkipSettingMode}
+            onNextEpisode={session.handleNextEpisode}
+          />
+        )}
+
+        {session.adSkipMarkFeedback && (
+          <div className='pointer-events-none absolute inset-x-0 bottom-14 z-40 flex justify-center px-3 md:bottom-16'>
+            <div
+              className='rounded-ui-sm border border-white/25 bg-black/90 px-4 py-2 text-sm font-medium text-white shadow-ui-strong'
+              role='status'
+            >
+              {session.adSkipMarkFeedback}
+            </div>
+          </div>
+        )}
+
+        {/* In-Player Failure State：恢复阶梯耗尽，仍留在播放页 (#48) */}
+        {session.inPlayerFailure && (
+          <div className='absolute inset-0 z-40 flex items-center justify-center bg-black/85 px-4'>
+            <div className='w-full max-w-sm rounded-ui-md border border-white/15 bg-black/90 p-5 text-center text-white shadow-ui-strong'>
+              <p className='text-xs font-semibold uppercase tracking-[0.22em] text-amber-200/90'>
+                播放中断
+              </p>
+              <h3 className='mt-2 text-lg font-semibold'>
+                当前线路无法继续恢复
+              </h3>
+              <p className='mt-2 text-sm leading-6 text-white/70'>
+                可以重试当前线路、手动切换其他源，或离开播放页。
+              </p>
+              <div className='mt-5 grid gap-2'>
+                <button
+                  type='button'
+                  onClick={() => {
+                    session.setInPlayerFailure(null);
+                    window.location.reload();
+                  }}
+                  className='inline-flex min-h-11 items-center justify-center rounded-ui-md bg-white px-4 text-sm font-semibold text-black transition hover:bg-white/90'
+                >
+                  重试
+                </button>
+                <button
+                  type='button'
+                  onClick={() => {
+                    session.setInPlayerFailure(null);
+                    session.setIsEpisodeSelectorCollapsed(false);
+                  }}
+                  className='inline-flex min-h-11 items-center justify-center rounded-ui-md border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15'
+                >
+                  手动换源
+                </button>
+                <button
+                  type='button'
+                  onClick={() => session.router.back()}
+                  className='inline-flex min-h-11 items-center justify-center rounded-ui-md px-4 text-sm font-semibold text-white/80 transition hover:text-white'
+                >
+                  离开
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 换源加载蒙层 */}
+        {session.isVideoLoading && (
+          <PlayerLoadingOverlay stage={session.videoLoadingStage} />
+        )}
+
+        {session.playbackDebugEnabled && (
+          <div className='absolute bottom-3 right-3 z-30 text-xs text-amber-50'>
+            {session.playbackDebugCollapsed ? (
+              <button
+                type='button'
+                onClick={() => session.setPlaybackDebugCollapsed(false)}
+                className='rounded-full border border-amber-400/40 bg-black/75 px-3 py-1.5 font-medium text-amber-100 shadow-ui-strong transition hover:bg-black/90'
+              >
+                调试 · {session.playbackDebugEvents.length}
+              </button>
+            ) : (
+              <div className='w-[min(300px,calc(100vw-2rem))] overflow-hidden rounded-ui-md border border-amber-400/40 bg-black/80 p-2.5 shadow-ui-strong'>
+                <div className='mb-2 flex items-center justify-between gap-2'>
+                  <span className='font-semibold'>播放调试</span>
+                  <button
+                    type='button'
+                    onClick={() => session.setPlaybackDebugCollapsed(true)}
+                    className='rounded border border-white/10 bg-white/10 px-2 py-0.5 text-[11px] text-amber-100 transition hover:bg-white/20'
+                  >
+                    收起
+                  </button>
+                </div>
+                <div className='mb-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-amber-100/90'>
+                  <div>
+                    <PlaybackDebugPlayhead
+                      currentTimeRef={session.currentPlayTimeRef}
+                    />
+                  </div>
+                  <div>模式：{session.playbackMode}</div>
+                  <div>
+                    运行：
+                    {session.playbackPolicyRef.current?.runtime || '-'}
+                  </div>
+                  <div>
+                    分片：
+                    {session.playbackPolicyRef.current?.segmentMode || '-'}
+                  </div>
+                  <div className='col-span-2 truncate'>
+                    过滤：
+                    {session.playbackPolicyRef.current?.playlistFilter || '-'}
+                  </div>
+                </div>
+                <div className='max-h-24 space-y-1 overflow-hidden'>
+                  {session.playbackDebugEvents.length === 0 ? (
+                    <div className='text-amber-100/70'>等待播放事件...</div>
+                  ) : (
+                    session.playbackDebugEvents.slice(0, 3).map((event) => (
+                      <div
+                        key={`${event.createdAt}-${event.eventType}`}
+                        className='rounded bg-white/5 px-2 py-1'
+                      >
+                        <div className='flex justify-between gap-2'>
+                          <span className='truncate font-medium'>
+                            {event.eventType}
+                          </span>
+                          <span>
+                            {formatDebugPlaybackTime(event.currentTime)}
+                          </span>
+                        </div>
+                        <div className='truncate text-amber-100/80'>
+                          {event.message}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Surface>
+  );
+}
+
+function PlayEpisodeColumn({
+  session,
+}: {
+  session: Extract<ReturnType<typeof usePlayPageSession>, { phase: 'ready' }>;
+}) {
+  return (
+    <PlayerSidebar
+      className={`min-w-0 ${
+        session.isTvMode ? 'w-full' : 'xl:sticky xl:top-24 xl:self-start'
+      }`}
+    >
+      <div className='mb-4 flex items-center justify-between gap-3'>
+        <div>
+          <h2 className='text-lg font-semibold text-[rgb(var(--ui-text))]'>
+            选集与线路
+          </h2>
+        </div>
+        {!session.isEpisodeSelectorCollapsed && (
+          <button
+            onClick={() =>
+              session.setIsEpisodeSelectorCollapsed(
+                !session.isEpisodeSelectorCollapsed
+              )
+            }
+            className='min-h-11 rounded-ui-sm border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-3 py-2 text-sm font-medium text-[rgb(var(--ui-text-muted))] transition hover:bg-[rgb(var(--ui-surface-strong))] hover:text-[rgb(var(--ui-text))]'
+            title='隐藏选集面板'
+            type='button'
+          >
+            隐藏
+          </button>
+        )}
+      </div>
+
+      <div
+        className={`${session.isEpisodeSelectorCollapsed ? 'hidden' : 'block'}`}
+      >
+        <EpisodeSelector
+          tvMode={session.isTvMode}
+          totalEpisodes={session.totalEpisodes}
+          value={session.currentEpisodeIndex + 1}
+          onChange={session.handleEpisodeChange}
+          onSourceChange={session.handleSourceChange}
+          currentSource={session.currentSource}
+          currentId={session.currentId}
+          videoTitle={session.searchTitle || session.videoTitle}
+          availableSources={session.availableSources}
+          sourceSearchLoading={session.sourceSearchLoading}
+          sourceSearchError={session.sourceSearchError}
+          precomputedVideoInfo={session.precomputedVideoInfo}
+          precomputedSourceStatuses={session.precomputedSourceStatuses}
+          sourceSelectionScores={session.sourceSelectionScores}
+        />
+      </div>
+
+      {session.isEpisodeSelectorCollapsed && (
+        <button
+          onClick={() => session.setIsEpisodeSelectorCollapsed(false)}
+          className='w-full min-h-11 rounded-ui-sm border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-4 py-3 text-sm font-medium text-[rgb(var(--ui-text))] transition hover:bg-[rgb(var(--ui-surface-strong))]'
+          title='显示选集面板'
+          type='button'
+        >
+          显示选集
+        </button>
+      )}
+    </PlayerSidebar>
+  );
+}
+
+function PlayPageExtras({
+  session,
+}: {
+  session: Extract<ReturnType<typeof usePlayPageSession>, { phase: 'ready' }>;
+}) {
+  if (session.isTvMode) return null;
+  return (
+    <>
+      <PlayDetailSection
+        cover={session.videoCover || session.detail?.poster}
+        detail={session.detail}
+        title={session.videoTitle}
+        year={session.videoYear}
+      />
+      <PlayRecommendations
+        doubanId={session.detail?.douban_id}
+        excludeTitle={session.videoTitle}
+        preferCategory={
+          session.detail ? classifySearchResult(session.detail) : 'movie'
+        }
+        vodClass={session.detail?.class}
+      />
+    </>
+  );
+}
+
+function PlayReadyView({
+  session,
+}: {
+  session: Extract<ReturnType<typeof usePlayPageSession>, { phase: 'ready' }>;
+}) {
+  return (
+    <PageLayout activePath='/play' tvMode={session.isTvMode}>
+      <div className={session.isTvMode ? 'space-y-4' : 'space-y-6'}>
+        <PlayPageHeading session={session} />
+        <div
+          className={`grid gap-6 ${
+            session.isTvMode
+              ? 'grid-cols-1'
+              : 'xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_360px]'
+          }`}
+        >
+          <PlayVideoSurface session={session} />
+          <PlayEpisodeColumn session={session} />
+        </div>
+        <PlayPageExtras session={session} />
+      </div>
+    </PageLayout>
+  );
+}
+
 function PlayPageClient() {
+  const session = usePlayPageSession();
+  if (session.phase === 'loading') return <PlayLoadingView session={session} />;
+  if (session.phase === 'error') return <PlayErrorView session={session} />;
+  return <PlayReadyView session={session} />;
+}
+
+function usePlayPageSession() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isTvMode = resolveIsTvMode(searchParams);
@@ -6238,405 +6704,66 @@ function PlayPageClient() {
   }, []);
 
   if (loading) {
-    return (
-      <PageLayout activePath='/play' tvMode={isTvMode}>
-        <InitialLoadingOverlay title={videoTitle || undefined} />
-      </PageLayout>
-    );
+    return { phase: 'loading' as const, isTvMode, videoTitle };
   }
 
   if (error) {
-    const errorCopy: Record<
-      PlaybackErrorKind,
-      { title: string; description: string; eyebrow: string }
-    > = {
-      'missing-params': {
-        eyebrow: '播放参数缺失',
-        title: '缺少必要播放信息',
-        description: '当前链接没有提供可用于定位影片的片名或播放源。',
-      },
-      'not-found': {
-        eyebrow: '资源未命中',
-        title: '未找到匹配结果',
-        description: '当前片名或播放源没有匹配到可播放资源，可以重新搜索片名。',
-      },
-      'history-expired': {
-        eyebrow: '历史记录已过期',
-        title: '旧播放记录暂时不可用',
-        description:
-          '这条历史记录对应的资源站资源可能已经下架或更换编号，当前也没有找到可替代线路。',
-      },
-      'device-unsupported': {
-        eyebrow: '设备不受支持',
-        title: '当前 Apple 播放环境不可用',
-        description:
-          '请升级到支持 ManagedMediaSource 的 iOS 或 iPadOS 版本后重试。',
-      },
-      'source-unavailable': {
-        eyebrow: '线路不可用',
-        title: '当前播放源不可用',
-        description: '可以重新尝试，或返回搜索页选择其他播放源。',
-      },
-      player: {
-        eyebrow: '播放器异常',
-        title: '播放器初始化失败',
-        description: '播放环境没有正常创建，可以刷新后重试。',
-      },
-      generic: {
-        eyebrow: '播放异常',
-        title: '播放遇到问题',
-        description: '请检查网络连接，或稍后重新尝试。',
-      },
+    return {
+      phase: 'error' as const,
+      error,
+      errorKind,
+      isTvMode,
+      router,
+      searchTitle,
+      videoTitle,
     };
-    const copy = errorCopy[errorKind] || errorCopy.generic;
-    const searchTarget = searchTitle || videoTitle;
-
-    return (
-      <PageLayout activePath='/play' tvMode={isTvMode}>
-        <div className='flex min-h-[70vh] items-center justify-center px-3'>
-          <Surface
-            variant='frosted'
-            className='ui-loading-panel mx-auto w-full max-w-xl px-6 py-8 text-center sm:px-8 sm:py-10'
-          >
-            <div className='mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-[rgba(var(--ui-critical),0.24)] bg-[rgba(var(--ui-critical),0.12)] text-[rgb(var(--ui-critical))] shadow-ui-soft'>
-              <AlertCircle className='h-10 w-10' strokeWidth={1.6} />
-            </div>
-
-            <div className='mt-6 space-y-3'>
-              <p className='text-[11px] font-semibold uppercase tracking-[0.28em] text-[rgb(var(--ui-accent-warm))]'>
-                {copy.eyebrow}
-              </p>
-              <h2 className='text-2xl font-semibold tracking-tight text-[rgb(var(--ui-text))] sm:text-3xl'>
-                {copy.title}
-              </h2>
-              <p className='mx-auto max-w-md text-sm leading-6 text-[rgb(var(--ui-text-muted))]'>
-                {copy.description}
-              </p>
-            </div>
-
-            <div className='mt-7 rounded-ui-md border border-[rgba(var(--ui-critical),0.22)] bg-[rgba(var(--ui-critical),0.08)] px-4 py-3 text-sm font-medium text-[rgb(var(--ui-text))]'>
-              {error}
-            </div>
-
-            <div className='mt-8 grid gap-3 sm:grid-cols-3'>
-              <button
-                type='button'
-                onClick={() => window.location.reload()}
-                className='inline-flex min-h-11 items-center justify-center gap-2 rounded-ui-md bg-[rgb(var(--ui-accent))] px-4 text-sm font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition hover:brightness-110'
-              >
-                <RefreshCw className='h-4 w-4' />
-                重新尝试
-              </button>
-
-              {searchTarget ? (
-                <button
-                  type='button'
-                  onClick={() =>
-                    router.push(`/search?q=${encodeURIComponent(searchTarget)}`)
-                  }
-                  className='inline-flex min-h-11 items-center justify-center gap-2 rounded-ui-md border border-white/10 bg-white/5 px-4 text-sm font-semibold text-[rgb(var(--ui-text))] transition hover:bg-white/10'
-                >
-                  <Search className='h-4 w-4' />
-                  搜索片名
-                </button>
-              ) : null}
-
-              <button
-                type='button'
-                onClick={() => router.back()}
-                className='inline-flex min-h-11 items-center justify-center gap-2 rounded-ui-md border border-white/10 bg-white/5 px-4 text-sm font-semibold text-[rgb(var(--ui-text-muted))] transition hover:bg-white/10 hover:text-[rgb(var(--ui-text))]'
-              >
-                <ArrowLeft className='h-4 w-4' />
-                返回上页
-              </button>
-            </div>
-          </Surface>
-        </div>
-      </PageLayout>
-    );
   }
 
-  return (
-    <PageLayout activePath='/play' tvMode={isTvMode}>
-      <div className={isTvMode ? 'space-y-4' : 'space-y-6'}>
-        <PlayerHeader
-          title={videoTitle || '影片标题'}
-          subtitle={[
-            totalEpisodes > 1 ? `第 ${currentEpisodeIndex + 1} 集` : null,
-            detail?.source_name || null,
-            detail?.year || videoYear || null,
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-          actions={
-            <>
-              <button
-                type='button'
-                aria-pressed={isTvMode}
-                onClick={() => {
-                  router.replace(
-                    buildTvModeHref(window.location.href, !isTvMode),
-                    { scroll: false }
-                  );
-                }}
-                className='inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/5 px-4 text-sm font-semibold text-[rgb(var(--ui-text))] transition hover:bg-white/10'
-              >
-                {isTvMode ? '退出电视模式' : '电视模式'}
-              </button>
-              <PlayFavoriteButton
-                favorited={favorited}
-                onToggle={handleToggleFavorite}
-              />
-            </>
-          }
-        />
-
-        <div
-          className={`grid gap-6 ${
-            isTvMode ? 'grid-cols-1' : '2xl:grid-cols-[minmax(0,1fr)_380px]'
-          }`}
-        >
-          <Surface variant='raised' className='min-w-0 overflow-hidden p-3'>
-            <div className='relative aspect-video min-h-[260px] w-full overflow-hidden md:min-h-[360px] lg:min-h-[460px] 2xl:min-h-[620px]'>
-              <div
-                data-playback-preparation-target
-                ref={artRef}
-                className='play-page-player h-full w-full overflow-hidden rounded-ui-md bg-black shadow-ui-strong'
-              ></div>
-
-              {/* 跳过片头片尾控制器 */}
-              {currentSource && currentId && videoTitle && (
-                <SkipController
-                  source={currentSource}
-                  id={currentId}
-                  title={videoTitle}
-                  artPlayerRef={artPlayerRef}
-                  playerBindingKey={videoUrl}
-                  duration={videoDuration}
-                  isSettingMode={isSkipSettingMode}
-                  onSettingModeChange={setIsSkipSettingMode}
-                  onNextEpisode={handleNextEpisode}
-                />
-              )}
-
-              {adSkipMarkFeedback && (
-                <div className='pointer-events-none absolute inset-x-0 bottom-14 z-40 flex justify-center px-3 md:bottom-16'>
-                  <div
-                    className='rounded-full border border-white/25 bg-black/80 px-4 py-2 text-sm font-medium text-white shadow-ui-strong backdrop-blur'
-                    role='status'
-                  >
-                    {adSkipMarkFeedback}
-                  </div>
-                </div>
-              )}
-
-              {/* In-Player Failure State：恢复阶梯耗尽，仍留在播放页 (#48) */}
-              {inPlayerFailure && (
-                <div className='absolute inset-0 z-40 flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm'>
-                  <div className='w-full max-w-sm rounded-ui-md border border-white/15 bg-black/90 p-5 text-center text-white shadow-ui-strong'>
-                    <p className='text-xs font-semibold uppercase tracking-[0.22em] text-amber-200/90'>
-                      播放中断
-                    </p>
-                    <h3 className='mt-2 text-lg font-semibold'>
-                      当前线路无法继续恢复
-                    </h3>
-                    <p className='mt-2 text-sm leading-6 text-white/70'>
-                      可以重试当前线路、手动切换其他源，或离开播放页。
-                    </p>
-                    <div className='mt-5 grid gap-2'>
-                      <button
-                        type='button'
-                        onClick={() => {
-                          setInPlayerFailure(null);
-                          window.location.reload();
-                        }}
-                        className='inline-flex min-h-11 items-center justify-center rounded-ui-md bg-white px-4 text-sm font-semibold text-black transition hover:bg-white/90'
-                      >
-                        重试
-                      </button>
-                      <button
-                        type='button'
-                        onClick={() => {
-                          setInPlayerFailure(null);
-                          setIsEpisodeSelectorCollapsed(false);
-                        }}
-                        className='inline-flex min-h-11 items-center justify-center rounded-ui-md border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15'
-                      >
-                        手动换源
-                      </button>
-                      <button
-                        type='button'
-                        onClick={() => router.back()}
-                        className='inline-flex min-h-11 items-center justify-center rounded-ui-md px-4 text-sm font-semibold text-white/80 transition hover:text-white'
-                      >
-                        离开
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 换源加载蒙层 */}
-              {isVideoLoading && (
-                <PlayerLoadingOverlay stage={videoLoadingStage} />
-              )}
-
-              {playbackDebugEnabled && (
-                <div className='absolute bottom-3 right-3 z-30 text-xs text-amber-50'>
-                  {playbackDebugCollapsed ? (
-                    <button
-                      type='button'
-                      onClick={() => setPlaybackDebugCollapsed(false)}
-                      className='rounded-full border border-amber-400/40 bg-black/75 px-3 py-1.5 font-medium text-amber-100 shadow-ui-strong backdrop-blur transition hover:bg-black/90'
-                    >
-                      调试 · {playbackDebugEvents.length}
-                    </button>
-                  ) : (
-                    <div className='w-[min(300px,calc(100vw-2rem))] overflow-hidden rounded-ui-md border border-amber-400/40 bg-black/80 p-2.5 shadow-ui-strong backdrop-blur'>
-                      <div className='mb-2 flex items-center justify-between gap-2'>
-                        <span className='font-semibold'>播放调试</span>
-                        <button
-                          type='button'
-                          onClick={() => setPlaybackDebugCollapsed(true)}
-                          className='rounded border border-white/10 bg-white/10 px-2 py-0.5 text-[11px] text-amber-100 transition hover:bg-white/20'
-                        >
-                          收起
-                        </button>
-                      </div>
-                      <div className='mb-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-amber-100/90'>
-                        <div>
-                          <PlaybackDebugPlayhead
-                            currentTimeRef={currentPlayTimeRef}
-                          />
-                        </div>
-                        <div>模式：{playbackMode}</div>
-                        <div>
-                          运行：
-                          {playbackPolicyRef.current?.runtime || '-'}
-                        </div>
-                        <div>
-                          分片：
-                          {playbackPolicyRef.current?.segmentMode || '-'}
-                        </div>
-                        <div className='col-span-2 truncate'>
-                          过滤：
-                          {playbackPolicyRef.current?.playlistFilter || '-'}
-                        </div>
-                      </div>
-                      <div className='max-h-24 space-y-1 overflow-hidden'>
-                        {playbackDebugEvents.length === 0 ? (
-                          <div className='text-amber-100/70'>
-                            等待播放事件...
-                          </div>
-                        ) : (
-                          playbackDebugEvents.slice(0, 3).map((event) => (
-                            <div
-                              key={`${event.createdAt}-${event.eventType}`}
-                              className='rounded bg-white/5 px-2 py-1'
-                            >
-                              <div className='flex justify-between gap-2'>
-                                <span className='truncate font-medium'>
-                                  {event.eventType}
-                                </span>
-                                <span>
-                                  {formatDebugPlaybackTime(event.currentTime)}
-                                </span>
-                              </div>
-                              <div className='truncate text-amber-100/80'>
-                                {event.message}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </Surface>
-
-          <PlayerSidebar
-            className={`min-w-0 ${
-              isTvMode ? 'w-full' : '2xl:sticky 2xl:top-24 2xl:self-start'
-            }`}
-          >
-            <div className='mb-4 flex items-center justify-between gap-3'>
-              <div>
-                <p className='text-xs font-semibold uppercase tracking-[0.2em] text-[rgb(var(--ui-accent-warm))]'>
-                  播放控制
-                </p>
-                <h2 className='mt-1 text-lg font-semibold text-[rgb(var(--ui-text))]'>
-                  选集与线路
-                </h2>
-              </div>
-              {!isEpisodeSelectorCollapsed && (
-                <button
-                  onClick={() =>
-                    setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
-                  }
-                  className='rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-[rgb(var(--ui-text-muted))] transition hover:bg-white/10 hover:text-[rgb(var(--ui-text))]'
-                  title='隐藏选集面板'
-                  type='button'
-                >
-                  隐藏
-                </button>
-              )}
-            </div>
-
-            <div
-              className={`${isEpisodeSelectorCollapsed ? 'hidden' : 'block'}`}
-            >
-              <EpisodeSelector
-                tvMode={isTvMode}
-                totalEpisodes={totalEpisodes}
-                value={currentEpisodeIndex + 1}
-                onChange={handleEpisodeChange}
-                onSourceChange={handleSourceChange}
-                currentSource={currentSource}
-                currentId={currentId}
-                videoTitle={searchTitle || videoTitle}
-                availableSources={availableSources}
-                sourceSearchLoading={sourceSearchLoading}
-                sourceSearchError={sourceSearchError}
-                precomputedVideoInfo={precomputedVideoInfo}
-                precomputedSourceStatuses={precomputedSourceStatuses}
-                sourceSelectionScores={sourceSelectionScores}
-              />
-            </div>
-
-            {isEpisodeSelectorCollapsed && (
-              <button
-                onClick={() => setIsEpisodeSelectorCollapsed(false)}
-                className='w-full rounded-ui-md border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-[rgb(var(--ui-text))] transition hover:bg-white/10'
-                title='显示选集面板'
-                type='button'
-              >
-                显示选集
-              </button>
-            )}
-          </PlayerSidebar>
-        </div>
-
-        {!isTvMode && (
-          <>
-            <PlayDetailSection
-              cover={videoCover || detail?.poster}
-              detail={detail}
-              title={videoTitle}
-              year={videoYear}
-            />
-            <PlayRecommendations
-              doubanId={detail?.douban_id}
-              excludeTitle={videoTitle}
-              preferCategory={detail ? classifySearchResult(detail) : 'movie'}
-              vodClass={detail?.class}
-            />
-          </>
-        )}
-      </div>
-    </PageLayout>
-  );
+  return {
+    phase: 'ready' as const,
+    adSkipMarkFeedback,
+    artPlayerRef,
+    artRef,
+    availableSources,
+    currentEpisodeIndex,
+    currentId,
+    currentPlayTimeRef,
+    currentSource,
+    detail,
+    favorited,
+    handleEpisodeChange,
+    handleNextEpisode,
+    handleSourceChange,
+    handleToggleFavorite,
+    inPlayerFailure,
+    isEpisodeSelectorCollapsed,
+    isSkipSettingMode,
+    isTvMode,
+    isVideoLoading,
+    playbackDebugCollapsed,
+    playbackDebugEnabled,
+    playbackDebugEvents,
+    playbackMode,
+    playbackPolicyRef,
+    precomputedSourceStatuses,
+    precomputedVideoInfo,
+    router,
+    searchTitle,
+    setInPlayerFailure,
+    setIsEpisodeSelectorCollapsed,
+    setIsSkipSettingMode,
+    setPlaybackDebugCollapsed,
+    sourceSearchError,
+    sourceSearchLoading,
+    sourceSelectionScores,
+    totalEpisodes,
+    videoCover,
+    videoDuration,
+    videoLoadingStage,
+    videoTitle,
+    videoUrl,
+    videoYear,
+  };
 }
 
 const PlayFallback = () => {

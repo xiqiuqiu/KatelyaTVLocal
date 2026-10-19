@@ -106,20 +106,22 @@ export default function ScrollableRow({
     >
       <div
         ref={containerRef}
-        className={`flex touch-pan-x gap-4 overflow-x-auto scrollbar-hide px-1 py-1 pb-6 sm:gap-5 ${contentClassName || ''}`}
+        className={`flex touch-pan-x gap-4 overflow-x-auto scrollbar-hide px-1 py-1 pb-6 sm:gap-5 ${
+          contentClassName || ''
+        }`}
         onScroll={checkScroll}
       >
         {children}
       </div>
       {showLeftScroll && (
         <div
-          className={`absolute inset-y-0 left-0 z-[600] hidden w-20 items-center justify-start bg-gradient-to-r from-[rgb(var(--ui-bg-elevated)/0.92)] via-[rgb(var(--ui-bg-elevated)/0.42)] to-transparent pl-2 transition-opacity duration-200 sm:flex ${
+          className={`absolute inset-y-0 left-0 z-[600] hidden w-20 items-center justify-start bg-gradient-to-r from-[rgb(var(--ui-bg-elevated)/0.92)] via-[rgb(var(--ui-bg-elevated)/0.42)] to-transparent pl-2 transition-opacity duration-150 focus-within:opacity-100 sm:flex ${
             isHovered ? 'opacity-100' : 'opacity-0'
           }`}
         >
           <button
             aria-label='向左滚动'
-            className='pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.52)] bg-[rgb(var(--ui-surface-strong)/0.78)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition-[border-color,background-color,transform] duration-150 ease ui-hover-scale-sm hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.94)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40'
+            className='pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.52)] bg-[rgb(var(--ui-surface-strong)/0.78)] text-[rgb(var(--ui-text))] transition-[border-color,background-color,transform] duration-150 ease ui-hover-scale-sm hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.94)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40'
             onClick={handleScrollLeftClick}
             type='button'
           >
@@ -130,13 +132,13 @@ export default function ScrollableRow({
 
       {showRightScroll && (
         <div
-          className={`absolute inset-y-0 right-0 z-[600] hidden w-20 items-center justify-end bg-gradient-to-l from-[rgb(var(--ui-bg-elevated)/0.92)] via-[rgb(var(--ui-bg-elevated)/0.42)] to-transparent pr-2 transition-opacity duration-200 sm:flex ${
+          className={`absolute inset-y-0 right-0 z-[600] hidden w-20 items-center justify-end bg-gradient-to-l from-[rgb(var(--ui-bg-elevated)/0.92)] via-[rgb(var(--ui-bg-elevated)/0.42)] to-transparent pr-2 transition-opacity duration-150 focus-within:opacity-100 sm:flex ${
             isHovered ? 'opacity-100' : 'opacity-0'
           }`}
         >
           <button
             aria-label='向右滚动'
-            className='pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.52)] bg-[rgb(var(--ui-surface-strong)/0.78)] text-[rgb(var(--ui-text))] shadow-ui-soft backdrop-blur-md transition-[border-color,background-color,transform] duration-150 ease ui-hover-scale-sm hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.94)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40'
+            className='pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgb(var(--ui-border)/0.52)] bg-[rgb(var(--ui-surface-strong)/0.78)] text-[rgb(var(--ui-text))] transition-[border-color,background-color,transform] duration-150 ease ui-hover-scale-sm hover:border-[rgb(var(--ui-accent)/0.36)] hover:bg-[rgb(var(--ui-surface-strong)/0.94)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40'
             onClick={handleScrollRightClick}
             type='button'
           >

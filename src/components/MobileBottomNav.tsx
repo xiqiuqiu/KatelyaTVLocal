@@ -1,81 +1,73 @@
 'use client';
 
-import { Clover, Film, Heart, Home, Search, Tv } from 'lucide-react';
+import { Compass, Home, Search, User } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import {
-  type NavigationIcon,
   isNavigationItemActive,
   primaryNavigationItems,
 } from '@/lib/ui/navigation';
 
 interface MobileBottomNavProps {
   activePath?: string;
+  onOpenMenu?: () => void;
+  menuOpen?: boolean;
 }
 
-const iconMap: Record<NavigationIcon, typeof Home> = {
+const icons: Record<string, typeof Home> = {
   home: Home,
+  discover: Compass,
   search: Search,
-  film: Film,
-  tv: Tv,
-  clover: Clover,
-  heart: Heart,
 };
 
-const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
+export default function MobileBottomNav({
+  activePath,
+  onOpenMenu,
+  menuOpen = false,
+}: MobileBottomNavProps) {
   const pathname = usePathname();
-
   const currentActive = activePath ?? pathname;
+  const personalActive =
+    isNavigationItemActive(currentActive, '/?tab=favorites') ||
+    ['/history', '/admin'].includes(pathname);
+  const itemClass =
+    'flex min-h-16 w-full flex-col items-center justify-center gap-1 rounded-ui-sm text-xs font-medium text-[rgb(var(--ui-text-muted))] transition-colors data-[active=true]:text-[rgb(var(--ui-accent))]';
 
   return (
-    <nav
-      className='ui-glass-strong fixed inset-x-0 bottom-0 z-[600] rounded-none border-x-0 border-b-0 md:hidden'
-      style={{
-        paddingBottom: 'env(safe-area-inset-bottom)',
-      }}
-    >
-      <div className='absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent' />
-
-      <ul className='flex items-center'>
+    <nav aria-label='手机导航' className='ui-mobile-nav md:hidden'>
+      <ul className='grid grid-cols-4 px-2'>
         {primaryNavigationItems.map((item) => {
+          const Icon = icons[item.key];
           const active = isNavigationItemActive(currentActive, item.href);
-          const Icon = iconMap[item.icon];
-
           return (
-            <li key={item.href} className='flex-shrink-0 w-1/5'>
+            <li key={item.key}>
               <Link
                 href={item.href}
-                data-active={active}
-                className='relative flex h-16 w-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors transition-transform duration-[160ms] ease-out active:scale-[0.97]'
+                data-active={active && !menuOpen}
+                aria-current={active ? 'page' : undefined}
+                className={itemClass}
               >
-                {active && (
-                  <div className='absolute inset-x-2 inset-y-1 rounded-ui-md border border-[rgb(var(--ui-accent)/0.24)] bg-[rgb(var(--ui-surface-strong)/0.48)] shadow-ui-soft' />
-                )}
-
-                <Icon
-                  className={`relative h-5 w-5 transition-colors ${
-                    active
-                      ? 'text-[rgb(var(--ui-accent))]'
-                      : 'text-[rgb(var(--ui-text-muted))] hover:text-[rgb(var(--ui-text))]'
-                  }`}
-                />
-                <span
-                  className={`relative transition-colors ${
-                    active
-                      ? 'text-[rgb(var(--ui-text))]'
-                      : 'text-[rgb(var(--ui-text-muted))]'
-                  }`}
-                >
-                  {item.label}
-                </span>
+                <Icon aria-hidden className='h-5 w-5' />
+                <span>{item.label}</span>
               </Link>
             </li>
           );
         })}
+        <li>
+          <button
+            type='button'
+            onClick={onOpenMenu}
+            aria-haspopup='dialog'
+            aria-expanded={menuOpen}
+            data-active={personalActive || menuOpen}
+            className={itemClass}
+          >
+            <User aria-hidden className='h-5 w-5' />
+            <span>我的</span>
+          </button>
+        </li>
       </ul>
     </nav>
   );
-};
-
-export default MobileBottomNav;
+}

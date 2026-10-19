@@ -108,5 +108,20 @@ export function SkeletonPosterCard({
 }
 
 export function LoadingRing({ className = '' }: LoadingRingProps) {
-  return <div aria-hidden='true' className={`ui-loading-ring ${className}`.trim()} />;
+  return (
+    <div aria-hidden='true' className={`ui-loading-ring ${className}`.trim()} />
+  );
+}
+
+export function SkeletonResultCard() {
+  return (
+    <div className='ui-search-card' aria-hidden='true'>
+      <SkeletonBlock className='aspect-[2/3] w-full rounded-ui-sm' />
+      <div className='space-y-4 py-1'>
+        <SkeletonText widths={['80%', '56%']} />
+        <SkeletonText lines={2} widths={['100%', '80%']} />
+        <SkeletonBlock className='h-11 w-32 rounded-ui-sm' />
+      </div>
+    </div>
+  );
 }

@@ -3,25 +3,25 @@
 export const runtime = 'edge';
 
 import {
-  Clock3,
   Eye,
   EyeOff,
   Hash,
-  Layers3,
   Loader2,
   LockKeyhole,
-  ShieldCheck,
+  Tv,
   UserRound,
 } from 'lucide-react';
 import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { getInviteCodeFromSearchParams } from '@/lib/registration/invite-link';
 import { getSafeRedirectPath } from '@/lib/safe-redirect';
+import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 
 import IOSCompatibility from '@/components/IOSCompatibility';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import useTvBrowseNavigation from '@/components/useTvBrowseNavigation';
 
 type AuthMode = 'login' | 'register';
 
@@ -44,6 +44,13 @@ declare global {
 
 function LoginPageClient() {
   const searchParams = useSearchParams();
+  const tvMode = isTvMode(searchParams);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useTvBrowseNavigation(rootRef, tvMode, '/login', true);
+  const modeHref = buildTvModeHref(
+    `/login?${searchParams.toString()}`,
+    !tvMode
+  );
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState('');
@@ -226,309 +233,304 @@ function LoginPageClient() {
 
   return (
     <IOSCompatibility>
-      <main className='relative min-h-dvh overflow-hidden bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text))]'>
-        <Image
-          src='/login-cinema-bg.png'
-          alt=''
-          fill
-          priority
-          sizes='100vw'
-          className='pointer-events-none object-cover object-center opacity-90'
-        />
-        <div className='pointer-events-none absolute inset-0 bg-[rgb(var(--ui-bg)/0.24)]' />
+      <div
+        ref={rootRef}
+        data-tv-mode={tvMode}
+        data-tv-browse={tvMode}
+        className='ui-auth-page min-h-dvh bg-[rgb(var(--ui-bg))] px-4 pb-8 pt-4 text-[rgb(var(--ui-text))] sm:px-8'
+      >
+        <header className='ui-auth-toolbar mx-auto flex w-full max-w-[1080px] items-center justify-between gap-4'>
+          <span className='text-lg font-semibold'>KatelyaTV</span>
+          <div className='flex items-center gap-2'>
+            <a
+              href={modeHref}
+              className='ui-secondary-button'
+              data-tv-focus-key='auth-mode-switch'
+            >
+              <Tv aria-hidden className='h-5 w-5 shrink-0' />
+              {tvMode ? '退出电视模式' : '电视模式'}
+            </a>
+            <ThemeToggle />
+          </div>
+        </header>
 
-        <div className='absolute right-4 top-4 z-20 sm:right-6 sm:top-6'>
-          <ThemeToggle />
-        </div>
-
-        <div className='relative z-10 mx-auto flex min-h-dvh w-full max-w-[1660px] items-center px-4 py-20 sm:px-8 lg:w-[calc(77.5vw+80px)] lg:translate-y-7 lg:px-10'>
-          <div className='grid w-full overflow-hidden rounded-[28px] border border-[rgb(var(--ui-border)/0.9)] bg-[rgb(var(--ui-bg)/0.78)] shadow-[0_36px_110px_rgb(0_0_0/0.52)] backdrop-blur-xl lg:h-[min(73vh,840px)] lg:grid-cols-[1.07fr_0.93fr]'>
-            <section className='relative hidden h-full min-h-0 overflow-hidden border-r border-[rgb(var(--ui-border)/0.82)] lg:block'>
+        <main className='ui-auth-layout mx-auto mt-8 grid w-full max-w-[1080px] overflow-hidden rounded-ui-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] lg:mt-12 lg:grid-cols-[0.9fr_1.1fr]'>
+          <section className='ui-auth-story relative hidden min-w-0 flex-col justify-between border-r border-[rgb(var(--ui-border))] p-10 lg:flex'>
+            <div>
+              <Image
+                src='/logo.png'
+                alt=''
+                width={56}
+                height={56}
+                className='h-14 w-14 rounded-ui-md object-cover'
+              />
+              <h1 className='mt-8 text-4xl font-semibold tracking-tight'>
+                你的私人放映厅
+              </h1>
+              <p className='mt-4 text-base leading-7 text-[rgb(var(--ui-text-muted))]'>
+                找一部想看的，接着上次的进度。
+              </p>
+            </div>
+            <div className='relative mt-10 aspect-[4/3] overflow-hidden rounded-ui-md'>
               <Image
                 src='/login-cinema-bg.png'
                 alt=''
                 fill
-                priority
-                sizes='(min-width: 1024px) 52vw, 0px'
-                className='object-cover object-left opacity-90'
+                sizes='(min-width: 1024px) 400px, 0px'
+                className='object-cover object-left'
               />
-              <div className='absolute inset-0 bg-[rgb(var(--ui-bg)/0.2)]' />
+            </div>
+          </section>
 
-              <div className='relative flex h-full flex-col items-center px-12 pb-16 pt-[168px] text-center'>
-                <div className='mb-9 flex h-28 w-28 items-center justify-center rounded-[28px] border border-[rgb(var(--ui-border)/0.9)] bg-[rgb(var(--ui-bg)/0.62)] shadow-[0_18px_50px_rgb(0_0_0/0.38)] backdrop-blur-xl'>
-                  <Image
-                    src='/logo.png'
-                    alt=''
-                    width={72}
-                    height={72}
-                    priority
-                    className='h-[72px] w-[72px] rounded-ui-md object-cover'
-                  />
-                </div>
-
-                <h1 className='text-[64px] font-bold leading-none tracking-[-0.045em] text-[rgb(var(--ui-text))]'>
-                  <span>Reel</span>
-                  <span className='text-[#67e8f9]'>Find</span>
-                </h1>
-                <p className='mt-5 text-xl tracking-wide text-[rgb(var(--ui-text-muted))]'>
-                  你的私人放映厅，随时续播。
+          <section className='ui-auth-form-panel min-w-0 px-5 py-8 sm:px-10 lg:p-12'>
+            <div className='ui-auth-form mx-auto w-full max-w-[460px]'>
+              <div className='mb-6'>
+                <h2 className='ui-auth-title text-2xl font-semibold leading-tight sm:text-3xl'>
+                  {authMode === 'register' ? '创建账号' : '欢迎回来'}
+                </h2>
+                <p className='ui-auth-hint mt-3 text-base leading-6 text-[rgb(var(--ui-text-muted))]'>
+                  {authMode === 'register'
+                    ? '完成验证，加入你的私人放映厅'
+                    : '登录后继续你的观影旅程'}
                 </p>
+              </div>
 
-                <div className='mt-9 flex flex-wrap justify-center gap-3'>
+              {shouldAskUsername && enableRegister && (
+                <div className='ui-auth-tabs mb-6 grid grid-cols-2 gap-2'>
                   {[
-                    [Layers3, '聚合片源'],
-                    [Clock3, '观看进度'],
-                    [LockKeyhole, '私密访问'],
-                  ].map(([Icon, label]) => (
-                    <div
-                      key={label as string}
-                      className='inline-flex items-center gap-2.5 rounded-full border border-[rgb(var(--ui-border)/0.74)] bg-[rgb(var(--ui-bg)/0.42)] px-5 py-3 text-base text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md'
+                    ['login', '登录'],
+                    ['register', '注册'],
+                  ].map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type='button'
+                      aria-pressed={authMode === mode}
+                      data-tv-focus-key={`auth-tab-${mode}`}
+                      onClick={() => {
+                        setError(null);
+                        setAuthMode(mode as AuthMode);
+                      }}
+                      className={`ui-auth-tab ${
+                        authMode === mode
+                          ? 'ui-primary-button'
+                          : 'ui-secondary-button'
+                      }`}
                     >
-                      <Icon className='h-[18px] w-[18px] text-[rgb(var(--ui-accent))]' />
-                      <span>{label as string}</span>
-                    </div>
+                      {label}
+                    </button>
                   ))}
                 </div>
-              </div>
-            </section>
+              )}
 
-            <section
-              className={`flex min-h-[600px] items-start bg-[rgb(var(--ui-bg)/0.32)] px-5 pb-12 pt-12 sm:px-10 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:px-16 xl:px-20 ${
-                authMode === 'register' ? 'lg:pt-8' : 'lg:pt-[74px]'
-              }`}
-            >
-              <div className='mx-auto w-full max-w-[560px]'>
-                <div className='mb-8 flex items-center gap-3 lg:hidden'>
-                  <div className='flex h-12 w-12 items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border)/0.8)] bg-[rgb(var(--ui-surface)/0.74)] shadow-ui-soft'>
-                    <Image
-                      src='/logo.png'
-                      alt=''
-                      width={40}
-                      height={40}
-                      priority
-                      className='h-9 w-9 rounded-ui-sm object-cover'
-                    />
-                  </div>
+              {tvMode && (
+                <p
+                  id='auth-tv-input-hint'
+                  className='ui-auth-hint mb-6 text-sm leading-6 text-[rgb(var(--ui-text-muted))]'
+                >
+                  方向键选择输入框，确认键开始输入；输入后按确认或返回键继续选择。
+                </p>
+              )}
+
+              <form onSubmit={handleAuthSubmit} className='space-y-5'>
+                {shouldAskUsername && (
                   <div>
-                    <p className='text-lg font-semibold'>ReelFind</p>
-                    <p className='mt-0.5 text-xs text-[rgb(var(--ui-text-muted))]'>
-                      私人放映厅
-                    </p>
-                  </div>
-                </div>
-
-                <div className={authMode === 'register' ? 'mb-4' : 'mb-7'}>
-                  <h2 className='text-[44px] font-semibold leading-tight tracking-tight text-[rgb(var(--ui-text))]'>
-                    {authMode === 'register' ? '创建账号' : '欢迎回来'}
-                  </h2>
-                  <p className='mt-2.5 text-base leading-7 text-[rgb(var(--ui-text-muted))]'>
-                    {authMode === 'register'
-                      ? '完成验证，加入你的私人放映厅'
-                      : '登录后继续你的观影旅程'}
-                  </p>
-                </div>
-
-                {shouldAskUsername && enableRegister && (
-                  <div className='mb-8 grid grid-cols-2 gap-1 rounded-ui-md border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg)/0.34)] p-1'>
-                    {[
-                      ['login', '登录'],
-                      ['register', '注册'],
-                    ].map(([mode, label]) => (
-                      <button
-                        key={mode}
-                        type='button'
-                        aria-pressed={authMode === mode}
-                        onClick={() => {
-                          setError(null);
-                          setAuthMode(mode as AuthMode);
-                        }}
-                        className={`rounded-ui-sm px-4 py-3.5 text-base font-semibold transition-colors duration-200 ${
-                          authMode === mode
-                            ? 'bg-[rgb(var(--ui-accent)/0.88)] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
-                            : 'text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface))] hover:text-[rgb(var(--ui-text))]'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                    <label
+                      htmlFor='username'
+                      className='ui-auth-label mb-2 block text-base font-medium'
+                    >
+                      用户名
+                    </label>
+                    <div className='ui-auth-input-wrap relative'>
+                      <UserRound
+                        aria-hidden
+                        className='ui-auth-input-icon pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]'
+                      />
+                      <input
+                        id='username'
+                        type='text'
+                        autoComplete='username'
+                        data-tv-primary
+                        data-tv-focus-key='auth-username'
+                        aria-invalid={Boolean(error)}
+                        aria-describedby={
+                          error
+                            ? 'auth-error'
+                            : tvMode
+                            ? 'auth-tv-input-hint'
+                            : undefined
+                        }
+                        className='ui-auth-input ui-input block w-full !pl-12'
+                        placeholder='输入用户名'
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                      />
+                    </div>
                   </div>
                 )}
 
-                <form
-                  onSubmit={handleAuthSubmit}
-                  className={
-                    authMode === 'register' ? 'space-y-4' : 'space-y-6'
-                  }
-                >
-                  {shouldAskUsername && (
-                    <div>
-                      <label
-                        htmlFor='username'
-                        className='mb-2.5 block text-base font-medium text-[rgb(var(--ui-text-muted))]'
-                      >
-                        用户名
-                      </label>
-                      <div className='relative'>
-                        <UserRound className='pointer-events-none absolute left-5 top-1/2 h-6 w-6 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
-                        <input
-                          id='username'
-                          type='text'
-                          autoComplete='username'
-                          className='login-input block min-h-[60px] w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg)/0.34)] py-4 pl-16 pr-5 text-lg text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted)/0.72)] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.28)]'
-                          placeholder='输入用户名'
-                          value={username}
-                          onChange={(e) => setUsername(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <label
-                      htmlFor='password'
-                      className='mb-2.5 block text-base font-medium text-[rgb(var(--ui-text-muted))]'
-                    >
-                      访问密码
-                    </label>
-                    <div className='relative'>
-                      <LockKeyhole className='pointer-events-none absolute left-5 top-1/2 h-6 w-6 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
-                      <input
-                        id='password'
-                        type={showPassword ? 'text' : 'password'}
-                        autoComplete={
-                          authMode === 'register'
-                            ? 'new-password'
-                            : 'current-password'
-                        }
-                        className='login-input block min-h-[60px] w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg)/0.34)] py-4 pl-16 pr-16 text-lg text-[rgb(var(--ui-text))] shadow-ui-soft selection:bg-[rgb(var(--ui-accent)/0.28)] selection:text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted)/0.72)] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.28)]'
-                        placeholder='输入访问密码'
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                      />
-                      <button
-                        aria-label={showPassword ? '隐藏密码' : '显示密码'}
-                        className='absolute right-0 top-1/2 flex h-full w-16 -translate-y-1/2 items-center justify-center rounded-r-ui-sm text-[rgb(var(--ui-text-muted))] transition-colors duration-200 before:absolute before:inset-y-1 before:right-2 before:w-11 before:rounded-ui-sm before:border before:border-transparent before:bg-transparent before:transition-[border-color,background-color,box-shadow] before:duration-200 hover:text-[rgb(var(--ui-text))] hover:before:border-[rgb(var(--ui-border)/0.62)] hover:before:bg-[rgb(var(--ui-surface-strong)/0.44)] hover:before:shadow-ui-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--ui-accent)/0.38)] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--ui-bg))]'
-                        onClick={() => setShowPassword((value) => !value)}
-                        onMouseDown={(event) => event.preventDefault()}
-                        type='button'
-                      >
-                        {showPassword ? (
-                          <EyeOff className='relative h-5 w-5' />
-                        ) : (
-                          <Eye className='relative h-5 w-5' />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {authMode === 'register' &&
-                    shouldAskUsername &&
-                    enableRegister && (
-                      <>
-                        {registerInviteRequired && (
-                          <div>
-                            <label
-                              htmlFor='inviteCode'
-                              className='mb-2.5 block text-base font-medium text-[rgb(var(--ui-text-muted))]'
-                            >
-                              邀请码
-                            </label>
-                            <div className='relative'>
-                              <Hash className='pointer-events-none absolute left-5 top-1/2 h-6 w-6 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]' />
-                              <input
-                                id='inviteCode'
-                                type='text'
-                                autoComplete='off'
-                                className='login-input block min-h-[60px] w-full rounded-ui-sm border border-[rgb(var(--ui-border)/0.86)] bg-[rgb(var(--ui-bg)/0.34)] py-4 pl-16 pr-5 text-lg text-[rgb(var(--ui-text))] shadow-ui-soft placeholder:text-[rgb(var(--ui-text-muted)/0.72)] focus:border-[rgb(var(--ui-accent))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent)/0.28)]'
-                                placeholder='输入邀请码'
-                                value={inviteCode}
-                                onChange={(e) => setInviteCode(e.target.value)}
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {turnstileSiteKey ? (
-                          <div
-                            id='register-turnstile'
-                            className='flex min-h-[82px] items-center justify-center overflow-hidden rounded-ui-sm border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg)/0.34)] px-3 py-2'
-                          />
-                        ) : (
-                          <p className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'>
-                            注册人机验证尚未配置，请稍后再试。
-                          </p>
-                        )}
-                      </>
-                    )}
-
-                  {authMode === 'login' &&
-                    loginTurnstileRequired &&
-                    (turnstileSiteKey ? (
-                      <div
-                        id='login-turnstile'
-                        className='flex min-h-[82px] items-center justify-center overflow-hidden rounded-ui-sm border border-[rgb(var(--ui-border)/0.72)] bg-[rgb(var(--ui-bg)/0.34)] px-3 py-2'
-                      />
-                    ) : (
-                      <p className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'>
-                        登录人机验证尚未配置，请稍后再试。
-                      </p>
-                    ))}
-
-                  {error && (
-                    <p
-                      role='alert'
-                      className='rounded-ui-sm border border-[rgb(var(--ui-critical)/0.36)] bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-text))]'
-                    >
-                      {error}
-                    </p>
-                  )}
-
-                  <button
-                    type='submit'
-                    disabled={
-                      authMode === 'register'
-                        ? !password ||
-                          !username ||
-                          loading ||
-                          !turnstileSiteKey ||
-                          !turnstileToken ||
-                          (registerInviteRequired && !inviteCode.trim())
-                        : !password ||
-                          loading ||
-                          (shouldAskUsername && !username) ||
-                          (loginTurnstileRequired &&
-                            (!turnstileSiteKey || !turnstileToken))
-                    }
-                    className='inline-flex min-h-[60px] w-full items-center justify-center rounded-ui-sm bg-[rgb(var(--ui-accent))] px-5 py-4 text-lg font-semibold text-[rgb(var(--ui-on-accent))] shadow-[0_14px_32px_rgb(var(--ui-accent)/0.22)] transition-[transform,filter] duration-150 ease ui-hover-lift hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-65 disabled:hover:translate-y-0'
+                <div>
+                  <label
+                    htmlFor='password'
+                    className='ui-auth-label mb-2 block text-base font-medium'
                   >
-                    {loading ? (
-                      <>
-                        <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                        {authMode === 'register' ? '注册中...' : '登录中...'}
-                      </>
-                    ) : (
-                      <>
-                        {authMode === 'register'
-                          ? '创建 ReelFind 账号'
-                          : '进入 ReelFind'}
-                      </>
-                    )}
-                  </button>
-                </form>
-
-                <div
-                  className={`flex items-center justify-center gap-2.5 text-sm text-[rgb(var(--ui-text-muted))] ${
-                    authMode === 'register' ? 'mt-4' : 'mt-8'
-                  }`}
-                >
-                  <ShieldCheck className='h-5 w-5 text-[rgb(var(--ui-success))]' />
-                  <span>凭证仅用于安全访问</span>
+                    访问密码
+                  </label>
+                  <div className='ui-auth-input-wrap relative'>
+                    <LockKeyhole
+                      aria-hidden
+                      className='ui-auth-input-icon pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]'
+                    />
+                    <input
+                      id='password'
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete={
+                        authMode === 'register'
+                          ? 'new-password'
+                          : 'current-password'
+                      }
+                      data-tv-primary={!shouldAskUsername || undefined}
+                      data-tv-focus-key='auth-password'
+                      aria-invalid={Boolean(error)}
+                      aria-describedby={
+                        error
+                          ? 'auth-error'
+                          : tvMode
+                          ? 'auth-tv-input-hint'
+                          : undefined
+                      }
+                      className='ui-auth-input ui-input block w-full !pl-12 !pr-14'
+                      placeholder='输入访问密码'
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                    <button
+                      aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                      aria-pressed={showPassword}
+                      data-tv-focus-key='auth-password-visibility'
+                      className='ui-auth-password-toggle absolute right-0 top-0 flex h-full min-h-11 w-12 items-center justify-center rounded-r-ui-sm text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface-strong))] hover:text-[rgb(var(--ui-text))]'
+                      onClick={() => setShowPassword((value) => !value)}
+                      onMouseDown={(event) => event.preventDefault()}
+                      type='button'
+                    >
+                      {showPassword ? (
+                        <EyeOff aria-hidden className='h-5 w-5' />
+                      ) : (
+                        <Eye aria-hidden className='h-5 w-5' />
+                      )}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </section>
-          </div>
-        </div>
-      </main>
+
+                {authMode === 'register' &&
+                  shouldAskUsername &&
+                  enableRegister && (
+                    <>
+                      {registerInviteRequired && (
+                        <div>
+                          <label
+                            htmlFor='inviteCode'
+                            className='ui-auth-label mb-2 block text-base font-medium'
+                          >
+                            邀请码
+                          </label>
+                          <div className='ui-auth-input-wrap relative'>
+                            <Hash
+                              aria-hidden
+                              className='ui-auth-input-icon pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[rgb(var(--ui-text-muted))]'
+                            />
+                            <input
+                              id='inviteCode'
+                              type='text'
+                              autoComplete='off'
+                              data-tv-focus-key='auth-invite'
+                              aria-invalid={Boolean(error)}
+                              aria-describedby={
+                                error
+                                  ? 'auth-error'
+                                  : tvMode
+                                  ? 'auth-tv-input-hint'
+                                  : undefined
+                              }
+                              className='ui-auth-input ui-input block w-full !pl-12'
+                              placeholder='输入邀请码'
+                              value={inviteCode}
+                              onChange={(e) => setInviteCode(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {turnstileSiteKey ? (
+                        <div
+                          id='register-turnstile'
+                          className='ui-auth-status flex min-h-[82px] items-center justify-center overflow-x-auto rounded-ui-sm bg-[rgb(var(--ui-bg))] py-2'
+                        />
+                      ) : (
+                        <p className='ui-auth-status rounded-ui-sm bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-critical))]'>
+                          注册人机验证尚未配置，请稍后再试。
+                        </p>
+                      )}
+                    </>
+                  )}
+
+                {authMode === 'login' &&
+                  loginTurnstileRequired &&
+                  (turnstileSiteKey ? (
+                    <div
+                      id='login-turnstile'
+                      className='ui-auth-status flex min-h-[82px] items-center justify-center overflow-x-auto rounded-ui-sm bg-[rgb(var(--ui-bg))] py-2'
+                    />
+                  ) : (
+                    <p className='ui-auth-status rounded-ui-sm bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-critical))]'>
+                      登录人机验证尚未配置，请稍后再试。
+                    </p>
+                  ))}
+
+                {error && (
+                  <p
+                    id='auth-error'
+                    role='alert'
+                    className='ui-auth-status rounded-ui-sm bg-[rgb(var(--ui-critical)/0.12)] px-4 py-3 text-sm text-[rgb(var(--ui-critical))]'
+                  >
+                    {error}
+                  </p>
+                )}
+
+                <button
+                  type='submit'
+                  data-tv-focus-key='auth-submit'
+                  disabled={
+                    authMode === 'register'
+                      ? !password ||
+                        !username ||
+                        loading ||
+                        !turnstileSiteKey ||
+                        !turnstileToken ||
+                        (registerInviteRequired && !inviteCode.trim())
+                      : !password ||
+                        loading ||
+                        (shouldAskUsername && !username) ||
+                        (loginTurnstileRequired &&
+                          (!turnstileSiteKey || !turnstileToken))
+                  }
+                  className='ui-auth-submit ui-primary-button w-full'
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 aria-hidden className='h-5 w-5 animate-spin' />
+                      {authMode === 'register' ? '注册中...' : '登录中...'}
+                    </>
+                  ) : authMode === 'register' ? (
+                    '创建 KatelyaTV 账号'
+                  ) : (
+                    '进入 KatelyaTV'
+                  )}
+                </button>
+              </form>
+            </div>
+          </section>
+        </main>
+      </div>
     </IOSCompatibility>
   );
 }
@@ -538,7 +540,7 @@ export default function LoginPage() {
     <Suspense
       fallback={
         <div className='flex min-h-dvh items-center justify-center bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text-muted))]'>
-          Loading...
+          正在加载登录页面…
         </div>
       }
     >

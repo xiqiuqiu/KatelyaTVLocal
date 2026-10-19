@@ -7,6 +7,7 @@ import { Suspense } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getDoubanCategories } from '@/lib/douban.client';
+import { isTvMode } from '@/lib/tv-interaction';
 import { DoubanItem } from '@/lib/types';
 import { getDoubanPageMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
@@ -24,13 +25,14 @@ export const runtime = 'edge';
 
 function DoubanPageClient() {
   const searchParams = useSearchParams();
+  const tvMode = isTvMode(searchParams);
+  const [error, setError] = useState('');
   const [doubanData, setDoubanData] = useState<DoubanItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectorsReady, setSelectorsReady] = useState(false);
-  const observerRef = useRef<IntersectionObserver | null>(null);
   const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -121,6 +123,7 @@ function DoubanPageClient() {
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true);
+      setError('');
       const data = await getDoubanCategories(getRequestParams(0));
 
       if (data.code === 200) {
@@ -132,6 +135,9 @@ function DoubanPageClient() {
       }
     } catch (err) {
       console.error(err);
+      setError('内容暂时加载失败，请重试。');
+    } finally {
+      setLoading(false);
     }
   }, [type, primarySelection, secondarySelection, getRequestParams]);
 
@@ -203,7 +209,7 @@ function DoubanPageClient() {
   // 设置滚动监听
   useEffect(() => {
     // 如果没有更多数据或正在加载，则不设置监听
-    if (!hasMore || isLoadingMore || loading) {
+    if (tvMode || error || !hasMore || isLoadingMore || loading) {
       return;
     }
 
@@ -222,14 +228,11 @@ function DoubanPageClient() {
     );
 
     observer.observe(loadingRef.current);
-    observerRef.current = observer;
 
     return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
+      observer.disconnect();
     };
-  }, [hasMore, isLoadingMore, loading]);
+  }, [tvMode, error, hasMore, isLoadingMore, loading]);
 
   // 处理选择器变化
   const handlePrimaryChange = useCallback(
@@ -266,15 +269,19 @@ function DoubanPageClient() {
   const pageHeaderMeta = getDoubanPageMeta(type);
 
   return (
-    <PageLayout activePath={getActivePath()}>
-      <div className='space-y-8 overflow-visible sm:px-10 sm:py-8'>
+    <PageLayout
+      activePath={getActivePath()}
+      tvMode={tvMode}
+      modeHref={`/douban?${searchParams.toString()}`}
+    >
+      <div className='ui-discovery-page space-y-8'>
         <PageHeader
           subtitle={pageHeaderMeta.subtitle}
           title={pageHeaderMeta.title}
         />
 
         <section className='space-y-4'>
-          <Surface className='p-4 sm:p-6' variant='frosted'>
+          <Surface className='p-4 sm:p-6' variant='plain'>
             <DoubanSelector
               type={type as 'movie' | 'tv' | 'show'}
               primarySelection={primarySelection}
@@ -285,14 +292,14 @@ function DoubanPageClient() {
           </Surface>
         </section>
 
-        <div className='mx-auto max-w-[95%] overflow-visible'>
+        <div className='min-w-0'>
           <SectionHeader
             className='mb-4'
             subtitle='来自豆瓣的精选内容'
             title={pageSectionLabels.doubanCatalog}
           />
           {/* 内容网格 */}
-          <PosterGrid className='grid-cols-3 gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fit,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
+          <PosterGrid className='grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6'>
             {loading || !selectorsReady
               ? // 显示骨架屏
                 skeletonData.map((index) => (
@@ -303,6 +310,7 @@ function DoubanPageClient() {
                   <div key={`${item.title}-${index}`} className='w-full'>
                     <VideoCard
                       from='douban'
+                      tvMode={tvMode}
                       title={item.title}
                       poster={item.poster}
                       douban_id={item.id}
@@ -315,7 +323,7 @@ function DoubanPageClient() {
           </PosterGrid>
 
           {/* 加载更多指示器 */}
-          {hasMore && !loading && (
+          {hasMore && !loading && !error && (
             <div
               ref={(el) => {
                 if (el && el.offsetParent !== null) {
@@ -326,12 +334,25 @@ function DoubanPageClient() {
               }}
               className='flex justify-center mt-12 py-8'
             >
-              {isLoadingMore && (
-                <div className='flex items-center gap-3 rounded-full border border-white/10 bg-[rgba(var(--ui-surface),0.58)] px-4 py-2 text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md'>
+              {tvMode ? (
+                <button
+                  type='button'
+                  className='ui-secondary-button'
+                  disabled={isLoadingMore}
+                  data-tv-focus-key='discovery-more'
+                  onClick={() => setCurrentPage((prev) => prev + 1)}
+                >
+                  {isLoadingMore ? '加载中…' : '加载更多'}
+                </button>
+              ) : isLoadingMore ? (
+                <div
+                  role='status'
+                  className='flex items-center gap-3 text-[rgb(var(--ui-text-muted))]'
+                >
                   <LoadingRing className='h-5 w-5' />
-                  <span className='text-sm'>加载中...</span>
+                  <span>加载中…</span>
                 </div>
-              )}
+              ) : null}
             </div>
           )}
 
@@ -346,7 +367,19 @@ function DoubanPageClient() {
           )}
 
           {/* 空状态 */}
-          {!loading && doubanData.length === 0 && (
+          {error && !loading && (
+            <div className='ui-empty-state' role='alert'>
+              <p>{error}</p>
+              <button
+                type='button'
+                className='ui-primary-button'
+                onClick={loadInitialData}
+              >
+                重新加载
+              </button>
+            </div>
+          )}
+          {!loading && selectorsReady && !error && doubanData.length === 0 && (
             <Surface
               className='mt-8 px-6 py-5 text-center text-[rgb(var(--ui-text-muted))]'
               variant='plain'
@@ -368,12 +401,12 @@ const DoubanFallback = () => {
           subtitle={getDoubanPageMeta('movie').subtitle}
           title={getDoubanPageMeta('movie').title}
         />
-        <div className='mx-auto max-w-[95%] overflow-visible'>
+        <div className='min-w-0'>
           <Surface
             variant='frosted'
             className='min-h-[70vh] rounded-ui-xl bg-transparent sm:min-h-[500px] sm:bg-[rgba(var(--ui-surface),0.3)] sm:p-8 sm:shadow-ui-soft'
           >
-            <PosterGrid className='grid-cols-3 gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fit,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
+            <PosterGrid className='grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6'>
               {Array.from({ length: 25 }, (_, index) => index).map((index) => (
                 <DoubanCardSkeleton key={index} index={index} />
               ))}

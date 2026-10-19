@@ -123,7 +123,7 @@ interface AiFindPanelProps {
   tvMode?: boolean;
 }
 
-export default function AiFindPanel({
+function useAiFindPanel({
   initialQuery = '',
   tvMode = false,
 }: AiFindPanelProps) {
@@ -727,174 +727,239 @@ export default function AiFindPanel({
     result?.groups.some((group) => group.groups.length > 0) ?? false;
   const hasPendingGroups = loadingGroups.length > 0;
   const tvBusy = tvMode && (loading || hasPendingGroups);
-  const savedRecordsList = (
+
+  return {
+    activeSavedRecordId,
+    error,
+    formRef,
+    groupErrors,
+    handleDeleteSavedRecord,
+    handleSelectSavedRecord,
+    hasPendingGroups,
+    hasResults,
+    initialQuery,
+    loading,
+    loadingGroups,
+    loadingText,
+    panelRef,
+    query,
+    restoreNotice,
+    result,
+    savedRecords,
+    setQuery,
+    submitQuery,
+    tvBusy,
+    tvMode,
+  };
+}
+
+type AiFindPanelSession = ReturnType<typeof useAiFindPanel>;
+
+function aiFindTvStatusText(
+  loading: boolean,
+  loadingText: string,
+  hasPendingGroups: boolean
+) {
+  if (loading) return loadingText;
+  if (hasPendingGroups) return '正在查询候选影片，已找到的影片可以直接播放。';
+  return '结果会自动保存，下次可从最近 AI 找片直接打开。';
+}
+
+function aiFindErrorText(error: string) {
+  if (error === 'AI find assistant is disabled') {
+    return 'AI 找片尚未启用，请先配置 AI 服务。';
+  }
+  return error;
+}
+
+function AiFindSavedRecords({ session }: { session: AiFindPanelSession }) {
+  return (
     <AiFindSavedRecordsList
-      activeSavedRecordId={activeSavedRecordId}
-      onSelectRecord={handleSelectSavedRecord}
-      savedRecords={savedRecords}
-      tvMode={tvMode}
-      disabled={tvBusy}
+      activeSavedRecordId={session.activeSavedRecordId}
+      onSelectRecord={session.handleSelectSavedRecord}
+      savedRecords={session.savedRecords}
+      tvMode={session.tvMode}
+      disabled={session.tvBusy}
     />
   );
+}
 
+function AiFindTvForm({ session }: { session: AiFindPanelSession }) {
   return (
-    <section ref={panelRef} className={tvMode ? 'space-y-8' : 'space-y-7'}>
-      {tvMode ? (
-        <div className='space-y-4'>
-          <TvSearchForm
-            initialQuery={initialQuery}
-            value={query}
-            onQueryChange={setQuery}
-            onSearch={(description) => void submitQuery(description)}
-            label='AI 找片描述'
-            placeholder='例如：90年代经典港片动作片，想看节奏快一点'
-            submitLabel='开始找片'
-            loading={loading}
-            errorId={error ? 'ai-find-error' : undefined}
-          />
+    <div className='space-y-4'>
+      <TvSearchForm
+        initialQuery={session.initialQuery}
+        value={session.query}
+        onQueryChange={session.setQuery}
+        onSearch={(description) => void session.submitQuery(description)}
+        label='AI 找片描述'
+        placeholder='例如：90年代经典港片动作片，想看节奏快一点'
+        submitLabel='开始找片'
+        loading={session.loading}
+        errorId={session.error ? 'ai-find-error' : undefined}
+      />
+      <p
+        className='text-base text-[rgb(var(--ui-text-muted))]'
+        role='status'
+        aria-live='polite'
+      >
+        {aiFindTvStatusText(
+          session.loading,
+          session.loadingText,
+          session.hasPendingGroups
+        )}
+      </p>
+      {session.restoreNotice ? (
+        <p role='alert'>{session.restoreNotice}</p>
+      ) : null}
+      {session.error ? (
+        <div className='space-y-3'>
           <p
-            className='text-base text-[rgb(var(--ui-text-muted))]'
-            role='status'
-            aria-live='polite'
+            id='ai-find-error'
+            role='alert'
+            className='text-lg text-[rgb(var(--ui-critical))]'
           >
-            {loading
-              ? loadingText
-              : hasPendingGroups
-              ? '正在查询候选影片，已找到的影片可以直接播放。'
-              : '结果会自动保存，下次可从最近 AI 找片直接打开。'}
+            {aiFindErrorText(session.error)}
           </p>
-          {restoreNotice ? <p role='alert'>{restoreNotice}</p> : null}
-          {error ? (
-            <div className='space-y-3'>
-              <p
-                id='ai-find-error'
-                role='alert'
-                className='text-lg text-[rgb(var(--ui-critical))]'
-              >
-                {error === 'AI find assistant is disabled'
-                  ? 'AI 找片尚未启用，请先配置 AI 服务。'
-                  : error}
-              </p>
-              <button
-                type='button'
-                data-tv-focus-key='ai-retry'
-                onClick={() => void submitQuery()}
-                className='rounded-ui-sm border border-[rgb(var(--ui-border))] px-6 py-3 text-lg'
-              >
-                重试找片
-              </button>
+          <button
+            type='button'
+            data-tv-focus-key='ai-retry'
+            onClick={() => void session.submitQuery()}
+            className='rounded-ui-sm border border-[rgb(var(--ui-border))] px-6 py-3 text-lg'
+          >
+            重试找片
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AiFindDesktopForm({ session }: { session: AiFindPanelSession }) {
+  return (
+    <Surface className='p-4 sm:p-6' variant='plain'>
+      <form
+        className='space-y-5'
+        onSubmit={(event) => {
+          event.preventDefault();
+          void session.submitQuery();
+        }}
+        ref={session.formRef}
+      >
+        <div className='flex flex-wrap items-center justify-between gap-3'>
+          <div className='flex items-center gap-3'>
+            <div className='flex h-10 w-10 items-center justify-center text-[rgb(var(--ui-accent))]'>
+              <Sparkles className='h-5 w-5' />
             </div>
+            <div>
+              <div className='flex items-center gap-2 text-lg font-semibold text-[rgb(var(--ui-text))]'>
+                <span>AI 找片</span>
+                <Info className='h-4 w-4 text-[rgb(var(--ui-text-muted))]' />
+              </div>
+              <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
+                描述片名线索、年代、演员或观影偏好
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className='flex flex-col gap-3 sm:flex-row'>
+          <label className='sr-only' htmlFor='ai-find-query'>
+            AI 找片描述
+          </label>
+          <input
+            aria-describedby={session.error ? 'ai-find-error' : undefined}
+            className='ui-input min-w-0 flex-1'
+            disabled={session.loading}
+            id='ai-find-query'
+            onChange={(event) => session.setQuery(event.target.value)}
+            placeholder='例如：90年代经典港片动作片，想看节奏快一点'
+            value={session.query}
+          />
+          <button
+            className='ui-primary-button shrink-0'
+            disabled={session.loading || !session.query.trim()}
+            type='submit'
+          >
+            {session.loading ? (
+              <Loader2 className='h-4 w-4 animate-spin' />
+            ) : (
+              <Sparkles className='h-4 w-4' />
+            )}
+            {session.loading ? '查找中' : '开始找片'}
+          </button>
+        </div>
+
+        <div className='flex flex-wrap items-center gap-2 text-xs text-[rgb(var(--ui-text-muted))]'>
+          <CheckCircle2 className='h-4 w-4 text-[rgb(var(--ui-success))]' />
+          <span>将保存本次结果，之后可直接打开</span>
+          {session.loading ? (
+            <span
+              aria-live='polite'
+              className='ml-1 text-[rgb(var(--ui-success))]'
+              role='status'
+            >
+              {session.loadingText}
+            </span>
           ) : null}
         </div>
-      ) : (
-        <Surface
-          className='border-[rgb(var(--ui-success)/0.22)] bg-[linear-gradient(180deg,rgb(var(--ui-surface)/0.72),rgb(var(--ui-bg-elevated)/0.46))] p-5 shadow-[0_24px_70px_rgb(0_0_0/0.28)] sm:p-6'
-          variant='plain'
-        >
-          <form
-            className='space-y-5'
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitQuery();
-            }}
-            ref={formRef}
+
+        {session.error ? (
+          <div
+            className='flex items-center gap-2 rounded-xl border border-[rgb(var(--ui-critical)/0.22)] bg-[rgb(var(--ui-critical)/0.08)] px-3 py-2 text-sm text-[rgb(var(--ui-critical))]'
+            id='ai-find-error'
+            role='alert'
           >
-            <div className='flex flex-wrap items-center justify-between gap-3'>
-              <div className='flex items-center gap-3'>
-                <div className='flex h-9 w-9 items-center justify-center rounded-xl border border-[rgb(var(--ui-success)/0.28)] bg-[rgb(var(--ui-success)/0.14)] text-[rgb(var(--ui-success))] shadow-[0_0_26px_rgb(var(--ui-success)/0.12)]'>
-                  <Sparkles className='h-5 w-5' />
-                </div>
-                <div>
-                  <div className='flex items-center gap-2 text-lg font-semibold text-[rgb(var(--ui-text))]'>
-                    <span>AI 找片</span>
-                    <Info className='h-4 w-4 text-[rgb(var(--ui-text-muted))]' />
-                  </div>
-                  <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-                    描述片名线索、年代、演员或观影偏好
-                  </p>
-                </div>
-              </div>
-            </div>
+            <AlertCircle className='h-4 w-4' />
+            <span>{session.error}</span>
+          </div>
+        ) : null}
+      </form>
+    </Surface>
+  );
+}
 
-            <div className='flex flex-col gap-3 rounded-2xl border border-white/10 bg-[rgb(var(--ui-bg-elevated)/0.72)] p-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)] sm:flex-row'>
-              <label className='sr-only' htmlFor='ai-find-query'>
-                AI 找片描述
-              </label>
-              <input
-                aria-describedby={error ? 'ai-find-error' : undefined}
-                className='min-h-12 flex-1 rounded-xl border border-transparent bg-white/[0.035] px-4 text-base text-[rgb(var(--ui-text))] outline-none transition placeholder:text-[rgb(var(--ui-text-muted)/0.68)] focus:border-[rgb(var(--ui-success)/0.42)] focus:bg-white/[0.07]'
-                disabled={loading}
-                id='ai-find-query'
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder='例如：90年代经典港片动作片，想看节奏快一点'
-                value={query}
-              />
-              <button
-                className='inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-[rgb(var(--ui-success))] px-5 text-sm font-semibold text-[rgb(var(--ui-on-accent))] shadow-[0_14px_30px_rgb(var(--ui-success)/0.24)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60'
-                disabled={loading || !query.trim()}
-                type='submit'
-              >
-                {loading ? (
-                  <Loader2 className='h-4 w-4 animate-spin' />
-                ) : (
-                  <Sparkles className='h-4 w-4' />
-                )}
-                {loading ? '查找中' : '开始找片'}
-              </button>
-            </div>
-
-            <div className='flex flex-wrap items-center gap-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-              <CheckCircle2 className='h-4 w-4 text-[rgb(var(--ui-success))]' />
-              <span>将保存本次结果，之后可直接打开</span>
-              {loading ? (
-                <span
-                  aria-live='polite'
-                  className='ml-1 text-[rgb(var(--ui-success))]'
-                  role='status'
-                >
-                  {loadingText}
-                </span>
-              ) : null}
-            </div>
-
-            {error ? (
-              <div
-                className='flex items-center gap-2 rounded-xl border border-[rgb(var(--ui-critical)/0.22)] bg-[rgb(var(--ui-critical)/0.08)] px-3 py-2 text-sm text-[rgb(var(--ui-critical))]'
-                id='ai-find-error'
-                role='alert'
-              >
-                <AlertCircle className='h-4 w-4' />
-                <span>{error}</span>
-              </div>
-            ) : null}
-          </form>
-        </Surface>
+function AiFindPanelLayout({ session }: { session: AiFindPanelSession }) {
+  const savedRecordsList = <AiFindSavedRecords session={session} />;
+  return (
+    <section
+      ref={session.panelRef}
+      className={session.tvMode ? 'space-y-8' : 'space-y-7'}
+    >
+      {session.tvMode ? (
+        <AiFindTvForm session={session} />
+      ) : (
+        <AiFindDesktopForm session={session} />
       )}
-
-      {!tvMode ? savedRecordsList : null}
-
-      {result ? (
+      {!session.tvMode ? savedRecordsList : null}
+      {session.result ? (
         <AiFindResultGroups
-          tvMode={tvMode}
-          actionsDisabled={tvBusy}
-          activeSavedRecordId={activeSavedRecordId}
-          groupErrors={groupErrors}
-          hasPendingGroups={hasPendingGroups}
-          hasResults={hasResults}
-          loadingGroups={loadingGroups}
-          onDeleteRecord={handleDeleteSavedRecord}
+          tvMode={session.tvMode}
+          actionsDisabled={session.tvBusy}
+          activeSavedRecordId={session.activeSavedRecordId}
+          groupErrors={session.groupErrors}
+          hasPendingGroups={session.hasPendingGroups}
+          hasResults={session.hasResults}
+          loadingGroups={session.loadingGroups}
+          onDeleteRecord={session.handleDeleteSavedRecord}
           onRefresh={() => {
-            if (tvMode) void submitQuery();
-            else formRef.current?.requestSubmit();
+            if (session.tvMode) void session.submitQuery();
+            else session.formRef.current?.requestSubmit();
           }}
           onSuggestionClick={(suggestion) => {
-            setQuery(suggestion);
-            if (tvMode) document.getElementById('tvSearchInput')?.focus();
+            session.setQuery(suggestion);
+            if (session.tvMode)
+              document.getElementById('tvSearchInput')?.focus();
           }}
-          result={result}
+          result={session.result}
         />
       ) : null}
-      {tvMode ? savedRecordsList : null}
+      {session.tvMode ? savedRecordsList : null}
     </section>
   );
+}
+
+export default function AiFindPanel(props: AiFindPanelProps) {
+  const session = useAiFindPanel(props);
+  return <AiFindPanelLayout session={session} />;
 }

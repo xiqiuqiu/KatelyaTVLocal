@@ -14,14 +14,14 @@ describe('Sidebar shell density', () => {
     document.documentElement.removeAttribute('data-sidebar-collapsed');
   });
 
-  it('defaults the desktop sidebar to the compact icon rail', () => {
+  it('defaults the desktop sidebar to readable labels', () => {
     render(<Sidebar activePath='/' />);
 
     expect(screen.getByTestId('desktop-sidebar')).toHaveAttribute(
       'data-collapsed',
-      'true'
+      'false'
     );
-    expect(screen.getByText('首页')).toHaveClass('max-w-0', 'opacity-0');
+    expect(screen.getByText('首页')).toHaveClass('opacity-100');
     expect(screen.getByRole('link', { name: '首页' })).toHaveAttribute(
       'href',
       '/'
@@ -31,14 +31,14 @@ describe('Sidebar shell density', () => {
   it('preserves the existing expand and collapse interaction', () => {
     render(<Sidebar activePath='/' />);
 
-    fireEvent.click(screen.getByRole('button', { name: '展开侧边栏' }));
+    fireEvent.click(screen.getByRole('button', { name: '折叠侧边栏' }));
 
     expect(screen.getByTestId('desktop-sidebar')).toHaveAttribute(
       'data-collapsed',
-      'false'
+      'true'
     );
     expect(screen.getByText('首页')).toBeInTheDocument();
-    expect(window.localStorage.getItem('sidebarCollapsed')).toBe('false');
+    expect(window.localStorage.getItem('sidebarCollapsed')).toBe('true');
   });
 
   it('can hide the internal collapse button when the shell owns the control', () => {

@@ -31,6 +31,8 @@ jest.mock('@/components/MobileBottomNav', () => () => (
   <div data-testid='mobile-bottom-nav' />
 ));
 
+jest.mock('@/components/UserMenu', () => ({ UserMenu: () => null }));
+
 describe('AppShell', () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -56,6 +58,37 @@ describe('AppShell', () => {
     );
   });
 
+  it('keeps all discovery categories and mode context reachable on TV', () => {
+    render(
+      <AppShell
+        activePath='/douban?type=tv'
+        tvMode
+        modeHref='/douban?type=tv&tv=1'
+      >
+        剧集
+      </AppShell>
+    );
+    expect(screen.getByRole('link', { name: '发现' })).toHaveAttribute(
+      'href',
+      '/douban?type=movie&tv=1'
+    );
+    expect(screen.getByRole('link', { name: '综艺' })).toHaveAttribute(
+      'href',
+      '/douban?type=show&tv=1'
+    );
+    expect(screen.getByRole('link', { name: '剧集' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    expect(screen.getByRole('link', { name: '退出电视模式' })).toHaveAttribute(
+      'href',
+      '/douban?type=tv&tv=0'
+    );
+    expect(
+      screen.queryByRole('link', { name: '管理面板' })
+    ).not.toBeInTheDocument();
+  });
+
   it('renders the shared shell regions around page content', () => {
     render(
       <AppShell activePath='/search'>
@@ -69,8 +102,8 @@ describe('AppShell', () => {
     expect(screen.getByText('search-body')).toBeInTheDocument();
   });
 
-  it('renders the server shell with the collapsed default even when a saved expanded state exists', () => {
-    window.localStorage.setItem('sidebarCollapsed', 'false');
+  it('renders the server shell with readable navigation before restoring a saved compact preference', () => {
+    window.localStorage.setItem('sidebarCollapsed', 'true');
 
     const html = renderToString(
       <AppShell activePath='/search'>
@@ -78,7 +111,7 @@ describe('AppShell', () => {
       </AppShell>
     );
 
-    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain('aria-pressed="true"');
   });
 
   it('restores saved sidebar state after the shell mounts in the browser', async () => {
@@ -107,8 +140,8 @@ describe('AppShell', () => {
 
     fireEvent.click(screen.getByTestId('top-search-bar'));
 
-    expect(window.localStorage.getItem('sidebarCollapsed')).toBe('false');
-    expect(window.__sidebarCollapsed).toBe(false);
+    expect(window.localStorage.getItem('sidebarCollapsed')).toBe('true');
+    expect(window.__sidebarCollapsed).toBe(true);
   });
 
   it('locks overscroll only while the play page is active', async () => {

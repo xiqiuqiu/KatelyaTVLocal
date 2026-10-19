@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import Swal from 'sweetalert2';
 
 import * as dbClient from '@/lib/db.client';
@@ -89,10 +95,89 @@ describe('HistoryPage', () => {
     expect(params.get('from')).toBe('playrecord');
   });
 
+  it('groups records by local date and keeps destructive controls in management mode', async () => {
+    const records = mockRecords();
+    const now = Date.now();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    (dbClient.getAllPlayRecords as jest.Mock).mockResolvedValue({
+      'source-today+1': {
+        ...records['source-b+2'],
+        title: '今天的影片',
+        search_title: '今天的影片',
+        save_time: now,
+      },
+      'source-yesterday+2': {
+        ...records['source-b+2'],
+        title: '昨天的影片',
+        search_title: '昨天的影片',
+        save_time: yesterday.getTime(),
+      },
+      'source-b+2': records['source-b+2'],
+    });
+    render(<HistoryPage />);
+    expect(
+      await screen.findByRole('region', { name: '今天' })
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: '昨天' })).getByText(
+        '昨天的影片',
+        { selector: 'button.line-clamp-2' }
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '更早' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '清空全部' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '选择播放记录' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
+    expect(
+      screen.getByRole('button', { name: '清空全部' })
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '完成管理' }));
+    expect(
+      screen.queryByRole('button', { name: '清空全部' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('cancels desktop deletion and deletes all grouped source keys only after confirmation', async () => {
+    const records = mockRecords();
+    (dbClient.getAllPlayRecords as jest.Mock).mockResolvedValue({
+      ...records,
+      'other-source+legacy': {
+        ...records['cdp-src+keep+id&hash#eq=1'],
+        save_time: 1,
+      },
+    });
+    render(<HistoryPage />);
+    await screen.findAllByText('特殊记录');
+    fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
+    (Swal.fire as jest.Mock).mockResolvedValueOnce({ isConfirmed: false });
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
+    await waitFor(() =>
+      expect(Swal.fire).toHaveBeenCalledWith(
+        expect.objectContaining({ focusCancel: true })
+      )
+    );
+    expect(dbClient.deletePlayRecordByKey).not.toHaveBeenCalled();
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
+    await waitFor(() =>
+      expect(dbClient.deletePlayRecordByKey).toHaveBeenCalledWith(
+        'other-source+legacy'
+      )
+    );
+    expect(dbClient.deletePlayRecordByKey).toHaveBeenCalledWith(
+      'cdp-src+keep+id&hash#eq=1'
+    );
+  });
+
   it('deletes one record through the single-record API path', async () => {
     render(<HistoryPage />);
 
     await screen.findAllByText('特殊记录');
+    fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
     fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
 
     await waitFor(() => {
@@ -119,6 +204,7 @@ describe('HistoryPage', () => {
       '/?tv=1'
     );
     (Swal.fire as jest.Mock).mockResolvedValueOnce({ isConfirmed: false });
+    fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
     fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
     await waitFor(() =>
       expect(Swal.fire).toHaveBeenCalledWith(
@@ -132,6 +218,7 @@ describe('HistoryPage', () => {
     render(<HistoryPage />);
 
     await screen.findAllByText('特殊记录');
+    fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
     fireEvent.click(screen.getByRole('button', { name: '全选' }));
     fireEvent.click(screen.getByRole('button', { name: /删除已选/ }));
 
@@ -149,6 +236,7 @@ describe('HistoryPage', () => {
     render(<HistoryPage />);
 
     await screen.findAllByText('特殊记录');
+    fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
     fireEvent.click(screen.getByRole('button', { name: /清空全部/ }));
 
     await waitFor(() => {

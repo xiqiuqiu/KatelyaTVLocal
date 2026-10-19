@@ -11,7 +11,7 @@ export default function PlayerSidebar({
 }: PlayerSidebarProps) {
   return (
     <aside
-      className={`rounded-ui-lg border border-white/10 bg-[rgba(var(--ui-surface),0.58)] p-4 shadow-ui-soft backdrop-blur-xl ${className}`.trim()}
+      className={`ui-player-sidebar rounded-ui-md bg-[rgb(var(--ui-surface))] p-4 sm:p-5 ${className}`.trim()}
     >
       {children}
     </aside>

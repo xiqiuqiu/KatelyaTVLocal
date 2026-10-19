@@ -18,15 +18,15 @@ interface EpisodeSelectorSourcesProps {
 }
 
 const stateActiveClass =
-  'border-[rgb(var(--ui-accent))] bg-[rgba(var(--ui-accent),0.1)] text-[rgb(var(--ui-text))] shadow-[inset_0_1px_0_rgba(var(--ui-text),0.08),0_8px_20px_rgba(0,0,0,0.18)]';
+  'border-[rgb(var(--ui-accent))] bg-[rgba(var(--ui-accent),0.1)] text-[rgb(var(--ui-accent))]';
 const stateIdleClass =
   'border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))] hover:border-[rgba(var(--ui-accent),0.45)] hover:bg-[rgba(var(--ui-surface-strong),0.82)] hover:text-[rgb(var(--ui-text))]';
 const stateMutedClass =
-  'border-[rgb(var(--ui-border))] bg-[rgba(var(--ui-surface),0.7)] text-[rgb(var(--ui-text-muted))] opacity-60';
+  'border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] text-[rgb(var(--ui-text-muted))]';
 const currentChipClass =
-  'rounded-full bg-[rgb(var(--ui-border))] px-1.5 py-0.5 text-[9px] font-bold leading-none text-[rgb(var(--ui-text))] ring-1 ring-[rgba(var(--ui-text),0.1)]';
+  'rounded px-1.5 py-0.5 text-xs font-semibold leading-none text-[rgb(var(--ui-accent))]';
 const metaChipClass =
-  'rounded-full bg-[rgb(var(--ui-border))] px-2 py-0.5 text-[11px] font-medium text-[rgb(var(--ui-text-muted))]';
+  'rounded bg-[rgb(var(--ui-surface-strong))] px-2 py-0.5 text-xs font-medium text-[rgb(var(--ui-text-muted))]';
 
 function getStatusClassName(
   effectiveSourceStatus: SourceAvailabilityItem['effectiveStatus']
@@ -76,8 +76,8 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
   return (
     <div className='mt-1 flex min-h-0 flex-1 flex-col'>
       {sourceSearchLoading && (
-        <div className='flex items-center justify-center rounded-ui-md border border-white/10 bg-white/[0.035] py-8'>
-          <div className='h-7 w-7 animate-spin rounded-full border-2 border-white/15 border-b-[rgb(var(--ui-accent))]'></div>
+        <div className='flex items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface-strong))] py-8'>
+          <div className='h-7 w-7 animate-spin rounded-full border-2 border-[rgb(var(--ui-border))] border-b-[rgb(var(--ui-accent))]'></div>
           <span className='ml-3 text-sm text-[rgb(var(--ui-text-muted))]'>
             搜索中...
           </span>
@@ -85,10 +85,11 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
       )}
 
       {sourceSearchError && (
-        <div className='flex items-center justify-center rounded-ui-md border border-red-400/20 bg-red-500/10 py-8'>
+        <div className='flex items-center justify-center rounded-ui-md border border-[rgba(var(--ui-critical),0.3)] bg-[rgba(var(--ui-critical),0.08)] py-8'>
           <div className='text-center'>
-            <div className='mb-2 text-2xl text-red-300'>⚠️</div>
-            <p className='text-sm text-red-200'>{sourceSearchError}</p>
+            <p className='text-sm text-[rgb(var(--ui-critical))]'>
+              {sourceSearchError}
+            </p>
           </div>
         </div>
       )}
@@ -96,11 +97,8 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
       {!sourceSearchLoading &&
         !sourceSearchError &&
         availableSourcesCount === 0 && (
-          <div className='flex items-center justify-center rounded-ui-md border border-white/10 bg-white/[0.035] py-8'>
+          <div className='flex items-center justify-center rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface-strong))] py-8'>
             <div className='text-center'>
-              <div className='mb-2 text-2xl text-[rgb(var(--ui-text-muted))]'>
-                📺
-              </div>
               <p className='text-sm text-[rgb(var(--ui-text-muted))]'>
                 暂无可用的换源
               </p>
@@ -112,7 +110,7 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
         !sourceSearchError &&
         availableSourcesCount > 0 && (
           <div className='flex min-h-0 flex-1 flex-col'>
-            <div className='grid flex-1 grid-cols-1 gap-2 overflow-y-auto pb-3 pr-0.5 sm:grid-cols-2 2xl:grid-cols-1'>
+            <div className='ui-player-source-grid grid flex-1 auto-rows-min grid-cols-1 content-start gap-2 overflow-y-auto pb-3 pr-0.5 sm:grid-cols-2 xl:grid-cols-1'>
               {sourceAvailabilityList.map((availability) => {
                 const { source, sourceKey } = availability;
                 const isCurrentSource = availability.isCurrent;
@@ -159,7 +157,7 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
                     }`}
                     title={`${source.title} · ${sourceStatusText}`}
                     onClick={() => isClickable && onSourceClick(source)}
-                    className={`group relative min-w-0 rounded-ui-md border px-3 py-3 text-left transition-[border-color,background-color,color] duration-200
+                    className={`group relative min-w-0 rounded-ui-sm border px-3 py-3 text-left transition-[border-color,background-color,color] duration-150
                           ${
                             isCurrentSource
                               ? `${stateActiveClass} cursor-default disabled:opacity-100`
@@ -175,15 +173,17 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
                             {source.source_name}
                           </span>
                           {isCurrentSource && (
-                            <span className={currentChipClass}>当前</span>
+                            <span className={`shrink-0 ${currentChipClass}`}>
+                              当前
+                            </span>
                           )}
                         </div>
-                        <p className='mt-1 truncate text-[11px] text-[rgb(var(--ui-text-muted))]'>
+                        <p className='mt-1 truncate text-sm text-[rgb(var(--ui-text-muted))]'>
                           {source.title}
                         </p>
                       </div>
                       <span
-                        className={`${statusClassName} shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold`}
+                        className={`${statusClassName} shrink-0 rounded px-2 py-1 text-xs font-semibold`}
                       >
                         {statusLabel}
                       </span>
@@ -191,7 +191,7 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
 
                     <div className='mt-3 flex flex-wrap items-center gap-1.5'>
                       {qualityLabel && (
-                        <span className='rounded-full bg-[rgba(var(--ui-success),0.16)] px-2 py-0.5 text-[11px] font-semibold text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]'>
+                        <span className='rounded bg-[rgba(var(--ui-success),0.16)] px-2 py-0.5 text-sm font-semibold text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]'>
                           {qualityLabel}
                         </span>
                       )}
@@ -205,7 +205,7 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
                       </span>
                     </div>
 
-                    <p className='mt-2 truncate text-[11px] font-medium text-[rgb(var(--ui-text-muted))]'>
+                    <p className='mt-2 break-words text-sm font-medium text-[rgb(var(--ui-text-muted))]'>
                       {sourceStatusText}
                     </p>
                   </button>
@@ -213,14 +213,14 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
               })}
             </div>
 
-            <div className='flex-shrink-0 border-t border-white/10 pt-2'>
+            <div className='flex-shrink-0 border-t border-[rgb(var(--ui-border))] pt-2'>
               <button
                 onClick={() => {
                   if (videoTitle) {
                     onSearchMismatchClick();
                   }
                 }}
-                className='w-full rounded-ui-sm px-3 py-2 text-center text-xs font-medium text-[rgb(var(--ui-text-muted))] transition-colors hover:bg-white/[0.06] hover:text-[rgb(var(--ui-text))]'
+                className='min-h-11 w-full rounded-ui-sm px-3 py-2 text-center text-xs font-medium text-[rgb(var(--ui-text-muted))] transition-colors hover:bg-[rgb(var(--ui-surface-strong))] hover:text-[rgb(var(--ui-text))]'
                 type='button'
               >
                 影片匹配有误？点击去搜索

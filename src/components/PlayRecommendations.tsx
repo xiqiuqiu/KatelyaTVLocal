@@ -46,8 +46,7 @@ export default function PlayRecommendations({
 }: PlayRecommendationsProps) {
   const [items, setItems] = useState<PlayRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
-  const cardWidthClass =
-    'w-24 min-w-[96px] min-[440px]:w-36 min-[440px]:min-w-[140px] sm:w-44 sm:min-w-[180px]';
+  const cardWidthClass = 'w-32 min-w-[128px] sm:w-40 sm:min-w-[160px]';
   const cardType = CATEGORY_TO_TYPE[preferCategory];
 
   useEffect(() => {

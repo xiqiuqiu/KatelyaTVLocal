@@ -125,6 +125,7 @@ jest.mock(
 
 jest.mock('@/components/ui/LoadingPrimitives', () => ({
   SkeletonPosterCard: () => <div>loading</div>,
+  SkeletonResultCard: () => <div>loading</div>,
 }));
 
 jest.mock('@/components/VideoCard', () => {
@@ -552,28 +553,31 @@ describe('SearchPage', () => {
     );
   });
 
-  it('retries a failed TV search through the existing request and cancellation path', async () => {
-    mockSearchParams = new URLSearchParams('tv=1&q=test');
-    const errorSpy = jest
-      .spyOn(console, 'error')
-      .mockImplementation(() => undefined);
-    const fetchMock = jest
-      .fn()
-      .mockResolvedValueOnce({ ok: false, status: 503 })
-      .mockResolvedValue({
-        ok: true,
-        json: async () => ({ results: sampleResults }),
+  it.each(['q=test', 'tv=1&q=test'])(
+    'retries a failed search through the existing request and cancellation path (%s)',
+    async (params) => {
+      mockSearchParams = new URLSearchParams(params);
+      const errorSpy = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 503 })
+        .mockResolvedValue({
+          ok: true,
+          json: async () => ({ results: sampleResults }),
+        });
+      (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
+      await act(async () => {
+        render(<SearchPage />);
       });
-    (global as typeof globalThis & { fetch: jest.Mock }).fetch = fetchMock;
-    await act(async () => {
-      render(<SearchPage />);
-    });
-    expect(screen.getByRole('alert')).toHaveTextContent('搜索失败，请重试。');
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: '重试搜索' }));
-    });
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    errorSpy.mockRestore();
-  });
+      expect(screen.getByRole('alert')).toHaveTextContent('搜索失败，请重试。');
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: '重试搜索' }));
+      });
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      errorSpy.mockRestore();
+    }
+  );
 });

@@ -2,11 +2,14 @@
 
 import {
   Clover,
+  Compass,
   Film,
   Heart,
+  History,
   Home,
   Menu,
   Search,
+  Settings,
   Tv,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -16,6 +19,7 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useState,
 } from 'react';
 
@@ -23,7 +27,6 @@ import {
   type NavigationIcon,
   type NavigationItem,
   isNavigationItemActive,
-  secondaryNavigationItems,
   sidebarNavigationItems,
 } from '@/lib/ui/navigation';
 
@@ -43,6 +46,7 @@ interface SidebarProps {
   visible?: boolean;
   collapsed?: boolean;
   showCollapseToggle?: boolean;
+  onOpenMenu?: () => void;
 }
 
 // 在浏览器环境下通过全局变量缓存折叠状态，避免组件重新挂载时出现初始值闪烁
@@ -59,6 +63,8 @@ const iconMap: Record<NavigationIcon, typeof Home> = {
   tv: Tv,
   clover: Clover,
   heart: Heart,
+  compass: Compass,
+  history: History,
 };
 
 const Sidebar = ({
@@ -67,20 +73,13 @@ const Sidebar = ({
   visible = true,
   collapsed,
   showCollapseToggle = true,
+  onOpenMenu,
 }: SidebarProps) => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const isControlled = typeof collapsed === 'boolean';
-  const [localCollapsed, setLocalCollapsed] = useState<boolean>(() => {
-    if (
-      typeof window !== 'undefined' &&
-      typeof window.__sidebarCollapsed === 'boolean'
-    ) {
-      return window.__sidebarCollapsed;
-    }
-    return true; // 默认使用设计图中的紧凑图标栏
-  });
+  const [localCollapsed, setLocalCollapsed] = useState(false);
   const isCollapsed = isControlled ? collapsed : localCollapsed;
 
   // 首次挂载时读取 localStorage，以便刷新后仍保持上次的折叠状态
@@ -137,9 +136,7 @@ const Sidebar = ({
     onToggle?.(newState);
   };
 
-  const contextValue = {
-    isCollapsed,
-  };
+  const contextValue = useMemo(() => ({ isCollapsed }), [isCollapsed]);
 
   const renderNavItem = (item: NavigationItem) => {
     const Icon = iconMap[item.icon];
@@ -152,13 +149,12 @@ const Sidebar = ({
         href={item.href}
         onClick={() => setActive(item.href)}
         data-active={isActive}
+        aria-current={isActive ? 'page' : undefined}
         title={isCollapsed ? item.label : undefined}
-        className={`group flex items-center gap-3 rounded-ui-md px-4 py-3 text-sm transition-colors duration-150 ease ${
-          isCollapsed ? 'justify-center px-3' : ''
-        } text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface)/0.42)] hover:text-[rgb(var(--ui-text))] data-[active=true]:border data-[active=true]:border-[rgb(var(--ui-accent)/0.24)] data-[active=true]:bg-[rgb(var(--ui-surface-strong)/0.5)] data-[active=true]:text-[rgb(var(--ui-text))] data-[active=true]:shadow-ui-soft`}
+        className={`ui-nav-item ${isCollapsed ? 'justify-center' : ''}`}
       >
         <span className='flex h-5 w-5 items-center justify-center'>
-          <Icon className='h-4 w-4' />
+          <Icon className='h-5 w-5' />
         </span>
         <span
           className={`truncate overflow-hidden transition-[max-width,opacity] duration-200 ease-out ${
@@ -180,8 +176,8 @@ const Sidebar = ({
           data-sidebar
           data-testid='desktop-sidebar'
           data-collapsed={isCollapsed}
-          className={`ui-glass-strong fixed inset-y-0 left-0 z-40 flex h-dvh flex-col rounded-none border-y-0 border-l-0 pt-[calc(4rem+env(safe-area-inset-top))] transition-[transform,opacity] duration-motionBase ease-easeOutStrong ${
-            isCollapsed ? 'w-20' : 'w-64'
+          className={`fixed inset-y-0 left-0 z-40 flex h-dvh flex-col border-r border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-bg))] pt-[calc(4rem+env(safe-area-inset-top))] transition-[transform,opacity] duration-motionBase ease-easeOutStrong ${
+            isCollapsed ? 'w-20' : 'w-44'
           } ${
             visible
               ? 'translate-x-0 opacity-100'
@@ -189,7 +185,11 @@ const Sidebar = ({
           }`}
         >
           <div className='flex h-full flex-col px-3 pb-6'>
-            <div className='relative flex h-16 items-center'>
+            <div
+              className={`relative flex ${
+                showCollapseToggle ? 'h-16' : 'h-6'
+              } items-center`}
+            >
               {showCollapseToggle && (
                 <button
                   onClick={handleToggle}
@@ -203,18 +203,22 @@ const Sidebar = ({
               )}
             </div>
 
-            <nav className='mt-4 space-y-2'>
-              {sidebarNavigationItems.slice(0, 2).map(renderNavItem)}
+            <nav aria-label='主导航' className='space-y-2'>
+              {sidebarNavigationItems.map(renderNavItem)}
             </nav>
-
-            <div className='mt-6 flex-1 overflow-y-auto'>
-              <div className='space-y-2'>
-                {sidebarNavigationItems.slice(2).map(renderNavItem)}
-              </div>
-              <div className='mt-6 space-y-2 border-t border-white/10 pt-6'>
-                {secondaryNavigationItems.map(renderNavItem)}
-              </div>
-            </div>
+            <button
+              type='button'
+              onClick={onOpenMenu}
+              aria-label='设置'
+              aria-haspopup='dialog'
+              title={isCollapsed ? '设置' : undefined}
+              className={`ui-nav-item mt-auto w-full ${
+                isCollapsed ? 'justify-center' : ''
+              }`}
+            >
+              <Settings aria-hidden className='h-5 w-5 shrink-0' />
+              {!isCollapsed && <span>设置</span>}
+            </button>
           </div>
         </aside>
       </div>

@@ -58,16 +58,18 @@ export default function PlayDetailSection({
   return (
     <section aria-label='影片详情'>
       <Surface
-        variant='raised'
-        className='grid grid-cols-1 gap-5 overflow-hidden p-4 sm:gap-6 sm:p-5 md:grid-cols-[160px_minmax(0,1fr)] lg:grid-cols-[180px_minmax(0,1fr)]'
+        variant='plain'
+        className='grid grid-cols-[80px_minmax(0,1fr)] items-start gap-4 py-4 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-6 sm:py-6'
       >
-        <div className='mx-auto w-36 sm:w-40 md:mx-0 md:w-full'>
-          <div className='flex aspect-[2/3] items-center justify-center overflow-hidden rounded-ui-md bg-[rgb(var(--ui-surface))] shadow-ui-soft'>
+        <div className='w-full'>
+          <div className='flex aspect-[2/3] items-center justify-center overflow-hidden rounded-ui-md bg-[rgb(var(--ui-surface-strong))]'>
             {posterSrc ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={posterSrc}
                 alt={displayTitle}
+                loading='lazy'
+                decoding='async'
                 className='h-full w-full object-cover'
               />
             ) : (
@@ -80,7 +82,7 @@ export default function PlayDetailSection({
 
         <div className='flex min-w-0 flex-col gap-3 sm:gap-4'>
           <div className='space-y-2'>
-            <h2 className='text-2xl font-semibold tracking-tight text-[rgb(var(--ui-text))] sm:text-3xl'>
+            <h2 className='break-words text-xl font-semibold text-[rgb(var(--ui-text))] sm:text-2xl'>
               {displayTitle}
             </h2>
 
@@ -98,11 +100,11 @@ export default function PlayDetailSection({
 
           {detail?.desc ? (
             <div className='space-y-2'>
-              <p className='text-xs font-semibold uppercase tracking-[0.16em] text-[rgb(var(--ui-text-muted))]'>
+              <p className='text-sm font-semibold text-[rgb(var(--ui-text-muted))]'>
                 简介
               </p>
               <div
-                className='max-h-48 overflow-y-auto text-sm leading-relaxed text-[rgb(var(--ui-text)/0.92)] scrollbar-hide sm:text-base'
+                className='max-h-48 max-w-prose overflow-y-auto text-sm leading-relaxed text-[rgb(var(--ui-text-muted))] sm:text-base'
                 style={{ whiteSpace: 'pre-line' }}
               >
                 {detail.desc}

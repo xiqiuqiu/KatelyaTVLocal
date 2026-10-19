@@ -143,7 +143,7 @@ interface EpisodeSelectorProps {
 /**
  * 选集组件，支持分页、自动滚动聚焦当前分页标签，以及换源功能。
  */
-const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
+function useEpisodeSelectorState({
   tvMode = false,
   totalEpisodes,
   episodesPerPage = 10,
@@ -159,7 +159,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   precomputedVideoInfo,
   precomputedSourceStatuses,
   sourceSelectionScores,
-}) => {
+}: EpisodeSelectorProps) {
   const router = useRouter();
   const pageCount = Math.ceil(totalEpisodes / episodesPerPage);
 
@@ -1048,11 +1048,68 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     sourceSelectionScores,
   });
 
+  const handleSearchMismatchClick = () => {
+    if (videoTitle) {
+      router.push(`/search?q=${encodeURIComponent(videoTitle)}`);
+    }
+  };
+
+  return {
+    activeTab,
+    availableSources,
+    currentPage,
+    descending,
+    episodesPerPage,
+    handleCategoryClick,
+    handleEpisodeClick,
+    handleSearchMismatchClick,
+    handleSourceClick,
+    handleSourceTabClick,
+    pageCount,
+    setActiveTab,
+    setDescending,
+    sourceAvailabilityList,
+    sourceSearchError,
+    sourceSearchLoading,
+    totalEpisodes,
+    tvMode,
+    value,
+    videoTitle,
+  };
+}
+
+const EpisodeSelector: React.FC<EpisodeSelectorProps> = (props) => {
+  const {
+    activeTab,
+    availableSources,
+    currentPage,
+    descending,
+    episodesPerPage,
+    handleCategoryClick,
+    handleEpisodeClick,
+    handleSearchMismatchClick,
+    handleSourceClick,
+    handleSourceTabClick,
+    pageCount,
+    setActiveTab,
+    setDescending,
+    sourceAvailabilityList,
+    sourceSearchError,
+    sourceSearchLoading,
+    totalEpisodes,
+    tvMode,
+    value,
+    videoTitle,
+  } = useEpisodeSelectorState(props);
+
   return (
-    <div className='flex max-h-[640px] min-h-[260px] flex-col overflow-hidden rounded-ui-lg border border-white/10 bg-[linear-gradient(180deg,rgba(var(--ui-surface-strong),0.64),rgba(var(--ui-surface),0.42))] p-3 text-[rgb(var(--ui-text))] shadow-[0_18px_48px_rgba(0,0,0,0.18)] sm:p-4'>
+    <div
+      data-tv-mode={tvMode ? 'true' : undefined}
+      className='ui-player-selector flex max-h-[640px] min-h-[260px] flex-col text-[rgb(var(--ui-text))]'
+    >
       {/* 主要的 Tab 切换 */}
       <div
-        className={`mb-3 grid flex-shrink-0 gap-1 rounded-ui-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-bg-elevated))] p-1 ${
+        className={`mb-3 grid flex-shrink-0 gap-1 rounded-ui-sm bg-[rgb(var(--ui-surface-strong))] p-1 ${
           totalEpisodes > 1 ? 'grid-cols-2' : 'grid-cols-1'
         }`}
         role='tablist'
@@ -1064,10 +1121,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             role='tab'
             aria-selected={activeTab === 'episodes'}
             onClick={() => setActiveTab('episodes')}
-            className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-[border-color,background-color,color,box-shadow] duration-200
+            className={`min-h-11 rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-colors duration-150
                 ${
                   activeTab === 'episodes'
-                    ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
+                    ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))]'
                     : 'text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface))] hover:text-[rgb(var(--ui-text))]'
                 }
             `.trim()}
@@ -1080,10 +1137,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           role='tab'
           aria-selected={activeTab === 'sources'}
           onClick={handleSourceTabClick}
-          className={`rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-[border-color,background-color,color,box-shadow] duration-200
+          className={`min-h-11 rounded-ui-sm px-4 py-2.5 text-center text-sm font-semibold transition-colors duration-150
                 ${
                   activeTab === 'sources'
-                    ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] shadow-ui-soft'
+                    ? 'bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))]'
                     : 'text-[rgb(var(--ui-text-muted))] hover:bg-[rgb(var(--ui-surface))] hover:text-[rgb(var(--ui-text))]'
                 }
             `.trim()}
@@ -1115,11 +1172,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           sourceAvailabilityList={sourceAvailabilityList}
           videoTitle={videoTitle}
           onSourceClick={handleSourceClick}
-          onSearchMismatchClick={() => {
-            if (videoTitle) {
-              router.push(`/search?q=${encodeURIComponent(videoTitle)}`);
-            }
-          }}
+          onSearchMismatchClick={handleSearchMismatchClick}
         />
       )}
     </div>
