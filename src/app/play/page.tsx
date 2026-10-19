@@ -116,12 +116,15 @@ import {
   clearAttemptedLedgersOnEpisodeChange,
   clearAttemptedLedgersOnTitleChange,
 } from '@/lib/source-availability/attempted-ledgers';
-import { selectRecoveryCandidate } from '@/lib/source-availability/index';
+import {
+  resolveSourceStatusEvidence,
+  selectInitialSourceCandidate,
+  selectRecoveryCandidate,
+} from '@/lib/source-availability/index';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import { buildVideoInfoFromPreferenceResult } from '@/lib/source-preference-video-info';
 import {
   buildSourceSelectionScores,
-  sortSourcesBySelectionScore,
   SourceSelectionScore,
 } from '@/lib/source-selection';
 import {
@@ -1588,13 +1591,12 @@ function PlayPageClient() {
         sourceKey,
         source.episodes || []
       );
-      if (
-        rememberedStatus?.kind === 'unavailable' ||
-        !statuses.has(sourceKey)
-      ) {
-        if (rememberedStatus) {
-          statuses.set(sourceKey, rememberedStatus);
-        }
+      const status = resolveSourceStatusEvidence(
+        statuses.get(sourceKey),
+        rememberedStatus
+      );
+      if (status) {
+        statuses.set(sourceKey, status);
       }
     });
     return statuses;
@@ -3273,12 +3275,17 @@ function PlayPageClient() {
   // 播放源优选函数
   const preferBestSource = async (
     sources: SearchResult[]
-  ): Promise<SearchResult> => {
+  ): Promise<SearchResult | null> => {
     if (sources.length === 1) {
+      const source = sources[0];
+      const rememberedStatus = getRememberedSourceStatusForSource(
+        getSourceIdentityKey(source.source, source.id),
+        source.episodes
+      );
       setPrecomputedSourceStatuses(new Map());
       setPrecomputedVideoInfo(new Map());
       updateSourceSelectionScores(sources, new Map(), new Map());
-      return sources[0];
+      return rememberedStatus?.kind === 'proxy' ? null : source;
     }
 
     const startedAt = Date.now();
@@ -3405,24 +3412,19 @@ function PlayPageClient() {
       const status = statusMap.get(
         getSourceIdentityKey(source.source, source.id)
       );
-      return (
-        status?.kind === 'direct' ||
-        status?.kind === 'proxy' ||
-        status?.kind === 'playable'
-      );
+      return status?.kind === 'direct' || status?.kind === 'playable';
     };
 
     const pickBestSource = (scores: Map<string, SourceSelectionScore>) => {
-      const ordered = sortSourcesBySelectionScore(sources, scores, (source) =>
-        getSourceIdentityKey(source.source, source.id)
+      return (
+        selectInitialSourceCandidate({
+          sources,
+          currentEpisodeIndex: currentEpisodeIndexRef.current,
+          statuses: statusMap,
+          measured: videoInfoMap,
+          sourceSelectionScores: scores,
+        })?.source || null
       );
-      const available = ordered.find((source) => {
-        const status = statusMap.get(
-          getSourceIdentityKey(source.source, source.id)
-        );
-        return status?.kind !== 'unavailable';
-      });
-      return { ordered, available };
     };
 
     // 第一阶段：快速预算内拿到结果就用，命中热内容时保持秒开体验。
@@ -3436,13 +3438,13 @@ function PlayPageClient() {
       applyPreferenceResults(fastData);
     }
 
-    // 第二阶段：若最优候选仍不可信（无任何 direct/proxy/playable 确认，
+    // 第二阶段：若最优候选仍不可信（无任何 direct/playable 确认，
     // 多见于冷内容按原始顺序命中未探测源），再等待完整结果，最多到扩展预算，
     // 用真实探测数据换取“首源不踩不可用源”。
-    let bestPick = pickBestSource(commitSelectionState());
+    let bestSource = pickBestSource(commitSelectionState());
     if (
       !preferenceSettled &&
-      (!bestPick.available || !isSourceKindUsable(bestPick.available))
+      (!bestSource || !isSourceKindUsable(bestSource))
     ) {
       const extendedData = await Promise.race([
         settledPromise,
@@ -3468,19 +3470,17 @@ function PlayPageClient() {
       });
     }
 
-    bestPick = pickBestSource(commitSelectionState());
-    // 兜底优先取评分最高源，而不是原始顺序第一个（后者可能恰是不可用源）。
-    const finalSource = bestPick.available || bestPick.ordered[0] || sources[0];
+    bestSource = pickBestSource(commitSelectionState());
 
     console.log('播放源优选结果:', {
-      selected: finalSource?.source_name,
-      trustworthy: finalSource ? isSourceKindUsable(finalSource) : false,
+      selected: bestSource?.source_name,
+      trustworthy: bestSource ? isSourceKindUsable(bestSource) : false,
       waitedMs: Date.now() - startedAt,
       preferenceSettled,
       progressiveProbe: true,
     });
 
-    return finalSource || sources[0];
+    return bestSource;
   };
 
   // 更新视频地址
@@ -4243,8 +4243,17 @@ function PlayPageClient() {
             fellBackFromHistory) &&
           optimizationEnabled
         ) {
-          detailData = await preferBestSource(sourcesInfo);
+          const preferredSource = await preferBestSource(sourcesInfo);
           if (cancelled) return;
+          if (!preferredSource) {
+            setPlaybackError(
+              '当前没有可直连的播放源，请稍后重试',
+              'source-unavailable'
+            );
+            setLoading(false);
+            return;
+          }
+          detailData = preferredSource;
         } else {
           updateSourceSelectionScores(
             sourcesInfo,

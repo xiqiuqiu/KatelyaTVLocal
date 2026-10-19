@@ -4,7 +4,12 @@ import {
   clearAttemptedLedgersOnEpisodeChange,
   clearAttemptedLedgersOnTitleChange,
 } from './attempted-ledgers';
-import { buildSourceAvailabilityList, selectRecoveryCandidate } from './index';
+import {
+  buildSourceAvailabilityList,
+  resolveSourceStatusEvidence,
+  selectInitialSourceCandidate,
+  selectRecoveryCandidate,
+} from './index';
 
 function createSource(
   source: string,
@@ -19,6 +24,21 @@ function createSource(
     poster: '',
     episodes,
     source_name: source,
+  };
+}
+
+function createSelectionScore(
+  source: SearchResult,
+  score: number,
+  originalIndex: number
+) {
+  const sourceKey = `${source.source}-${source.id}`;
+  return {
+    sourceKey,
+    score,
+    reason: '测试排序',
+    source,
+    originalIndex,
   };
 }
 
@@ -387,6 +407,96 @@ describe('shared eligibility model for manual vs auto', () => {
         expect(item.manualSwitch.mode).toBe('switch-now');
       }
     }
+  });
+});
+
+describe('initial source selection', () => {
+  it('skips a higher-scored proxy-only source for a direct source', () => {
+    const proxy = createSource('proxy', '1');
+    const direct = createSource('direct', '2');
+    const candidate = selectInitialSourceCandidate({
+      sources: [proxy, direct],
+      currentEpisodeIndex: 0,
+      statuses: new Map<string, SourceStatus>([
+        ['proxy-1', { kind: 'proxy', playbackMode: 'proxy' }],
+        ['direct-2', { kind: 'direct', playbackMode: 'direct' }],
+      ]),
+      sourceSelectionScores: new Map([
+        ['proxy-1', createSelectionScore(proxy, 100, 0)],
+        ['direct-2', createSelectionScore(direct, 50, 1)],
+      ]),
+    });
+
+    expect(candidate?.sourceKey).toBe('direct-2');
+  });
+
+  it('preserves score order among direct and playable sources', () => {
+    const direct = createSource('direct', '1');
+    const playable = createSource('playable', '2');
+    const candidate = selectInitialSourceCandidate({
+      sources: [direct, playable],
+      currentEpisodeIndex: 0,
+      statuses: new Map<string, SourceStatus>([
+        ['direct-1', { kind: 'direct' }],
+        ['playable-2', { kind: 'playable' }],
+      ]),
+      sourceSelectionScores: new Map([
+        ['direct-1', createSelectionScore(direct, 50, 0)],
+        ['playable-2', createSelectionScore(playable, 80, 1)],
+      ]),
+    });
+
+    expect(candidate?.sourceKey).toBe('playable-2');
+  });
+
+  it('returns no automatic candidate when every source requires proxy', () => {
+    expect(
+      selectInitialSourceCandidate({
+        sources: [createSource('proxy', '1')],
+        currentEpisodeIndex: 0,
+        statuses: new Map<string, SourceStatus>([
+          ['proxy-1', { kind: 'proxy', playbackMode: 'proxy' }],
+        ]),
+      })
+    ).toBeNull();
+  });
+});
+
+describe('source status evidence freshness', () => {
+  const rememberedUnavailable: SourceStatus = {
+    kind: 'unavailable',
+    reason: '旧记忆不可用',
+    fromMemory: true,
+  };
+  const rememberedDirect: SourceStatus = {
+    kind: 'direct',
+    reason: '旧记忆可用',
+    fromMemory: true,
+  };
+
+  it('keeps current playable evidence over remembered unavailable', () => {
+    const current: SourceStatus = { kind: 'direct', reason: '本次探测可用' };
+
+    expect(resolveSourceStatusEvidence(current, rememberedUnavailable)).toBe(
+      current
+    );
+  });
+
+  it('keeps current unavailable evidence over remembered playable', () => {
+    const current: SourceStatus = {
+      kind: 'unavailable',
+      reason: '本次探测失败',
+    };
+
+    expect(resolveSourceStatusEvidence(current, rememberedDirect)).toBe(
+      current
+    );
+  });
+
+  it('uses remembered unavailable when current evidence is absent', () => {
+    expect(resolveSourceStatusEvidence(undefined, rememberedUnavailable)).toBe(
+      rememberedUnavailable
+    );
   });
 });
 
