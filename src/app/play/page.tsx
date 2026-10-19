@@ -2582,6 +2582,11 @@ function PlayPageClient() {
 
     if (update.healthy) {
       state.lastHealthyProgressAt = now;
+      dispatchPlaybackSessionEvent({
+        type: 'recovery.progressHealthy',
+        snapshot: getCurrentVideoSnapshot(),
+        nowMs: now,
+      });
       resetHlsStallWindow('playback-progress-healthy', currentTime);
     }
   };
@@ -4415,15 +4420,23 @@ function PlayPageClient() {
           ? options.resumeTime
           : resumeTimeRef.current;
       const nextSourceKey = getSourceIdentityKey(newSource, newId);
-      const resumePlan = getSourceSwitchResumePlan({
-        currentEpisodeIndex: activeEpisodeIndex,
-        targetEpisodeIndex: targetIndex,
-        currentPlayTime,
-        existingResumeTime: plannedResumeTime,
-        badPoints: playbackSessionStateRef.current.badPoints,
-        currentSourceKey: getCurrentSourceKey(),
-        targetSourceKey: nextSourceKey,
-      });
+      const resumePlan =
+        options.autoRecovery && typeof options.resumeTime === 'number'
+          ? {
+              resumeTime: options.resumeTime,
+              saveAfterCanPlay: options.resumeTime > 0,
+              action: 'none' as const,
+              recordBadPointAt: null,
+            }
+          : getSourceSwitchResumePlan({
+              currentEpisodeIndex: activeEpisodeIndex,
+              targetEpisodeIndex: targetIndex,
+              currentPlayTime,
+              existingResumeTime: plannedResumeTime,
+              badPoints: playbackSessionStateRef.current.badPoints,
+              currentSourceKey: getCurrentSourceKey(),
+              targetSourceKey: nextSourceKey,
+            });
       if (
         resumePlan.recordBadPointAt != null &&
         (options.autoRecovery || resumePlan.action === 'skip-forward')
@@ -5385,6 +5398,7 @@ function PlayPageClient() {
                 const legacyIsUserPaused =
                   state.userPausedAt > 0 && video.paused;
                 if (
+                  (!fatal || !isPlaybackRecoverySessionAuthorityEnabled()) &&
                   !isSessionAutomaticEffectAllowed(
                     'same-source-recovery',
                     now,
