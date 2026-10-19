@@ -6,6 +6,11 @@ const nextConfig = {
     dirs: ['src'],
   },
 
+  // Resolve Node16-style .js imports to their TypeScript source while bundling.
+  experimental: {
+    extensionAlias: { '.js': ['.js', '.ts', '.tsx'] },
+  },
+
   reactStrictMode: false,
   swcMinify: true,
 
