@@ -210,11 +210,15 @@ function PlaybackPreparationOverlay({
   }, [ready, returning]);
 
   const rect = expanded ? target : intent.rect;
-  const transform = `translate3d(${rect.left - intent.rect.left}px, ${
-    rect.top - intent.rect.top
-  }px, 0) scale(${rect.width / intent.rect.width}, ${
+  const scale = Math.min(
+    rect.width / intent.rect.width,
     rect.height / intent.rect.height
-  })`;
+  );
+  const transform = `translate3d(${
+    rect.left + (rect.width - intent.rect.width * scale) / 2 - intent.rect.left
+  }px, ${
+    rect.top + (rect.height - intent.rect.height * scale) / 2 - intent.rect.top
+  }px, 0) scale(${scale})`;
   const duration = reducedMotion ? 120 : ENTER_DURATION_MS;
   const statusTop = Math.min(
     target.top + target.height + 18,

@@ -211,7 +211,7 @@ describe('PlaybackPreparationProvider', () => {
       left: '80px',
       width: '160px',
       height: '240px',
-      transform: 'translate3d(160px, -24px, 0) scale(5, 1.875)',
+      transform: 'translate3d(410px, -24px, 0) scale(1.875)',
     });
     target.remove();
   });
