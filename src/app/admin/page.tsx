@@ -33,6 +33,7 @@ import {
   Users,
   Video,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
   Suspense,
@@ -46,7 +47,7 @@ import Swal from 'sweetalert2';
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getRuntimeCurrentUser } from '@/lib/auth';
 import { buildRegistrationInviteLink } from '@/lib/registration/invite-link';
-import { isTvMode } from '@/lib/tv-interaction';
+import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 import { managementSettingsGroups } from '@/lib/ui/settings';
 
 import PageLayout from '@/components/PageLayout';
@@ -2683,7 +2684,9 @@ function AdminPageClient() {
   const section = managementSettingsGroups
     .flatMap((group) => group.items.map((item) => item.id))
     .find((id) => id === requestedSection);
-  const modeHref = section ? `/admin?section=${section}` : '/admin';
+  const modeHref = section
+    ? `/admin?section=${section}#admin-${section}`
+    : '/admin';
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2866,16 +2869,19 @@ function AdminPageClient() {
               <div className='ui-admin-nav-group' key={group.id}>
                 <p className='ui-admin-nav-group-title'>{group.label}</p>
                 {group.items.map((item) => (
-                  <a
+                  <Link
                     key={item.id}
-                    href={`#admin-${item.id}`}
+                    href={buildTvModeHref(
+                      `/admin?section=${item.id}#admin-${item.id}`,
+                      tvMode
+                    )}
                     data-active={expandedTabs[item.id] || undefined}
                     onClick={() =>
                       setExpandedTabs((prev) => ({ ...prev, [item.id]: true }))
                     }
                   >
                     {item.label}
-                  </a>
+                  </Link>
                 ))}
               </div>
             ))}

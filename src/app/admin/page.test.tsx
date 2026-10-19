@@ -211,7 +211,10 @@ it('organizes all six existing panels into the same navigation and content group
     for (const item of group.items) {
       expect(
         within(navigation).getByRole('link', { name: item.label })
-      ).toHaveAttribute('href', `#admin-${item.id}`);
+      ).toHaveAttribute(
+        'href',
+        `/admin?section=${item.id}&tv=1#admin-${item.id}`
+      );
       expect(
         within(content).getByRole('button', { name: item.label })
       ).toHaveAttribute('aria-expanded', 'false');
@@ -227,7 +230,7 @@ it('opens an allowed deep link and preserves an unsaved form when the query sele
   fireEvent.change(siteName, { target: { value: '未保存站点名称' } });
   expect(screen.getByRole('main')).toHaveAttribute(
     'data-mode-href',
-    '/admin?section=siteConfig'
+    '/admin?section=siteConfig#admin-siteConfig'
   );
 
   mockSearchParams = new URLSearchParams('tv=1&section=videoSource');
@@ -246,7 +249,7 @@ it('opens an allowed deep link and preserves an unsaved form when the query sele
   );
   expect(screen.getByRole('main')).toHaveAttribute(
     'data-mode-href',
-    '/admin?section=videoSource'
+    '/admin?section=videoSource#admin-videoSource'
   );
   expect(fetch).toHaveBeenCalledTimes(1);
 });
