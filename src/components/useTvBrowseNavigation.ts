@@ -47,6 +47,8 @@ export default function useTvBrowseNavigation(
     if (!enabled || !root) return;
     document.documentElement.classList.add('tv-browse-navigation');
     const storageKey = `tv-browse-focus:${page}`;
+    const requestedSection =
+      page === '/admin' ? window.location.hash.slice(1) : '';
     let remembered = '';
     try {
       remembered = sessionStorage.getItem(storageKey) || '';
@@ -145,10 +147,18 @@ export default function useTvBrowseNavigation(
       ).find(available);
     const focusInitial = () => {
       const controls = actions(root);
+      const section = requestedSection
+        ? document.getElementById(requestedSection)
+        : null;
+      const sectionControl =
+        section && root.contains(section)
+          ? controls.find((control) => section.contains(control))
+          : undefined;
       const saved = controls.find(
         (control) => control.dataset.tvFocusKey === remembered
       );
       const target =
+        sectionControl ||
         saved ||
         controls.find((control) => control.hasAttribute('data-tv-primary')) ||
         controls[0];

@@ -119,6 +119,7 @@ describe('TV browse interaction', () => {
   });
 
   afterEach(() => {
+    window.history.replaceState(null, '', '/');
     document
       .querySelectorAll('[role="dialog"][aria-modal="true"]')
       .forEach((modal) => modal.remove());
@@ -138,6 +139,37 @@ describe('TV browse interaction', () => {
       <button hidden>隐藏操作</button>
     </>
   );
+
+  it('focuses a requested admin section after loading instead of restoring the navigation', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/admin?section=videoSource&tv=1#admin-videoSource'
+    );
+    sessionStorage.setItem('tv-browse-focus:/admin', 'nav-home');
+    const view = render(
+      <AppShell activePath='/admin' tvMode>
+        <p>加载中</p>
+      </AppShell>
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: '首页' })).toHaveFocus()
+    );
+    view.rerender(
+      <AppShell activePath='/admin' tvMode>
+        <section id='admin-videoSource'>
+          <button>视频源配置</button>
+        </section>
+      </AppShell>
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '视频源配置' })).toHaveFocus()
+    );
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({
+      block: 'nearest',
+      inline: 'nearest',
+    });
+  });
 
   it('reveals the current selection even when a direction has no next target, without activating it', async () => {
     const view = render(
