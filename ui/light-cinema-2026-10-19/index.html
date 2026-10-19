@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>KatelyaTV · 轻量影院设计评审</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC',
+          'Microsoft YaHei', sans-serif;
+        color: #17202c;
+        background: #f5f6f8;
+        line-height: 1.65;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      a {
+        color: #2458b8;
+        text-underline-offset: 4px;
+      }
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 3px solid #2458b8;
+        outline-offset: 5px;
+      }
+      .skip {
+        position: fixed;
+        left: 16px;
+        top: -100px;
+        background: white;
+        padding: 12px;
+        z-index: 9;
+      }
+      .skip:focus {
+        top: 12px;
+      }
+      .wrap {
+        max-width: 1540px;
+        margin: auto;
+        padding-inline: clamp(20px, 4vw, 64px);
+      }
+      header {
+        border-bottom: 1px solid #d8dee8;
+        padding-block: 48px 32px;
+      }
+      .eyebrow {
+        margin: 0 0 14px;
+        color: #536174;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(32px, 5vw, 60px);
+        font-weight: 650;
+        line-height: 1.18;
+        letter-spacing: -0.04em;
+      }
+      h1 span {
+        color: #2458b8;
+      }
+      .intro {
+        max-width: 760px;
+        font-size: 18px;
+        margin-block: 20px 24px;
+        color: #536174;
+      }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 24px;
+      }
+      nav a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      section {
+        padding-block: 44px;
+        scroll-margin-top: 24px;
+      }
+      section + section {
+        border-top: 1px solid #d8dee8;
+      }
+      h2 {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.35;
+        letter-spacing: -0.02em;
+      }
+      h3 {
+        margin: 0 0 10px;
+        font-size: 17px;
+      }
+      .section-heading {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+      .section-heading p {
+        color: #536174;
+        margin: 10px 0 0;
+        max-width: 780px;
+      }
+      .open {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        font-size: 14px;
+      }
+      .principles {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 32px;
+        margin-block: 28px 36px;
+      }
+      .principles p,
+      .note {
+        margin: 0;
+        color: #536174;
+        font-size: 15px;
+      }
+      .color-groups {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+      }
+      .colors {
+        border-radius: 12px;
+        padding: 24px;
+        background: #101216;
+        color: #f1f3f5;
+      }
+      .colors.light {
+        background: #fff;
+        color: #17202c;
+        border: 1px solid #d8dee8;
+      }
+      .swatches {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+      }
+      .swatch i {
+        display: block;
+        width: 100%;
+        height: 56px;
+        background: var(--color);
+        border-radius: 8px;
+        border: 1px solid rgb(128 128 128 / 0.25);
+      }
+      .swatch span {
+        display: block;
+        font-size: 13px;
+        margin-top: 8px;
+      }
+      .swatch code {
+        display: block;
+        font-size: 12px;
+        color: #a8b1c0;
+      }
+      .light .swatch code {
+        color: #536174;
+      }
+      .states {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        align-items: center;
+        gap: 24px;
+        margin-top: 24px;
+        padding: 24px;
+        background: #101216;
+        color: #f1f3f5;
+        border-radius: 12px;
+      }
+      .state-samples {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        align-items: center;
+      }
+      .state {
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        min-width: 112px;
+        min-height: 56px;
+        padding: 10px 20px;
+        border-radius: 8px;
+        background: #242b35;
+        font-size: 16px;
+      }
+      .state.selected {
+        background: #78aaff;
+        color: #0c172a;
+      }
+      .state.focused {
+        outline: 3px solid #f1f3f5;
+        outline-offset: 4px;
+      }
+      .states p {
+        color: #a8b1c0;
+        font-size: 14px;
+        margin: 0;
+      }
+      figure {
+        margin: 0;
+      }
+      figure a {
+        display: block;
+      }
+      figure img {
+        display: block;
+        width: 100%;
+        height: auto;
+        background: #eaeceb;
+        border: 1px solid #d8dee8;
+      }
+      figcaption {
+        margin-top: 12px;
+        color: #536174;
+        font-size: 14px;
+      }
+      .rules {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 28px;
+        margin-top: 28px;
+      }
+      .rules p {
+        color: #536174;
+        margin: 0;
+        font-size: 15px;
+      }
+      details {
+        margin-top: 24px;
+        padding: 18px 24px;
+        border-top: 1px solid #d8dee8;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+        min-height: 44px;
+      }
+      details p {
+        color: #536174;
+        max-width: 900px;
+      }
+      .review {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 48px;
+      }
+      .review ol {
+        padding-left: 24px;
+        margin-block: 0;
+      }
+      .review li {
+        margin-bottom: 12px;
+      }
+      footer {
+        padding-block: 24px 40px;
+        color: #536174;
+        font-size: 13px;
+        border-top: 1px solid #d8dee8;
+      }
+      @media (max-width: 760px) {
+        header {
+          padding-top: 32px;
+        }
+        section {
+          padding-block: 32px;
+        }
+        .principles,
+        .rules,
+        .color-groups,
+        .states,
+        .review {
+          grid-template-columns: 1fr;
+        }
+        .section-heading {
+          display: block;
+        }
+        .open {
+          margin-top: 10px;
+        }
+        .swatches {
+          gap: 8px;
+        }
+        .colors {
+          padding: 18px;
+        }
+        .swatch code {
+          font-size: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#principles">跳到设计内容</a>
+    <header>
+      <div class="wrap">
+        <p class="eyebrow">KATELYATV / DESIGN REVIEW / 2026.10.19</p>
+        <h1>轻量影院<span>，</span>顺手开看。</h1>
+        <p class="intro">
+          同一套视觉，适合三种使用方式。电脑与手机优先找片、续播；电视围绕遥控器焦点组织操作。
+        </p>
+        <nav aria-label="设计评审导航">
+          <a href="#principles">视觉规范</a>
+          <a href="#desktop">电脑样稿</a>
+          <a href="#mobile">手机样稿</a>
+          <a href="#tv">电视样稿</a>
+          <a href="#review">评审要点</a>
+          <a href="DESIGN_SPEC.md">完整规范 ↗</a>
+        </nav>
+      </div>
+    </header>
+    <main class="wrap">
+      <section id="principles" aria-labelledby="principles-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">VISUAL SYSTEM</p>
+            <h2 id="principles-title">让内容醒目，让操作清楚。</h2>
+            <p>
+              沿用蓝色品牌识别，以平面深灰、清晰文字和适度留白减少界面噪声。深色展示主样稿，浅色保留同一套语义映射。
+            </p>
+          </div>
+        </div>
+        <div class="principles">
+          <article>
+            <h3>续播先到达</h3>
+            <p>
+              有历史时，继续观看优先于精选推荐。标题、集数、进度与继续播放放在一起。
+            </p>
+          </article>
+          <article>
+            <h3>高频操作常可见</h3>
+            <p>
+              搜索、收藏、历史与设置有固定入口。选集与线路明确分组，当前状态不藏在图标里。
+            </p>
+          </article>
+          <article>
+            <h3>三端共享语义</h3>
+            <p>
+              电脑并排、手机纵向、电视分组导航。统一颜色和状态，按设备调整布局与输入方式。
+            </p>
+          </article>
+        </div>
+        <div class="color-groups">
+          <article class="colors">
+            <h3>深色 · 主视觉</h3>
+            <div class="swatches">
+              <div class="swatch" style="--color: #101216">
+                <i></i><span>背景</span><code>#101216</code>
+              </div>
+              <div class="swatch" style="--color: #191d24">
+                <i></i><span>表面</span><code>#191D24</code>
+              </div>
+              <div class="swatch" style="--color: #f1f3f5">
+                <i></i><span>文字</span><code>#F1F3F5</code>
+              </div>
+              <div class="swatch" style="--color: #78aaff">
+                <i></i><span>强调</span><code>#78AAFF</code>
+              </div>
+            </div>
+          </article>
+          <article class="colors light">
+            <h3>浅色 · 语义对应</h3>
+            <div class="swatches">
+              <div class="swatch" style="--color: #f5f6f8">
+                <i></i><span>背景</span><code>#F5F6F8</code>
+              </div>
+              <div class="swatch" style="--color: #ffffff">
+                <i></i><span>表面</span><code>#FFFFFF</code>
+              </div>
+              <div class="swatch" style="--color: #17202c">
+                <i></i><span>文字</span><code>#17202C</code>
+              </div>
+              <div class="swatch" style="--color: #2458b8">
+                <i></i><span>强调</span><code>#2458B8</code>
+              </div>
+            </div>
+          </article>
+        </div>
+        <div class="states">
+          <div class="state-samples" aria-label="选中和焦点状态示例">
+            <span class="state selected">18 · 当前</span
+            ><span class="state focused">19 · 聚焦</span>
+          </div>
+          <p>
+            蓝色表示已选中或当前播放；白色外环表示遥控器焦点。移动到第 19
+            集时，第 18 集仍保持当前播放标记。
+          </p>
+        </div>
+      </section>
+      <section id="desktop" aria-labelledby="desktop-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">DESKTOP</p>
+            <h2 id="desktop-title">电脑 · 信息并排，入口固定</h2>
+            <p>
+              左侧导航、顶部常驻搜索；首页把续播放在最前，搜索按影片聚合，播放页将选集与线路放到侧栏。
+            </p>
+          </div>
+          <a class="open" href="desktop.png">查看原图 ↗</a>
+        </div>
+        <figure>
+          <a href="desktop.png" aria-label="放大电脑端六页设计板"
+            ><img
+              src="desktop.png"
+              width="1536"
+              height="1024"
+              alt="电脑端首页、搜索、播放、历史、收藏和设置六页轻量影院设计样稿"
+          /></a>
+          <figcaption>
+            阅读顺序：上排首页、搜索、播放；下排历史、收藏、设置。点击图片可放大。
+          </figcaption>
+        </figure>
+        <div class="rules">
+          <article>
+            <h3>首页</h3>
+            <p>继续观看 → 紧凑精选 → 热门分类，减少推荐横幅占用。</p>
+          </article>
+          <article>
+            <h3>搜索</h3>
+            <p>先辨认影片，再按需展开来源，普通搜索与 AI 找片分开。</p>
+          </article>
+          <article>
+            <h3>播放</h3>
+            <p>播放器与选集并排；实际视频容器固定 16:9，不能裁切或拉伸正片。</p>
+          </article>
+        </div>
+      </section>
+      <section id="mobile" aria-labelledby="mobile-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">MOBILE</p>
+            <h2 id="mobile-title">手机 · 触手可及，纵向完成</h2>
+            <p>
+              底栏：首页、发现、搜索、我的。收藏、历史和设置归入“我的”；播放页保留短横屏画幅与直接可达的选集。
+            </p>
+          </div>
+          <a class="open" href="mobile.png">查看原图 ↗</a>
+        </div>
+        <figure>
+          <a href="mobile.png" aria-label="放大手机端六页设计板"
+            ><img
+              src="mobile.png"
+              width="1672"
+              height="941"
+              loading="lazy"
+              alt="手机端首页、搜索、播放、历史、收藏和设置六页设计样稿，底栏使用首页、发现、搜索、我的"
+          /></a>
+          <figcaption>
+            从左到右：首页、搜索、播放、历史、收藏、设置。无手机外壳，直接展示页面内容。
+          </figcaption>
+        </figure>
+        <div class="rules">
+          <article>
+            <h3>单手操作</h3>
+            <p>
+              高频入口放底部，主要按钮建议 48px 高；避免只在悬停时出现操作。
+            </p>
+          </article>
+          <article>
+            <h3>纵向播放页</h3>
+            <p>16:9 播放器 → 集数与收藏 → 选集/线路，不用大推荐区挤压操作。</p>
+          </article>
+          <article>
+            <h3>个人内容</h3>
+            <p>历史直接续播，收藏使用两列网格；管理状态再显示批量删除。</p>
+          </article>
+        </div>
+      </section>
+      <section id="tv" aria-labelledby="tv-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">TELEVISION</p>
+            <h2 id="tv-title">电视 · 看清焦点，按键有方向</h2>
+            <p>
+              大字号、明确的焦点组、可预测的返回路径。播放中选集作为浮层打开，当前项与聚焦项各自保持状态。
+            </p>
+          </div>
+          <a class="open" href="tv.png">查看原图 ↗</a>
+        </div>
+        <figure>
+          <a href="tv.png" aria-label="放大电视端六页设计板"
+            ><img
+              src="tv.png"
+              width="1870"
+              height="841"
+              loading="lazy"
+              alt="电视模式首页、搜索、播放、历史、收藏和设置样稿，白色焦点环与蓝色当前播放项分开"
+          /></a>
+          <figcaption>
+            上排首页、搜索、播放；下排历史、收藏、设置。播放样稿：第 18
+            集正在播放，焦点停留第 19 集。
+          </figcaption>
+        </figure>
+        <div class="rules">
+          <article>
+            <h3>方向键与确认</h3>
+            <p>
+              左右同组移动，上下切换行或分区。每屏一个焦点，确认只执行当前项。
+            </p>
+          </article>
+          <article>
+            <h3>返回有层次</h3>
+            <p>
+              先关闭面板，再退出全屏，再返回上一页；返回列表恢复原焦点和位置。
+            </p>
+          </article>
+          <article>
+            <h3>观看不受打断</h3>
+            <p>异步检测与内容更新不抢焦点，背景测速不打断正常播放。</p>
+          </article>
+        </div>
+      </section>
+      <section id="review" aria-labelledby="review-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">REVIEW</p>
+            <h2 id="review-title">先确认这四件事</h2>
+          </div>
+        </div>
+        <div class="review">
+          <ol>
+            <li>深灰与蓝色的轻量影院风格是否符合预期？</li>
+            <li>首页优先续播，精选推荐适度后移，是否顺手？</li>
+            <li>手机“我的”集中收藏、历史与设置，是否容易找到？</li>
+            <li>电视焦点与当前播放状态的区别是否足够清楚？</li>
+          </ol>
+          <div>
+            <h3>这次交付</h3>
+            <p class="note">
+              三端各六个关键页面概念样稿，以及颜色、字体、组件状态、电视按键、加载与失败状态的统一规范。
+            </p>
+            <p><a href="DESIGN_SPEC.md">阅读完整视觉规范 ↗</a></p>
+            <p class="note">
+              样稿为生成式视觉稿，精确画幅、尺寸和文案以规范为准。浅色已定义颜色映射，本轮未另绘六页浅色稿。
+            </p>
+          </div>
+        </div>
+        <details>
+          <summary>功能与验证边界</summary>
+          <p>
+            页面使用演示内容，未接入接口、播放器、账号或数据存储。样稿不意味着新增功能已经实现；现有业务代码未改动。后续还需覆盖登录、发现、AI
+            面板与管理员页面的完整状态，并在手机、电视真机验证触控、焦点和可读性。
+          </p>
+          <p>
+            加载速度需要在实现后测量；本轮定义图片、动效、按需加载及反馈规则，不声明性能已经改善。
+          </p>
+        </details>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap">
+        KatelyaTV · 轻量影院 · 设计评审稿 · 2026-10-19 · 使用内置 imagegen
+        生成样稿，提示词保存在 prompts.json。
+      </div>
+    </footer>
+  </body>
+</html>

@@ -158,7 +158,13 @@ describe('EpisodeSelector playback sidebar controls', () => {
 
     expect(screen.getByRole('tab', { name: '选集' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '线路' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '第3集' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '第3集' })).toHaveAttribute(
+      'aria-current',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: '第2集' })).not.toHaveAttribute(
+      'aria-current'
+    );
 
     fireEvent.click(screen.getByRole('tab', { name: '线路' }));
 

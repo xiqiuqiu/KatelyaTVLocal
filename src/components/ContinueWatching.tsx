@@ -40,7 +40,7 @@ export default function ContinueWatching({
   const [loading, setLoading] = useState(true);
   const cardWidthClass = tvMode
     ? 'w-full'
-    : 'w-24 min-w-[96px] min-[440px]:w-36 min-[440px]:min-w-[140px] sm:w-44 sm:min-w-[180px]';
+    : 'w-[78vw] max-w-80 shrink-0 sm:w-72 xl:w-80';
   const Row = tvMode ? PosterGrid : ScrollableRow;
 
   // 处理播放记录数据更新的函数
@@ -100,7 +100,7 @@ export default function ContinueWatching({
   };
 
   return (
-    <section className={`mb-8 ${className || ''}`}>
+    <section className={className}>
       <SectionHeader
         action={
           !loading && playRecords.length > 0 ? (
@@ -115,19 +115,26 @@ export default function ContinueWatching({
         className='mb-4'
         title='继续观看'
       />
-      <Row>
+      <Row
+        className={
+          tvMode
+            ? 'grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3'
+            : '[&>div:first-child]:pb-2'
+        }
+      >
         {loading
           ? // 加载状态显示灰色占位数据
             Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className={cardWidthClass}>
                 <SkeletonPosterCard
+                  aspectRatio='aspect-video'
                   delayIndex={index}
                   widths={['84%', '62%']}
                 />
               </div>
             ))
           : // 显示真实数据
-            playRecords.map((record) => {
+            playRecords.map((record, index) => {
               const route = resolveContinueWatchingRoute(record);
               if (!route) {
                 return null;
@@ -136,6 +143,8 @@ export default function ContinueWatching({
               return (
                 <div key={record.key} className={cardWidthClass}>
                   <VideoCard
+                    layout='landscape'
+                    imagePriority={index < 3}
                     tvMode={tvMode}
                     id={id}
                     title={record.title}

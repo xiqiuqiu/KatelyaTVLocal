@@ -7,12 +7,14 @@ interface SurfaceProps {
   variant?: 'plain' | 'raised' | 'frosted';
 }
 
-const variantClassNames: Record<NonNullable<SurfaceProps['variant']>, string> =
-  {
-    plain: 'ui-glass-subtle shadow-none',
-    raised: 'ui-glass transition-[border-color,box-shadow] duration-200 ease hover:border-[rgb(var(--ui-accent)/0.34)] hover:shadow-ui-strong',
-    frosted: 'ui-glass-strong',
-  };
+const variantClassNames: Record<
+  NonNullable<SurfaceProps['variant']>,
+  string
+> = {
+  plain: 'ui-glass-subtle',
+  raised: 'ui-glass',
+  frosted: 'ui-glass-strong',
+};
 
 export default function Surface({
   as: Component = 'div',

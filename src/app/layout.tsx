@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
 import { cookies } from 'next/headers';
 
 import './globals.css';
@@ -16,7 +15,6 @@ import PlaybackPreparationProvider from '../components/playback-preparation/Play
 import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-primary' });
 const defaultImageProxy = '/api/image-proxy?url=';
 const defaultSourceProbe = '/api/source-probe?url=';
 const defaultHlsProxy = '/api/hls-proxy?url=';
@@ -46,14 +44,10 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: 'rgb(11 15 20)',
+  themeColor: 'rgb(16 18 22)',
 };
 
-export default async function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+async function loadRootLayoutModel() {
   let siteName = process.env.SITE_NAME || 'KatelyaTV';
   let announcement =
     process.env.ANNOUNCEMENT ||
@@ -96,20 +90,32 @@ export default async function RootLayout({
       }
     : null;
 
-  const runtimeConfig = {
-    STORAGE_TYPE: process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage',
-    ENABLE_REGISTER: enableRegister,
-    IMAGE_PROXY: imageProxy,
-    DOUBAN_PROXY: doubanProxy,
-    SOURCE_PROBE: sourceProbe,
-    HLS_PROXY: hlsProxy,
-    SOURCE_RANKING_ENABLED:
-      process.env.NEXT_PUBLIC_SOURCE_RANKING_ENABLED === 'true',
-    TURNSTILE_SITE_KEY: turnstileSiteKey,
-    LOGIN_TURNSTILE_REQUIRED: process.env.LOGIN_TURNSTILE_REQUIRED === 'true',
-    REGISTER_INVITE_REQUIRED: registerInviteRequired,
-    CURRENT_USER: currentUser,
+  return {
+    siteName,
+    announcement,
+    runtimeConfig: {
+      STORAGE_TYPE: process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage',
+      ENABLE_REGISTER: enableRegister,
+      IMAGE_PROXY: imageProxy,
+      DOUBAN_PROXY: doubanProxy,
+      SOURCE_PROBE: sourceProbe,
+      HLS_PROXY: hlsProxy,
+      SOURCE_RANKING_ENABLED:
+        process.env.NEXT_PUBLIC_SOURCE_RANKING_ENABLED === 'true',
+      TURNSTILE_SITE_KEY: turnstileSiteKey,
+      LOGIN_TURNSTILE_REQUIRED: process.env.LOGIN_TURNSTILE_REQUIRED === 'true',
+      REGISTER_INVITE_REQUIRED: registerInviteRequired,
+      CURRENT_USER: currentUser,
+    },
   };
+}
+
+export default async function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const { siteName, announcement, runtimeConfig } = await loadRootLayoutModel();
 
   return (
     <html lang='zh-CN' suppressHydrationWarning>
@@ -123,9 +129,7 @@ export default async function RootLayout({
           }}
         />
       </head>
-      <body
-        className={`${inter.className} ${inter.variable} min-h-dvh bg-[rgb(var(--ui-bg))] text-[rgb(var(--ui-text))]`}
-      >
+      <body className='min-h-dvh bg-[rgb(var(--ui-bg))] font-primary text-[rgb(var(--ui-text))]'>
         <ThemeProvider attribute='class' defaultTheme='system' enableSystem>
           <SiteProvider siteName={siteName} announcement={announcement}>
             <PlaybackPreparationProvider>

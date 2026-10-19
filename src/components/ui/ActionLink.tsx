@@ -9,7 +9,7 @@ interface ActionLinkProps {
 }
 
 const baseClassName =
-  'inline-flex items-center gap-1 rounded-full border border-[rgb(var(--ui-border)/0.28)] bg-[rgb(var(--ui-surface)/0.2)] px-3 py-1.5 text-sm font-medium text-[rgb(var(--ui-text-muted))] backdrop-blur-sm transition-[border-color,background-color,color,transform] duration-150 ease ui-hover-lift hover:border-[rgb(var(--ui-accent)/0.34)] hover:bg-[rgb(var(--ui-surface-strong)/0.36)] hover:text-[rgb(var(--ui-text))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent';
+  'ui-action-link inline-flex min-h-11 items-center justify-center gap-1 rounded-ui-sm px-3 py-2 text-sm font-medium text-[rgb(var(--ui-text-muted))] transition-colors duration-150 hover:bg-[rgb(var(--ui-surface-strong))] hover:text-[rgb(var(--ui-text))]';
 
 export default function ActionLink({
   children,
@@ -28,11 +28,7 @@ export default function ActionLink({
   }
 
   return (
-    <button
-      className={resolvedClassName}
-      onClick={onClick}
-      type='button'
-    >
+    <button className={resolvedClassName} onClick={onClick} type='button'>
       {children}
     </button>
   );

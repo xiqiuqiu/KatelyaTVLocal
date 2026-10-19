@@ -15,10 +15,10 @@ export default function InitialLoadingOverlay({
       role='status'
     >
       <Surface
-        variant='frosted'
+        variant='plain'
         className='ui-loading-panel mx-auto w-full max-w-md px-6 py-9 text-center sm:px-8 sm:py-11'
       >
-        <div className='mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-[rgba(var(--ui-surface-strong),0.82)] shadow-ui-soft'>
+        <div className='mx-auto flex h-16 w-16 items-center justify-center rounded-ui-md bg-[rgb(var(--ui-surface-strong))]'>
           <LoadingRing className='h-9 w-9' />
         </div>
         {title ? (

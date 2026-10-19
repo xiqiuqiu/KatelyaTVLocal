@@ -63,13 +63,17 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className='flex h-11 w-11 items-center justify-center rounded-ui-sm border border-white/10 bg-white/5 p-2 text-[rgb(var(--ui-text-muted))] shadow-ui-soft transition-colors hover:bg-white/10 hover:text-[rgb(var(--ui-text))]'
-      aria-label='Toggle theme'
+      className='ui-icon-button'
+      aria-label={
+        (resolvedTheme || 'light') === 'dark'
+          ? '切换为浅色外观'
+          : '切换为深色外观'
+      }
     >
       {(resolvedTheme || 'light') === 'dark' ? (
-        <Sun className='w-full h-full' />
+        <Sun aria-hidden className='h-5 w-5' />
       ) : (
-        <Moon className='w-full h-full' />
+        <Moon aria-hidden className='h-5 w-5' />
       )}
     </button>
   );

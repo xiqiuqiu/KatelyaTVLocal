@@ -9,7 +9,9 @@ import {
 } from '@/lib/tv-interaction';
 
 const ACTIONS =
-  'button:not(:disabled):not([tabindex="-1"]), a[href]:not([tabindex="-1"]), input[data-tv-input]:not(:disabled)';
+  'button:not(:disabled):not([tabindex="-1"]), a[href]:not([tabindex="-1"]), input[data-tv-input]:not(:disabled), textarea[data-tv-input]:not(:disabled), select[data-tv-input]:not(:disabled)';
+
+type FormControl = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
 
 function available(element: HTMLElement): boolean {
   if (
@@ -37,13 +39,16 @@ function available(element: HTMLElement): boolean {
 export default function useTvBrowseNavigation(
   rootRef: RefObject<HTMLDivElement>,
   enabled: boolean,
-  page: string
+  page: string,
+  manageInputs = false
 ) {
   useEffect(() => {
     const root = rootRef.current;
     if (!enabled || !root) return;
     document.documentElement.classList.add('tv-browse-navigation');
     const storageKey = `tv-browse-focus:${page}`;
+    const requestedSection =
+      page === '/admin' ? window.location.hash.slice(1) : '';
     let remembered = '';
     try {
       remembered = sessionStorage.getItem(storageKey) || '';
@@ -58,6 +63,50 @@ export default function useTvBrowseNavigation(
     let lastRootFocus: HTMLElement | null = null;
     let lastDialog: HTMLElement | null = null;
     let frame = 0;
+    const managedFields = new Map<FormControl, boolean | null>();
+    let editingField: FormControl | null = null;
+    const finishEditing = () => {
+      if (!editingField) return;
+      if ('readOnly' in editingField) editingField.readOnly = true;
+      delete editingField.dataset.tvEditing;
+      editingField = null;
+    };
+    const registerFields = (scope: HTMLElement) => {
+      if (!manageInputs) return;
+      scope
+        .querySelectorAll<FormControl>(
+          'input:not([type="hidden"]), textarea, select'
+        )
+        .forEach((field) => {
+          // Existing TV search/password fields keep their own editing contract.
+          if (field.hasAttribute('data-tv-input')) return;
+          managedFields.set(field, 'readOnly' in field ? field.readOnly : null);
+          field.setAttribute('data-tv-input', '');
+          if ('readOnly' in field) field.readOnly = true;
+        });
+    };
+    const startEditing = (target: HTMLElement) => {
+      if (!managedFields.has(target as FormControl)) return;
+      const field = target as FormControl;
+      if (managedFields.get(field) === true) return;
+      if (
+        field instanceof HTMLInputElement &&
+        [
+          'checkbox',
+          'radio',
+          'file',
+          'button',
+          'submit',
+          'reset',
+          'image',
+        ].includes(field.type)
+      )
+        return;
+      finishEditing();
+      editingField = field;
+      field.dataset.tvEditing = 'true';
+      if ('readOnly' in field) field.readOnly = false;
+    };
     const sessionId = `tv-browse-${Date.now().toString(36)}`;
     if (process.env.NODE_ENV === 'development')
       root.dataset.tvDebugSession = sessionId;
@@ -98,10 +147,18 @@ export default function useTvBrowseNavigation(
       ).find(available);
     const focusInitial = () => {
       const controls = actions(root);
+      const section = requestedSection
+        ? document.getElementById(requestedSection)
+        : null;
+      const sectionControl =
+        section && root.contains(section)
+          ? controls.find((control) => section.contains(control))
+          : undefined;
       const saved = controls.find(
         (control) => control.dataset.tvFocusKey === remembered
       );
       const target =
+        sectionControl ||
         saved ||
         controls.find((control) => control.hasAttribute('data-tv-primary')) ||
         controls[0];
@@ -110,8 +167,10 @@ export default function useTvBrowseNavigation(
     };
     const recoverFocus = () => {
       frame = 0;
+      registerFields(root);
       const modal = dialog();
       if (modal) {
+        registerFields(modal);
         lastDialog = modal;
         return;
       }
@@ -129,6 +188,7 @@ export default function useTvBrowseNavigation(
     };
     const onFocus = (event: FocusEvent) => {
       if (!(event.target instanceof HTMLElement)) return;
+      if (editingField && event.target !== editingField) finishEditing();
       const modal = dialog();
       if (modal && !modal.contains(event.target)) {
         lastDialog = modal;
@@ -155,6 +215,7 @@ export default function useTvBrowseNavigation(
       rememberFocus(target);
       activating = true;
       try {
+        startEditing(target);
         target.click();
       } finally {
         activating = false;
@@ -172,11 +233,26 @@ export default function useTvBrowseNavigation(
       const current = controls.find(
         (control) => control === document.activeElement
       );
+      if (event.isComposing || event.keyCode === 229) return;
+      if (editingField && current === editingField) {
+        if (
+          ['Enter', 'Escape', 'BrowserBack'].includes(event.key) ||
+          event.keyCode === 4
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          lastEnterAt = Date.now();
+          pending = null;
+          finishEditing();
+        }
+        return;
+      }
       // Editing belongs to the native input/IME, not directional page navigation.
       if (
-        event.isComposing ||
-        event.keyCode === 229 ||
-        (current instanceof HTMLInputElement && !current.readOnly)
+        (current instanceof HTMLInputElement ||
+          current instanceof HTMLTextAreaElement) &&
+        !managedFields.has(current) &&
+        !current.readOnly
       )
         return;
       if (isTvDirectionalKey(event.key)) {
@@ -228,7 +304,9 @@ export default function useTvBrowseNavigation(
       const active = document.activeElement;
       pending =
         virtualPointer &&
-        active instanceof HTMLInputElement &&
+        (active instanceof HTMLInputElement ||
+          active instanceof HTMLTextAreaElement ||
+          active instanceof HTMLSelectElement) &&
         active.hasAttribute('data-tv-input')
           ? active
           : resolveTvRemoteClickTarget({
@@ -263,6 +341,7 @@ export default function useTvBrowseNavigation(
             ? event.target.closest<HTMLElement>(ACTIONS)
             : null;
         if (clicked && actions(dialog() || root).includes(clicked)) {
+          startEditing(clicked);
           rememberFocus(clicked);
           log('browse-confirm', {
             focus:
@@ -292,6 +371,11 @@ export default function useTvBrowseNavigation(
       });
     scheduleRecovery();
     return () => {
+      finishEditing();
+      managedFields.forEach((readOnly, field) => {
+        field.removeAttribute('data-tv-input');
+        if (readOnly !== null && 'readOnly' in field) field.readOnly = readOnly;
+      });
       observer.disconnect();
       cancelAnimationFrame(frame);
       document.documentElement.classList.remove('tv-browse-navigation');
@@ -301,5 +385,5 @@ export default function useTvBrowseNavigation(
       window.removeEventListener('click', onClick, true);
       window.removeEventListener('focusin', onFocus, true);
     };
-  }, [enabled, page, rootRef]);
+  }, [enabled, page, rootRef, manageInputs]);
 }

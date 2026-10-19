@@ -1,5 +1,3 @@
-import { primaryNavigationItems } from '@/lib/ui/navigation';
-
 export interface PageMetaEntry {
   subtitle: string;
   title: string;
@@ -7,23 +5,23 @@ export interface PageMetaEntry {
 
 export const pageMeta = {
   '/': {
-    title: primaryNavigationItems[0].label,
+    title: '首页',
     subtitle: '聚合首页与继续观看入口',
   },
   '/search': {
-    title: primaryNavigationItems[1].label,
+    title: '搜索',
     subtitle: '按片名、演员或年份检索内容',
   },
   '/douban?type=movie': {
-    title: primaryNavigationItems[2].label,
+    title: '电影',
     subtitle: '豆瓣热门电影',
   },
   '/douban?type=tv': {
-    title: primaryNavigationItems[3].label,
+    title: '剧集',
     subtitle: '豆瓣热门剧集',
   },
   '/douban?type=show': {
-    title: primaryNavigationItems[4].label,
+    title: '综艺',
     subtitle: '豆瓣热门综艺',
   },
   '/config': {

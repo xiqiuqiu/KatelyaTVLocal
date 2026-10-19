@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 
 import * as dbClient from '@/lib/db.client';
@@ -18,9 +19,15 @@ const mockPlaybackPreparationStart = jest.fn();
 
 jest.mock('next/image', () => ({
   __esModule: true,
-  default: ({ alt, src }: { alt: string; src: string }) => (
-    <img alt={alt} src={src} />
-  ),
+  default: ({
+    alt,
+    src,
+    onError,
+  }: {
+    alt: string;
+    src: string;
+    onError?: () => void;
+  }) => <img alt={alt} src={src} onError={onError} />,
 }));
 
 jest.mock('next/navigation', () => ({
@@ -79,6 +86,45 @@ describe('VideoCard favorites store integration', () => {
   afterEach(() => {
     __resetFavoritesStoreForTests();
     jest.clearAllMocks();
+  });
+
+  it('expands result sources without navigating and preserves the selected source playback route', async () => {
+    const items: SearchResult[] = ['甲', '乙'].map((label, index) => ({
+      id: String(index + 1),
+      source: `source-${index}`,
+      source_name: `源${label}`,
+      title: '测试剧集',
+      year: '2026',
+      poster: 'https://example.com/poster.jpg',
+      episodes: ['a', 'b'],
+    }));
+    render(
+      <VideoCard
+        from='search'
+        layout='result'
+        tvMode
+        items={items}
+        query='测试'
+      />
+    );
+    expect(
+      screen.queryByRole('link', { name: '打开豆瓣页面' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '展开来源' }));
+    expect(mockPlaybackPreparationStart).not.toHaveBeenCalled();
+    const source = (await screen.findByText('源乙')).closest('article');
+    expect(source).not.toBeNull();
+    if (!source) throw new Error('source row missing');
+    fireEvent.click(
+      within(source).getByRole('button', { name: '查看并播放 测试剧集' })
+    );
+    const href = mockPlaybackPreparationStart.mock.calls[0][0].href;
+    const params = new URL(href, 'http://localhost').searchParams;
+    expect(params.get('source')).toBe('source-1');
+    expect(params.get('id')).toBe('2');
+    expect(params.get('stitle')).toBe('测试');
+    expect(params.get('tv')).toBe('1');
+    expect(params.has('prefer')).toBe(false);
   });
 
   it('shares one initial favorites load and one source subscription across cards', async () => {
@@ -204,6 +250,43 @@ describe('VideoCard favorites store integration', () => {
       'tabindex',
       '-1'
     );
+  });
+
+  it('uses the existing resume route from a landscape CTA and keeps a failed poster actionable', () => {
+    render(
+      <VideoCard
+        layout='landscape'
+        tvMode
+        id='id+hash#value'
+        source='source-a'
+        title='续看'
+        poster='https://example.com/missing.jpg'
+        from='playrecord'
+        currentEpisode={18}
+        progress={40}
+        source_name='测试源'
+      />
+    );
+    fireEvent.error(screen.getByRole('img', { name: '续看' }));
+    expect(
+      screen.getByRole('img', { name: '续看 海报暂不可用' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('第 18 集 · 已看 40% · 测试源')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '打开 续看 海报' })
+    ).toHaveAttribute('tabindex', '-1');
+    const resume = screen.getByRole('button', { name: '继续播放 续看' });
+    expect(resume).toHaveAttribute('data-tv-primary', 'true');
+    fireEvent.click(resume);
+    const params = new URLSearchParams(
+      mockPlaybackPreparationStart.mock.calls[0][0].href.split('?')[1]
+    );
+    expect(params.get('from')).toBe('playrecord');
+    expect(params.get('source')).toBe('source-a');
+    expect(params.get('id')).toBe('id+hash#value');
+    expect(params.get('tv')).toBe('1');
   });
 
   it('updates only the matching card when favorites change through the shared store', async () => {

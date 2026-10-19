@@ -3,7 +3,14 @@
 
 import { ChevronUp, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import {
+  type Dispatch,
+  type SetStateAction,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import {
   addSearchHistory,
@@ -32,7 +39,7 @@ import CapsuleSwitch from '@/components/CapsuleSwitch';
 import PageLayout from '@/components/PageLayout';
 import TvSearchForm from '@/components/TvSearchForm';
 import ActionLink from '@/components/ui/ActionLink';
-import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
+import { SkeletonResultCard } from '@/components/ui/LoadingPrimitives';
 import PageHeader from '@/components/ui/PageHeader';
 import PosterGrid from '@/components/ui/PosterGrid';
 import SectionHeader from '@/components/ui/SectionHeader';
@@ -40,6 +47,424 @@ import Surface from '@/components/ui/Surface';
 import VideoCard from '@/components/VideoCard';
 
 export const runtime = 'edge';
+
+type SearchPageSession = {
+  aggregatedResults: [string, SearchResult[]][];
+  categoryTabOptions: any;
+  displayedResultCount: any;
+  filteredSearchResults: SearchResult[];
+  isLoading: any;
+  modeHref: any;
+  resultCategory: any;
+  resultGridClass: any;
+  router: any;
+  scrollToTop: any;
+  searchError: any;
+  searchHeaderSubtitle: any;
+  searchHeaderTitle: any;
+  searchHistory: string[];
+  searchMode: any;
+  searchQuery: any;
+  searchResults: any;
+  setResultCategory: any;
+  setSearchAttempt: Dispatch<SetStateAction<number>>;
+  setSearchMode: any;
+  setTvDraft: any;
+  setViewMode: any;
+  shouldShowAiFindGuide: any;
+  showBackToTop: any;
+  showResults: any;
+  submitTvSearch: any;
+  switchSearchMode: any;
+  tvDraft: any;
+  tvMode: any;
+  viewMode: any;
+};
+
+function SearchPageHeading({ session }: { session: SearchPageSession }) {
+  return (
+    <PageHeader
+      className='ui-search-header !p-0'
+      action={
+        session.searchMode === 'normal' && session.showResults ? (
+          session.tvMode ? (
+            <button
+              type='button'
+              aria-pressed={session.viewMode === 'agg'}
+              onClick={() =>
+                session.setViewMode(session.viewMode === 'agg' ? 'all' : 'agg')
+              }
+              className='rounded-ui-sm border border-[rgb(var(--ui-border))] px-5 py-3 text-lg font-semibold'
+            >
+              聚合：{session.viewMode === 'agg' ? '开' : '关'}
+            </button>
+          ) : (
+            <label className='ui-secondary-button cursor-pointer gap-3'>
+              <span>聚合</span>
+              <div className='relative'>
+                <input
+                  type='checkbox'
+                  className='peer sr-only'
+                  checked={session.viewMode === 'agg'}
+                  onChange={() =>
+                    session.setViewMode(
+                      session.viewMode === 'agg' ? 'all' : 'agg'
+                    )
+                  }
+                />
+                <div className='h-5 w-9 rounded-full bg-[rgb(var(--ui-border))] transition-colors peer-checked:bg-[rgb(var(--ui-accent))] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[rgb(var(--ui-focus))]' />
+                <div className='absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-4' />
+              </div>
+            </label>
+          )
+        ) : null
+      }
+      subtitle={session.searchHeaderSubtitle}
+      title={session.searchHeaderTitle}
+    />
+  );
+}
+
+function SearchModeBar({ session }: { session: SearchPageSession }) {
+  return (
+    <>
+      <div className='ui-mode-tabs' aria-label='搜索方式'>
+        {(['normal', 'ai'] as const).map((mode) => (
+          <button
+            key={mode}
+            type='button'
+            data-tv-focus-key={`search-mode:${mode}`}
+            aria-pressed={session.searchMode === mode}
+            onClick={() => session.switchSearchMode(mode)}
+            className='ui-mode-tab'
+          >
+            {mode === 'ai' ? 'AI 找片' : '普通搜索'}
+          </button>
+        ))}
+      </div>
+
+      {session.tvMode && session.searchMode === 'normal' ? (
+        <div className='mb-6'>
+          <TvSearchForm
+            initialQuery={session.searchQuery}
+            value={session.tvDraft}
+            onQueryChange={session.setTvDraft}
+            onSearch={session.submitTvSearch}
+          />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function searchResultsViewKey(session: SearchPageSession) {
+  if (session.searchMode === 'ai') return 'ai';
+  return `normal-${session.isLoading ? 'loading' : 'ready'}`;
+}
+
+function SearchLoadingSection({ session }: { session: SearchPageSession }) {
+  return (
+    <section className='space-y-4'>
+      <SectionHeader
+        subtitle='正在整理结果与可用线路'
+        title={pageSectionLabels.searchResults}
+      />
+      <PosterGrid className={session.resultGridClass}>
+        {Array.from({ length: 12 }).map((_, index) => (
+          <SkeletonResultCard key={`search-skeleton-${index}`} />
+        ))}
+      </PosterGrid>
+    </section>
+  );
+}
+
+function SearchErrorSection({ session }: { session: SearchPageSession }) {
+  return (
+    <Surface className='space-y-4 p-6' variant='plain'>
+      <p role='alert'>{session.searchError}</p>
+      <button
+        type='button'
+        onClick={() => session.setSearchAttempt((attempt) => attempt + 1)}
+        className='rounded-ui-sm border border-[rgb(var(--ui-border))] px-5 py-3'
+      >
+        重试搜索
+      </button>
+    </Surface>
+  );
+}
+
+function SearchResultCards({ session }: { session: SearchPageSession }) {
+  if (session.filteredSearchResults.length === 0) {
+    return (
+      <Surface
+        className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
+        variant='plain'
+      >
+        该分类下暂无结果
+      </Surface>
+    );
+  }
+
+  return (
+    <PosterGrid
+      key={`search-results-${session.viewMode}-${session.resultCategory}`}
+      className={session.resultGridClass}
+    >
+      {session.viewMode === 'agg'
+        ? session.aggregatedResults.map(([mapKey, group]) => {
+            const meta = getSearchCardMeta(group[0]);
+            return (
+              <div key={`agg-${mapKey}`} className='w-full'>
+                <VideoCard
+                  layout='result'
+                  tvMode={session.tvMode}
+                  from='search'
+                  items={group}
+                  query={
+                    session.searchQuery.trim() !== group[0].title
+                      ? session.searchQuery.trim()
+                      : ''
+                  }
+                  statusText={meta.statusText}
+                  typeName={meta.typeChip}
+                  year={meta.year}
+                />
+              </div>
+            );
+          })
+        : session.filteredSearchResults.map((item) => {
+            const meta = getSearchCardMeta(item);
+            return (
+              <div key={`all-${item.source}-${item.id}`} className='w-full'>
+                <VideoCard
+                  layout='result'
+                  tvMode={session.tvMode}
+                  description={item.desc}
+                  id={item.id}
+                  title={item.title}
+                  poster={item.poster}
+                  episodes={item.episodes.length}
+                  source={item.source}
+                  source_name={item.source_name}
+                  douban_id={item.douban_id?.toString()}
+                  query={
+                    session.searchQuery.trim() !== item.title
+                      ? session.searchQuery.trim()
+                      : ''
+                  }
+                  year={meta.year}
+                  from='search'
+                  type={item.episodes.length > 1 ? 'tv' : 'movie'}
+                  typeName={meta.typeChip}
+                  statusText={meta.statusText}
+                />
+              </div>
+            );
+          })}
+    </PosterGrid>
+  );
+}
+
+function SearchResultSection({ session }: { session: SearchPageSession }) {
+  const showGuide = !session.tvMode && session.shouldShowAiFindGuide;
+  return (
+    <section className='space-y-4'>
+      <SectionHeader
+        subtitle={`当前显示 ${session.displayedResultCount} 条${
+          session.viewMode === 'agg' ? '聚合结果' : '原始结果'
+        }`}
+        title={pageSectionLabels.searchResults}
+      />
+      {showGuide ? (
+        <Surface className='ui-ai-search-guide p-4 sm:p-5' variant='plain'>
+          <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+            <div>
+              <p className='text-sm font-semibold text-[rgb(var(--ui-text))]'>
+                结果较多，可以用 AI 精准找片
+              </p>
+              <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
+                会带入当前关键词，按片名线索重新整理候选结果。
+              </p>
+            </div>
+            <button
+              type='button'
+              onClick={() => session.setSearchMode('ai')}
+              className='ui-secondary-button'
+            >
+              用 AI 精准找片
+            </button>
+          </div>
+        </Surface>
+      ) : null}
+      {session.searchResults.length > 0 ? (
+        <>
+          <CapsuleSwitch
+            active={session.resultCategory}
+            aria-label='结果分类'
+            onChange={(value) =>
+              session.setResultCategory(value as SearchCategory)
+            }
+            options={session.categoryTabOptions}
+          />
+          <SearchResultCards session={session} />
+        </>
+      ) : (
+        <Surface
+          className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
+          variant='plain'
+        >
+          未找到相关结果
+        </Surface>
+      )}
+    </section>
+  );
+}
+
+function SearchHistorySection({ session }: { session: SearchPageSession }) {
+  return (
+    <section className='space-y-4'>
+      <SectionHeader
+        action={
+          session.searchHistory.length > 0 ? (
+            <ActionLink
+              onClick={() => {
+                clearSearchHistory(); // 事件监听会自动更新界面
+              }}
+            >
+              清空
+            </ActionLink>
+          ) : null
+        }
+        title={pageSectionLabels.searchHistory}
+      />
+      <Surface className='p-4 sm:p-5' variant='plain'>
+        <div className='flex flex-wrap gap-2'>
+          {session.searchHistory.map((item) => (
+            <div
+              key={item}
+              className='group flex items-center gap-1 rounded-ui-sm bg-[rgb(var(--ui-surface-strong))]'
+            >
+              <button
+                onClick={() => {
+                  const href = `/search?q=${encodeURIComponent(item.trim())}`;
+                  session.router.push(
+                    session.tvMode ? buildTvModeHref(href, true) : href
+                  );
+                }}
+                className='ui-secondary-button'
+                type='button'
+              >
+                {item}
+              </button>
+              <button
+                aria-label={
+                  session.tvMode ? `删除搜索历史 ${item}` : '删除搜索历史'
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  deleteSearchHistory(item); // 事件监听会自动更新界面
+                }}
+                className='ui-icon-button'
+                type='button'
+              >
+                <X className='h-3 w-3' />
+              </button>
+            </div>
+          ))}
+        </div>
+      </Surface>
+    </section>
+  );
+}
+
+function SearchResultsSwitch({ session }: { session: SearchPageSession }) {
+  let body = null;
+  if (session.searchMode === 'ai') {
+    body = (
+      <AiFindPanel initialQuery={session.searchQuery} tvMode={session.tvMode} />
+    );
+  } else if (session.isLoading) {
+    body = <SearchLoadingSection session={session} />;
+  } else if (session.searchError) {
+    body = <SearchErrorSection session={session} />;
+  } else if (session.showResults) {
+    body = <SearchResultSection session={session} />;
+  } else if (session.searchHistory.length > 0) {
+    body = <SearchHistorySection session={session} />;
+  }
+
+  return (
+    <div key={searchResultsViewKey(session)} className='ui-search-view'>
+      {body}
+    </div>
+  );
+}
+
+function SearchBackToTop({ session }: { session: SearchPageSession }) {
+  return (
+    <button
+      onClick={() => {
+        session.scrollToTop();
+        if (session.tvMode) document.getElementById('tvSearchInput')?.focus();
+      }}
+      className={`ui-glass fixed bottom-20 right-6 z-[500] flex h-12 w-12 items-center justify-center rounded-full text-[rgb(var(--ui-text))] transition-[opacity,transform,border-color] duration-150 ease ui-hover-scale-md hover:border-[rgb(var(--ui-accent)/0.42)] md:bottom-6 group ${
+        session.showBackToTop
+          ? 'opacity-100 translate-y-0 pointer-events-auto'
+          : 'opacity-0 translate-y-4 pointer-events-none'
+      }`}
+      aria-label='返回顶部'
+      aria-hidden={!session.showBackToTop}
+      tabIndex={session.showBackToTop ? 0 : -1}
+    >
+      <ChevronUp className='w-6 h-6 transition-transform duration-150 ease ui-hover-scale-sm' />
+    </button>
+  );
+}
+
+function getDefaultAggregate() {
+  if (typeof window !== 'undefined') {
+    const userSetting = localStorage.getItem('defaultAggregateSearch');
+    if (userSetting !== null) {
+      return JSON.parse(userSetting);
+    }
+  }
+  return true;
+}
+
+function scrollSearchPageToTop() {
+  try {
+    document.body.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (error) {
+    document.body.scrollTop = 0;
+  }
+}
+
+function buildSearchHeaderCopy({
+  searchMode,
+  showResults,
+  searchQuery,
+}: {
+  searchMode: 'normal' | 'ai';
+  showResults: boolean;
+  searchQuery: string;
+}) {
+  const title =
+    searchMode === 'ai'
+      ? 'AI 找片'
+      : showResults
+      ? pageSectionLabels.searchResults
+      : pageMeta['/search'].title;
+  const subtitle =
+    searchMode === 'ai'
+      ? '描述片名线索、年代、演员或观影偏好'
+      : showResults
+      ? searchQuery
+        ? `当前关键词：${searchQuery}`
+        : pageMeta['/search'].subtitle
+      : pageMeta['/search'].subtitle;
+  return { title, subtitle };
+}
 
 function SearchPageClient() {
   // 搜索历史
@@ -67,16 +492,6 @@ function SearchPageClient() {
   const [restoredTvQuery, setRestoredTvQuery] = useState<string | null>(null);
 
   // 获取默认聚合设置：只读取用户本地设置，默认为 true
-  const getDefaultAggregate = () => {
-    if (typeof window !== 'undefined') {
-      const userSetting = localStorage.getItem('defaultAggregateSearch');
-      if (userSetting !== null) {
-        return JSON.parse(userSetting);
-      }
-    }
-    return true; // 默认启用聚合
-  };
-
   const [viewMode, setViewMode] = useState<'agg' | 'all'>(() => {
     return getDefaultAggregate() ? 'agg' : 'all';
   });
@@ -298,396 +713,58 @@ function SearchPageClient() {
     }
   };
 
-  const resultGridClass = tvMode
-    ? 'grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5'
-    : 'grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2';
+  const resultGridClass = 'ui-search-results';
 
-  // 返回顶部功能
-  const scrollToTop = () => {
-    try {
-      // 根据调试结果，真正的滚动容器是 document.body
-      document.body.scrollTo({
-        top: 0,
-        behavior: 'smooth',
-      });
-    } catch (error) {
-      // 如果平滑滚动完全失败，使用立即滚动
-      document.body.scrollTop = 0;
-    }
-  };
-
-  const searchHeaderTitle =
-    tvMode && searchMode === 'ai'
-      ? 'AI 找片'
-      : showResults
-      ? pageSectionLabels.searchResults
-      : pageMeta['/search'].title;
-  const searchHeaderSubtitle =
-    tvMode && searchMode === 'ai'
-      ? '描述片名线索、年代、演员或观影偏好'
-      : showResults
-      ? searchQuery
-        ? `当前关键词：${searchQuery}`
-        : pageMeta['/search'].subtitle
-      : pageMeta['/search'].subtitle;
+  const { title: searchHeaderTitle, subtitle: searchHeaderSubtitle } =
+    buildSearchHeaderCopy({ searchMode, showResults, searchQuery });
   const displayedResultCount =
     viewMode === 'agg'
       ? aggregatedResults.length
       : filteredSearchResults.length;
 
+  const session = {
+    aggregatedResults,
+    categoryTabOptions,
+    displayedResultCount,
+    filteredSearchResults,
+    isLoading,
+    modeHref,
+    resultCategory,
+    resultGridClass,
+    router,
+    scrollToTop: scrollSearchPageToTop,
+    searchError,
+    searchHeaderSubtitle,
+    searchHeaderTitle,
+    searchHistory,
+    searchMode,
+    searchQuery,
+    searchResults,
+    setResultCategory,
+    setSearchAttempt,
+    setSearchMode,
+    setTvDraft,
+    setViewMode,
+    shouldShowAiFindGuide,
+    showBackToTop,
+    showResults,
+    submitTvSearch,
+    switchSearchMode,
+    tvDraft,
+    tvMode,
+    viewMode,
+  };
+
   return (
     <PageLayout activePath='/search' tvMode={tvMode} modeHref={modeHref}>
-      <div
-        className={
-          tvMode
-            ? 'mb-6 space-y-5'
-            : 'mb-10 space-y-8 overflow-visible sm:px-10 sm:py-8'
-        }
-      >
-        <PageHeader
-          className={tvMode ? '!p-4' : undefined}
-          action={
-            searchMode === 'normal' && showResults ? (
-              tvMode ? (
-                <button
-                  type='button'
-                  aria-pressed={viewMode === 'agg'}
-                  onClick={() =>
-                    setViewMode(viewMode === 'agg' ? 'all' : 'agg')
-                  }
-                  className='rounded-ui-sm border border-[rgb(var(--ui-border))] px-5 py-3 text-lg font-semibold'
-                >
-                  聚合：{viewMode === 'agg' ? '开' : '关'}
-                </button>
-              ) : (
-                <label className='inline-flex cursor-pointer items-center gap-3 rounded-full border border-white/10 bg-[rgba(var(--ui-surface-strong),0.72)] px-3 py-2 text-sm text-[rgb(var(--ui-text-muted))] shadow-ui-soft backdrop-blur-md'>
-                  <span>聚合</span>
-                  <div className='relative'>
-                    <input
-                      type='checkbox'
-                      className='peer sr-only'
-                      checked={viewMode === 'agg'}
-                      onChange={() =>
-                        setViewMode(viewMode === 'agg' ? 'all' : 'agg')
-                      }
-                    />
-                    <div className='h-5 w-9 rounded-full bg-white/15 transition-colors peer-checked:bg-[rgb(var(--ui-accent))]' />
-                    <div className='absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-4' />
-                  </div>
-                </label>
-              )
-            ) : null
-          }
-          subtitle={searchHeaderSubtitle}
-          title={searchHeaderTitle}
-        />
-
-        <div
-          className={
-            tvMode ? 'space-y-6' : 'mx-auto max-w-[95%] overflow-visible'
-          }
-        >
-          {tvMode ? (
-            <div className='mb-6 flex flex-wrap gap-4' aria-label='搜索方式'>
-              {(['normal', 'ai'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type='button'
-                  data-tv-focus-key={`search-mode:${mode}`}
-                  aria-pressed={searchMode === mode}
-                  onClick={() => switchSearchMode(mode)}
-                  className={`min-h-12 rounded-ui-sm border px-6 py-3 text-lg font-semibold ${
-                    searchMode === mode
-                      ? 'border-[rgb(var(--ui-accent))] bg-[rgb(var(--ui-accent)/0.18)]'
-                      : 'border-[rgb(var(--ui-border))]'
-                  }`}
-                >
-                  {mode === 'ai' ? 'AI 找片' : '普通搜索'}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <Surface className='mb-4 max-w-[28rem] p-1.5' variant='plain'>
-              <div className='grid grid-cols-2 gap-1.5'>
-                <button
-                  aria-pressed={searchMode === 'normal'}
-                  className={`rounded-xl px-4 py-2.5 text-sm font-medium transition ${
-                    searchMode === 'normal'
-                      ? 'bg-[rgb(var(--ui-accent)/0.18)] text-[rgb(var(--ui-text))] shadow-[inset_0_0_0_1px_rgb(var(--ui-accent)/0.22)]'
-                      : 'bg-white/5 text-[rgb(var(--ui-text-muted))] hover:bg-white/10'
-                  }`}
-                  onClick={() => setSearchMode('normal')}
-                  type='button'
-                >
-                  普通搜索
-                </button>
-                <button
-                  aria-pressed={searchMode === 'ai'}
-                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition ${
-                    searchMode === 'ai'
-                      ? 'bg-[rgb(var(--ui-success)/0.2)] text-[rgb(var(--ui-success))] shadow-[inset_0_0_0_1px_rgb(var(--ui-success)/0.28)]'
-                      : 'bg-white/5 text-[rgb(var(--ui-text-muted))] hover:bg-white/10'
-                  }`}
-                  onClick={() => setSearchMode('ai')}
-                  type='button'
-                >
-                  AI 找片
-                </button>
-              </div>
-            </Surface>
-          )}
-
-          {tvMode && searchMode === 'normal' ? (
-            <div className='mb-6'>
-              <TvSearchForm
-                initialQuery={searchQuery}
-                value={tvDraft}
-                onQueryChange={setTvDraft}
-                onSearch={submitTvSearch}
-              />
-            </div>
-          ) : null}
-
-          <div
-            key={
-              searchMode === 'ai'
-                ? 'ai'
-                : `normal-${isLoading ? 'loading' : 'ready'}`
-            }
-            className='ui-search-view'
-          >
-            {searchMode === 'ai' ? (
-              <AiFindPanel initialQuery={searchQuery} tvMode={tvMode} />
-            ) : isLoading ? (
-              <section className='space-y-4'>
-                <SectionHeader
-                  subtitle='正在整理结果与可用线路'
-                  title={pageSectionLabels.searchResults}
-                />
-                <PosterGrid className={resultGridClass}>
-                  {Array.from({ length: 12 }).map((_, index) => (
-                    <div key={`search-skeleton-${index}`} className='w-full'>
-                      <SkeletonPosterCard
-                        delayIndex={index}
-                        widths={['80%', '58%']}
-                      />
-                    </div>
-                  ))}
-                </PosterGrid>
-              </section>
-            ) : tvMode && searchError ? (
-              <Surface className='space-y-4 p-6' variant='plain'>
-                <p role='alert'>{searchError}</p>
-                <button
-                  type='button'
-                  onClick={() => setSearchAttempt((attempt) => attempt + 1)}
-                  className='rounded-ui-sm border border-[rgb(var(--ui-border))] px-5 py-3'
-                >
-                  重试搜索
-                </button>
-              </Surface>
-            ) : showResults ? (
-              <section className='space-y-4'>
-                <SectionHeader
-                  subtitle={`当前显示 ${displayedResultCount} 条${
-                    viewMode === 'agg' ? '聚合结果' : '原始结果'
-                  }`}
-                  title={pageSectionLabels.searchResults}
-                />
-                {!tvMode && shouldShowAiFindGuide ? (
-                  <Surface
-                    className='border-[rgb(var(--ui-success)/0.24)] bg-[linear-gradient(135deg,rgb(var(--ui-success)/0.12),rgb(var(--ui-bg-elevated)/0.58))] p-4 sm:p-5'
-                    variant='plain'
-                  >
-                    <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-                      <div>
-                        <p className='text-sm font-semibold text-[rgb(var(--ui-text))]'>
-                          结果较多，可以用 AI 精准找片
-                        </p>
-                        <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-                          会带入当前关键词，按片名线索重新整理候选结果。
-                        </p>
-                      </div>
-                      <button
-                        type='button'
-                        onClick={() => setSearchMode('ai')}
-                        className='inline-flex min-h-10 items-center justify-center rounded-xl bg-[rgb(var(--ui-success))] px-4 text-sm font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition hover:brightness-110'
-                      >
-                        用 AI 精准找片
-                      </button>
-                    </div>
-                  </Surface>
-                ) : null}
-                {searchResults.length > 0 ? (
-                  <>
-                    <CapsuleSwitch
-                      active={resultCategory}
-                      aria-label='结果分类'
-                      onChange={(value) =>
-                        setResultCategory(value as SearchCategory)
-                      }
-                      options={categoryTabOptions}
-                    />
-                    {filteredSearchResults.length > 0 ? (
-                      <PosterGrid
-                        key={`search-results-${viewMode}-${resultCategory}`}
-                        className={resultGridClass}
-                      >
-                        {viewMode === 'agg'
-                          ? aggregatedResults.map(([mapKey, group]) => {
-                              const meta = getSearchCardMeta(group[0]);
-                              return (
-                                <div key={`agg-${mapKey}`} className='w-full'>
-                                  <VideoCard
-                                    tvMode={tvMode}
-                                    from='search'
-                                    items={group}
-                                    query={
-                                      searchQuery.trim() !== group[0].title
-                                        ? searchQuery.trim()
-                                        : ''
-                                    }
-                                    statusText={meta.statusText}
-                                    typeName={meta.typeChip}
-                                    year={meta.year}
-                                  />
-                                </div>
-                              );
-                            })
-                          : filteredSearchResults.map((item) => {
-                              const meta = getSearchCardMeta(item);
-                              return (
-                                <div
-                                  key={`all-${item.source}-${item.id}`}
-                                  className='w-full'
-                                >
-                                  <VideoCard
-                                    tvMode={tvMode}
-                                    id={item.id}
-                                    title={item.title}
-                                    poster={item.poster}
-                                    episodes={item.episodes.length}
-                                    source={item.source}
-                                    source_name={item.source_name}
-                                    douban_id={item.douban_id?.toString()}
-                                    query={
-                                      searchQuery.trim() !== item.title
-                                        ? searchQuery.trim()
-                                        : ''
-                                    }
-                                    year={meta.year}
-                                    from='search'
-                                    type={
-                                      item.episodes.length > 1 ? 'tv' : 'movie'
-                                    }
-                                    typeName={meta.typeChip}
-                                    statusText={meta.statusText}
-                                  />
-                                </div>
-                              );
-                            })}
-                      </PosterGrid>
-                    ) : (
-                      <Surface
-                        className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
-                        variant='plain'
-                      >
-                        该分类下暂无结果
-                      </Surface>
-                    )}
-                  </>
-                ) : (
-                  <Surface
-                    className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
-                    variant='plain'
-                  >
-                    未找到相关结果
-                  </Surface>
-                )}
-              </section>
-            ) : searchHistory.length > 0 ? (
-              // 搜索历史
-              <section className='space-y-4'>
-                <SectionHeader
-                  action={
-                    searchHistory.length > 0 ? (
-                      <ActionLink
-                        onClick={() => {
-                          clearSearchHistory(); // 事件监听会自动更新界面
-                        }}
-                      >
-                        清空
-                      </ActionLink>
-                    ) : null
-                  }
-                  title={pageSectionLabels.searchHistory}
-                />
-                <Surface className='p-4 sm:p-5' variant='plain'>
-                  <div className='flex flex-wrap gap-2'>
-                    {searchHistory.map((item) => (
-                      <div
-                        key={item}
-                        className={
-                          tvMode ? 'flex items-center gap-2' : 'group relative'
-                        }
-                      >
-                        <button
-                          onClick={() => {
-                            const href = `/search?q=${encodeURIComponent(
-                              item.trim()
-                            )}`;
-                            router.push(
-                              tvMode ? buildTvModeHref(href, true) : href
-                            );
-                          }}
-                          className='rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-[rgb(var(--ui-text))] transition-colors duration-200 hover:bg-white/10'
-                          type='button'
-                        >
-                          {item}
-                        </button>
-                        <button
-                          aria-label={
-                            tvMode ? `删除搜索历史 ${item}` : '删除搜索历史'
-                          }
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            deleteSearchHistory(item); // 事件监听会自动更新界面
-                          }}
-                          className={
-                            tvMode
-                              ? 'flex items-center justify-center rounded-ui-sm border border-[rgb(var(--ui-border))] px-3 text-[rgb(var(--ui-text-muted))]'
-                              : 'absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-white/25 text-[10px] text-white opacity-0 transition-colors group-hover:opacity-100 hover:bg-red-500'
-                          }
-                          type='button'
-                        >
-                          <X className='h-3 w-3' />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </Surface>
-              </section>
-            ) : null}
-          </div>
+      <div className='ui-search-page space-y-6'>
+        <SearchPageHeading session={session} />
+        <div className='min-w-0 space-y-6'>
+          <SearchModeBar session={session} />
+          <SearchResultsSwitch session={session} />
         </div>
       </div>
-
-      {/* 返回顶部悬浮按钮 */}
-      <button
-        onClick={() => {
-          scrollToTop();
-          if (tvMode) document.getElementById('tvSearchInput')?.focus();
-        }}
-        className={`ui-glass fixed bottom-20 right-6 z-[500] flex h-12 w-12 items-center justify-center rounded-full text-[rgb(var(--ui-text))] transition-[opacity,transform,border-color] duration-150 ease ui-hover-scale-md hover:border-[rgb(var(--ui-accent)/0.42)] md:bottom-6 group ${
-          showBackToTop
-            ? 'opacity-100 translate-y-0 pointer-events-auto'
-            : 'opacity-0 translate-y-4 pointer-events-none'
-        }`}
-        aria-label='返回顶部'
-      >
-        <ChevronUp className='w-6 h-6 transition-transform duration-150 ease ui-hover-scale-sm' />
-      </button>
+      <SearchBackToTop session={session} />
     </PageLayout>
   );
 }
@@ -695,28 +772,20 @@ function SearchPageClient() {
 const SearchFallback = () => {
   return (
     <PageLayout activePath='/search'>
-      <div className='space-y-4 sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
+      <div className='ui-search-page space-y-6'>
         <PageHeader
           subtitle={pageMeta['/search'].subtitle}
           title={pageMeta['/search'].title}
         />
-        <div className='mx-auto max-w-[95%] overflow-visible'>
+        <div className='min-w-0'>
           <section className='space-y-4'>
             <SectionHeader
               subtitle='正在整理结果与可用线路'
               title={pageSectionLabels.searchResults}
             />
-            <PosterGrid className='grid-cols-3 justify-start gap-x-2 gap-y-6 px-0 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8 sm:gap-y-20 sm:px-2'>
+            <PosterGrid className='ui-search-results'>
               {Array.from({ length: 12 }).map((_, index) => (
-                <div
-                  key={`search-skeleton-fallback-${index}`}
-                  className='w-full'
-                >
-                  <SkeletonPosterCard
-                    delayIndex={index}
-                    widths={['80%', '58%']}
-                  />
-                </div>
+                <SkeletonResultCard key={`search-skeleton-fallback-${index}`} />
               ))}
             </PosterGrid>
           </section>

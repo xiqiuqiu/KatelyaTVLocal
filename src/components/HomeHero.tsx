@@ -29,12 +29,13 @@ interface HomeHeroProps {
 
 function HomeHeroSkeleton() {
   return (
-    <section
-      aria-busy='true'
-      aria-label='精选推荐'
-      className='relative overflow-hidden rounded-ui-lg border border-[rgb(var(--ui-border)/0.28)] bg-[rgb(var(--ui-surface)/0.35)]'
-    >
-      <div className='aspect-[16/10] w-full animate-pulse bg-[rgb(var(--ui-surface-strong)/0.45)] sm:aspect-[21/9]' />
+    <section aria-busy='true' aria-label='精选推荐' className='ui-home-feature'>
+      <div className='ui-home-feature-copy'>
+        <div className='ui-skeleton-block h-7 w-3/4 rounded-ui-sm' />
+        <div className='ui-skeleton-block h-4 w-1/2 rounded-ui-sm' />
+        <div className='ui-skeleton-block h-11 w-28 rounded-ui-sm' />
+      </div>
+      <div className='ui-skeleton-block ui-home-feature-art' />
     </section>
   );
 }
@@ -61,9 +62,9 @@ export default function HomeHero({
   const typeLabel = type ? MEDIA_TYPE_LABEL[type] : null;
   const metadata = [item.year, typeLabel].filter(Boolean).join(' · ');
   const posterSrc = processImageUrl(item.poster, {
-    width: 1280,
-    height: 720,
-    quality: 82,
+    width: 640,
+    height: 360,
+    quality: 78,
   });
   const playbackCardKey = `hero:douban:${item.id || item.title}`;
 
@@ -89,73 +90,49 @@ export default function HomeHero({
   return (
     <section
       aria-label='精选推荐'
-      className='relative overflow-hidden rounded-ui-lg border border-[rgb(var(--ui-border)/0.28)] bg-[rgb(var(--ui-bg))] shadow-ui-soft'
+      className='ui-home-feature'
       data-playback-preparation-card={playbackCardKey}
       ref={surfaceRef}
     >
-      <div
-        className={
-          tvMode
-            ? 'relative h-60 w-full'
-            : 'relative aspect-[16/10] w-full sm:aspect-[21/9]'
-        }
-      >
+      <div className='ui-home-feature-copy'>
+        <h2 className='line-clamp-2 text-xl font-semibold leading-snug text-[rgb(var(--ui-text))] sm:text-2xl'>
+          {item.title}
+        </h2>
+        <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[rgb(var(--ui-text-muted))]'>
+          {item.rate && (
+            <span className='inline-flex items-center gap-1 font-semibold text-[rgb(var(--ui-accent-warm))]'>
+              <Star
+                aria-hidden
+                className='h-4 w-4 fill-current'
+                strokeWidth={0}
+              />
+              {item.rate}
+            </span>
+          )}
+          {metadata && <span>{metadata}</span>}
+        </div>
+        <Link
+          data-tv-focus-key='hero-play'
+          data-tv-primary={tvMode || undefined}
+          href={playHref}
+          onClick={handlePlay}
+          className='inline-flex min-h-11 items-center justify-center gap-2 rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-2 text-sm font-semibold text-[rgb(var(--ui-on-accent))] transition-[filter] duration-150 hover:brightness-110'
+        >
+          <Play aria-hidden className='h-4 w-4 fill-current' />
+          立即播放
+        </Link>
+      </div>
+      <div className='ui-home-feature-art'>
         <Image
           alt=''
           aria-hidden
           className='object-cover object-[center_18%]'
           fill
-          priority
+          loading='lazy'
           referrerPolicy='no-referrer'
-          sizes='(max-width: 640px) 100vw, (max-width: 1280px) 90vw, 1100px'
+          sizes='(max-width: 767px) 38vw, 560px'
           src={posterSrc}
         />
-
-        {/* Wide-banner read: vertical poster crop + layered gradients */}
-        <div
-          aria-hidden
-          className='absolute inset-0 bg-gradient-to-r from-[rgb(var(--ui-bg)/0.96)] via-[rgb(var(--ui-bg)/0.55)] to-[rgb(var(--ui-bg)/0.18)]'
-        />
-        <div
-          aria-hidden
-          className='absolute inset-0 bg-gradient-to-t from-[rgb(var(--ui-bg)/0.92)] via-[rgb(var(--ui-bg)/0.2)] to-transparent'
-        />
-
-        <div className='absolute inset-0 flex items-end'>
-          <div className='flex w-full max-w-xl flex-col gap-3 px-4 py-5 sm:gap-4 sm:px-8 sm:py-8 lg:px-10'>
-            <div className='space-y-2'>
-              <h2 className='text-2xl font-semibold tracking-tight text-[rgb(var(--ui-text))] sm:text-3xl lg:text-4xl'>
-                {item.title}
-              </h2>
-
-              <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[rgb(var(--ui-text-muted))] sm:text-base'>
-                {item.rate ? (
-                  <span className='inline-flex items-center gap-1 font-semibold text-[rgb(var(--ui-accent-warm))]'>
-                    <Star
-                      aria-hidden
-                      className='h-4 w-4 fill-current'
-                      strokeWidth={0}
-                    />
-                    {item.rate}
-                  </span>
-                ) : null}
-                {metadata ? <span>{metadata}</span> : null}
-              </div>
-            </div>
-
-            <div className='flex flex-wrap items-center gap-2 sm:gap-3'>
-              <Link
-                data-tv-focus-key='hero-play'
-                className='inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[rgb(var(--ui-accent))] px-4 text-sm font-semibold text-[rgb(var(--ui-on-accent))] shadow-ui-soft transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent sm:min-h-11 sm:px-5'
-                href={playHref}
-                onClick={handlePlay}
-              >
-                <Play aria-hidden className='h-4 w-4 fill-current' />
-                立即播放
-              </Link>
-            </div>
-          </div>
-        </div>
       </div>
     </section>
   );

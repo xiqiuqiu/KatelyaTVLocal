@@ -11,6 +11,8 @@ import {
   getInviteCodeFromSearchParams,
 } from '@/lib/registration/invite-link';
 
+import useTvBrowseNavigation from '@/components/useTvBrowseNavigation';
+
 import LoginPage from '@/app/login/page';
 
 let mockSearchParams = new URLSearchParams();
@@ -18,6 +20,11 @@ const originalFetch = global.fetch;
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => mockSearchParams,
+}));
+
+jest.mock('@/components/useTvBrowseNavigation', () => ({
+  __esModule: true,
+  default: jest.fn(),
 }));
 
 jest.mock('next/image', () => ({
@@ -114,7 +121,7 @@ describe('LoginPage invite link', () => {
       'new-password'
     );
     expect(
-      screen.getByRole('button', { name: '创建 ReelFind 账号' })
+      screen.getByRole('button', { name: '创建 KatelyaTV 账号' })
     ).toBeDisabled();
     expect(await screen.findByLabelText('邀请码')).toBeInTheDocument();
     expect(document.getElementById('register-turnstile')).not.toBeNull();
@@ -156,7 +163,7 @@ describe('LoginPage invite link', () => {
       fireEvent.change(await screen.findByLabelText('访问密码'), {
         target: { value: 'password123' },
       });
-      fireEvent.click(screen.getByRole('button', { name: '进入 ReelFind' }));
+      fireEvent.click(screen.getByRole('button', { name: '进入 KatelyaTV' }));
 
       await waitFor(() => {
         expect(fetchMock).toHaveBeenCalled();
@@ -168,6 +175,74 @@ describe('LoginPage invite link', () => {
         value: originalLocation,
       });
     }
+  });
+
+  it('keeps redirect and invite context when switching TV presentation', async () => {
+    mockSearchParams = new URLSearchParams(
+      'tv=1&redirect=%2Ffavorites%3Ftv%3D1&inviteCode=KATELYA-2026'
+    );
+
+    render(<LoginPage />);
+
+    expect(await screen.findByLabelText('邀请码')).toHaveValue('KATELYA-2026');
+    expect(useTvBrowseNavigation).toHaveBeenCalledWith(
+      expect.any(Object),
+      true,
+      '/login',
+      true
+    );
+    const switchLink = screen.getByRole('link', { name: '退出电视模式' });
+    const target = new URL(
+      switchLink.getAttribute('href') || '',
+      'http://localhost'
+    );
+    expect(target.pathname).toBe('/login');
+    expect(target.searchParams.get('tv')).toBe('0');
+    expect(target.searchParams.get('redirect')).toBe('/favorites?tv=1');
+    expect(target.searchParams.get('inviteCode')).toBe('KATELYA-2026');
+    expect(screen.getByText(/方向键选择输入框/)).toBeInTheDocument();
+  });
+
+  it.each([
+    { STORAGE_TYPE: 'localstorage', ENABLE_REGISTER: true },
+    { STORAGE_TYPE: 'd1', ENABLE_REGISTER: false },
+  ])(
+    'keeps registration controls hidden for runtime configuration %p',
+    async (config) => {
+      window.RUNTIME_CONFIG = config;
+      render(<LoginPage />);
+      expect(
+        await screen.findByRole('heading', { name: '欢迎回来' })
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: '注册' })
+      ).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('邀请码')).not.toBeInTheDocument();
+      if (config.STORAGE_TYPE === 'localstorage') {
+        expect(screen.queryByLabelText('用户名')).not.toBeInTheDocument();
+      } else {
+        expect(screen.getByLabelText('用户名')).toBeInTheDocument();
+      }
+    }
+  );
+
+  it('keeps password visibility and failure feedback accessible', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401 });
+    window.RUNTIME_CONFIG = { STORAGE_TYPE: 'localstorage' };
+    render(<LoginPage />);
+    const password = await screen.findByLabelText('访问密码');
+    fireEvent.change(password, { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('button', { name: '显示密码' }));
+    expect(password).toHaveAttribute('type', 'text');
+    expect(screen.getByRole('button', { name: '隐藏密码' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    fireEvent.click(screen.getByRole('button', { name: '进入 KatelyaTV' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('密码错误');
+    expect(password).toHaveAttribute('aria-invalid', 'true');
+    expect(password).toHaveAttribute('aria-describedby', 'auth-error');
+    expect(password).toHaveValue('password123');
   });
 
   it('sends the login Turnstile token when login verification is required', async () => {
@@ -207,7 +282,7 @@ describe('LoginPage invite link', () => {
     fireEvent.change(screen.getByLabelText('访问密码'), {
       target: { value: 'password123' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '进入 ReelFind' }));
+    fireEvent.click(screen.getByRole('button', { name: '进入 KatelyaTV' }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
