@@ -33,12 +33,14 @@ function rect(left: number, top: number) {
 function ManagedForm({
   enabled = true,
   onSubmit = jest.fn(),
+  manageInputs = true,
 }: {
   enabled?: boolean;
   onSubmit?: () => void;
+  manageInputs?: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  useTvBrowseNavigation(rootRef, enabled, '/admin', true);
+  useTvBrowseNavigation(rootRef, enabled, '/admin', manageInputs);
   return (
     <div ref={rootRef}>
       <form
@@ -651,6 +653,55 @@ describe('TV browse interaction', () => {
     fireEvent.keyDown(field, { key: 'BrowserBack' });
     expect(cancelled).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it('manages embedded admin inputs without taking over ordinary page inputs', async () => {
+    render(<ManagedForm manageInputs={false} />);
+    const pageField = screen.getByRole('textbox', { name: '站点名称' });
+    const modal = document.createElement('div');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.innerHTML =
+      '<div data-admin-settings><input aria-label="内嵌站点名称" /></div><button data-tv-back>关闭设置</button>';
+    act(() => {
+      document.body.appendChild(modal);
+    });
+    const input = screen.getByRole('textbox', { name: '内嵌站点名称' });
+    await waitFor(() => expect(input).toHaveAttribute('data-tv-input'));
+    expect(pageField).not.toHaveAttribute('data-tv-input');
+    act(() => input.focus());
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(input).not.toHaveAttribute('readonly');
+    fireEvent.keyDown(input, { key: 'BrowserBack' });
+    expect(input).toHaveAttribute('readonly');
+    expect(modal).toBeInTheDocument();
+  });
+
+  it('prioritizes a nested admin confirmation over the settings dialog', async () => {
+    render(<ManagedForm />);
+    const settings = document.createElement('div');
+    settings.setAttribute('role', 'dialog');
+    settings.setAttribute('aria-modal', 'true');
+    settings.innerHTML = '<button data-tv-back>关闭设置</button>';
+    const close = jest.fn();
+    settings.querySelector('button')?.addEventListener('click', close);
+    const confirmation = document.createElement('div');
+    confirmation.className = 'swal2-popup ui-admin-dialog';
+    confirmation.setAttribute('role', 'dialog');
+    confirmation.setAttribute('aria-modal', 'true');
+    confirmation.innerHTML = '<button class="swal2-cancel">取消确认</button>';
+    const cancel = jest.fn(() => confirmation.remove());
+    const button = confirmation.querySelector('button');
+    if (!button) throw new Error('missing confirmation');
+    button.addEventListener('click', cancel);
+    act(() => {
+      document.body.append(settings, confirmation);
+      button.focus();
+    });
+    fireEvent.keyDown(button, { key: 'BrowserBack' });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
+    expect(settings).toBeInTheDocument();
   });
 
   it('redirects virtual confirmation to the TV input without activating an unrelated control', async () => {

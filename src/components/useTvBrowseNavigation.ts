@@ -72,8 +72,12 @@ export default function useTvBrowseNavigation(
       editingField = null;
     };
     const registerFields = (scope: HTMLElement) => {
-      if (!manageInputs) return;
-      scope
+      const formScope =
+        manageInputs || scope.matches('.ui-admin-dialog')
+          ? scope
+          : scope.querySelector<HTMLElement>('[data-admin-settings]');
+      if (!formScope) return;
+      formScope
         .querySelectorAll<FormControl>(
           'input:not([type="hidden"]), textarea, select'
         )
@@ -136,6 +140,7 @@ export default function useTvBrowseNavigation(
       }).catch(() => undefined);
     };
     const dialog = () =>
+      document.querySelector<HTMLElement>('.swal2-popup[role="dialog"]') ||
       document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
     const actions = (scope: HTMLElement) =>
       Array.from(scope.querySelectorAll<HTMLElement>(ACTIONS)).filter(

@@ -3,7 +3,6 @@
 'use client';
 
 import {
-  ChevronRight,
   Heart,
   History,
   KeyRound,
@@ -14,9 +13,17 @@ import {
   User,
   X,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import {
+  Fragment,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 
 import { getRuntimeCurrentUser } from '@/lib/auth';
@@ -24,6 +31,21 @@ import { buildTvModeHref } from '@/lib/tv-interaction';
 import { managementSettingsGroups } from '@/lib/ui/settings';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
+import useTvBrowseNavigation from '@/components/useTvBrowseNavigation';
+
+const AdminSettings = dynamic(
+  () =>
+    import('@/components/admin/AdminSettings.js').then(
+      (module) => module.AdminSettings
+    ),
+  {
+    ssr: false,
+    loading: () => <p role='status'>正在加载管理配置…</p>,
+  }
+);
+type ManagementGroupId = (typeof managementSettingsGroups)[number]['id'];
+type ManagementSection =
+  (typeof managementSettingsGroups)[number]['items'][number]['id'];
 
 interface AuthInfo {
   username?: string | null;
@@ -52,7 +74,34 @@ interface UserMenuProps {
 }
 
 function UserMenuPanel({ session }: { session: UserMenuSession }) {
-  const [category, setCategory] = useState('device');
+  const panelRef = useRef<HTMLDivElement>(null);
+  useTvBrowseNavigation(
+    panelRef,
+    session.tvMode && session.pathname === '/play',
+    '/settings',
+    true
+  );
+  const [category, setCategory] = useState(
+    session.initialManagementSection ? 'management' : 'device'
+  );
+  const [managementGroup, setManagementGroup] = useState<ManagementGroupId>(
+    managementSettingsGroups.find((group) =>
+      group.items.some((item) => item.id === session.initialManagementSection)
+    )?.id || 'content'
+  );
+  const [managementMounted, setManagementMounted] = useState(
+    Boolean(session.initialManagementSection)
+  );
+  useEffect(() => {
+    if (!session.initialManagementSection) return;
+    setCategory('management');
+    setManagementMounted(true);
+    setManagementGroup(
+      managementSettingsGroups.find((group) =>
+        group.items.some((item) => item.id === session.initialManagementSection)
+      )?.id || 'content'
+    );
+  }, [session.initialManagementSection]);
   return (
     <>
       {/* 背景遮罩 - 普通菜单无需模糊 */}
@@ -66,11 +115,13 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
 
       {/* 菜单面板 */}
       <div
+        ref={panelRef}
         role='dialog'
         aria-modal='true'
         aria-label='设置与账号'
         aria-hidden={!session.isOpen}
         data-tv-mode={session.tvMode}
+        data-management={category === 'management' || undefined}
         data-tv-browse={session.tvMode}
         data-open={session.isMenuVisible ? 'true' : 'false'}
         className='ui-user-menu-panel z-[1001] rounded-ui-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] p-3 text-[rgb(var(--ui-text))] shadow-ui-strong transition-opacity duration-[180ms] data-[open=false]:pointer-events-none data-[open=false]:opacity-0 data-[open=true]:opacity-100'
@@ -78,9 +129,13 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
           if (event.key !== 'Tab') return;
           const controls = Array.from(
             event.currentTarget.querySelectorAll<HTMLElement>(
-              'button:not(:disabled), a[href]'
+              'button:not(:disabled), a[href], input:not(:disabled):not([type=hidden]), textarea:not(:disabled), select:not(:disabled)'
             )
-          ).filter((control) => !control.closest('[hidden]'));
+          ).filter(
+            (control) =>
+              control.tabIndex !== -1 &&
+              !control.closest('[hidden], [inert], [aria-hidden="true"]')
+          );
           const first = controls[0];
           const last = controls[controls.length - 1];
           if (event.shiftKey && document.activeElement === first) {
@@ -115,23 +170,53 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
                 ? [{ id: 'management', label: '站点管理', icon: Shield }]
                 : []),
             ].map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                type='button'
-                aria-pressed={category === id}
-                aria-controls={`user-settings-${id}`}
-                data-active={category === id || undefined}
-                className={menuItemClassName}
-                onClick={() => {
-                  setCategory(id);
-                  document
-                    .querySelector('.ui-settings-content')
-                    ?.scrollTo?.({ top: 0 });
-                }}
-              >
-                <Icon aria-hidden className='h-5 w-5 shrink-0' />
-                {label}
-              </button>
+              <Fragment key={id}>
+                <button
+                  type='button'
+                  aria-pressed={category === id}
+                  aria-expanded={
+                    id === 'management' ? category === id : undefined
+                  }
+                  aria-controls={`user-settings-${id}`}
+                  data-active={category === id || undefined}
+                  className={menuItemClassName}
+                  onClick={() => {
+                    setCategory(id);
+                    if (id === 'management') setManagementMounted(true);
+                    document
+                      .querySelector('.ui-settings-content')
+                      ?.scrollTo?.({ top: 0 });
+                  }}
+                >
+                  <Icon aria-hidden className='h-5 w-5 shrink-0' />
+                  {label}
+                </button>
+                {id === 'management' && category === 'management' && (
+                  <div
+                    className='ui-settings-subnav'
+                    role='group'
+                    aria-label='站点管理分类'
+                  >
+                    {managementSettingsGroups.map((group) => (
+                      <button
+                        key={group.id}
+                        type='button'
+                        aria-pressed={managementGroup === group.id}
+                        aria-controls='user-settings-management'
+                        data-active={managementGroup === group.id || undefined}
+                        onClick={() => {
+                          setManagementGroup(group.id);
+                          document
+                            .querySelector('.ui-settings-content')
+                            ?.scrollTo?.({ top: 0 });
+                        }}
+                      >
+                        {group.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Fragment>
             ))}
           </nav>
           <div className='ui-settings-content min-h-0 min-w-0 space-y-6 overflow-y-auto px-1 pb-2'>
@@ -269,55 +354,18 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
                 aria-labelledby='user-settings-management-title'
                 className='ui-settings-group'
               >
-                <h3
-                  id='user-settings-management-title'
-                  className='mb-2 px-3 text-base font-semibold'
-                >
+                <span id='user-settings-management-title' className='sr-only'>
                   站点管理
-                </h3>
-                <button
-                  onClick={session.handleAdminPanel}
-                  onFocus={() => session.router.prefetch('/admin')}
-                  onMouseEnter={() => session.router.prefetch('/admin')}
-                  className={menuItemClassName}
-                >
-                  <Shield aria-hidden className='h-5 w-5' />
-                  <span>管理面板</span>
-                  <ChevronRight
-                    aria-hidden
-                    className='ml-auto h-5 w-5 shrink-0'
+                </span>
+                {(managementMounted || category === 'management') && (
+                  <AdminSettings
+                    groupId={managementGroup}
+                    initialSection={
+                      session.initialManagementSection || undefined
+                    }
+                    tvMode={session.tvMode}
                   />
-                </button>
-                {managementSettingsGroups.map((group) => (
-                  <div key={group.id} className='mt-4'>
-                    <h4 className='px-3 text-sm font-medium text-[rgb(var(--ui-text-muted))]'>
-                      {group.label}
-                    </h4>
-                    <div className='ui-settings-management-links mt-1 grid grid-cols-2 gap-1'>
-                      {group.items.map((item) => (
-                        <Link
-                          key={item.id}
-                          href={
-                            session.tvMode
-                              ? buildTvModeHref(
-                                  `/admin?section=${item.id}#admin-${item.id}`,
-                                  true
-                                )
-                              : `/admin?section=${item.id}#admin-${item.id}`
-                          }
-                          className={menuItemClassName}
-                          onClick={session.handleCloseMenu}
-                        >
-                          <span>{item.label}</span>
-                          <ChevronRight
-                            aria-hidden
-                            className='ml-auto h-5 w-5 shrink-0'
-                          />
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                )}
               </section>
             )}
           </div>
@@ -500,12 +548,12 @@ function ChangePasswordPanel({ session }: { session: UserMenuSession }) {
 }
 
 type UserMenuSession = {
+  initialManagementSection: ManagementSection | null;
   editingPassword: string | null;
   setEditingPassword: (value: string | null) => void;
   authInfo: any;
   confirmPassword: any;
   getRoleText: any;
-  handleAdminPanel: any;
   handleChangePassword: any;
   handleCloseChangePassword: any;
   handleCloseMenu: any;
@@ -532,7 +580,7 @@ type UserMenuSession = {
   tvMode: any;
 };
 
-export const UserMenu = ({
+const UserMenuContent = ({
   open,
   onOpenChange,
   tvMode = false,
@@ -540,6 +588,13 @@ export const UserMenu = ({
 }: UserMenuProps) => {
   const router = useRouter();
   const pathname = usePathname();
+  const requestedSettings = useSearchParams().get('settings');
+  const requestedManagementSection =
+    managementSettingsGroups
+      .flatMap((group) => [...group.items])
+      .find((item) => item.id === requestedSettings)?.id || null;
+  const [initialManagementSection, setInitialManagementSection] =
+    useState<ManagementSection | null>(null);
   const modeTarget =
     modeHref ||
     (typeof window === 'undefined'
@@ -628,7 +683,14 @@ export const UserMenu = ({
 
   const handleCloseMenu = useCallback(() => {
     setIsOpen(false);
-  }, [setIsOpen]);
+    if (requestedSettings) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('settings');
+      router.replace(`${url.pathname}${url.search}${url.hash}`, {
+        scroll: false,
+      });
+    }
+  }, [setIsOpen, requestedSettings, router]);
 
   const handleLogout = async () => {
     try {
@@ -640,11 +702,6 @@ export const UserMenu = ({
       console.error('注销请求失败:', error);
     }
     window.location.href = '/';
-  };
-
-  const handleAdminPanel = () => {
-    setIsOpen(false);
-    router.push(tvMode ? buildTvModeHref('/admin', true) : '/admin');
   };
 
   const handleChangePassword = () => {
@@ -670,7 +727,10 @@ export const UserMenu = ({
     }
 
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') {
+      if (
+        event.key !== 'Escape' ||
+        document.querySelector('.swal2-container')
+      ) {
         return;
       }
 
@@ -734,10 +794,10 @@ export const UserMenu = ({
     authInfo?.role === 'owner' || authInfo?.role === 'admin';
 
   useEffect(() => {
-    if (showAdminPanel) {
-      router.prefetch('/admin');
-    }
-  }, [router, showAdminPanel]);
+    if (!showAdminPanel || !requestedManagementSection) return;
+    setInitialManagementSection(requestedManagementSection);
+    setIsOpen(true);
+  }, [showAdminPanel, requestedManagementSection, setIsOpen]);
 
   // 检查是否显示修改密码按钮
   const showChangePassword =
@@ -763,7 +823,7 @@ export const UserMenu = ({
     authInfo,
     confirmPassword,
     getRoleText,
-    handleAdminPanel,
+    initialManagementSection,
     handleChangePassword,
     handleCloseChangePassword,
     handleCloseMenu,
@@ -818,3 +878,9 @@ export const UserMenu = ({
     </>
   );
 };
+
+export const UserMenu = (props: UserMenuProps) => (
+  <Suspense>
+    <UserMenuContent {...props} />
+  </Suspense>
+);
