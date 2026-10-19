@@ -1,3 +1,6 @@
+export const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+export const REMEMBERED_SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+
 export type SessionRole = 'owner' | 'admin' | 'user';
 
 export interface SessionPayload {
@@ -5,6 +8,7 @@ export interface SessionPayload {
   username?: string;
   role: SessionRole;
   issuedAt: number;
+  expiresAt?: number;
 }
 
 interface SessionEnvelope {
@@ -64,7 +68,7 @@ async function verify(
 }
 
 export async function createSessionCookieValue(
-  input: { username?: string; role: SessionRole },
+  input: { username?: string; role: SessionRole; expiresAt?: number },
   secret: string
 ): Promise<string> {
   const payload: SessionPayload = {
@@ -72,6 +76,7 @@ export async function createSessionCookieValue(
     username: input.username,
     role: input.role,
     issuedAt: Date.now(),
+    expiresAt: input.expiresAt ?? Date.now() + SESSION_DURATION_MS,
   };
 
   const body = JSON.stringify(payload);
@@ -99,7 +104,16 @@ export async function parseSessionCookieValue(
 
     const body = JSON.stringify(parsed.payload);
     const isValid = await verify(body, parsed.signature, secret);
-    return isValid ? parsed.payload : null;
+    if (!isValid) return null;
+    const expiresAt =
+      parsed.payload.expiresAt ?? parsed.payload.issuedAt + SESSION_DURATION_MS;
+    if (
+      typeof expiresAt !== 'number' ||
+      !Number.isFinite(expiresAt) ||
+      Date.now() >= expiresAt
+    )
+      return null;
+    return parsed.payload;
   } catch (_error) {
     return null;
   }
