@@ -963,6 +963,35 @@ describe('PlayPage source initialization', () => {
       screen.getByRole('heading', { name: '当前线路无法继续恢复' })
     ).toBeTruthy();
   });
+
+  it('keeps recovery actions visible when failure arrives before loading ends', async () => {
+    mockAutoFireManifestParsed = false;
+    const actual = jest.requireActual<typeof import('@/lib/playback-session')>(
+      '@/lib/playback-session'
+    );
+    const reducer = jest.mocked(reducePlaybackSession);
+    render(<PlayPage />);
+    await settlePlayPage();
+    expect(screen.getByTestId('player-loading')).toBeVisible();
+    reducer.mockImplementation((state, event) => {
+      const result = actual.reducePlaybackSession(state, event);
+      result.effects.push({
+        type: 'showInPlayerFailure',
+        reason: 'recovery-exhausted',
+        actions: ['retry', 'switch-source', 'leave'],
+      });
+      return result;
+    });
+    try {
+      act(() => {
+        mockArtPlayerEventHandlers.get('video:timeupdate')?.();
+      });
+      expect(screen.getByRole('button', { name: '重试' })).toBeVisible();
+      expect(screen.queryByTestId('player-loading')).toBeNull();
+    } finally {
+      reducer.mockImplementation(actual.reducePlaybackSession);
+    }
+  });
 });
 
 describe('PlayPage lower detail composition', () => {

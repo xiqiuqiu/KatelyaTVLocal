@@ -664,7 +664,7 @@ function PlayVideoSurface({
         )}
 
         {/* 换源加载蒙层 */}
-        {session.isVideoLoading && (
+        {session.isVideoLoading && !session.inPlayerFailure && (
           <PlayerLoadingOverlay stage={session.videoLoadingStage} />
         )}
 
