@@ -55,6 +55,7 @@ react-doctor-report.json
 
 # test artifacts
 .playwright-mcp/
+/.impeccable/review/
 tmp-cloudflare-play-test.png
 .wrangler/
 .tmp-dev-*.log
