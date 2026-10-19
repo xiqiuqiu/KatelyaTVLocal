@@ -743,7 +743,9 @@ function PlayPageClient() {
     attemptId: number;
     sourceKey: string;
     expectedPlaybackUrl: string | null;
-    targetReady: boolean;
+    manifestReady: boolean;
+    mediaReady: boolean;
+    mediaReadyHls: Hls | null;
     hls: Hls | null;
     automatic: boolean;
     mediaFinalized?: boolean;
@@ -2129,16 +2131,16 @@ function PlayPageClient() {
     const timeoutAttemptId = sourceAttempt.sourceChangeAttemptId || 1;
     sourceChangeAttemptIdRef.current = timeoutAttemptId;
     const timeoutSourceKey = getSourceIdentityKey(source.source, source.id);
-    sourceChangeMediaAttemptRef.current = artPlayerRef.current
-      ? {
-          attemptId: timeoutAttemptId,
-          sourceKey: timeoutSourceKey,
-          expectedPlaybackUrl: playbackUrl || null,
-          targetReady: false,
-          hls: null,
-          automatic: sourceSwitchAutomaticRef.current,
-        }
-      : null;
+    sourceChangeMediaAttemptRef.current = {
+      attemptId: timeoutAttemptId,
+      sourceKey: timeoutSourceKey,
+      expectedPlaybackUrl: playbackUrl || null,
+      manifestReady: false,
+      mediaReady: false,
+      mediaReadyHls: null,
+      hls: null,
+      automatic: sourceSwitchAutomaticRef.current,
+    };
     dispatchPlaybackSessionEvent({
       type: 'sourceChange.started',
       attemptId: timeoutAttemptId,
@@ -4974,7 +4976,7 @@ function PlayPageClient() {
         Artplayer.USE_RAF = true;
 
         const finalizeSourceChangeMediaReady = (
-          trigger: 'canplay' | 'manifest'
+          trigger: 'canplay' | 'playing' | 'manifest'
         ): boolean => {
           const player = artPlayerRef.current;
           if (!player) {
@@ -4986,16 +4988,33 @@ function PlayPageClient() {
             if (sourceChangeAttempt.mediaFinalized) {
               return false;
             }
+            const belongsToCurrentAttempt =
+              sourceChangeAttempt.attemptId ===
+                sourceChangeAttemptIdRef.current &&
+              sourceChangeAttempt.sourceKey === getCurrentSourceKey();
+            if (trigger !== 'manifest' && belongsToCurrentAttempt) {
+              sourceChangeAttempt.mediaReady = true;
+              sourceChangeAttempt.mediaReadyHls =
+                ((player.video as HTMLVideoElement | undefined)?.hls as
+                  | Hls
+                  | undefined) || null;
+            }
+            const requiresHlsManifest = Boolean(
+              sourceChangeAttempt.hls || sourceChangeAttempt.mediaReadyHls
+            );
+            const hlsMediaReady =
+              !requiresHlsManifest ||
+              (sourceChangeAttempt.manifestReady &&
+                sourceChangeAttempt.hls != null &&
+                sourceChangeAttempt.mediaReadyHls === sourceChangeAttempt.hls &&
+                sourceChangeAttempt.hls ===
+                  (player.video as HTMLVideoElement | undefined)?.hls);
             if (
-              !sourceChangeAttempt.targetReady ||
-              (sourceChangeAttempt.hls != null &&
-                sourceChangeAttempt.hls !==
-                  (player.video as HTMLVideoElement | undefined)?.hls) ||
-              sourceChangeAttempt.attemptId !==
-                sourceChangeAttemptIdRef.current ||
-              sourceChangeAttempt.sourceKey !== getCurrentSourceKey()
+              !belongsToCurrentAttempt ||
+              !sourceChangeAttempt.mediaReady ||
+              !hlsMediaReady
             ) {
-              if (trigger === 'canplay') {
+              if (trigger !== 'manifest') {
                 emitPlaybackDebugLog(
                   'switch-source-canplay-ignored-stale',
                   '已忽略不属于当前换源尝试的 canplay',
@@ -5006,7 +5025,8 @@ function PlayPageClient() {
                     currentSourceKey: getCurrentSourceKey(),
                     expectedPlaybackUrl:
                       sourceChangeAttempt.expectedPlaybackUrl,
-                    targetReady: sourceChangeAttempt.targetReady,
+                    manifestReady: sourceChangeAttempt.manifestReady,
+                    mediaReady: sourceChangeAttempt.mediaReady,
                     trigger,
                   }
                 );
@@ -5310,18 +5330,13 @@ function PlayPageClient() {
                   urlMatches &&
                   video.hls === hls
                 ) {
-                  sourceChangeAttempt.targetReady = true;
+                  sourceChangeAttempt.manifestReady = true;
                   sourceChangeAttempt.hls = hls;
                   if (!sourceChangeAttempt.expectedPlaybackUrl) {
                     sourceChangeAttempt.expectedPlaybackUrl = url;
                   }
-                  // canplay may have already fired (and been ignored) before the
-                  // target manifest was ready; browsers often do not re-emit.
-                  // Finalize on the microtask so artPlayerRef is assigned after
-                  // `new Artplayer(...)` returns. Closing the preparation
-                  // transition is part of finalizing media readiness here: an
-                  // early canplay swallowed by the stale gate must not leave the
-                  // overlay stuck over a playing video.
+                  // A matching early canplay may already be latched. Finalize on
+                  // a microtask so the initial ArtPlayer assignment can finish.
                   queueMicrotask(() => {
                     if (finalizeSourceChangeMediaReady('manifest')) {
                       playbackPreparation.markFrameReady();
@@ -6060,6 +6075,7 @@ function PlayPageClient() {
           clearWaitingRecoveryTimer();
           markHlsPlaybackProgress(artPlayerRef.current.currentTime || 0);
           scheduleProgressiveSourceProbe();
+          finalizeSourceChangeMediaReady('playing');
           // Backstop for the preparation transition: if the video is genuinely
           // playing while the overlay is still covering (e.g. its canplay was
           // swallowed by the source-change stale gate, or the source is direct

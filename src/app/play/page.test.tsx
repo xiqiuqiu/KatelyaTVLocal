@@ -1350,12 +1350,18 @@ describe('PlayPage automatic source-switch resume', () => {
     });
 
     expect(plannerMock).not.toHaveBeenCalled();
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
     await waitFor(() => {
       expect(mockArtPlayerInstance?.currentTime).toBe(132);
     });
   });
 
   it('keeps the queued resume for the target source when the old source emits canplay', async () => {
+    mockAutoFireManifestParsed = false;
+    mockManifestParsedHandlers.length = 0;
+
     render(<PlayPage />);
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
@@ -1407,6 +1413,25 @@ describe('PlayPage automatic source-switch resume', () => {
       await Promise.resolve();
     });
 
+    const playerAfterSwitch = mockArtPlayerInstance;
+    if (!playerAfterSwitch) {
+      throw new Error('ArtPlayer mock missing after source switch');
+    }
+    playerAfterSwitch.currentTime = 0;
+    playerAfterSwitch.video.currentTime = 0;
+
+    await act(async () => {
+      const liveManifestHandler =
+        mockManifestParsedHandlers[mockManifestParsedHandlers.length - 1];
+      liveManifestHandler?.();
+      jest.runAllTicks();
+      await Promise.resolve();
+    });
+    expect(playerAfterSwitch.currentTime).toBe(0);
+
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
     await waitFor(() => {
       expect(mockArtPlayerInstance?.currentTime).toBe(115);
     });
@@ -1473,23 +1498,15 @@ describe('PlayPage automatic source-switch resume', () => {
     });
     expect(playerAfterSwitch.currentTime).toBe(0);
 
-    // Late target-manifest readiness must still apply resume even if canplay
-    // already fired too early (and must not require a third canplay).
-    mockAutoFireManifestParsed = true;
+    // Late target-manifest readiness completes the same attempt because the
+    // matching canplay evidence was latched for this HLS instance.
     await act(async () => {
-      (playerAfterSwitch as { switch?: string }).switch =
-        'https://example.com/new.m3u8';
-      await Promise.resolve();
+      const liveManifestHandler =
+        mockManifestParsedHandlers[mockManifestParsedHandlers.length - 1];
+      liveManifestHandler?.();
+      jest.runAllTicks();
       await Promise.resolve();
     });
-
-    if (playerAfterSwitch.currentTime !== 115) {
-      // Fallback signal: once the target manifest has armed targetReady,
-      // a subsequent canplay must be able to apply the queued resume.
-      act(() => {
-        mockArtPlayerEventHandlers.get('video:canplay')?.();
-      });
-    }
 
     expect(playerAfterSwitch.currentTime).toBe(115);
   });
@@ -1553,16 +1570,17 @@ describe('PlayPage automatic source-switch resume', () => {
     playerAfterSwitch.duration = 0;
     playerAfterSwitch.video.duration = 0;
 
-    mockAutoFireManifestParsed = true;
     await act(async () => {
-      (playerAfterSwitch as { switch?: string }).switch =
-        'https://example.com/new.m3u8';
-      await Promise.resolve();
+      const liveManifestHandler =
+        mockManifestParsedHandlers[mockManifestParsedHandlers.length - 1];
+      liveManifestHandler?.();
+      jest.runAllTicks();
       await Promise.resolve();
     });
 
-    // MANIFEST_PARSED arms targetReady; canplay finalizes synchronously (the
-    // queued microtask is not required for this signal).
+    // Manifest parsing alone must not complete the attempt or consume resume.
+    expect(playerAfterSwitch.currentTime).toBe(0);
+
     act(() => {
       mockArtPlayerEventHandlers.get('video:canplay')?.();
     });
@@ -1721,10 +1739,7 @@ describe('PlayPage preparation transition completion', () => {
     expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(1);
   });
 
-  it('dismisses the preparation overlay when the switched source manifest finalizes after an early swallowed canplay', async () => {
-    // Early canplay before targetReady is deliberately ignored (stale gate),
-    // but the MANIFEST_PARSED fallback must still close the transition instead
-    // of leaving the poster overlay stuck over a playing video.
+  it('dismisses the preparation overlay after matching canplay and manifest evidence', async () => {
     mockAutoFireManifestParsed = false;
     mockManifestParsedHandlers.length = 0;
     mockMarkPreparationFrameReady.mockClear();
@@ -1747,26 +1762,13 @@ describe('PlayPage preparation transition completion', () => {
       throw new Error('ArtPlayer mock missing after source switch');
     }
 
-    // Load the target source's media playlist without auto-firing its manifest.
-    mockAutoFireManifestParsed = false;
-    await act(async () => {
-      (playerAfterSwitch as { switch?: string }).switch =
-        'https://example.com/new.m3u8';
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    // Early canplay is swallowed by the stale gate before targetReady.
+    // Early canplay is retained, but cannot close the transition by itself.
     act(() => {
       mockArtPlayerEventHandlers.get('video:canplay')?.();
     });
     expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(0);
 
-    // Late MANIFEST_PARSED arms targetReady and finalizes media readiness; this
-    // fallback must also call markFrameReady even if the browser never re-emits
-    // canplay. Only the live handler (the one bound to the current hls) can
-    // fire in production — the mock keeps stale handlers from destroyed
-    // players, so fire the latest one and flush the faked microtask queue.
+    // The matching manifest completes the attempt without another canplay.
     await act(async () => {
       const liveManifestHandler =
         mockManifestParsedHandlers[mockManifestParsedHandlers.length - 1];
@@ -1776,5 +1778,40 @@ describe('PlayPage preparation transition completion', () => {
     });
 
     expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the source timeout active when only the manifest is ready', async () => {
+    mockAutoFireManifestParsed = false;
+    mockManifestParsedHandlers.length = 0;
+    mockMarkPreparationFrameReady.mockClear();
+
+    await settleWithSources();
+    const reduceMock = jest.mocked(reducePlaybackSession);
+    reduceMock.mockClear();
+
+    await act(async () => {
+      const liveManifestHandler =
+        mockManifestParsedHandlers[mockManifestParsedHandlers.length - 1];
+      liveManifestHandler?.();
+      jest.runAllTicks();
+      await Promise.resolve();
+    });
+
+    expect(mockMarkPreparationFrameReady).toHaveBeenCalledTimes(0);
+    expect(
+      reduceMock.mock.calls.some(
+        ([, event]) => event.type === 'sourceChange.completed'
+      )
+    ).toBe(false);
+
+    act(() => {
+      jest.advanceTimersByTime(25000);
+    });
+
+    expect(
+      reduceMock.mock.calls.some(
+        ([, event]) => event.type === 'timer.sourceChangeTimeout'
+      )
+    ).toBe(true);
   });
 });
