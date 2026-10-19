@@ -1,5 +1,6 @@
 import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 
+import { getAuthInfoFromCookie } from '@/lib/auth';
 import { savePlaybackFeedback } from '@/lib/source-ranking/feedback';
 import { getSourceRankingRuntime } from '@/lib/source-ranking/runtime';
 
@@ -86,6 +87,10 @@ jest.mock('@/lib/source-ranking/feedback', () => ({
   savePlaybackFeedback: jest.fn(),
 }));
 
+jest.mock('@/lib/auth', () => ({
+  getAuthInfoFromCookie: jest.fn(),
+}));
+
 jest.mock('@/lib/source-ranking/runtime', () => ({
   getSourceRankingRuntime: jest.fn(),
 }));
@@ -97,6 +102,8 @@ describe('source feedback route', () => {
     >;
   const mockedSavePlaybackFeedback =
     savePlaybackFeedback as jest.MockedFunction<typeof savePlaybackFeedback>;
+  const mockedGetAuthInfoFromCookie =
+    getAuthInfoFromCookie as jest.MockedFunction<typeof getAuthInfoFromCookie>;
   const mockedGetSourceRankingRuntime =
     getSourceRankingRuntime as jest.MockedFunction<
       typeof getSourceRankingRuntime
@@ -108,6 +115,12 @@ describe('source feedback route', () => {
   });
 
   beforeEach(() => {
+    mockedGetAuthInfoFromCookie.mockResolvedValue({
+      version: 2,
+      username: 'viewer',
+      role: 'user',
+      issuedAt: 1710000000,
+    });
     mockedGetOptionalRequestContext.mockReturnValue({
       env: {
         DB: { prepare: jest.fn() },
@@ -115,6 +128,57 @@ describe('source feedback route', () => {
       cf: {},
       ctx: {},
     });
+  });
+
+  it('rejects unauthenticated feedback', async () => {
+    mockedGetAuthInfoFromCookie.mockResolvedValue(null);
+
+    const response = await POST(
+      new Request('https://app.example.com/api/source-feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sourceKey: 'alpha',
+          playbackMode: 'direct',
+          startupSuccess: true,
+        }),
+      })
+    );
+
+    expect(response.status).toBe(401);
+    expect(mockedSavePlaybackFeedback).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ sourceKey: 'alpha', playbackMode: 'invalid', startupSuccess: true }],
+    [{ sourceKey: 'alpha', playbackMode: 'direct' }],
+    [
+      {
+        sourceKey: 'alpha',
+        playbackMode: 'direct',
+        startupSuccess: true,
+        startupTimeMs: -1,
+      },
+    ],
+    [
+      {
+        sourceKey: 'alpha',
+        playbackMode: 'direct',
+        startupSuccess: true,
+        sessionError: 'x'.repeat(257),
+      },
+    ],
+  ])('rejects invalid feedback payload %#', async (payload) => {
+    const response = await POST(
+      new Request('https://app.example.com/api/source-feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockedSavePlaybackFeedback).not.toHaveBeenCalled();
   });
 
   afterEach(() => {
@@ -158,6 +222,7 @@ describe('source feedback route', () => {
       })
     );
     expect(response.status).toBe(200);
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
     await expect(response.json()).resolves.toEqual({ saved: true });
   });
 
