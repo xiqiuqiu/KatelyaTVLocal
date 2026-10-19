@@ -79,6 +79,13 @@ export type SelectRecoveryCandidateInput = BuildSourceAvailabilityListInput & {
   allowUnverifiedFallback?: boolean;
 };
 
+export function resolveSourceStatusEvidence(
+  currentStatus: SourceStatus | null | undefined,
+  rememberedStatus: SourceStatus | null | undefined
+): SourceStatus | undefined {
+  return currentStatus ?? rememberedStatus ?? undefined;
+}
+
 function hasBackendPlayableMetrics(info: SourceVideoInfo | undefined): boolean {
   return Boolean(
     info &&
@@ -326,6 +333,18 @@ export function buildSourceAvailabilityList({
       autoRecovery,
     };
   });
+}
+
+export function selectInitialSourceCandidate(
+  input: BuildSourceAvailabilityListInput
+): SourceAvailabilityItem | null {
+  return (
+    buildSourceAvailabilityList(input).find((item) =>
+      ['direct', 'playable', 'unknown', 'probing'].includes(
+        item.availabilityKind
+      )
+    ) || null
+  );
 }
 
 function pickAutoRecoveryCandidate(
