@@ -331,28 +331,28 @@ function HomeCatalog({
           </div>
           <ContinueWatching tvMode={tvMode} />
 
-          {HomePosterSection({
-            href: '/douban?type=movie',
-            items: hotMovies.slice(0, 12),
-            loading,
-            title: pageSectionLabels.popularMovies,
-            tvMode,
-            type: 'movie',
-          })}
-          {HomePosterSection({
-            href: '/douban?type=tv',
-            items: hotTvShows.slice(0, 10),
-            loading,
-            title: pageSectionLabels.popularShows,
-            tvMode,
-          })}
-          {HomePosterSection({
-            href: '/douban?type=show',
-            items: hotVarietyShows.slice(0, 10),
-            loading,
-            title: pageSectionLabels.popularVariety,
-            tvMode,
-          })}
+          <HomePosterSection
+            href='/douban?type=movie'
+            items={hotMovies.slice(0, 12)}
+            loading={loading}
+            title={pageSectionLabels.popularMovies}
+            tvMode={tvMode}
+            type='movie'
+          />
+          <HomePosterSection
+            href='/douban?type=tv'
+            items={hotTvShows.slice(0, 10)}
+            loading={loading}
+            title={pageSectionLabels.popularShows}
+            tvMode={tvMode}
+          />
+          <HomePosterSection
+            href='/douban?type=show'
+            items={hotVarietyShows.slice(0, 10)}
+            loading={loading}
+            title={pageSectionLabels.popularVariety}
+            tvMode={tvMode}
+          />
 
           {/* 首页底部 Logo */}
           <BottomKatelyaLogo />
