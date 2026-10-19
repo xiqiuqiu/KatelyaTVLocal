@@ -17,7 +17,10 @@ describe('cloudflare-first source preference', () => {
     headers: { get: (key: string) => string | null };
     private readonly bodyText: string;
 
-    constructor(bodyText = '', init?: { status?: number; headers?: Record<string, string> }) {
+    constructor(
+      bodyText = '',
+      init?: { status?: number; headers?: Record<string, string> }
+    ) {
       this.status = init?.status ?? 200;
       this.ok = this.status >= 200 && this.status < 300;
       const normalizedHeaders = Object.fromEntries(
@@ -60,6 +63,21 @@ describe('cloudflare-first source preference', () => {
       this.url = url;
       this.method = init?.method || 'GET';
     }
+  }
+
+  function hlsResponse(
+    body: string,
+    options: { status?: number; cors?: boolean } = {}
+  ) {
+    return new MockResponse(body, {
+      status: options.status,
+      headers: {
+        'content-type': 'application/vnd.apple.mpegurl',
+        ...(options.cors === false
+          ? {}
+          : { 'access-control-allow-origin': '*' }),
+      },
+    });
   }
 
   beforeEach(() => {
@@ -125,12 +143,7 @@ describe('cloudflare-first source preference', () => {
       },
     ]);
 
-    expect(sorted.map((item) => item.sourceKey)).toEqual([
-      'a',
-      'b',
-      'c',
-      'd',
-    ]);
+    expect(sorted.map((item) => item.sourceKey)).toEqual(['a', 'b', 'c', 'd']);
   });
 
   it('reuses cloudflare cache results before hitting upstream again', async () => {
@@ -332,16 +345,13 @@ describe('cloudflare-first source preference', () => {
       global.fetch = jest
         .fn()
         .mockResolvedValueOnce(
-          new MockResponse(
-            '#EXTM3U\nhttps://media.example.com/segment.ts',
-            {
-              status: 200,
-              headers: {
-                'access-control-allow-origin': '*',
-                'content-type': 'application/vnd.apple.mpegurl',
-              },
-            }
-          )
+          new MockResponse('#EXTM3U\nhttps://media.example.com/segment.ts', {
+            status: 200,
+            headers: {
+              'access-control-allow-origin': '*',
+              'content-type': 'application/vnd.apple.mpegurl',
+            },
+          })
         )
         .mockResolvedValueOnce(
           new MockResponse('', {
@@ -374,6 +384,139 @@ describe('cloudflare-first source preference', () => {
         'https://media.example.com/segment.ts',
         expect.objectContaining({ redirect: 'manual' })
       );
+    });
+
+    it('follows a master playlist through its variant to the first media segment', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(
+          hlsResponse(
+            '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000\nvariant.m3u8'
+          )
+        )
+        .mockResolvedValueOnce(hlsResponse('#EXTM3U\n#EXTINF:6,\nsegment.ts'))
+        .mockResolvedValueOnce(
+          new MockResponse('', {
+            status: 206,
+            headers: { 'access-control-allow-origin': '*' },
+          })
+        );
+
+      const result = await probeSourcePlaybackWithCache(
+        'https://media.example.com/master.m3u8',
+        'https://app.example.com'
+      );
+
+      expect(result.kind).toBe('direct');
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      expect(global.fetch).toHaveBeenLastCalledWith(
+        'https://media.example.com/segment.ts',
+        expect.objectContaining({ redirect: 'manual' })
+      );
+    });
+
+    it('marks a source unavailable when its variant loads but its segment fails', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(hlsResponse('#EXTM3U\nvariant.m3u8'))
+        .mockResolvedValueOnce(hlsResponse('#EXTM3U\nsegment.ts'))
+        .mockResolvedValueOnce(new MockResponse('', { status: 404 }));
+
+      const result = await probeSourcePlaybackWithCache(
+        'https://media.example.com/master-failing.m3u8',
+        'https://app.example.com'
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind: 'unavailable',
+          reason: 'HLS 播放目标不可达: 404',
+          upstreamStatus: 404,
+        })
+      );
+    });
+
+    it('does not mark an empty media playlist as playable', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(hlsResponse('#EXTM3U\n#EXT-X-ENDLIST'));
+
+      const result = await probeSourcePlaybackWithCache(
+        'https://media.example.com/empty.m3u8',
+        'https://app.example.com'
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind: 'unavailable',
+          reason: '播放列表未包含可探测的媒体对象',
+        })
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('requires CORS on every playlist and media layer for direct playback', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(hlsResponse('#EXTM3U\nvariant.m3u8'))
+        .mockResolvedValueOnce(
+          hlsResponse('#EXTM3U\nsegment.ts', { cors: false })
+        )
+        .mockResolvedValueOnce(
+          new MockResponse('', {
+            status: 206,
+            headers: { 'access-control-allow-origin': '*' },
+          })
+        );
+
+      const result = await probeSourcePlaybackWithCache(
+        'https://media.example.com/master-cors.m3u8',
+        'https://app.example.com'
+      );
+
+      expect(result.kind).toBe('proxy');
+    });
+
+    it('stops cyclic playlists without refetching the same target', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(hlsResponse('#EXTM3U\nloop.m3u8'))
+        .mockResolvedValueOnce(hlsResponse('#EXTM3U\nloop.m3u8'));
+
+      const result = await probeSourcePlaybackWithCache(
+        'https://media.example.com/master-loop.m3u8',
+        'https://app.example.com'
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind: 'unavailable',
+          reason: '播放列表存在循环引用',
+        })
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops playlist nesting at the fixed request budget', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(hlsResponse('#EXTM3U\nlevel-1.m3u8'))
+        .mockResolvedValueOnce(hlsResponse('#EXTM3U\nlevel-2.m3u8'))
+        .mockResolvedValueOnce(hlsResponse('#EXTM3U\nlevel-3.m3u8'))
+        .mockResolvedValueOnce(hlsResponse('#EXTM3U\nsegment.ts'));
+
+      const result = await probeSourcePlaybackWithCache(
+        'https://media.example.com/master-deep.m3u8',
+        'https://app.example.com'
+      );
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind: 'unavailable',
+          reason: '播放列表嵌套超过探测上限',
+        })
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(4);
     });
   });
 });

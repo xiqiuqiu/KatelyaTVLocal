@@ -2,15 +2,13 @@ import {
   fetchWithValidatedRedirects,
   validateProxyTargetUrl,
 } from './proxy-url-policy';
-import {
-  SourceProbeResult,
-  SourceStatusKind,
-} from './types';
+import { SourceProbeResult, SourceStatusKind } from './types';
 
-const SOURCE_PROBE_CACHE_VERSION = 'v1';
+const SOURCE_PROBE_CACHE_VERSION = 'v2';
 const SOURCE_PROBE_POSITIVE_TTL_SECONDS = 10 * 60;
 const SOURCE_PROBE_NEGATIVE_TTL_SECONDS = 2 * 60;
 const SOURCE_PROBE_FETCH_TIMEOUT_MS = 5000;
+const SOURCE_PROBE_MAX_NESTED_REQUESTS = 3;
 const PLAYLIST_CONTENT_TYPES = [
   'application/vnd.apple.mpegurl',
   'application/x-mpegurl',
@@ -133,36 +131,105 @@ function getFirstPlaylistTarget(
 
 async function probeNestedTarget(
   targetUrl: string,
+  rootUrl: string,
   origin: string,
   options?: SourceProbeOptions
-): Promise<{ ok: boolean; corsAccessible: boolean; status: number }> {
-  const validation = validateProxyTargetUrl(targetUrl);
-  if (!validation.ok) {
-    throw new Error(validation.reason);
+): Promise<{
+  ok: boolean;
+  corsAccessible: boolean;
+  status?: number;
+  reason?: string;
+}> {
+  const rootValidation = validateProxyTargetUrl(rootUrl);
+  const visited = new Set(rootValidation.ok ? [rootValidation.url.href] : []);
+  let currentUrl = targetUrl;
+  let corsAccessible = true;
+
+  for (
+    let requestCount = 0;
+    requestCount < SOURCE_PROBE_MAX_NESTED_REQUESTS;
+    requestCount += 1
+  ) {
+    const validation = validateProxyTargetUrl(currentUrl);
+    if (!validation.ok) {
+      return {
+        ok: false,
+        corsAccessible: false,
+        reason: validation.reason,
+      };
+    }
+
+    currentUrl = validation.url.href;
+    if (visited.has(currentUrl)) {
+      return {
+        ok: false,
+        corsAccessible,
+        reason: '播放列表存在循环引用',
+      };
+    }
+    visited.add(currentUrl);
+
+    const response = await fetchValidatedProbeTarget(
+      currentUrl,
+      {
+        headers: buildUpstreamHeaders(
+          currentUrl,
+          currentUrl.toLowerCase().includes('.m3u8') ? null : 'bytes=0-1'
+        ),
+      },
+      options
+    );
+    const ok = response.ok || response.status === 206;
+    corsAccessible = corsAccessible && isCorsAccessible(response, origin);
+
+    if (!ok) {
+      return {
+        ok: false,
+        corsAccessible,
+        status: response.status,
+        reason: `HLS 播放目标不可达: ${response.status}`,
+      };
+    }
+
+    if (!isPlaylistResponse(currentUrl, response.headers.get('content-type'))) {
+      return { ok: true, corsAccessible, status: response.status };
+    }
+
+    if (requestCount === SOURCE_PROBE_MAX_NESTED_REQUESTS - 1) {
+      return {
+        ok: false,
+        corsAccessible,
+        status: response.status,
+        reason: '播放列表嵌套超过探测上限',
+      };
+    }
+
+    const nextTarget = getFirstPlaylistTarget(
+      await response.text(),
+      currentUrl
+    );
+    if (!nextTarget) {
+      return {
+        ok: false,
+        corsAccessible,
+        status: response.status,
+        reason: '播放列表未包含可探测的媒体对象',
+      };
+    }
+    currentUrl = nextTarget;
   }
 
-  const isNestedPlaylist = targetUrl.toLowerCase().includes('.m3u8');
-  const response = await fetchValidatedProbeTarget(
-    validation.url.href,
-    {
-      headers: buildUpstreamHeaders(
-        validation.url.href,
-        isNestedPlaylist ? null : 'bytes=0-1'
-      ),
-    },
-    options
-  );
-
   return {
-    ok: response.ok || response.status === 206,
-    corsAccessible: isCorsAccessible(response, origin),
-    status: response.status,
+    ok: false,
+    corsAccessible,
+    reason: '播放列表嵌套超过探测上限',
   };
 }
 
 function getCloudflareCache(): Cache | null {
-  const cacheApi = (globalThis as { caches?: CacheStorage & { default?: Cache } })
-    .caches;
+  const cacheApi = (
+    globalThis as { caches?: CacheStorage & { default?: Cache } }
+  ).caches;
 
   if (cacheApi?.default) {
     return cacheApi.default;
@@ -179,7 +246,9 @@ function buildProbeCacheRequest(targetUrl: string, origin: string): Request {
   return new Request(cacheUrl.toString(), { method: 'GET' });
 }
 
-function getStatusPriority(kind: SourceStatusKind | SourceProbeResult['kind']): number {
+function getStatusPriority(
+  kind: SourceStatusKind | SourceProbeResult['kind']
+): number {
   switch (kind) {
     case 'direct':
       return 0;
@@ -250,36 +319,27 @@ export async function probeSourcePlaybackUpstream(
     const playlistContent = await upstreamResponse.text();
     const nextTarget = getFirstPlaylistTarget(playlistContent, targetUrl);
 
-    if (nextTarget) {
-      const nestedValidation = validateProxyTargetUrl(nextTarget);
-      if (!nestedValidation.ok) {
-        return {
-          kind: 'unavailable',
-          reason: nestedValidation.reason,
-          domain,
-          probeTimeMs: Date.now() - startedAt,
-        };
-      }
-    }
-
     if (!nextTarget) {
       return {
-        kind: playlistCorsAccessible ? 'direct' : 'proxy',
-        reason: playlistCorsAccessible
-          ? '播放列表可直接访问'
-          : '播放列表缺少跨域头，需走代理',
+        kind: 'unavailable',
+        reason: '播放列表未包含可探测的媒体对象',
         domain,
         upstreamStatus: upstreamResponse.status,
         probeTimeMs,
       };
     }
 
-    const nestedProbe = await probeNestedTarget(nextTarget, origin, options);
+    const nestedProbe = await probeNestedTarget(
+      nextTarget,
+      targetUrl,
+      origin,
+      options
+    );
 
     if (!nestedProbe.ok) {
       return {
         kind: 'unavailable',
-        reason: `首个媒体片段不可达: ${nestedProbe.status}`,
+        reason: nestedProbe.reason || '首个媒体对象不可达',
         domain,
         upstreamStatus: nestedProbe.status,
         probeTimeMs: Date.now() - startedAt,
@@ -316,8 +376,9 @@ export async function probeSourcePlaybackWithCache(
   if (cache) {
     const cachedResponse = await cache.match(cacheRequest);
     if (cachedResponse) {
-      const cachedPayload =
-        (await cachedResponse.json().catch(() => null)) as SourceProbeMetrics | null;
+      const cachedPayload = (await cachedResponse
+        .json()
+        .catch(() => null)) as SourceProbeMetrics | null;
       if (cachedPayload) {
         return {
           ...cachedPayload,
@@ -360,9 +421,9 @@ export function getBrowserProbeBudget(totalCandidates: number): number {
   return 5;
 }
 
-export function sortSourcePreferenceResults<T extends SourcePreferenceProbeResult>(
-  results: T[]
-): T[] {
+export function sortSourcePreferenceResults<
+  T extends SourcePreferenceProbeResult
+>(results: T[]): T[] {
   return [...results].sort((a, b) => {
     const priorityGap = getStatusPriority(a.kind) - getStatusPriority(b.kind);
     if (priorityGap !== 0) {
