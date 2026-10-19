@@ -374,7 +374,8 @@ function buildVideoCardFacts({
     showContinue: isLandscape,
     showDoubanLink: !tvMode && config.showDoubanLink && !!actualDoubanId,
     showEpisodeBadge: !!actualEpisodes && actualEpisodes > 1,
-    showFavoriteBar: config.showHeart || config.showCheckCircle,
+    showFavoriteBar:
+      !(tvMode && isLandscape) && (config.showHeart || config.showCheckCircle),
     showHeartButton: !!(
       config.showHeart &&
       showFavoriteAction &&

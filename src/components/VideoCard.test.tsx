@@ -279,6 +279,15 @@ describe('VideoCard favorites store integration', () => {
     ).toHaveAttribute('tabindex', '-1');
     const resume = screen.getByRole('button', { name: '继续播放 续看' });
     expect(resume).toHaveAttribute('data-tv-primary', 'true');
+    expect(
+      screen.getAllByRole('button').filter((button) => button.tabIndex >= 0)
+    ).toEqual([resume]);
+    expect(
+      screen.queryByRole('button', { name: '删除播放记录' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '切换收藏' })
+    ).not.toBeInTheDocument();
     fireEvent.click(resume);
     const params = new URLSearchParams(
       mockPlaybackPreparationStart.mock.calls[0][0].href.split('?')[1]
@@ -287,6 +296,25 @@ describe('VideoCard favorites store integration', () => {
     expect(params.get('source')).toBe('source-a');
     expect(params.get('id')).toBe('id+hash#value');
     expect(params.get('tv')).toBe('1');
+  });
+
+  it('keeps favorite and history management on web resume cards', () => {
+    render(
+      <VideoCard
+        layout='landscape'
+        id='1'
+        source='source-a'
+        title='续看'
+        from='playrecord'
+      />
+    );
+
+    expect(
+      screen.getByRole('button', { name: '删除播放记录' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '切换收藏' })
+    ).toBeInTheDocument();
   });
 
   it('updates only the matching card when favorites change through the shared store', async () => {
