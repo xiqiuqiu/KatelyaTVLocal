@@ -24,6 +24,8 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import useTvBrowseNavigation from '@/components/useTvBrowseNavigation';
 
 type AuthMode = 'login' | 'register';
+const REMEMBER_LOGIN_KEY = 'katelya.rememberLogin';
+const REMEMBER_USERNAME_KEY = 'katelya.rememberedUsername';
 
 declare global {
   interface Window {
@@ -54,6 +56,7 @@ function LoginPageClient() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [turnstileToken, setTurnstileToken] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +66,9 @@ function LoginPageClient() {
   const [turnstileSiteKey, setTurnstileSiteKey] = useState('');
   const [loginTurnstileRequired, setLoginTurnstileRequired] = useState(false);
   const [registerInviteRequired, setRegisterInviteRequired] = useState(true);
-  const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [authMode, setAuthMode] = useState<AuthMode>(() =>
+    getInviteCodeFromSearchParams(searchParams) ? 'register' : 'login'
+  );
   useEffect(() => {
     const inviteCodeFromUrl = getInviteCodeFromSearchParams(searchParams);
     if (inviteCodeFromUrl) {
@@ -89,6 +94,18 @@ function LoginPageClient() {
       );
     }
   }, []);
+
+  useEffect(() => {
+    if (authMode !== 'login') return;
+    try {
+      const remembered = localStorage.getItem(REMEMBER_LOGIN_KEY) === 'true';
+      setRememberMe(remembered);
+      if (remembered)
+        setUsername(localStorage.getItem(REMEMBER_USERNAME_KEY) || '');
+    } catch {
+      // Login remains available when device storage is blocked.
+    }
+  }, [authMode]);
 
   useEffect(() => {
     setTurnstileToken('');
@@ -156,10 +173,24 @@ function LoginPageClient() {
           password,
           ...(shouldAskUsername ? { username } : {}),
           turnstileToken,
+          rememberMe,
         }),
       });
 
       if (res.ok) {
+        try {
+          if (rememberMe) {
+            localStorage.setItem(REMEMBER_LOGIN_KEY, 'true');
+            if (shouldAskUsername)
+              localStorage.setItem(REMEMBER_USERNAME_KEY, username);
+            else localStorage.removeItem(REMEMBER_USERNAME_KEY);
+          } else {
+            localStorage.removeItem(REMEMBER_LOGIN_KEY);
+            localStorage.removeItem(REMEMBER_USERNAME_KEY);
+          }
+        } catch {
+          // A successful server session does not depend on local preferences.
+        }
         window.location.href = getSafeRedirectPath(
           searchParams.get('redirect'),
           '/'
@@ -331,7 +362,11 @@ function LoginPageClient() {
                 </p>
               )}
 
-              <form onSubmit={handleAuthSubmit} className='space-y-5'>
+              <form
+                onSubmit={handleAuthSubmit}
+                autoComplete='on'
+                className='space-y-5'
+              >
                 {shouldAskUsername && (
                   <div>
                     <label
@@ -347,6 +382,7 @@ function LoginPageClient() {
                       />
                       <input
                         id='username'
+                        name='username'
                         type='text'
                         autoComplete='username'
                         data-tv-primary
@@ -382,6 +418,7 @@ function LoginPageClient() {
                     />
                     <input
                       id='password'
+                      name='password'
                       type={showPassword ? 'text' : 'password'}
                       autoComplete={
                         authMode === 'register'
@@ -420,6 +457,20 @@ function LoginPageClient() {
                     </button>
                   </div>
                 </div>
+
+                {authMode === 'login' && (
+                  <label className='ui-auth-label flex min-h-11 cursor-pointer items-center gap-3 text-sm text-[rgb(var(--ui-text-muted))]'>
+                    <input
+                      name='rememberMe'
+                      type='checkbox'
+                      checked={rememberMe}
+                      onChange={(event) => setRememberMe(event.target.checked)}
+                      className='h-5 w-5 shrink-0 accent-[rgb(var(--ui-accent))]'
+                      data-tv-focus-key='auth-remember-login'
+                    />
+                    在此设备保持登录 30 天
+                  </label>
+                )}
 
                 {authMode === 'register' &&
                   shouldAskUsername &&

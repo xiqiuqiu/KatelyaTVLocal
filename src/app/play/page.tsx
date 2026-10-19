@@ -619,7 +619,7 @@ function PlayVideoSurface({
 
         {/* In-Player Failure State：恢复阶梯耗尽，仍留在播放页 (#48) */}
         {session.inPlayerFailure && (
-          <div className='absolute inset-0 z-40 flex items-center justify-center bg-black/85 px-4'>
+          <div className='absolute inset-0 z-[80] flex items-center justify-center bg-black/85 px-4'>
             <div className='w-full max-w-sm rounded-ui-md border border-white/15 bg-black/90 p-5 text-center text-white shadow-ui-strong'>
               <p className='text-xs font-semibold uppercase tracking-[0.22em] text-amber-200/90'>
                 播放中断
@@ -664,7 +664,7 @@ function PlayVideoSurface({
         )}
 
         {/* 换源加载蒙层 */}
-        {session.isVideoLoading && (
+        {session.isVideoLoading && !session.inPlayerFailure && (
           <PlayerLoadingOverlay stage={session.videoLoadingStage} />
         )}
 

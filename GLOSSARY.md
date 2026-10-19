@@ -33,7 +33,7 @@ On Douban browsing, login, and the user menu, a UI Alignment Slice only applies 
 _Avoid_: treating Douban/login/menu structural redesign as part of the same slice as home/search/play Structural Alignment Targets
 
 **Playback Preparation Transition**:
-The cancellable visual bridge from a user selecting a title until the first playable video frame, terminal failure, or return to the preserved browsing context. It presents the selected title and one neutral preparation state while only observing existing playback decisions.
+The cancellable visual bridge from a user selecting a title until the destination player surface can take over, terminal failure, or return to the preserved browsing context. Network and first-frame preparation then remain visible inside the Playback Session. It presents the selected title and one neutral preparation state while only observing existing playback decisions.
 _Avoid_: loading progress wizard; source-search or source-ranking explanation; fixed-duration brand intro; owning timeout, source switching, or recovery policy
 
 **Playback Session**:

@@ -43,7 +43,7 @@ const inactiveApi: PlaybackPreparationApi = {
 const PlaybackPreparationContext =
   createContext<PlaybackPreparationApi>(inactiveApi);
 
-const ENTER_DURATION_MS = 320;
+const ENTER_DURATION_MS = 220;
 const READY_FADE_MS = 200;
 const LATE_NAVIGATION_TTL_MS = 30_000;
 
@@ -129,13 +129,17 @@ function PlaybackPreparationOverlay({
   returning,
   ready,
   onCancel,
+  onSurfaceReady,
 }: {
   intent: PlaybackPreparationIntent;
   returning: boolean;
   ready: boolean;
   onCancel: () => void;
+  onSurfaceReady: () => void;
 }) {
-  const reducedMotion = readReducedMotion();
+  const reducedMotion =
+    readReducedMotion() ||
+    isTvMode(new URL(intent.href, window.location.origin).searchParams);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const overlayRootRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(returning);
@@ -160,20 +164,39 @@ function PlaybackPreparationOverlay({
   }, [ready]);
 
   useEffect(() => {
-    const update = () => setTarget(getPlayerRect());
-    const observer = new MutationObserver(() => {
-      if (document.querySelector('[data-playback-preparation-target]')) {
-        update();
+    let handoff: number | null = null;
+    const update = () => {
+      const surface = document.querySelector<HTMLElement>(
+        '[data-playback-preparation-target]'
+      );
+      if (!surface || surface.getBoundingClientRect().width <= 0) return;
+      const next = getPlayerRect();
+      setTarget((previous) =>
+        previous.top === next.top &&
+        previous.left === next.left &&
+        previous.width === next.width &&
+        previous.height === next.height
+          ? previous
+          : next
+      );
+      if (hrefMatchesTarget(currentHref(), intent.href) && handoff === null) {
+        // Hand off to the page shell; network preparation continues inside it.
+        handoff = window.setTimeout(
+          onSurfaceReady,
+          reducedMotion ? 80 : ENTER_DURATION_MS
+        );
       }
-    });
+    };
+    const observer = new MutationObserver(update);
     update();
     observer.observe(document.body, { childList: true, subtree: true });
     window.addEventListener('resize', update);
     return () => {
       observer.disconnect();
+      if (handoff !== null) window.clearTimeout(handoff);
       window.removeEventListener('resize', update);
     };
-  }, []);
+  }, [intent.href, onSurfaceReady, reducedMotion]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => setExpanded(!returning));
@@ -186,7 +209,16 @@ function PlaybackPreparationOverlay({
     }
   }, [ready, returning]);
 
-  const rect = reducedMotion ? target : expanded ? target : intent.rect;
+  const rect = expanded ? target : intent.rect;
+  const scale = Math.min(
+    rect.width / intent.rect.width,
+    rect.height / intent.rect.height
+  );
+  const transform = `translate3d(${
+    rect.left + (rect.width - intent.rect.width * scale) / 2 - intent.rect.left
+  }px, ${
+    rect.top + (rect.height - intent.rect.height * scale) / 2 - intent.rect.top
+  }px, 0) scale(${scale})`;
   const duration = reducedMotion ? 120 : ENTER_DURATION_MS;
   const statusTop = Math.min(
     target.top + target.height + 18,
@@ -213,10 +245,10 @@ function PlaybackPreparationOverlay({
     >
       <div
         aria-hidden
-        className='absolute inset-0 bg-black/80 backdrop-blur-md'
+        className='absolute inset-0 bg-black/65'
         style={{
           opacity: expanded && !returning ? 1 : 0,
-          transition: `opacity ${duration}ms ease`,
+          transition: `opacity ${duration}ms cubic-bezier(0.23,1,0.32,1)`,
         }}
       />
 
@@ -224,15 +256,17 @@ function PlaybackPreparationOverlay({
         className='absolute overflow-hidden bg-black shadow-[0_24px_80px_rgba(0,0,0,0.55)]'
         data-testid='playback-preparation-visual'
         style={{
-          top: rect.top,
-          left: rect.left,
-          width: rect.width,
-          height: rect.height,
-          borderRadius: expanded ? 18 : 14,
+          top: intent.rect.top,
+          left: intent.rect.left,
+          width: intent.rect.width,
+          height: intent.rect.height,
+          transformOrigin: 'top left',
+          transform: reducedMotion ? 'none' : transform,
+          borderRadius: 12,
           opacity: reducedMotion ? (expanded ? 1 : 0) : 1,
           transition: reducedMotion
             ? `opacity ${duration}ms linear`
-            : `top ${duration}ms cubic-bezier(0.22,1,0.36,1), left ${duration}ms cubic-bezier(0.22,1,0.36,1), width ${duration}ms cubic-bezier(0.22,1,0.36,1), height ${duration}ms cubic-bezier(0.22,1,0.36,1), border-radius ${duration}ms ease`,
+            : `transform ${duration}ms cubic-bezier(0.23,1,0.32,1)`,
         }}
       >
         <Image
@@ -360,51 +394,45 @@ export default function PlaybackPreparationProvider({
     [clearFinishTimer, router]
   );
 
-  const markFrameReady = useCallback(() => {
-    const current = stateRef.current;
-    if (
-      !current.intent ||
-      (current.phase !== 'entering' && current.phase !== 'preparing')
-    ) {
-      return;
-    }
-    if (
-      pathnameOf(current.intent.origin.href) ===
-        pathnameOf(current.intent.href) &&
-      !hrefMatchesTarget(currentHref(), current.intent.href)
-    ) {
-      return;
-    }
-    dispatch({ type: 'frameReady', generation: current.generation });
-    clearFinishTimer();
-    finishTimerRef.current = window.setTimeout(() => {
-      setOverlayDismissed(true);
-      finishTimerRef.current = null;
-    }, READY_FADE_MS);
-  }, [clearFinishTimer]);
+  const finishPreparation = useCallback(
+    (type: 'frameReady' | 'surfaceReady' | 'terminalFailure') => {
+      const current = stateRef.current;
+      if (
+        !current.intent ||
+        (current.phase !== 'entering' && current.phase !== 'preparing')
+      )
+        return;
+      if (
+        !hrefMatchesTarget(currentHref(), current.intent.href) &&
+        pathnameOf(current.intent.origin.href) ===
+          pathnameOf(current.intent.href)
+      )
+        return;
+      dispatch({ type, generation: current.generation });
+      clearFinishTimer();
+      finishTimerRef.current = window.setTimeout(
+        () => {
+          setOverlayDismissed(true);
+          finishTimerRef.current = null;
+        },
+        readReducedMotion() ? 80 : READY_FADE_MS
+      );
+    },
+    [clearFinishTimer]
+  );
 
-  const markTerminalFailure = useCallback(() => {
-    const current = stateRef.current;
-    if (
-      !current.intent ||
-      (current.phase !== 'entering' && current.phase !== 'preparing')
-    ) {
-      return;
-    }
-    if (
-      pathnameOf(current.intent.origin.href) ===
-        pathnameOf(current.intent.href) &&
-      !hrefMatchesTarget(currentHref(), current.intent.href)
-    ) {
-      return;
-    }
-    dispatch({ type: 'terminalFailure', generation: current.generation });
-    clearFinishTimer();
-    finishTimerRef.current = window.setTimeout(() => {
-      setOverlayDismissed(true);
-      finishTimerRef.current = null;
-    }, READY_FADE_MS);
-  }, [clearFinishTimer]);
+  const markFrameReady = useCallback(
+    () => finishPreparation('frameReady'),
+    [finishPreparation]
+  );
+  const markSurfaceReady = useCallback(
+    () => finishPreparation('surfaceReady'),
+    [finishPreparation]
+  );
+  const markTerminalFailure = useCallback(
+    () => finishPreparation('terminalFailure'),
+    [finishPreparation]
+  );
 
   const cancel = useCallback(() => {
     const current = stateRef.current;
@@ -566,6 +594,7 @@ export default function PlaybackPreparationProvider({
         <PlaybackPreparationOverlay
           intent={state.intent}
           onCancel={cancel}
+          onSurfaceReady={markSurfaceReady}
           ready={state.phase === 'ready' || state.phase === 'failed'}
           returning={state.phase === 'returning'}
         />

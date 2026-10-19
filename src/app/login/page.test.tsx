@@ -42,6 +42,7 @@ jest.mock('@/components/ThemeToggle', () => ({
 describe('LoginPage invite link', () => {
   beforeEach(() => {
     mockSearchParams = new URLSearchParams();
+    localStorage.clear();
     document.getElementById('cf-turnstile-script')?.remove();
     delete window.turnstile;
     window.RUNTIME_CONFIG = {
@@ -79,6 +80,8 @@ describe('LoginPage invite link', () => {
 
   it('prefills the registration invite input from the URL', async () => {
     mockSearchParams = new URLSearchParams('inviteCode=KATELYA-2026');
+    localStorage.setItem('katelya.rememberLogin', 'true');
+    localStorage.setItem('katelya.rememberedUsername', 'alice');
 
     render(<LoginPage />);
 
@@ -86,6 +89,7 @@ describe('LoginPage invite link', () => {
 
     await waitFor(() => {
       expect(inviteInput).toHaveValue('KATELYA-2026');
+      expect(screen.getByLabelText('用户名')).toHaveValue('');
     });
   });
 
@@ -291,6 +295,114 @@ describe('LoginPage invite link', () => {
       username: 'alice',
       password: 'password123',
       turnstileToken: 'login-token',
+      rememberMe: false,
     });
+  });
+  it('restores the remembered username without putting a password in device storage', async () => {
+    localStorage.setItem('katelya.rememberLogin', 'true');
+    localStorage.setItem('katelya.rememberedUsername', 'alice');
+    render(<LoginPage />);
+    expect(await screen.findByLabelText('用户名')).toHaveValue('alice');
+    expect(screen.getByLabelText('访问密码')).toHaveValue('');
+    expect(
+      screen.getByRole('checkbox', { name: '在此设备保持登录 30 天' })
+    ).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+    expect(
+      screen.queryByRole('checkbox', { name: '在此设备保持登录 30 天' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('saves the chosen login preference only after success and clears it when unchecked', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+    global.fetch = fetchMock;
+    const originalLocation = window.location;
+    let redirectedTo = '';
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        get href() {
+          return redirectedTo || 'http://localhost/';
+        },
+        set href(value: string) {
+          redirectedTo = value;
+        },
+      },
+    });
+    try {
+      const view = render(<LoginPage />);
+      fireEvent.change(await screen.findByLabelText('用户名'), {
+        target: { value: 'alice' },
+      });
+      fireEvent.change(screen.getByLabelText('访问密码'), {
+        target: { value: 'password123' },
+      });
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: '在此设备保持登录 30 天' })
+      );
+      fireEvent.click(screen.getByRole('button', { name: '进入 KatelyaTV' }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).rememberMe).toBe(true);
+      await waitFor(() =>
+        expect(localStorage.getItem('katelya.rememberedUsername')).toBe('alice')
+      );
+      expect(Object.values(localStorage).join()).not.toContain('password123');
+      view.unmount();
+      redirectedTo = '';
+      render(<LoginPage />);
+      expect(await screen.findByLabelText('用户名')).toHaveValue('alice');
+      expect(screen.getByLabelText('访问密码')).toHaveValue('');
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: '在此设备保持登录 30 天' })
+      );
+      fireEvent.change(screen.getByLabelText('访问密码'), {
+        target: { value: 'password123' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: '进入 KatelyaTV' }));
+      await waitFor(() =>
+        expect(localStorage.getItem('katelya.rememberLogin')).toBeNull()
+      );
+      expect(localStorage.getItem('katelya.rememberedUsername')).toBeNull();
+    } finally {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
+  it('does not save a failed login attempt', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401 });
+    render(<LoginPage />);
+    fireEvent.change(await screen.findByLabelText('用户名'), {
+      target: { value: 'alice' },
+    });
+    fireEvent.change(screen.getByLabelText('访问密码'), {
+      target: { value: 'wrong-password' },
+    });
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: '在此设备保持登录 30 天' })
+    );
+    fireEvent.click(screen.getByRole('button', { name: '进入 KatelyaTV' }));
+    expect(await screen.findByText('密码错误')).toBeInTheDocument();
+    expect(localStorage.getItem('katelya.rememberLogin')).toBeNull();
+    expect(localStorage.getItem('katelya.rememberedUsername')).toBeNull();
+  });
+  it('keeps login usable when device preferences cannot be read', async () => {
+    const read = jest
+      .spyOn(Storage.prototype, 'getItem')
+      .mockImplementation(() => {
+        throw new Error('Storage blocked');
+      });
+    try {
+      render(<LoginPage />);
+      expect(await screen.findByLabelText('用户名')).toBeEnabled();
+      expect(
+        screen.getByRole('checkbox', { name: '在此设备保持登录 30 天' })
+      ).not.toBeChecked();
+    } finally {
+      read.mockRestore();
+    }
   });
 });

@@ -39,6 +39,7 @@ export type PlaybackPreparationEvent =
       intent: PlaybackPreparationIntent;
     }
   | { type: 'frameReady'; generation: number }
+  | { type: 'surfaceReady'; generation: number }
   | { type: 'terminalFailure'; generation: number }
   | { type: 'cancel'; generation: number }
   | { type: 'return'; generation: number }
@@ -63,6 +64,7 @@ export function reducePlaybackPreparationTransition(
         generation: event.generation,
         intent: event.intent,
       };
+    case 'surfaceReady':
     case 'frameReady':
       if (
         event.generation !== state.generation ||

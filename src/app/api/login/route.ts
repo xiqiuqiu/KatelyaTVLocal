@@ -8,6 +8,8 @@ import { recordLoginResult, validateLoginSecurity } from '@/lib/login/security';
 import {
   type SessionRole,
   createSessionCookieValue,
+  REMEMBERED_SESSION_DURATION_MS,
+  SESSION_DURATION_MS,
 } from '@/lib/security/session';
 import { getClientIp } from '@/lib/turnstile';
 
@@ -49,7 +51,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { username, password, turnstileToken } = await req.json();
+    const { username, password, turnstileToken, rememberMe } = await req.json();
     const storageType = getStorageType();
     const security = await validateLoginSecurity({
       username:
@@ -78,14 +80,16 @@ export async function POST(req: NextRequest) {
         success: true,
       });
       const response = NextResponse.json({ ok: true });
+      const expiresAt =
+        Date.now() +
+        (rememberMe === true
+          ? REMEMBERED_SESSION_DURATION_MS
+          : SESSION_DURATION_MS);
       const cookieValue = await createSessionCookieValue(
-        session,
+        { ...session, expiresAt },
         signingSecret
       );
-      const expires = new Date();
-      expires.setDate(expires.getDate() + 7);
-
-      setAuthCookie(req, response, cookieValue, expires);
+      setAuthCookie(req, response, cookieValue, new Date(expiresAt));
       return response;
     };
     const createFailedCredentialsResponse = async () => {

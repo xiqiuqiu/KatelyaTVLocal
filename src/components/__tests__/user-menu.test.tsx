@@ -13,6 +13,8 @@ import useTvBrowseNavigation from '@/components/useTvBrowseNavigation';
 const push = jest.fn();
 const prefetch = jest.fn();
 let mockPathname = '/';
+let mockSettingsParams = new URLSearchParams();
+const replace = jest.fn();
 let currentUser: {
   username: string;
   role: 'owner' | 'admin' | 'user';
@@ -20,7 +22,34 @@ let currentUser: {
 
 jest.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
-  useRouter: () => ({ prefetch, push }),
+  useSearchParams: () => mockSettingsParams,
+  useRouter: () => ({ prefetch, push, replace }),
+}));
+
+jest.mock('next/dynamic', () => ({
+  __esModule: true,
+  default:
+    () =>
+    ({
+      groupId,
+      tvMode,
+      initialSection,
+    }: {
+      groupId: string;
+      tvMode: boolean;
+      initialSection?: string;
+    }) =>
+      (
+        <div
+          data-testid='embedded-admin'
+          data-group={groupId}
+          data-tv-mode={tvMode}
+          data-initial-section={initialSection}
+        >
+          <input aria-label='管理配置输入' />
+          <button>保存管理配置</button>
+        </div>
+      ),
 }));
 
 jest.mock('@/lib/auth', () => ({
@@ -32,6 +61,8 @@ describe('UserMenu', () => {
     push.mockClear();
     prefetch.mockClear();
     mockPathname = '/';
+    mockSettingsParams = new URLSearchParams();
+    replace.mockClear();
     currentUser = { username: 'tester', role: 'user' };
     window.RUNTIME_CONFIG = {
       STORAGE_TYPE: 'd1',
@@ -54,7 +85,9 @@ describe('UserMenu', () => {
     expect(screen.getByText('退出登录')).toBeInTheDocument();
     expect(screen.queryByText('偏好设置')).not.toBeInTheDocument();
     expect(screen.queryByText('TVBox配置')).not.toBeInTheDocument();
-    expect(screen.queryByText('管理面板')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '站点管理' })
+    ).not.toBeInTheDocument();
   });
 
   it('shows the admin panel entry only for admins', async () => {
@@ -74,15 +107,17 @@ describe('UserMenu', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
 
-    expect(await screen.findByText('管理面板')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: '站点管理' })
+    ).toBeInTheDocument();
     expect(screen.getByText('修改密码')).toBeInTheDocument();
     expect(screen.queryByText('偏好设置')).not.toBeInTheDocument();
     expect(screen.queryByText('TVBox配置')).not.toBeInTheDocument();
-    expect(prefetch).toHaveBeenCalledWith('/admin');
+    expect(prefetch).not.toHaveBeenCalled();
   });
 
   it.each([false, true])(
-    'closes the account menu and preserves TV mode when opening admin (%s)',
+    'shows management inside settings and preserves TV mode (%s)',
     async (tvMode) => {
       currentUser = { username: 'admin', role: 'admin' };
       window.RUNTIME_CONFIG = {
@@ -99,12 +134,18 @@ describe('UserMenu', () => {
       render(<UserMenu tvMode={tvMode} />);
 
       fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
-      fireEvent.click(await screen.findByText('管理面板'));
-
-      expect(push).toHaveBeenCalledWith(tvMode ? '/admin?tv=1' : '/admin');
-      await waitFor(() => {
-        expect(screen.queryByText('管理面板')).not.toBeInTheDocument();
-      });
+      fireEvent.click(await screen.findByRole('button', { name: '站点管理' }));
+      fireEvent.click(screen.getByRole('button', { name: '用户与访问' }));
+      expect(await screen.findByTestId('embedded-admin')).toHaveAttribute(
+        'data-group',
+        'access'
+      );
+      expect(screen.getByTestId('embedded-admin')).toHaveAttribute(
+        'data-tv-mode',
+        String(tvMode)
+      );
+      expect(screen.getByRole('dialog', { name: '设置与账号' })).toBeVisible();
+      expect(push).not.toHaveBeenCalled();
     }
   );
 
@@ -124,13 +165,17 @@ describe('UserMenu', () => {
     const { rerender } = render(<UserMenu />);
 
     fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
-    expect(await screen.findByText('管理面板')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: '站点管理' })
+    ).toBeInTheDocument();
 
     mockPathname = '/admin';
     rerender(<UserMenu />);
 
     await waitFor(() => {
-      expect(screen.queryByText('管理面板')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: '站点管理' })
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -164,6 +209,7 @@ describe('UserMenu', () => {
     render(<UserMenu />);
 
     fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+    fireEvent.click(screen.getByRole('button', { name: '账号与安全' }));
     fireEvent.click(await screen.findByText('修改密码'));
     expect(await screen.findByText('确认修改')).toBeInTheDocument();
 
@@ -178,16 +224,19 @@ describe('UserMenu', () => {
     trigger.focus();
     fireEvent.click(trigger);
     const dialog = await screen.findByRole('dialog', { name: '设置与账号' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '观看与收藏' }));
     expect(
       within(dialog).getByRole('link', { name: '我的收藏' })
     ).toHaveAttribute('href', '/?tab=favorites&tv=1');
     expect(
       within(dialog).getByRole('link', { name: '播放历史' })
     ).toHaveAttribute('href', '/history?tv=1');
+    fireEvent.click(within(dialog).getByRole('button', { name: '外观与设备' }));
     expect(
       within(dialog).getByRole('link', { name: '退出电视模式' })
     ).toHaveAttribute('href', '/search?q=test&tv=0');
     expect(within(dialog).queryByText('管理面板')).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: '账号与安全' }));
     const last = within(dialog).getByRole('button', { name: '退出登录' });
     last.focus();
     fireEvent.keyDown(last, { key: 'Tab' });
@@ -201,37 +250,27 @@ describe('UserMenu', () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
-  it('groups existing settings and moves category focus to its first available control', async () => {
-    const originalScroll = HTMLElement.prototype.scrollIntoView;
-    HTMLElement.prototype.scrollIntoView = jest.fn();
-    try {
-      render(<UserMenu />);
-      fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
-      const dialog = await screen.findByRole('dialog', { name: '设置与账号' });
-      expect(
-        within(dialog).getByRole('region', { name: '观看与收藏' })
-      ).toBeInTheDocument();
-      expect(
-        within(dialog).getByRole('region', { name: '外观与设备' })
-      ).toBeInTheDocument();
-      expect(
-        within(dialog).getByRole('region', { name: '账号与安全' })
-      ).toHaveTextContent('tester');
-      fireEvent.click(
-        within(dialog).getByRole('button', { name: '观看与收藏' })
-      );
-      expect(
-        within(dialog).getByRole('link', { name: '我的收藏' })
-      ).toHaveFocus();
-      fireEvent.click(
-        within(dialog).getByRole('button', { name: '账号与安全' })
-      );
-      expect(
-        within(dialog).getByRole('button', { name: '修改密码' })
-      ).toHaveFocus();
-    } finally {
-      HTMLElement.prototype.scrollIntoView = originalScroll;
-    }
+  it('shows only the selected settings category and keeps its menu visible', async () => {
+    render(<UserMenu />);
+    fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+    const dialog = await screen.findByRole('dialog', { name: '设置与账号' });
+    expect(
+      within(dialog).getByRole('region', { name: '外观与设备' })
+    ).toBeVisible();
+    expect(
+      within(dialog).queryByRole('region', { name: '账号与安全' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: '账号与安全' }));
+    expect(
+      within(dialog).getByRole('region', { name: '账号与安全' })
+    ).toHaveTextContent('tester');
+    expect(
+      within(dialog).queryByRole('region', { name: '外观与设备' })
+    ).not.toBeInTheDocument();
+    expect(within(dialog).getAllByRole('region')).toHaveLength(1);
+    expect(
+      within(dialog).getByRole('button', { name: '账号与安全' })
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 
   it.each([
@@ -242,7 +281,7 @@ describe('UserMenu', () => {
     ['admin', true],
     ['owner', true],
   ] as const)(
-    'keeps management groups permission-gated and links to the chosen section (%s, TV=%s)',
+    'keeps embedded management permission-gated with three submenus (%s, TV=%s)',
     async (role, tvMode) => {
       currentUser = { username: role, role };
       window.RUNTIME_CONFIG = {
@@ -268,49 +307,51 @@ describe('UserMenu', () => {
         ).not.toBeInTheDocument();
         return;
       }
+      fireEvent.click(within(dialog).getByRole('button', { name: '站点管理' }));
       const managementRegion = await within(dialog).findByRole('region', {
         name: '站点管理',
       });
-      expect(managementRegion).toBeInTheDocument();
-      expect(
-        within(managementRegion).getByRole('button', { name: '管理面板' })
-      ).toBeInTheDocument();
-      expect(
-        within(dialog).getByRole('region', { name: '账号与安全' })
-      ).not.toContainElement(management);
+      expect(managementRegion).toBeVisible();
       for (const [id, label] of [
-        ['siteConfig', '站点配置'],
-        ['videoSource', '视频源配置'],
-        ['userConfig', '用户配置'],
-        ['inviteConfig', '注册邀请码'],
-        ['aiUsage', 'AI 用量监控'],
-        ['playbackDebug', '播放调试日志'],
+        ['content', '内容与站点'],
+        ['access', '用户与访问'],
+        ['diagnostics', '运行与诊断'],
       ]) {
-        expect(
-          within(managementRegion).getByRole('link', { name: label })
-        ).toHaveAttribute(
-          'href',
-          `/admin?section=${id}${tvMode ? '&tv=1' : ''}#admin-${id}`
+        fireEvent.click(within(dialog).getByRole('button', { name: label }));
+        expect(await screen.findByTestId('embedded-admin')).toHaveAttribute(
+          'data-group',
+          id
         );
       }
-      const destination = within(managementRegion).getByRole('link', {
-        name: '站点配置',
-      });
-      destination.addEventListener('click', (event) => event.preventDefault(), {
-        once: true,
-      });
-      fireEvent.click(destination);
-      await waitFor(() =>
-        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-      );
+      expect(
+        within(dialog).queryByRole('link', { name: '站点配置' })
+      ).not.toBeInTheDocument();
+      expect(push).not.toHaveBeenCalled();
       expect(global.fetch).toHaveBeenCalledTimes(1);
       expect(global.fetch).toHaveBeenCalledWith('/api/session');
     }
   );
 
+  it('opens legacy management deep links in the correct settings group', async () => {
+    currentUser = { username: 'admin', role: 'admin' };
+    mockSettingsParams = new URLSearchParams('settings=playbackDebug');
+    render(<UserMenu />);
+    expect(await screen.findByTestId('embedded-admin')).toHaveAttribute(
+      'data-group',
+      'diagnostics'
+    );
+    expect(screen.getByTestId('embedded-admin')).toHaveAttribute(
+      'data-initial-section',
+      'playbackDebug'
+    );
+    fireEvent.click(screen.getByRole('button', { name: '关闭设置与账号' }));
+    expect(replace).toHaveBeenCalledWith('/', { scroll: false });
+  });
+
   it('keeps keyboard focus inside the password dialog', async () => {
     render(<UserMenu />);
     fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+    fireEvent.click(screen.getByRole('button', { name: '账号与安全' }));
     fireEvent.click(await screen.findByText('修改密码'));
     const dialog = await screen.findByRole('dialog', { name: '修改密码' });
     fireEvent.change(within(dialog).getByLabelText('新密码'), {
@@ -370,6 +411,7 @@ describe('UserMenu', () => {
     const view = render(<TvAccount />);
     try {
       fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+      fireEvent.click(screen.getByRole('button', { name: '账号与安全' }));
       fireEvent.click(await screen.findByText('修改密码'));
       const dialog = await screen.findByRole('dialog', { name: '修改密码' });
       await waitFor(() =>

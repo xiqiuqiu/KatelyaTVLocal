@@ -1,6 +1,7 @@
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
 import { recordLoginResult, validateLoginSecurity } from '@/lib/login/security';
+import { createSessionCookieValue } from '@/lib/security/session';
 
 class MockHeaders {
   private readonly values = new Map<string, string>();
@@ -82,6 +83,7 @@ jest.mock('@/lib/db', () => ({
 }));
 
 jest.mock('@/lib/security/session', () => ({
+  ...jest.requireActual('@/lib/security/session'),
   createSessionCookieValue: jest.fn(() => Promise.resolve('session-cookie')),
 }));
 
@@ -197,6 +199,46 @@ describe('login route security', () => {
       success: true,
     });
   });
+
+  it.each([
+    [true, 30],
+    [false, 7],
+    ['true', 7],
+    [undefined, 7],
+  ])(
+    'keeps an explicit remembered login for the requested duration (%s)',
+    async (rememberMe, days) => {
+      const before = Date.now();
+      const response = await POST(
+        new Request('https://app.example.com/api/login', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: 'alice',
+            password: 'password123',
+            rememberMe,
+          }),
+        })
+      );
+      const options = response.cookies.set.mock.calls[0][2];
+      expect(createSessionCookieValue).toHaveBeenCalledWith(
+        expect.objectContaining({ expiresAt: options.expires.getTime() }),
+        'secret'
+      );
+      expect(options).toEqual(
+        expect.objectContaining({
+          httpOnly: true,
+          secure: true,
+          sameSite: 'lax',
+        })
+      );
+      expect(options.expires.getTime()).toBeGreaterThanOrEqual(
+        before + Number(days) * 86400000
+      );
+      expect(options.expires.getTime()).toBeLessThanOrEqual(
+        Date.now() + Number(days) * 86400000
+      );
+    }
+  );
 
   it('does not issue a session when successful login recording fails', async () => {
     process.env.USERNAME = 'alice';

@@ -1,5 +1,9 @@
+'use client';
+
+import { ArrowLeft } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+
 import { LoadingRing } from '@/components/ui/LoadingPrimitives';
-import Surface from '@/components/ui/Surface';
 
 interface InitialLoadingOverlayProps {
   title?: string;
@@ -8,28 +12,52 @@ interface InitialLoadingOverlayProps {
 export default function InitialLoadingOverlay({
   title,
 }: InitialLoadingOverlayProps) {
+  const router = useRouter();
   return (
     <div
       aria-label={title ? `正在准备播放 ${title}` : '正在准备播放'}
-      className='flex min-h-[70vh] items-center justify-center'
+      className='space-y-6'
       role='status'
     >
-      <Surface
-        variant='plain'
-        className='ui-loading-panel mx-auto w-full max-w-md px-6 py-9 text-center sm:px-8 sm:py-11'
-      >
-        <div className='mx-auto flex h-16 w-16 items-center justify-center rounded-ui-md bg-[rgb(var(--ui-surface-strong))]'>
-          <LoadingRing className='h-9 w-9' />
+      <div className='flex flex-wrap items-center justify-between gap-4'>
+        <div>
+          <h1 className='text-2xl font-semibold text-[rgb(var(--ui-text))] md:text-3xl'>
+            {title || '准备播放'}
+          </h1>
+          <div
+            aria-hidden
+            className='mt-2 h-5 w-40 rounded bg-[rgb(var(--ui-surface-strong))]'
+          />
         </div>
-        {title ? (
-          <h2 className='mt-6 text-2xl font-semibold tracking-tight text-[rgb(var(--ui-text))] sm:text-3xl'>
-            {title}
-          </h2>
-        ) : null}
-        <p className='mt-3 text-sm text-[rgb(var(--ui-text-muted))]'>
-          正在准备播放
-        </p>
-      </Surface>
+        <button
+          className='ui-secondary-button'
+          onClick={() => router.back()}
+          type='button'
+        >
+          <ArrowLeft aria-hidden className='h-4 w-4' />
+          返回上一页
+        </button>
+      </div>
+      <div className='ui-initial-player-layout grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_360px]'>
+        <div
+          data-playback-preparation-target
+          className='relative aspect-video w-full rounded-ui-md bg-black text-white'
+        >
+          <div className='absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center'>
+            <LoadingRing className='h-8 w-8' />
+            <p className='text-base'>正在准备播放</p>
+            <p className='text-sm text-white/70'>正在获取播放资源，请稍候</p>
+          </div>
+        </div>
+        <div
+          aria-hidden
+          className='ui-initial-player-sidebar space-y-4 rounded-ui-md bg-[rgb(var(--ui-surface))] p-5'
+        >
+          <div className='h-6 w-28 rounded bg-[rgb(var(--ui-surface-strong))]' />
+          <div className='h-11 rounded bg-[rgb(var(--ui-surface-strong))]' />
+          <div className='h-20 rounded bg-[rgb(var(--ui-surface-strong))]' />
+        </div>
+      </div>
     </div>
   );
 }
