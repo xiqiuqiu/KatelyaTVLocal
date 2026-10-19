@@ -3,6 +3,7 @@
 'use client';
 
 import {
+  ChevronRight,
   Heart,
   History,
   KeyRound,
@@ -20,6 +21,7 @@ import { createPortal } from 'react-dom';
 
 import { getRuntimeCurrentUser } from '@/lib/auth';
 import { buildTvModeHref } from '@/lib/tv-interaction';
+import { managementSettingsGroups } from '@/lib/ui/settings';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
 
@@ -70,7 +72,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
         data-tv-mode={session.tvMode}
         data-tv-browse={session.tvMode}
         data-open={session.isMenuVisible ? 'true' : 'false'}
-        className='ui-user-menu-panel fixed right-4 top-20 z-[1001] w-[calc(100vw-2rem)] max-w-3xl origin-top-right overflow-y-auto rounded-ui-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] p-3 text-[rgb(var(--ui-text))] shadow-ui-strong transition-opacity duration-[180ms] data-[open=false]:pointer-events-none data-[open=false]:opacity-0 data-[open=true]:opacity-100'
+        className='ui-user-menu-panel z-[1001] rounded-ui-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] p-3 text-[rgb(var(--ui-text))] shadow-ui-strong transition-opacity duration-[180ms] data-[open=false]:pointer-events-none data-[open=false]:opacity-0 data-[open=true]:opacity-100'
         onKeyDown={(event) => {
           if (event.key !== 'Tab') return;
           const controls = Array.from(
@@ -89,7 +91,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
           }
         }}
       >
-        <div className='mb-2 flex items-center justify-between px-3'>
+        <div className='ui-settings-header mb-3 flex shrink-0 items-center justify-between border-b border-[rgb(var(--ui-border))] px-3 pb-2'>
           <h2 className='text-lg font-semibold'>设置与账号</h2>
           <button
             type='button'
@@ -102,7 +104,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
             <X aria-hidden className='h-5 w-5' />
           </button>
         </div>
-        <div className='ui-settings-layout grid gap-6 md:grid-cols-[9rem_minmax(0,1fr)]'>
+        <div className='ui-settings-layout grid min-h-0 gap-6 md:grid-cols-[9rem_minmax(0,1fr)]'>
           <nav
             aria-label='设置分类'
             className='ui-settings-nav hidden space-y-2 border-r border-[rgb(var(--ui-border))] pr-3 md:block'
@@ -110,7 +112,10 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
             {[
               { id: 'library', label: '观看与收藏', icon: History },
               { id: 'device', label: '外观与设备', icon: Palette },
-              { id: 'account', label: '账号与数据', icon: User },
+              { id: 'account', label: '账号与安全', icon: User },
+              ...(session.showAdminPanel
+                ? [{ id: 'management', label: '站点管理', icon: Shield }]
+                : []),
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -132,7 +137,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
               </button>
             ))}
           </nav>
-          <div className='ui-settings-content min-w-0 space-y-6 px-1'>
+          <div className='ui-settings-content min-h-0 min-w-0 space-y-6 overflow-y-auto px-1 pb-2'>
             <section
               id='user-settings-library'
               aria-labelledby='user-settings-library-title'
@@ -221,7 +226,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
                 id='user-settings-account-title'
                 className='mb-3 px-3 text-base font-semibold'
               >
-                账号与数据
+                账号与安全
               </h3>
               <div className='space-y-2 rounded-ui-sm bg-[rgb(var(--ui-surface-strong))] p-3'>
                 <div className='flex flex-wrap items-center justify-between gap-2'>
@@ -248,17 +253,6 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
                   <span>修改密码</span>
                 </button>
               )}
-              {session.showAdminPanel && (
-                <button
-                  onClick={session.handleAdminPanel}
-                  onFocus={() => session.router.prefetch('/admin')}
-                  onMouseEnter={() => session.router.prefetch('/admin')}
-                  className={menuItemClassName}
-                >
-                  <Shield aria-hidden className='h-5 w-5' />
-                  <span>管理面板</span>
-                </button>
-              )}
               <button
                 onClick={session.handleLogout}
                 className={dangerMenuItemClassName}
@@ -267,6 +261,64 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
                 <span>退出登录</span>
               </button>
             </section>
+
+            {session.showAdminPanel && (
+              <section
+                id='user-settings-management'
+                aria-labelledby='user-settings-management-title'
+                className='ui-settings-group scroll-mt-4 border-t border-[rgb(var(--ui-border))] pt-5'
+              >
+                <h3
+                  id='user-settings-management-title'
+                  className='mb-2 px-3 text-base font-semibold'
+                >
+                  站点管理
+                </h3>
+                <button
+                  onClick={session.handleAdminPanel}
+                  onFocus={() => session.router.prefetch('/admin')}
+                  onMouseEnter={() => session.router.prefetch('/admin')}
+                  className={menuItemClassName}
+                >
+                  <Shield aria-hidden className='h-5 w-5' />
+                  <span>管理面板</span>
+                  <ChevronRight
+                    aria-hidden
+                    className='ml-auto h-5 w-5 shrink-0'
+                  />
+                </button>
+                {managementSettingsGroups.map((group) => (
+                  <div key={group.id} className='mt-4'>
+                    <h4 className='px-3 text-sm font-medium text-[rgb(var(--ui-text-muted))]'>
+                      {group.label}
+                    </h4>
+                    <div className='ui-settings-management-links mt-1 grid grid-cols-2 gap-1'>
+                      {group.items.map((item) => (
+                        <Link
+                          key={item.id}
+                          href={
+                            session.tvMode
+                              ? buildTvModeHref(
+                                  `/admin?section=${item.id}#admin-${item.id}`,
+                                  true
+                                )
+                              : `/admin?section=${item.id}#admin-${item.id}`
+                          }
+                          className={menuItemClassName}
+                          onClick={session.handleCloseMenu}
+                        >
+                          <span>{item.label}</span>
+                          <ChevronRight
+                            aria-hidden
+                            className='ml-auto h-5 w-5 shrink-0'
+                          />
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
           </div>
         </div>
       </div>

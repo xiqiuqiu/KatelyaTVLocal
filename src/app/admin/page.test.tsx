@@ -9,6 +9,7 @@ import { ReactNode } from 'react';
 import Swal from 'sweetalert2';
 
 import { AdminConfig } from '@/lib/admin.types';
+import { managementSettingsGroups } from '@/lib/ui/settings';
 
 import AdminPage from './page';
 
@@ -80,7 +81,10 @@ beforeEach(() => {
   }));
 });
 
+afterEach(() => jest.restoreAllMocks());
+
 it('reorders sources with buttons and keeps the original explicit save contract', async () => {
+  const consoleError = jest.spyOn(console, 'error');
   render(<AdminPage />);
   fireEvent.click(await screen.findByRole('button', { name: '视频源配置' }));
 
@@ -103,6 +107,11 @@ it('reorders sources with buttons and keeps the original explicit save contract'
       body: JSON.stringify({ action: 'sort', order: ['b', 'a'] }),
     })
   );
+  expect(
+    consoleError.mock.calls.filter(([message]) =>
+      String(message).includes('validateDOMNesting')
+    )
+  ).toEqual([]);
 });
 
 it('keeps owner and peer administrator operations hidden from an administrator', async () => {
@@ -180,5 +189,82 @@ it('associates visible site and registration labels with their actual controls',
     expect(label).not.toBeNull();
     expect(label?.control).toBe(document.getElementById(id));
   }
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('organizes all six existing panels into the same navigation and content groups', async () => {
+  render(<AdminPage />);
+  const navigation = await screen.findByRole('navigation', {
+    name: '管理分类',
+  });
+  const labels = managementSettingsGroups.flatMap((group) =>
+    group.items.map((item) => item.label)
+  );
+
+  expect(
+    within(navigation)
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+  ).toEqual(labels);
+  for (const group of managementSettingsGroups) {
+    const content = screen.getByRole('region', { name: group.label });
+    for (const item of group.items) {
+      expect(
+        within(navigation).getByRole('link', { name: item.label })
+      ).toHaveAttribute('href', `#admin-${item.id}`);
+      expect(
+        within(content).getByRole('button', { name: item.label })
+      ).toHaveAttribute('aria-expanded', 'false');
+    }
+  }
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('opens an allowed deep link and preserves an unsaved form when the query selects another section', async () => {
+  mockSearchParams = new URLSearchParams('tv=1&section=siteConfig');
+  const { rerender } = render(<AdminPage />);
+  const siteName = await screen.findByLabelText('站点名称');
+  fireEvent.change(siteName, { target: { value: '未保存站点名称' } });
+  expect(screen.getByRole('main')).toHaveAttribute(
+    'data-mode-href',
+    '/admin?section=siteConfig'
+  );
+
+  mockSearchParams = new URLSearchParams('tv=1&section=videoSource');
+  rerender(<AdminPage />);
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: '视频源配置' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+  );
+  expect(screen.getByLabelText('站点名称')).toBe(siteName);
+  expect(siteName).toHaveValue('未保存站点名称');
+  expect(screen.getByRole('button', { name: '站点配置' })).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
+  expect(screen.getByRole('main')).toHaveAttribute(
+    'data-mode-href',
+    '/admin?section=videoSource'
+  );
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('ignores unknown section values without mounting any administration form', async () => {
+  mockSearchParams = new URLSearchParams('tv=1&section=unknown');
+  render(<AdminPage />);
+  await screen.findByRole('navigation', { name: '管理分类' });
+
+  for (const group of managementSettingsGroups) {
+    for (const item of group.items) {
+      expect(screen.getByRole('button', { name: item.label })).toHaveAttribute(
+        'aria-expanded',
+        'false'
+      );
+    }
+  }
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  expect(screen.getByRole('main')).toHaveAttribute('data-mode-href', '/admin');
   expect(fetch).toHaveBeenCalledTimes(1);
 });

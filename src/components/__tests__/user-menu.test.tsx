@@ -215,7 +215,7 @@ describe('UserMenu', () => {
         within(dialog).getByRole('region', { name: '外观与设备' })
       ).toBeInTheDocument();
       expect(
-        within(dialog).getByRole('region', { name: '账号与数据' })
+        within(dialog).getByRole('region', { name: '账号与安全' })
       ).toHaveTextContent('tester');
       fireEvent.click(
         within(dialog).getByRole('button', { name: '观看与收藏' })
@@ -224,7 +224,7 @@ describe('UserMenu', () => {
         within(dialog).getByRole('link', { name: '我的收藏' })
       ).toHaveFocus();
       fireEvent.click(
-        within(dialog).getByRole('button', { name: '账号与数据' })
+        within(dialog).getByRole('button', { name: '账号与安全' })
       );
       expect(
         within(dialog).getByRole('button', { name: '修改密码' })
@@ -233,6 +233,80 @@ describe('UserMenu', () => {
       HTMLElement.prototype.scrollIntoView = originalScroll;
     }
   });
+
+  it.each([
+    ['user', false],
+    ['admin', false],
+    ['owner', false],
+    ['user', true],
+    ['admin', true],
+    ['owner', true],
+  ] as const)(
+    'keeps management groups permission-gated and links to the chosen section (%s, TV=%s)',
+    async (role, tvMode) => {
+      currentUser = { username: role, role };
+      window.RUNTIME_CONFIG = {
+        STORAGE_TYPE: 'd1',
+        CURRENT_USER: currentUser,
+      };
+      global.fetch = jest.fn().mockResolvedValue({
+        json: jest.fn().mockResolvedValue({
+          authenticated: true,
+          user: currentUser,
+        }),
+      }) as jest.Mock;
+      render(<UserMenu tvMode={tvMode} />);
+      fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+      const dialog = await screen.findByRole('dialog', { name: '设置与账号' });
+      const management = within(dialog).queryByRole('region', {
+        name: '站点管理',
+      });
+      if (role === 'user') {
+        expect(management).not.toBeInTheDocument();
+        expect(
+          within(dialog).queryByRole('link', { name: '站点配置' })
+        ).not.toBeInTheDocument();
+        return;
+      }
+      const managementRegion = await within(dialog).findByRole('region', {
+        name: '站点管理',
+      });
+      expect(managementRegion).toBeInTheDocument();
+      expect(
+        within(managementRegion).getByRole('button', { name: '管理面板' })
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole('region', { name: '账号与安全' })
+      ).not.toContainElement(management);
+      for (const [id, label] of [
+        ['siteConfig', '站点配置'],
+        ['videoSource', '视频源配置'],
+        ['userConfig', '用户配置'],
+        ['inviteConfig', '注册邀请码'],
+        ['aiUsage', 'AI 用量监控'],
+        ['playbackDebug', '播放调试日志'],
+      ]) {
+        expect(
+          within(managementRegion).getByRole('link', { name: label })
+        ).toHaveAttribute(
+          'href',
+          `/admin?section=${id}${tvMode ? '&tv=1' : ''}#admin-${id}`
+        );
+      }
+      const destination = within(managementRegion).getByRole('link', {
+        name: '站点配置',
+      });
+      destination.addEventListener('click', (event) => event.preventDefault(), {
+        once: true,
+      });
+      fireEvent.click(destination);
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      );
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(global.fetch).toHaveBeenCalledWith('/api/session');
+    }
+  );
 
   it('keeps keyboard focus inside the password dialog', async () => {
     render(<UserMenu />);

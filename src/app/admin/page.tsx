@@ -47,6 +47,7 @@ import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getRuntimeCurrentUser } from '@/lib/auth';
 import { buildRegistrationInviteLink } from '@/lib/registration/invite-link';
 import { isTvMode } from '@/lib/tv-interaction';
+import { managementSettingsGroups } from '@/lib/ui/settings';
 
 import PageLayout from '@/components/PageLayout';
 
@@ -1789,57 +1790,57 @@ const VideoSourceConfig = ({
         aria-label='管理数据表格，可横向滚动'
         tabIndex={0}
       >
-        <table className='min-w-full divide-y divide-[rgb(var(--ui-border))]'>
-          <thead className='bg-[rgb(var(--ui-surface))]'>
-            <tr>
-              {/* 拖拽手柄列 */}
-              <th className='px-2 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))]'>
-                排序
-              </th>
-
-              {/* 批量选择列 */}
-              {batchMode && (
-                <th className='w-12 px-4 py-3'>
-                  <input
-                    type='checkbox'
-                    aria-label='选择全部可管理视频源'
-                    checked={
-                      selectedSources.size > 0 &&
-                      selectedSources.size === sources.length
-                    }
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                    className='w-4 h-4 text-[rgb(var(--ui-accent))] bg-[rgb(var(--ui-surface))] border-[rgb(var(--ui-border))] rounded focus:ring-[rgb(var(--ui-accent))] focus:ring-2'
-                  />
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+          autoScroll={false}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+        >
+          <table className='min-w-full divide-y divide-[rgb(var(--ui-border))]'>
+            <thead className='bg-[rgb(var(--ui-surface))]'>
+              <tr>
+                {/* 拖拽手柄列 */}
+                <th className='px-2 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))]'>
+                  排序
                 </th>
-              )}
 
-              <th className='px-6 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
-                名称
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
-                Key
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
-                API 地址
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
-                Detail 地址
-              </th>
-              <th className='px-6 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
-                状态
-              </th>
-              <th className='px-6 py-3 text-right text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
-                操作
-              </th>
-            </tr>
-          </thead>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-            autoScroll={false}
-            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-          >
+                {/* 批量选择列 */}
+                {batchMode && (
+                  <th className='w-12 px-4 py-3'>
+                    <input
+                      type='checkbox'
+                      aria-label='选择全部可管理视频源'
+                      checked={
+                        selectedSources.size > 0 &&
+                        selectedSources.size === sources.length
+                      }
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      className='w-4 h-4 text-[rgb(var(--ui-accent))] bg-[rgb(var(--ui-surface))] border-[rgb(var(--ui-border))] rounded focus:ring-[rgb(var(--ui-accent))] focus:ring-2'
+                    />
+                  </th>
+                )}
+
+                <th className='px-6 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
+                  名称
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
+                  Key
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
+                  API 地址
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
+                  Detail 地址
+                </th>
+                <th className='px-6 py-3 text-left text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
+                  状态
+                </th>
+                <th className='px-6 py-3 text-right text-xs font-medium text-[rgb(var(--ui-text-muted))] uppercase tracking-wider'>
+                  操作
+                </th>
+              </tr>
+            </thead>
             <SortableContext
               items={sources.map((s) => s.key)}
               strategy={verticalListSortingStrategy}
@@ -1861,8 +1862,8 @@ const VideoSourceConfig = ({
                 ))}
               </tbody>
             </SortableContext>
-          </DndContext>
-        </table>
+          </table>
+        </DndContext>
       </div>
 
       {/* 保存排序按钮 */}
@@ -2676,7 +2677,13 @@ const PlaybackDebugLogs = () => {
 };
 
 function AdminPageClient() {
-  const tvMode = isTvMode(useSearchParams());
+  const searchParams = useSearchParams();
+  const tvMode = isTvMode(searchParams);
+  const requestedSection = searchParams.get('section');
+  const section = managementSettingsGroups
+    .flatMap((group) => group.items.map((item) => item.id))
+    .find((id) => id === requestedSection);
+  const modeHref = section ? `/admin?section=${section}` : '/admin';
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2689,6 +2696,12 @@ function AdminPageClient() {
     aiUsage: false,
     playbackDebug: false,
   });
+
+  useEffect(() => {
+    if (section) {
+      setExpandedTabs((prev) => ({ ...prev, [section]: true }));
+    }
+  }, [section]);
 
   // 获取管理员配置
   // showLoading 用于控制是否在请求期间显示整体加载骨架。
@@ -2759,10 +2772,10 @@ function AdminPageClient() {
 
   if (loading) {
     return (
-      <PageLayout activePath='/admin' tvMode={tvMode} modeHref='/admin'>
+      <PageLayout activePath='/admin' tvMode={tvMode} modeHref={modeHref}>
         <div className='ui-admin-page' data-tv-mode={tvMode || undefined}>
           <div className='ui-admin-layout'>
-            <h1 className='ui-admin-title'>管理员设置</h1>
+            <h1 className='ui-admin-title'>站点管理</h1>
             <div className='space-y-4'>
               {Array.from({ length: 3 }).map((_, index) => (
                 <div
@@ -2779,9 +2792,9 @@ function AdminPageClient() {
 
   if (error) {
     return (
-      <PageLayout activePath='/admin' tvMode={tvMode} modeHref='/admin'>
+      <PageLayout activePath='/admin' tvMode={tvMode} modeHref={modeHref}>
         <div className='ui-admin-page' data-tv-mode={tvMode || undefined}>
-          <h1 className='ui-admin-title'>管理员设置</h1>
+          <h1 className='ui-admin-title'>站点管理</h1>
           <div className='ui-admin-section-body' role='alert'>
             <p>管理配置加载失败</p>
             <p className='text-[rgb(var(--ui-text-muted))]'>{error}</p>
@@ -2800,13 +2813,44 @@ function AdminPageClient() {
     );
   }
 
+  const panels = {
+    siteConfig: {
+      icon: <Settings size={20} className='text-[rgb(var(--ui-text-muted))]' />,
+      content: <SiteConfigComponent config={config} />,
+    },
+    videoSource: {
+      icon: <Video size={20} className='text-[rgb(var(--ui-text-muted))]' />,
+      content: (
+        <VideoSourceConfig config={config} refreshConfig={fetchConfig} />
+      ),
+    },
+    userConfig: {
+      icon: <Users size={20} className='text-[rgb(var(--ui-text-muted))]' />,
+      content: (
+        <UserConfig config={config} role={role} refreshConfig={fetchConfig} />
+      ),
+    },
+    inviteConfig: {
+      icon: <Copy size={20} className='text-[rgb(var(--ui-text-muted))]' />,
+      content: <InviteConfig />,
+    },
+    aiUsage: {
+      icon: <Activity size={20} className='text-[rgb(var(--ui-text-muted))]' />,
+      content: <AiUsageMonitor />,
+    },
+    playbackDebug: {
+      icon: <Activity size={20} className='text-[rgb(var(--ui-text-muted))]' />,
+      content: <PlaybackDebugLogs />,
+    },
+  };
+
   return (
-    <PageLayout activePath='/admin' tvMode={tvMode} modeHref='/admin'>
+    <PageLayout activePath='/admin' tvMode={tvMode} modeHref={modeHref}>
       <div className='ui-admin-page' data-tv-mode={tvMode || undefined}>
         <div className='ui-admin-layout'>
           {/* 标题 + 重置配置按钮 */}
           <div className='ui-admin-heading'>
-            <h1 className='ui-admin-title'>管理员设置</h1>
+            <h1 className='ui-admin-title'>站点管理</h1>
             {config && role === 'owner' && (
               <button
                 onClick={handleResetConfig}
@@ -2818,129 +2862,54 @@ function AdminPageClient() {
           </div>
 
           <nav className='ui-admin-nav' aria-label='管理分类'>
-            {[
-              ['siteConfig', '站点配置'],
-              ['userConfig', '用户配置'],
-              ['inviteConfig', '注册邀请码'],
-              ['videoSource', '视频源配置'],
-              ['aiUsage', 'AI 用量监控'],
-              ['playbackDebug', '播放调试日志'],
-            ].map(([key, label]) => (
-              <a
-                key={key}
-                href={`#admin-${key}`}
-                data-active={expandedTabs[key] || undefined}
-                onClick={() =>
-                  setExpandedTabs((prev) => ({ ...prev, [key]: true }))
-                }
-              >
-                {label}
-              </a>
+            {managementSettingsGroups.map((group) => (
+              <div className='ui-admin-nav-group' key={group.id}>
+                <p className='ui-admin-nav-group-title'>{group.label}</p>
+                {group.items.map((item) => (
+                  <a
+                    key={item.id}
+                    href={`#admin-${item.id}`}
+                    data-active={expandedTabs[item.id] || undefined}
+                    onClick={() =>
+                      setExpandedTabs((prev) => ({ ...prev, [item.id]: true }))
+                    }
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </div>
             ))}
           </nav>
           <div className='ui-admin-content'>
-            {/* 站点配置标签 */}
-            <CollapsibleTab
-              id='siteConfig'
-              title='站点配置'
-              icon={
-                <Settings
-                  size={20}
-                  className='text-[rgb(var(--ui-text-muted))]'
-                />
-              }
-              isExpanded={expandedTabs.siteConfig}
-              onToggle={() => toggleTab('siteConfig')}
-            >
-              <SiteConfigComponent config={config} />
-            </CollapsibleTab>
-
-            <div className='space-y-4'>
-              {/* 用户配置标签 */}
-              <CollapsibleTab
-                id='userConfig'
-                title='用户配置'
-                icon={
-                  <Users
-                    size={20}
-                    className='text-[rgb(var(--ui-text-muted))]'
-                  />
-                }
-                isExpanded={expandedTabs.userConfig}
-                onToggle={() => toggleTab('userConfig')}
+            {managementSettingsGroups.map((group) => (
+              <section
+                key={group.id}
+                className='ui-admin-content-group'
+                aria-labelledby={`admin-group-${group.id}`}
               >
-                <UserConfig
-                  config={config}
-                  role={role}
-                  refreshConfig={fetchConfig}
-                />
-              </CollapsibleTab>
-
-              <CollapsibleTab
-                id='inviteConfig'
-                title='注册邀请码'
-                icon={
-                  <Copy
-                    size={20}
-                    className='text-[rgb(var(--ui-text-muted))]'
-                  />
-                }
-                isExpanded={expandedTabs.inviteConfig}
-                onToggle={() => toggleTab('inviteConfig')}
-              >
-                <InviteConfig />
-              </CollapsibleTab>
-
-              {/* AI 用量监控标签 */}
-              <CollapsibleTab
-                id='aiUsage'
-                title='AI 用量监控'
-                icon={
-                  <Activity
-                    size={20}
-                    className='text-[rgb(var(--ui-text-muted))]'
-                  />
-                }
-                isExpanded={expandedTabs.aiUsage}
-                onToggle={() => toggleTab('aiUsage')}
-              >
-                <AiUsageMonitor />
-              </CollapsibleTab>
-
-              <CollapsibleTab
-                id='playbackDebug'
-                title='播放调试日志'
-                icon={
-                  <Activity
-                    size={20}
-                    className='text-[rgb(var(--ui-text-muted))]'
-                  />
-                }
-                isExpanded={expandedTabs.playbackDebug}
-                onToggle={() => toggleTab('playbackDebug')}
-              >
-                <PlaybackDebugLogs />
-              </CollapsibleTab>
-
-              {/* 视频源配置标签 */}
-              <CollapsibleTab
-                id='videoSource'
-                title='视频源配置'
-                icon={
-                  <Video
-                    size={20}
-                    className='text-[rgb(var(--ui-text-muted))]'
-                  />
-                }
-                isExpanded={expandedTabs.videoSource}
-                onToggle={() => toggleTab('videoSource')}
-              >
-                <VideoSourceConfig
-                  config={config}
-                  refreshConfig={fetchConfig}
-                />
-              </CollapsibleTab>
-            </div>
+                <h2
+                  id={`admin-group-${group.id}`}
+                  className='ui-admin-group-title'
+                >
+                  {group.label}
+                </h2>
+                {group.items.map((item) => {
+                  const panel = panels[item.id];
+                  return (
+                    <CollapsibleTab
+                      key={item.id}
+                      id={item.id}
+                      title={item.label}
+                      icon={panel.icon}
+                      isExpanded={expandedTabs[item.id]}
+                      onToggle={() => toggleTab(item.id)}
+                    >
+                      {panel.content}
+                    </CollapsibleTab>
+                  );
+                })}
+              </section>
+            ))}
           </div>
         </div>
       </div>
