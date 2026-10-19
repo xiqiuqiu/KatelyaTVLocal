@@ -4,6 +4,8 @@ import { join } from 'path';
 import type { ReactNode } from 'react';
 
 import { getAllPlayRecords } from '@/lib/db.client';
+import { reducePlaybackSession } from '@/lib/playback-session';
+import { getSourceSwitchResumePlan } from '@/lib/playback-source-switch';
 import type { SearchResult } from '@/lib/types';
 
 import PlayPage from '@/app/play/page';
@@ -49,11 +51,18 @@ const mockArtPlayerEventHandlers = new Map<
   string,
   (...args: unknown[]) => void
 >();
+const mockArtPlayerEventHandlerLists = new Map<
+  string,
+  Array<(...args: unknown[]) => void>
+>();
 let mockAutoFireManifestParsed = true;
 let mockHlsSupported = false;
 let mockDefaultPlayerDuration = 120;
 let mockUseRealArtPlayer = false;
 const mockManifestParsedHandlers: Array<() => void> = [];
+const mockHlsErrorHandlers: Array<
+  (event?: unknown, data?: Record<string, unknown>) => void
+> = [];
 const mockMarkPreparationFrameReady = jest.fn();
 const mockRouterBack = jest.fn();
 
@@ -76,6 +85,22 @@ jest.mock('@/lib/db.client', () => ({
   savePlayRecordKeys: jest.fn(),
   subscribeToDataUpdates: jest.fn(() => jest.fn()),
 }));
+
+jest.mock('@/lib/playback-source-switch', () => {
+  const actual = jest.requireActual('@/lib/playback-source-switch');
+  return {
+    ...actual,
+    getSourceSwitchResumePlan: jest.fn(actual.getSourceSwitchResumePlan),
+  };
+});
+
+jest.mock('@/lib/playback-session', () => {
+  const actual = jest.requireActual('@/lib/playback-session');
+  return {
+    ...actual,
+    reducePlaybackSession: jest.fn(actual.reducePlaybackSession),
+  };
+});
 
 jest.mock('@/components/PageLayout', () => ({
   __esModule: true,
@@ -236,6 +261,9 @@ jest.mock('artplayer', () => ({
       notice: { show: '' },
       on: jest.fn((event: string, handler: () => void) => {
         mockArtPlayerEventHandlers.set(event, handler);
+        const handlers = mockArtPlayerEventHandlerLists.get(event) || [];
+        handlers.push(handler);
+        mockArtPlayerEventHandlerLists.set(event, handlers);
       }),
       off: jest.fn(),
       pause: jest.fn(),
@@ -273,15 +301,22 @@ jest.mock('hls.js', () => {
     destroy = jest.fn();
     loadSource = jest.fn();
     startLoad = jest.fn();
-    on = jest.fn((event: string, handler: () => void) => {
-      if (event === MockHls.Events.MANIFEST_PARSED) {
-        if (mockAutoFireManifestParsed) {
-          handler();
-          return;
+    on = jest.fn(
+      (
+        event: string,
+        handler: (event?: unknown, data?: Record<string, unknown>) => void
+      ) => {
+        if (event === MockHls.Events.MANIFEST_PARSED) {
+          if (mockAutoFireManifestParsed) {
+            handler();
+            return;
+          }
+          mockManifestParsedHandlers.push(() => handler());
+        } else if (event === MockHls.Events.ERROR) {
+          mockHlsErrorHandlers.push(handler);
         }
-        mockManifestParsedHandlers.push(handler);
       }
-    });
+    );
   }
 
   return {
@@ -328,6 +363,7 @@ describe('PlayPage source initialization', () => {
 
   beforeEach(() => {
     jest.useFakeTimers();
+    mockHlsErrorHandlers.length = 0;
     mockSearchParams = new URLSearchParams(
       'source=detail-source&id=detail-id&title=%E8%AF%A6%E6%83%85%E5%BD%B1%E7%89%87'
     );
@@ -1117,12 +1153,14 @@ describe('PlayPage automatic source-switch resume', () => {
     mockAutoFireManifestParsed = true;
     mockDefaultPlayerDuration = 120;
     mockManifestParsedHandlers.length = 0;
+    mockHlsErrorHandlers.length = 0;
     mockSearchParams = new URLSearchParams(
       'source=old&id=1&title=%E6%B5%8B%E8%AF%95'
     );
     mockSourceChangeHandler = undefined;
     mockArtPlayerInstance = undefined;
     mockArtPlayerEventHandlers.clear();
+    mockArtPlayerEventHandlerLists.clear();
     (
       getAllPlayRecords as jest.MockedFunction<typeof getAllPlayRecords>
     ).mockResolvedValue({});
@@ -1170,8 +1208,151 @@ describe('PlayPage automatic source-switch resume', () => {
   });
 
   afterEach(() => {
+    mockHlsSupported = false;
     jest.useRealTimers();
     jest.clearAllMocks();
+  });
+
+  async function settleWithSources() {
+    render(<PlayPage />);
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/search?q=%E6%B5%8B%E8%AF%95',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('episode-selector-sources')).toHaveTextContent(
+        '旧源,新源'
+      );
+    });
+  }
+
+  async function switchToFreshHlsSource() {
+    await act(async () => {
+      await mockSourceChangeHandler?.('new', '2', '测试', {
+        autoRecovery: true,
+        resumeTime: 115,
+        reason: '自动恢复测试',
+        autoPlayAfterReady: true,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+  }
+
+  it('forwards fatal HLS evidence during source-switch settle while suppressing soft errors', async () => {
+    mockHlsSupported = true;
+    await settleWithSources();
+    await switchToFreshHlsSource();
+
+    const reduceMock = jest.mocked(reducePlaybackSession);
+    reduceMock.mockClear();
+    const errorHandler = mockHlsErrorHandlers[mockHlsErrorHandlers.length - 1];
+    expect(errorHandler).toBeDefined();
+
+    act(() => {
+      errorHandler?.('error', {
+        fatal: false,
+        type: 'mediaError',
+        details: 'bufferStalledError',
+      });
+    });
+    expect(
+      reduceMock.mock.calls.some(
+        ([, event]) => event.type === 'recovery.runtimeEvidence'
+      )
+    ).toBe(false);
+
+    act(() => {
+      errorHandler?.('error', {
+        fatal: true,
+        type: 'mediaError',
+        details: 'bufferAppendError',
+      });
+    });
+    expect(reduceMock.mock.calls.map(([, event]) => event)).toContainEqual(
+      expect.objectContaining({
+        type: 'recovery.runtimeEvidence',
+        evidence: expect.objectContaining({
+          hls: expect.objectContaining({ fatal: true }),
+        }),
+      })
+    );
+  });
+
+  it('forwards healthy HLS progress to Playback Session', async () => {
+    mockHlsSupported = true;
+    await settleWithSources();
+    await switchToFreshHlsSource();
+    act(() => {
+      jest.advanceTimersByTime(2100);
+    });
+
+    const errorHandler = mockHlsErrorHandlers[mockHlsErrorHandlers.length - 1];
+    expect(errorHandler).toBeDefined();
+    act(() => {
+      errorHandler?.('error', {
+        fatal: false,
+        type: 'mediaError',
+        details: 'bufferStalledError',
+      });
+    });
+
+    const reduceMock = jest.mocked(reducePlaybackSession);
+    reduceMock.mockClear();
+    const player = mockArtPlayerInstance;
+    if (!player) throw new Error('player was not created');
+    player.currentTime = 116;
+    player.video.currentTime = 116;
+    const timeupdateHandler =
+      mockArtPlayerEventHandlerLists.get('video:timeupdate')?.[0];
+    expect(timeupdateHandler).toBeDefined();
+    act(() => {
+      timeupdateHandler?.();
+    });
+
+    expect(reduceMock.mock.calls.map(([, event]) => event)).toContainEqual(
+      expect.objectContaining({ type: 'recovery.progressHealthy' })
+    );
+  });
+
+  it('applies an explicit R3 resume without planning it again', async () => {
+    mockDefaultPlayerDuration = 300;
+    await settleWithSources();
+
+    const player = mockArtPlayerInstance;
+    if (!player) throw new Error('ArtPlayer mock was not initialized');
+    player.currentTime = 126;
+    player.video.currentTime = 126;
+    const plannerMock = jest.mocked(getSourceSwitchResumePlan);
+    plannerMock.mockClear();
+
+    await act(async () => {
+      await mockSourceChangeHandler?.('new', '2', '测试', {
+        autoRecovery: true,
+        resumeTime: 132,
+        reason: 'R3 自动恢复',
+        autoPlayAfterReady: true,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(plannerMock).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockArtPlayerInstance?.currentTime).toBe(132);
+    });
   });
 
   it('keeps the queued resume for the target source when the old source emits canplay', async () => {
@@ -1414,6 +1595,7 @@ describe('PlayPage preparation transition completion', () => {
     mockSourceChangeHandler = undefined;
     mockArtPlayerInstance = undefined;
     mockArtPlayerEventHandlers.clear();
+    mockArtPlayerEventHandlerLists.clear();
     (
       getAllPlayRecords as jest.MockedFunction<typeof getAllPlayRecords>
     ).mockResolvedValue({});

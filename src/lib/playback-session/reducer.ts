@@ -193,7 +193,9 @@ function createRecoverySwitchEffect(
           timeSeconds: escape.recordBadPointAt,
           nowMs,
           escapeEndSeconds:
-            escape.action === 'skip-forward' ? resumeTime ?? undefined : undefined,
+            escape.action === 'skip-forward'
+              ? resumeTime ?? undefined
+              : undefined,
         })
       : state.badPoints;
   const nextRecoveredSourceKeys = new Set(state.recoveredSourceKeys);
@@ -496,14 +498,7 @@ function withIntentTransition(
   }
 
   const cancelled = cancelInFlightAdSkip(state, cancelReason);
-  const recoveryCancelled =
-    cancelReason === 'user-paused' || cancelReason === 'seeking'
-      ? cancelRecoveryEpisode(cancelled.state)
-      : {
-          ...cancelled.state,
-          // Manual source/episode switch ends the Stall Episode disclosure too.
-          recoverableAutoSourceSwitch: null,
-        };
+  const recoveryCancelled = cancelRecoveryEpisode(cancelled.state);
 
   // Pause/seek cancel must not erase bad points. Episode/source switch already
   // applied scope rules on nextState — do not overwrite those.
@@ -514,6 +509,9 @@ function withIntentTransition(
     state: {
       ...nextState,
       ...pickRecoveryCancelFields(recoveryCancelled, nextState),
+      ...(cancelReason === 'user-switch'
+        ? { recoveryResumeTime: null, pendingResumeTime: null }
+        : {}),
       adSkipInFlightWindowKey: cancelled.state.adSkipInFlightWindowKey,
       ...(preserveBadPoints
         ? {
@@ -1067,10 +1065,7 @@ export function reducePlaybackSession(
 
     case 'user.undoAutoSourceSwitch': {
       const pending = state.recoverableAutoSourceSwitch;
-      if (
-        !pending ||
-        pending.previousSourceKey !== event.previousSourceKey
-      ) {
+      if (!pending || pending.previousSourceKey !== event.previousSourceKey) {
         return { state, effects: [] };
       }
 
@@ -1200,6 +1195,7 @@ export function reducePlaybackSession(
           ...state,
           recoveredSourceKeys,
           recoveryInFlight: null,
+          recoverableAutoSourceSwitch: null,
           recoveryStage:
             state.recoveryStage === 'R3' ? 'idle' : state.recoveryStage,
         },

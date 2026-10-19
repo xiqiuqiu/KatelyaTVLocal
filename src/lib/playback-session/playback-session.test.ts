@@ -100,6 +100,25 @@ describe('Playback Session Intent gate', () => {
     ]);
     expect(afterWaiting.state.playbackIntent).toBe('user-paused');
 
+    const afterFatal = reducePlaybackSession(paused, {
+      type: 'recovery.runtimeEvidence',
+      nowMs: 10_000,
+      snapshot: { currentTime: 438.123 },
+      evidence: {
+        platform: 'hlsjs',
+        stallCandidate: true,
+        hardFailure: true,
+        hls: { stallCount: 1, fatal: true },
+      },
+    });
+    expect(afterFatal.effects).toEqual([
+      expect.objectContaining({
+        type: 'emitDebugEvent',
+        eventType: 'intent.gate.denied',
+        details: expect.objectContaining({ deniedBy: 'user-paused' }),
+      }),
+    ]);
+
     const afterPlay = reducePlaybackSession(paused, {
       type: 'user.play',
     }).state;
@@ -222,6 +241,59 @@ describe('Playback Session Intent gate', () => {
     expect(allowsAutomaticEffect(afterEpisode, 'ad-skip', 20_500)).toBe(false);
     expect(allowsAutomaticEffect(afterEpisode, 'ad-skip', 22_100)).toBe(true);
   });
+
+  it.each([
+    {
+      label: 'source',
+      event: {
+        type: 'user.switchSource' as const,
+        sourceKey: 'direct-5',
+        nowMs: 20_000,
+      },
+    },
+    {
+      label: 'episode',
+      event: {
+        type: 'user.switchEpisode' as const,
+        episodeIndex: 1,
+        nowMs: 20_000,
+      },
+    },
+  ])(
+    'clears stale recovery state after a manual $label switch',
+    ({ event }) => {
+      const recovering = {
+        ...loadSources(),
+        recoveryStage: 'R2' as const,
+        stallEpisodeActive: true,
+        r0EnteredAtMs: 10_000,
+        r1AttemptCount: 1,
+        r2AttemptCount: 1,
+        recoveryInFlight: 'R2' as const,
+        recoveryResumeTime: 132,
+        pendingResumeTime: 132,
+        recoverableAutoSourceSwitch: {
+          previousSourceKey: 'current-1',
+          currentSourceKey: 'direct-5',
+          switchedAtMs: 10_000,
+        },
+      };
+
+      const result = reducePlaybackSession(recovering, event).state;
+
+      expect(result).toMatchObject({
+        recoveryStage: 'idle',
+        stallEpisodeActive: false,
+        r0EnteredAtMs: null,
+        r1AttemptCount: 0,
+        r2AttemptCount: 0,
+        recoveryInFlight: null,
+        recoveryResumeTime: null,
+        pendingResumeTime: null,
+        recoverableAutoSourceSwitch: null,
+      });
+    }
+  );
 
   it('keeps user-paused freeze across seek until play or implied-play', () => {
     const paused = reducePlaybackSession(loadSources(), {
@@ -782,8 +854,10 @@ describe('Playback Session automatic recovery', () => {
       sourceKey: 'direct-5',
     });
 
+    expect(switched.recoverableAutoSourceSwitch).not.toBeNull();
     expect(result.state.recoveredSourceKeys.has('current-1')).toBe(true);
     expect(result.state.recoveredSourceKeys.has('direct-5')).toBe(false);
+    expect(result.state.recoverableAutoSourceSwitch).toBeNull();
   });
 });
 
