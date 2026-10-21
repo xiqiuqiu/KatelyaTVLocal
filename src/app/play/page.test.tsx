@@ -41,6 +41,9 @@ let mockArtPlayerInstance:
         currentTime: number;
         duration: number;
         paused: boolean;
+        seeking?: boolean;
+        playbackRate?: number;
+        addEventListener?: jest.Mock;
         muted?: boolean;
         play: jest.Mock;
         hls?: unknown;
@@ -1279,6 +1282,126 @@ describe('PlayPage automatic source-switch resume', () => {
       mockArtPlayerEventHandlers.get('video:canplay')?.();
     });
   }
+
+  async function setupStarvationPlayback() {
+    mockHlsSupported = true;
+    await settleWithSources();
+    act(() => mockArtPlayerEventHandlers.get('video:canplay')?.());
+    const player = mockArtPlayerInstance;
+    if (!player) throw new Error('player was not created');
+    let forwardBufferSeconds = 0;
+    Object.defineProperty(player.video, 'buffered', {
+      get: () => ({
+        length: 1,
+        start: () => 0,
+        end: () => player.video.currentTime + forwardBufferSeconds,
+      }),
+    });
+    const startedAt = Date.now();
+    const reduceMock = jest.mocked(reducePlaybackSession);
+    reduceMock.mockClear();
+    const timeupdate =
+      mockArtPlayerEventHandlerLists.get('video:timeupdate')?.[0];
+    expect(timeupdate).toBeDefined();
+    return {
+      player,
+      sample(elapsed: number, currentTime: number, buffer: number) {
+        jest.setSystemTime(startedAt + elapsed);
+        player.currentTime = currentTime;
+        player.video.currentTime = currentTime;
+        forwardBufferSeconds = buffer;
+        act(() => timeupdate?.());
+      },
+      getSwitches: () =>
+        reduceMock.mock.results.flatMap((result) =>
+          result.type === 'return'
+            ? result.value.effects.filter(
+                (effect) => effect.type === 'switchSource'
+              )
+            : []
+        ),
+    };
+  }
+
+  it.each([0.5, 1, 2])(
+    'keeps the current source during smooth %sx playback with repeated buffer dips',
+    async (playbackRate) => {
+      const playback = await setupStarvationPlayback();
+      playback.player.video.playbackRate = playbackRate;
+      for (let elapsed = 0; elapsed <= 12_000; elapsed += 250) {
+        playback.sample(
+          elapsed,
+          30 + (elapsed / 1000) * playbackRate,
+          elapsed % 4000 < 1000 ? 1.5 : 4
+        );
+      }
+      expect(playback.getSwitches()).toEqual([]);
+    }
+  );
+
+  it('still switches sources after repeated real playback waits', async () => {
+    const playback = await setupStarvationPlayback();
+    for (let index = 0; index < 3; index += 1) {
+      playback.sample(index * 4000, 30 + index, 0);
+      playback.sample(index * 4000 + 800, 30.1 + index, 4);
+    }
+    expect(playback.getSwitches()).toEqual([
+      expect.objectContaining({ sourceKey: 'new-2' }),
+    ]);
+    expect(new URL(window.location.href).searchParams.get('source')).toBe(
+      'new'
+    );
+  });
+
+  it('does not carry waits across a user pause without progress callbacks', async () => {
+    const playback = await setupStarvationPlayback();
+    for (let index = 0; index < 2; index += 1) {
+      playback.sample(index * 4000, 30 + index, 0);
+      playback.sample(index * 4000 + 800, 30.1 + index, 4);
+    }
+    playback.sample(8000, 32, 0);
+    playback.player.video.paused = true;
+    playback.player.video.play.mockClear();
+    act(() => mockArtPlayerEventHandlers.get('video:pause')?.());
+    expect(playback.player.video.play).not.toHaveBeenCalled();
+    playback.player.video.paused = false;
+    act(() => mockArtPlayerEventHandlers.get('video:play')?.());
+    playback.sample(15_000, 32, 0);
+    playback.sample(15_800, 32.1, 4);
+    expect(playback.getSwitches()).toEqual([]);
+  });
+
+  it('does not carry waits across a user seek or move their chosen playhead', async () => {
+    const playback = await setupStarvationPlayback();
+    for (let index = 0; index < 2; index += 1) {
+      playback.sample(index * 4000, 30 + index, 0);
+      playback.sample(index * 4000 + 800, 30.1 + index, 4);
+    }
+    playback.sample(8000, 32, 0);
+    const listeners = playback.player.video.addEventListener?.mock.calls;
+    const seeking = listeners?.find(([event]) => event === 'seeking')?.[1];
+    const seeked = listeners?.find(([event]) => event === 'seeked')?.[1];
+    expect(seeking).toBeDefined();
+    expect(seeked).toBeDefined();
+    playback.player.currentTime = 10;
+    playback.player.video.currentTime = 10;
+    playback.player.video.seeking = true;
+    act(() => seeking?.());
+    playback.player.video.seeking = false;
+    act(() => seeked?.());
+    for (let elapsed = 0; elapsed <= 12_000; elapsed += 250) {
+      playback.sample(9000 + elapsed, 10 + elapsed / 1000, 1.5);
+    }
+    expect(playback.getSwitches()).toEqual([]);
+    expect(playback.player.video.currentTime).toBe(22);
+    expect(jest.mocked(reducePlaybackSession).mock.calls).toContainEqual([
+      expect.anything(),
+      expect.objectContaining({
+        type: 'user.seekStarted',
+        confirmedUserGesture: true,
+      }),
+    ]);
+  });
 
   it('forwards fatal HLS evidence during source-switch settle while suppressing soft errors', async () => {
     mockHlsSupported = true;

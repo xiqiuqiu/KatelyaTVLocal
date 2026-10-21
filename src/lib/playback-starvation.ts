@@ -22,6 +22,7 @@ export const STARVATION_MIN_REBUFFER_MS = 400;
 export interface StarvationSampleInput {
   nowMs: number;
   currentTime: number;
+  playbackRate?: number;
   /** Seconds of media buffered ahead of the playhead. */
   forwardBufferSeconds: number;
   paused?: boolean;
@@ -32,6 +33,8 @@ export interface StarvationSampleInput {
 export interface PlaybackStarvationState {
   runwayStarvingSinceMs: number | null;
   rebufferStartedAtMs: number | null;
+  rebufferStartedAtTime: number | null;
+  playbackRate: number | null;
   rebufferTimesMs: number[];
 }
 
@@ -39,6 +42,8 @@ export function createPlaybackStarvationState(): PlaybackStarvationState {
   return {
     runwayStarvingSinceMs: null,
     rebufferStartedAtMs: null,
+    rebufferStartedAtTime: null,
+    playbackRate: null,
     rebufferTimesMs: [],
   };
 }
@@ -63,30 +68,42 @@ export function samplePlaybackStarvation(
   state: PlaybackStarvationState,
   input: StarvationSampleInput
 ): StarvationSampleResult {
-  if (input.paused || input.seeking || input.ended) {
+  const playbackRate = input.playbackRate ?? 1;
+  if (input.paused || input.seeking || input.ended || playbackRate <= 0) {
     return {
-      state: {
-        ...state,
-        runwayStarvingSinceMs: null,
-        rebufferStartedAtMs: null,
-      },
+      state: createPlaybackStarvationState(),
       starved: false,
     };
+  }
+  if (state.playbackRate != null && state.playbackRate !== playbackRate) {
+    state = createPlaybackStarvationState();
   }
 
   const recent = countRecentRebuffers(state.rebufferTimesMs, input.nowMs);
   let rebufferTimesMs = recent.timesMs;
   let rebufferStartedAtMs = state.rebufferStartedAtMs;
+  let rebufferStartedAtTime = state.rebufferStartedAtTime;
+  // Low buffer alone is healthy if the playhead keeps up at the chosen speed.
+  const rebufferDelayMs =
+    rebufferStartedAtMs != null && rebufferStartedAtTime != null
+      ? input.nowMs -
+        rebufferStartedAtMs -
+        ((input.currentTime - rebufferStartedAtTime) / playbackRate) * 1000
+      : 0;
+  const hasRebuffered =
+    Math.round(rebufferDelayMs) >= STARVATION_MIN_REBUFFER_MS;
 
   if (input.forwardBufferSeconds <= STARVATION_RUNWAY_SECONDS) {
     if (rebufferStartedAtMs == null) {
       rebufferStartedAtMs = input.nowMs;
+      rebufferStartedAtTime = input.currentTime;
     }
   } else if (rebufferStartedAtMs != null) {
-    if (input.nowMs - rebufferStartedAtMs >= STARVATION_MIN_REBUFFER_MS) {
+    if (hasRebuffered) {
       rebufferTimesMs = [...rebufferTimesMs, rebufferStartedAtMs];
     }
     rebufferStartedAtMs = null;
+    rebufferStartedAtTime = null;
   }
 
   const runwayStarvingSinceMs =
@@ -95,7 +112,8 @@ export function samplePlaybackStarvation(
       : null;
   const runwayStarved =
     runwayStarvingSinceMs != null &&
-    input.nowMs - runwayStarvingSinceMs >= STARVATION_SUSTAIN_MS;
+    input.nowMs - runwayStarvingSinceMs >= STARVATION_SUSTAIN_MS &&
+    hasRebuffered;
   const rebufferStarved =
     countRecentRebuffers(rebufferTimesMs, input.nowMs).count >=
     STARVATION_REBUFFER_THRESHOLD;
@@ -104,24 +122,21 @@ export function samplePlaybackStarvation(
     state: {
       runwayStarvingSinceMs,
       rebufferStartedAtMs,
+      rebufferStartedAtTime,
+      playbackRate,
       rebufferTimesMs,
     },
     starved: runwayStarved || rebufferStarved,
   };
 }
 
-/** Seconds of media buffered strictly ahead of the playhead. */
+/** Continuous playable buffer from the playhead, without crossing a gap. */
 export function getForwardBufferSeconds(
   currentTime: number,
   ranges: Array<{ start: number; end: number }>
 ): number {
-  let ahead = 0;
-  ranges.forEach((range) => {
-    if (range.end <= currentTime || range.end <= range.start) {
-      return;
-    }
-    const start = Math.max(range.start, currentTime);
-    ahead = Math.max(ahead, range.end - start);
-  });
-  return ahead;
+  const range = ranges.find(
+    ({ start, end }) => start <= currentTime && currentTime < end
+  );
+  return range ? range.end - currentTime : 0;
 }

@@ -2080,6 +2080,7 @@ function usePlayPageSession() {
       nowMs: Date.now(),
       currentTime: video.currentTime || 0,
       forwardBufferSeconds: getForwardBufferSecondsFromVideo(video),
+      playbackRate: video.playbackRate,
       paused: video.paused,
       seeking: video.seeking || hlsRecoveryStateRef.current.isSeeking,
       ended: video.ended,
@@ -2821,6 +2822,7 @@ function usePlayPageSession() {
   };
 
   const markHlsUserPause = (currentTime?: number) => {
+    playbackStarvationRef.current = createPlaybackStarvationState();
     // iOS pauses MMS media while locking/backgrounding. That browser pause is
     // not user intent; preserving `playing` lets the foreground wake-up run.
     if (
@@ -2989,6 +2991,7 @@ function usePlayPageSession() {
       nowMs: now,
       confirmedUserGesture: true,
     });
+    playbackStarvationRef.current = createPlaybackStarvationState();
     const state = hlsRecoveryStateRef.current;
     clearWaitingRecoveryTimer();
     state.userSeekingAt = now;
