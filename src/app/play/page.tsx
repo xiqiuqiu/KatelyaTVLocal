@@ -2056,13 +2056,14 @@ function usePlayPageSession() {
   };
 
   const getForwardBufferSecondsFromVideo = (video: HTMLVideoElement) => {
-    const ranges = Array.from(
-      { length: video.buffered.length },
-      (_, index) => ({
-        start: video.buffered.start(index),
-        end: video.buffered.end(index),
-      })
-    );
+    const buffered = video.buffered;
+    if (!buffered || typeof buffered.length !== 'number') {
+      return 0;
+    }
+    const ranges = Array.from({ length: buffered.length }, (_, index) => ({
+      start: buffered.start(index),
+      end: buffered.end(index),
+    }));
     return getForwardBufferSeconds(video.currentTime || 0, ranges);
   };
 
