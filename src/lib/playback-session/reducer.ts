@@ -23,6 +23,7 @@ import {
   endStallEpisodePreservingBudget,
   isRecoveryInFlightBlockingAdSkip,
   isResumePendingBlockingAdSkip,
+  isStarvationSwitch,
   loadBadPointsForScope,
   persistBadPointsForScope,
   resetEscapeBudget,
@@ -134,11 +135,18 @@ function setRecoveryResumeTime(
 
 function shouldAllowUnverifiedRecoveryFallback(
   reason: 'auto-recovery' | 'source-timeout',
-  snapshot: VideoSnapshot
+  snapshot: VideoSnapshot,
+  evidence?: RecoveryRuntimeEvidence | null
 ): boolean {
   // Startup hang: progressive probe never starts without stable playback, so
   // requiring direct/playable evidence leaves the user stuck on a dead source.
   if (reason === 'source-timeout') {
+    return true;
+  }
+  // Sustained starvation has the same evidence gap mid-episode: background
+  // probing pauses while recovery is active, so unverified sources never become
+  // direct/playable. One unverified try is allowed only on this path.
+  if (isStarvationSwitch(evidence)) {
     return true;
   }
   return (snapshot.currentTime || 0) < 1;
@@ -148,7 +156,8 @@ function createRecoverySwitchEffect(
   state: PlaybackSessionState,
   snapshot: VideoSnapshot,
   reason: 'auto-recovery' | 'source-timeout',
-  nowMs: number
+  nowMs: number,
+  evidence?: RecoveryRuntimeEvidence | null
 ): {
   state: PlaybackSessionState;
   effect: Extract<PlaybackSessionEffect, { type: 'switchSource' }>;
@@ -163,7 +172,8 @@ function createRecoverySwitchEffect(
     attemptedSourceKeys: state.recoveredSourceKeys,
     allowUnverifiedFallback: shouldAllowUnverifiedRecoveryFallback(
       reason,
-      snapshot
+      snapshot,
+      evidence
     ),
   });
 
@@ -239,13 +249,20 @@ function tryEmitR3(
   state: PlaybackSessionState,
   snapshot: VideoSnapshot,
   nowMs: number,
-  reason: 'auto-recovery' | 'source-timeout'
+  reason: 'auto-recovery' | 'source-timeout',
+  evidence?: RecoveryRuntimeEvidence | null
 ): PlaybackSessionResult {
   if (!allowsAutomaticEffect(state, 'auto-source-switch', nowMs)) {
     return { state, effects: [] };
   }
 
-  const recovery = createRecoverySwitchEffect(state, snapshot, reason, nowMs);
+  const recovery = createRecoverySwitchEffect(
+    state,
+    snapshot,
+    reason,
+    nowMs,
+    evidence
+  );
   if (!recovery) {
     return {
       state: {
@@ -311,6 +328,8 @@ function handleStallCandidate(
     hardFailure?: boolean;
     forceR3Evaluation?: boolean;
     r3Reason?: 'auto-recovery' | 'source-timeout';
+    /** Under-feeding switches now and skips same-source reload/seek. */
+    starvationSwitch?: boolean;
   } = {}
 ): PlaybackSessionResult {
   // A stall breaks any continuous healthy run.
@@ -319,8 +338,11 @@ function handleStallCandidate(
   // The post-switch settle window filters noisy soft callbacks only. A fatal
   // media error or source-change timeout must still be able to leave a broken
   // source immediately, while all user-intent gates remain in force.
+  const immediateSwitch = Boolean(
+    options.forceR3Evaluation || options.starvationSwitch
+  );
   const gateState =
-    options.hardFailure || options.forceR3Evaluation
+    options.hardFailure || immediateSwitch
       ? { ...state, sourceSwitchSettledUntilMs: null }
       : state;
   const sameSourceGate = allowsAutomaticEffect(
@@ -359,7 +381,7 @@ function handleStallCandidate(
   state = gateState;
 
   if (
-    options.forceR3Evaluation ||
+    immediateSwitch ||
     (options.hardFailure && !sameSourceGate && autoSwitchGate)
   ) {
     if (!autoSwitchGate) {
@@ -369,7 +391,8 @@ function handleStallCandidate(
       state,
       snapshot,
       nowMs,
-      options.r3Reason || 'auto-recovery'
+      options.r3Reason || 'auto-recovery',
+      options.evidence
     );
   }
 
@@ -427,7 +450,8 @@ function handleStallCandidate(
         ladder.state,
         snapshot,
         nowMs,
-        options.r3Reason || 'auto-recovery'
+        options.r3Reason || 'auto-recovery',
+        options.evidence
       );
       return {
         state: r3.state,
@@ -1328,6 +1352,7 @@ export function reducePlaybackSession(
         hardFailure: Boolean(
           event.evidence.hardFailure || event.evidence.hls?.fatal
         ),
+        starvationSwitch: isStarvationSwitch(event.evidence),
         r3Reason: 'auto-recovery',
       });
     }

@@ -340,6 +340,17 @@ function shouldAccelerateToR3(
   return false;
 }
 
+/** Sustained under-feeding switches now; it does not spend same-source retries. */
+export function isStarvationSwitch(
+  evidence: RecoveryRuntimeEvidence | null | undefined
+): boolean {
+  return (
+    Boolean(evidence?.starved) &&
+    !evidence?.hardFailure &&
+    !evidence?.hls?.fatal
+  );
+}
+
 function planR2Escape(
   state: PlaybackSessionState,
   snapshot: VideoSnapshot,
@@ -783,8 +794,8 @@ function emitR1(
           action === 'nudge-playback'
             ? escape.resumeTime
             : action === 'restart-load'
-              ? snapshot.currentTime
-              : null,
+            ? snapshot.currentTime
+            : null,
         reason,
       },
     ],

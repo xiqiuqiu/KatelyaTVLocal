@@ -73,6 +73,12 @@ export interface RecoveryRuntimeEvidence {
   stallCandidate?: boolean;
   /** Hard failure may shorten R0/R1; still requires Intent for R3. */
   hardFailure?: boolean;
+  /**
+   * Current source cannot sustain realtime playback (empty runway or repeated
+   * short rebuffers). Switches immediately and may try one unverified source.
+   * Distinct from a single hard stall, which still climbs the R ladder.
+   */
+  starved?: boolean;
   hls?: {
     stallCount: number;
     /** 30s window counter from the HLS adapter; max(stallCount, this) drives R3. */

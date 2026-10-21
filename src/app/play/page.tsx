@@ -99,6 +99,11 @@ import {
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
 import {
+  createPlaybackStarvationState,
+  getForwardBufferSeconds,
+  samplePlaybackStarvation,
+} from '@/lib/playback-starvation';
+import {
   type PlaybackBadPoint,
   planStallEscapeResume,
   purgeBadPointsOverlappingAdSkipWindow,
@@ -1269,6 +1274,7 @@ function usePlayPageSession() {
   const wasPlayingBeforeBackgroundRef = useRef(false);
   const startupFeedbackSentRef = useRef(false);
   const waitingRecoveryTimerRef = useRef<number | null>(null);
+  const playbackStarvationRef = useRef(createPlaybackStarvationState());
   const sourceChangeTimeoutTimerRef = useRef<number | null>(null);
   const sourceChangeAttemptIdRef = useRef(0);
   const lastPlaybackFailureFeedbackRef = useRef<{
@@ -2049,6 +2055,42 @@ function usePlayPageSession() {
     };
   };
 
+  const getForwardBufferSecondsFromVideo = (video: HTMLVideoElement) => {
+    const ranges = Array.from(
+      { length: video.buffered.length },
+      (_, index) => ({
+        start: video.buffered.start(index),
+        end: video.buffered.end(index),
+      })
+    );
+    return getForwardBufferSeconds(video.currentTime || 0, ranges);
+  };
+
+  /**
+   * Samples whether the current source is feeding too slowly to keep realtime
+   * playback. Returns true once, then the caller switches source. Hard stalls
+   * continue through the existing waiting / HLS error path.
+   */
+  const consumePlaybackStarvation = (video: HTMLVideoElement) => {
+    if (!isPlaybackRecoverySessionAuthorityEnabled()) {
+      return false;
+    }
+    const sample = samplePlaybackStarvation(playbackStarvationRef.current, {
+      nowMs: Date.now(),
+      currentTime: video.currentTime || 0,
+      forwardBufferSeconds: getForwardBufferSecondsFromVideo(video),
+      paused: video.paused,
+      seeking: video.seeking || hlsRecoveryStateRef.current.isSeeking,
+      ended: video.ended,
+    });
+    playbackStarvationRef.current = sample.state;
+    if (!sample.starved) {
+      return false;
+    }
+    playbackStarvationRef.current = createPlaybackStarvationState();
+    return true;
+  };
+
   const buildPlaybackSessionSourceStatuses = (sources: SearchResult[]) => {
     const statuses = new Map(precomputedSourceStatusesRef.current);
     sources.forEach((source) => {
@@ -2761,6 +2803,7 @@ function usePlayPageSession() {
     hlsRecoveryStateRef.current.seekBufferGraceUntil = 0;
     hlsRecoveryStateRef.current.manualInteractionUntil = 0;
     hlsRecoveryStateRef.current.isSeeking = false;
+    playbackStarvationRef.current = createPlaybackStarvationState();
   };
 
   const startHlsPlaybackSession = () => {
@@ -2773,6 +2816,7 @@ function usePlayPageSession() {
     state.seekBufferGraceUntil = 0;
     state.manualInteractionUntil = 0;
     state.isSeeking = false;
+    playbackStarvationRef.current = createPlaybackStarvationState();
   };
 
   const markHlsUserPause = (currentTime?: number) => {
@@ -3059,6 +3103,72 @@ function usePlayPageSession() {
       });
       resetHlsStallWindow('playback-progress-healthy', currentTime);
     }
+  };
+
+  const reportPlaybackStarvation = (video: HTMLVideoElement) => {
+    if (!consumePlaybackStarvation(video)) {
+      return;
+    }
+    syncPlaybackSessionSources();
+    const sessionResult = dispatchPlaybackSessionEvent({
+      type: 'recovery.runtimeEvidence',
+      nowMs: Date.now(),
+      snapshot: getCurrentVideoSnapshot(),
+      evidence: {
+        platform: getPlaybackRuntimePlatform(),
+        stallCandidate: true,
+        starved: true,
+      },
+    });
+    const switchEffect = sessionResult.effects.find(
+      (
+        effect
+      ): effect is Extract<PlaybackSessionEffect, { type: 'switchSource' }> =>
+        effect.type === 'switchSource'
+    );
+    if (!switchEffect) {
+      emitPlaybackDebugLog(
+        'starvation-switch-unavailable',
+        '当前线路持续喂不饱，但没有可切换的播放源',
+        {
+          currentTime: Number((video.currentTime || 0).toFixed(2)),
+          sourceKey: getCurrentSourceKey(),
+        }
+      );
+      return;
+    }
+    emitPlaybackDebugLog(
+      'starvation-switch',
+      '当前线路持续喂不饱，立即切换播放源',
+      {
+        currentTime: Number((video.currentTime || 0).toFixed(2)),
+        nextSource: switchEffect.source.source,
+        nextId: switchEffect.source.id,
+        resumeTime: switchEffect.resumeTime,
+      }
+    );
+    if (switchEffect.resumeTime != null) {
+      resumeTimeRef.current = switchEffect.resumeTime;
+      sourceSwitchSavePendingRef.current = true;
+    }
+    void handleSourceChange(
+      switchEffect.source.source,
+      switchEffect.source.id,
+      switchEffect.source.title,
+      {
+        autoRecovery: true,
+        resumeTime: switchEffect.resumeTime,
+        reason: '当前线路持续卡顿，自动切换播放源',
+        autoPlayAfterReady: true,
+      }
+    ).then((switched) => {
+      if (!switched) {
+        dispatchPlaybackSessionEvent({
+          type: 'recovery.switchFailed',
+          sourceKey: switchEffect.sourceKey,
+        });
+      }
+    });
   };
 
   const getNextRecoverySource = () => {
@@ -6261,6 +6371,7 @@ function usePlayPageSession() {
               const handleVideoPlaying = () => {
                 clearWaitingRecoveryTimer();
                 markHlsPlaybackProgress(video.currentTime || 0);
+                reportPlaybackStarvation(video);
                 scheduleProgressiveSourceProbe();
               };
 
@@ -6279,6 +6390,7 @@ function usePlayPageSession() {
                   return;
                 }
                 markHlsPlaybackProgress(video.currentTime || 0);
+                reportPlaybackStarvation(video);
                 scheduleProgressiveSourceProbe();
               };
 
@@ -6525,6 +6637,12 @@ function usePlayPageSession() {
           publishPlayTimeForUi(currentTime);
           clearWaitingRecoveryTimer();
           markHlsPlaybackProgress(currentTime);
+          const progressVideo = artPlayerRef.current.video as
+            | HTMLVideoElement
+            | undefined;
+          if (progressVideo) {
+            reportPlaybackStarvation(progressVideo);
+          }
           scheduleProgressiveSourceProbe();
 
           // 同时更新时长（防止ready事件中获取不到）
@@ -6549,6 +6667,12 @@ function usePlayPageSession() {
         artPlayerRef.current.on('video:playing', () => {
           clearWaitingRecoveryTimer();
           markHlsPlaybackProgress(artPlayerRef.current.currentTime || 0);
+          const playingVideo = artPlayerRef.current.video as
+            | HTMLVideoElement
+            | undefined;
+          if (playingVideo) {
+            reportPlaybackStarvation(playingVideo);
+          }
           scheduleProgressiveSourceProbe();
           finalizeSourceChangeMediaReady('playing');
           // Backstop for the preparation transition: if the video is genuinely
