@@ -1354,6 +1354,14 @@ describe('PlayPage automatic source-switch resume', () => {
     expect(reduceMock.mock.calls.map(([, event]) => event)).toContainEqual(
       expect.objectContaining({ type: 'recovery.progressHealthy' })
     );
+    expect(
+      reduceMock.mock.calls.some(
+        ([, event]) =>
+          event.type === 'recovery.runtimeEvidence' &&
+          'evidence' in event &&
+          event.evidence.starved === true
+      )
+    ).toBe(false);
   });
 
   it('applies an explicit R3 resume without planning it again', async () => {
