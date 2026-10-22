@@ -982,8 +982,15 @@ function usePlayPageSession() {
   const sourceFallbackAttemptedRef = useRef(false);
   const sourceSwitchSavePendingRef = useRef(false);
   const endedAutoAdvanceTimerRef = useRef<number | null>(null);
+  /**
+   * Set as soon as video.ended starts saving, before the 1s timer exists.
+   * A manual pick in that gap must not save the finished playhead again.
+   */
+  const endedAutoAdvancePendingRef = useRef(false);
   /** This playback session confirmed a backward user seek. */
   const userRewoundRef = useRef(false);
+  /** Bumped on each rewind so an older in-flight save cannot clear a newer one. */
+  const userRewoundGenerationRef = useRef(0);
   /**
    * Set when the session episode changes before the player element does.
    * Heartbeat and pause must not read that element until the new media is ready.
@@ -3093,6 +3100,7 @@ function usePlayPageSession() {
       Number.isFinite(currentTime) &&
       currentTime + 1.5 < lastObserved
     ) {
+      userRewoundGenerationRef.current += 1;
       userRewoundRef.current = true;
     }
     if (classification !== 'user') {
@@ -5267,6 +5275,7 @@ function usePlayPageSession() {
   // ---------------------------------------------------------------------------
   // 处理集数切换
   const clearEndedAutoAdvanceTimer = () => {
+    endedAutoAdvancePendingRef.current = false;
     if (endedAutoAdvanceTimerRef.current != null) {
       window.clearTimeout(endedAutoAdvanceTimerRef.current);
       endedAutoAdvanceTimerRef.current = null;
@@ -5297,7 +5306,9 @@ function usePlayPageSession() {
       return;
     }
     const skipLeavingSave = shouldSkipLeavingProgressSave({
-      pendingEndedAutoAdvance: endedAutoAdvanceTimerRef.current != null,
+      pendingEndedAutoAdvance:
+        endedAutoAdvancePendingRef.current ||
+        endedAutoAdvanceTimerRef.current != null,
     });
     clearEndedAutoAdvanceTimer();
     const leaving = resolveEpisodeProgressSnapshot({
@@ -5600,21 +5611,27 @@ function usePlayPageSession() {
       route_id: currentIdRef.current,
     };
 
+    const rewindGeneration = userRewoundRef.current
+      ? userRewoundGenerationRef.current
+      : 0;
     try {
       await savePlayRecordKeys(
         [writePlan.primaryKey, ...writePlan.dualWriteKeys],
         record,
         {
           ...options,
-          userRewound: userRewoundRef.current,
+          userRewound: rewindGeneration > 0,
         }
       );
 
       lastSaveTimeRef.current = saveTime;
       lastSavedSnapshotRef.current = snapshot;
-      // A rewind only authorizes the save that records it. Later heartbeats
-      // must not keep overwriting a further playhead from another tab.
-      if (userRewoundRef.current) {
+      // A rewind only authorizes the save that records it. A save that started
+      // before this rewind must not clear the flag when it returns.
+      if (
+        rewindGeneration > 0 &&
+        userRewoundGenerationRef.current === rewindGeneration
+      ) {
         userRewoundRef.current = false;
       }
     } catch (err) {
@@ -6987,13 +7004,17 @@ function usePlayPageSession() {
             // finished episode on the snapped media until that next episode
             // actually reaches canplay — or a manual pick replaces it.
             beginEpisodeProgressEpoch(nextEpisodeIndex);
+            endedAutoAdvancePendingRef.current = true;
             void executeSaveProgressEffects(result.effects, {
               playTime: endedProgress.playTime,
               totalTime: endedProgress.totalTime,
             }).then(() => {
-              clearEndedAutoAdvanceTimer();
+              if (!endedAutoAdvancePendingRef.current) {
+                return;
+              }
               endedAutoAdvanceTimerRef.current = window.setTimeout(() => {
                 endedAutoAdvanceTimerRef.current = null;
+                endedAutoAdvancePendingRef.current = false;
                 if (
                   !shouldAutoAdvanceEndedEpisode({
                     endedEpisodeIndex: idx,
