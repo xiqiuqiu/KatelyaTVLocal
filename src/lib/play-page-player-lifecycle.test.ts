@@ -1,7 +1,9 @@
 import {
   consumePlayIdentityInitSkip,
   isArtPlayerBoundToContainer,
+  resolveEpisodeProgressSnapshot,
   resolvePlayUrlTitle,
+  shouldAutoAdvanceEndedEpisode,
 } from '@/lib/play-page-player-lifecycle';
 
 describe('play-page player lifecycle', () => {
@@ -27,10 +29,7 @@ describe('play-page player lifecycle', () => {
       document.body.appendChild(host);
 
       expect(
-        isArtPlayerBoundToContainer(
-          { template: { $container: inner } },
-          host
-        )
+        isArtPlayerBoundToContainer({ template: { $container: inner } }, host)
       ).toBe(true);
 
       host.remove();
@@ -56,6 +55,45 @@ describe('play-page player lifecycle', () => {
         runInit: true,
         clearSkip: false,
       });
+    });
+  });
+
+  describe('shouldAutoAdvanceEndedEpisode', () => {
+    it('advances only while the page is still on the episode that ended', () => {
+      expect(
+        shouldAutoAdvanceEndedEpisode({
+          endedEpisodeIndex: 0,
+          currentEpisodeIndex: 0,
+        })
+      ).toBe(true);
+      expect(
+        shouldAutoAdvanceEndedEpisode({
+          endedEpisodeIndex: 0,
+          currentEpisodeIndex: 4,
+        })
+      ).toBe(false);
+    });
+  });
+
+  describe('resolveEpisodeProgressSnapshot', () => {
+    it('keeps the leaving episode index with that episode media times', () => {
+      expect(
+        resolveEpisodeProgressSnapshot({
+          episodeIndex: 0,
+          playTime: 2758.2,
+          totalTime: 2758.9,
+        })
+      ).toEqual({ episodeIndex: 0, playTime: 2758, totalTime: 2758 });
+    });
+
+    it('drops non-finite media times instead of writing them onto the next episode', () => {
+      expect(
+        resolveEpisodeProgressSnapshot({
+          episodeIndex: 4,
+          playTime: Number.NaN,
+          totalTime: Number.POSITIVE_INFINITY,
+        })
+      ).toEqual({ episodeIndex: 4, playTime: 0, totalTime: 0 });
     });
   });
 

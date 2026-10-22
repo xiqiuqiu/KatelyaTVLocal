@@ -55,7 +55,9 @@ import { stopVideoElementLoading } from '@/lib/media-cleanup';
 import {
   consumePlayIdentityInitSkip,
   isArtPlayerBoundToContainer,
+  resolveEpisodeProgressSnapshot,
   resolvePlayUrlTitle,
+  shouldAutoAdvanceEndedEpisode,
 } from '@/lib/play-page-player-lifecycle';
 import {
   type PlayRecordSaveReason,
@@ -975,6 +977,15 @@ function usePlayPageSession() {
     useRef<PlaybackDebugCanplaySnapshot | null>(null);
   const sourceFallbackAttemptedRef = useRef(false);
   const sourceSwitchSavePendingRef = useRef(false);
+  const endedAutoAdvanceTimerRef = useRef<number | null>(null);
+  /**
+   * Set when the session episode changes before the player element does.
+   * Heartbeat and pause must not read that element until the new media is ready.
+   */
+  const progressMediaEpochRef = useRef<{
+    episodeIndex: number;
+    ready: boolean;
+  }>({ episodeIndex: 0, ready: true });
   const sourceDurationBeforeSwitchRef = useRef<number | null>(null);
   const sourceSwitchAutoPlayPendingRef = useRef(false);
   const playbackPolicyLogKeysRef = useLazyRef(() => new Set<string>());
@@ -2304,19 +2315,26 @@ function usePlayPageSession() {
   const persistAdSkipWindowConfirmation = (
     window: Pick<
       HlsAdSkipWindow,
-      'startTimeSeconds' | 'endTimeSeconds' | 'ruleId'
+      'startTimeSeconds' | 'endTimeSeconds' | 'ruleId' | 'scopeEpisodeIndex'
     >,
     kind: 'confirm' | 'undo'
   ) => {
     const source = currentSourceRef.current;
     const id = currentIdRef.current;
+    const episodeIndex =
+      window.scopeEpisodeIndex ?? currentEpisodeIndexRef.current;
     if (!source || !id) {
+      return;
+    }
+    // A window carried from another episode must not be confirmed onto the
+    // episode that is on screen now.
+    if (episodeIndex !== currentEpisodeIndexRef.current) {
       return;
     }
     void recordAdSkipWindowConfirmation({
       source,
       id,
-      episodeIndex: currentEpisodeIndexRef.current,
+      episodeIndex,
       window: {
         startTimeSeconds: window.startTimeSeconds,
         endTimeSeconds: window.endTimeSeconds,
@@ -2496,12 +2514,16 @@ function usePlayPageSession() {
       return;
     }
 
+    const scopedEpisodeIndex = currentEpisodeIndexRef.current;
     dispatchPlaybackSessionEvent({
       type: 'adSkipWindows.loaded',
       windows: mergeAdSkipWindowsForLoad({
         persisted,
         analyzer: analyzerWindows,
-      }),
+      }).map((window) => ({
+        ...window,
+        scopeEpisodeIndex: scopedEpisodeIndex,
+      })),
     });
   };
 
@@ -2563,7 +2585,10 @@ function usePlayPageSession() {
     }
 
     const platform = getPlaybackRuntimePlatform();
-    const markedWindow = toUserMarkAdSkipWindow(snapped);
+    const markedWindow = {
+      ...toUserMarkAdSkipWindow(snapped),
+      scopeEpisodeIndex: currentEpisodeIndexRef.current,
+    };
     dispatchPlaybackSessionEvent({
       type: 'user.markAdSkip',
       nowMs: Date.now(),
@@ -4942,6 +4967,7 @@ function usePlayPageSession() {
       });
       // 旧源清单不能用于新源的结构块吸附
       latestMediaPlaylistRef.current = null;
+      clearEndedAutoAdvanceTimer();
       sourceSwitchSavePendingRef.current = false;
       sourceSwitchAutoPlayPendingRef.current = false;
       sourceDurationBeforeSwitchRef.current =
@@ -5126,49 +5152,56 @@ function usePlayPageSession() {
   // 集数切换
   // ---------------------------------------------------------------------------
   // 处理集数切换
+  const clearEndedAutoAdvanceTimer = () => {
+    if (endedAutoAdvanceTimerRef.current != null) {
+      window.clearTimeout(endedAutoAdvanceTimerRef.current);
+      endedAutoAdvanceTimerRef.current = null;
+    }
+  };
+
+  const beginEpisodeProgressEpoch = (episodeIndex: number) => {
+    progressMediaEpochRef.current = { episodeIndex, ready: false };
+  };
+
+  const switchToEpisodeIndex = (episodeIndex: number) => {
+    const d = detailRef.current;
+    const idx = currentEpisodeIndexRef.current;
+    if (!d?.episodes || episodeIndex < 0 || episodeIndex >= d.episodes.length) {
+      return;
+    }
+    if (episodeIndex === idx) {
+      return;
+    }
+    clearEndedAutoAdvanceTimer();
+    const leaving = resolveEpisodeProgressSnapshot({
+      episodeIndex: idx,
+      playTime: artPlayerRef.current?.currentTime ?? 0,
+      totalTime: artPlayerRef.current?.duration ?? 0,
+    });
+    const result = dispatchPlaybackSessionEvent({
+      type: 'user.switchEpisode',
+      episodeIndex,
+      nowMs: Date.now(),
+    });
+    beginEpisodeProgressEpoch(episodeIndex);
+    void executeSaveProgressEffects(result.effects, {
+      playTime: leaving.playTime,
+      totalTime: leaving.totalTime,
+    });
+    setCurrentEpisodeIndex(episodeIndex);
+  };
+
   const handleEpisodeChange = (episodeNumber: number) => {
     // episodeNumber是显示的集数（从1开始），需要转换为索引（从0开始）
-    const episodeIndex = episodeNumber - 1;
-    if (episodeIndex >= 0 && episodeIndex < totalEpisodes) {
-      const result = dispatchPlaybackSessionEvent({
-        type: 'user.switchEpisode',
-        episodeIndex,
-        nowMs: Date.now(),
-      });
-      void executeSaveProgressEffects(result.effects);
-      setCurrentEpisodeIndex(episodeIndex);
-    }
+    switchToEpisodeIndex(episodeNumber - 1);
   };
 
   const handlePreviousEpisode = () => {
-    const d = detailRef.current;
-    const idx = currentEpisodeIndexRef.current;
-    if (d && d.episodes && idx > 0) {
-      const episodeIndex = idx - 1;
-      const result = dispatchPlaybackSessionEvent({
-        type: 'user.switchEpisode',
-        episodeIndex,
-        nowMs: Date.now(),
-      });
-      void executeSaveProgressEffects(result.effects);
-      setCurrentEpisodeIndex(episodeIndex);
-    }
+    switchToEpisodeIndex(currentEpisodeIndexRef.current - 1);
   };
 
   const handleNextEpisode = () => {
-    console.log('尝试切换到下一集');
-    const d = detailRef.current;
-    const idx = currentEpisodeIndexRef.current;
-    if (d && d.episodes && idx < d.episodes.length - 1) {
-      const episodeIndex = idx + 1;
-      const result = dispatchPlaybackSessionEvent({
-        type: 'user.switchEpisode',
-        episodeIndex,
-        nowMs: Date.now(),
-      });
-      void executeSaveProgressEffects(result.effects);
-      setCurrentEpisodeIndex(episodeIndex);
-    }
+    switchToEpisodeIndex(currentEpisodeIndexRef.current + 1);
   };
 
   // ---------------------------------------------------------------------------
@@ -5348,10 +5381,25 @@ function usePlayPageSession() {
     }
 
     const player = artPlayerRef.current;
-    const duration = Math.floor(options?.totalTime ?? player.duration ?? 0);
     const episodeIndex =
       options?.episodeIndex ?? currentEpisodeIndexRef.current;
-    const livePlayTime = options?.playTime ?? player.currentTime ?? 0;
+    const mediaEpoch = progressMediaEpochRef.current;
+    const mediaMatchesEpisode =
+      mediaEpoch.ready && mediaEpoch.episodeIndex === episodeIndex;
+    const hasSnappedProgress =
+      options?.playTime != null && options?.totalTime != null;
+    // Episode change snaps the leaving episode before the element switches.
+    // Until the new episode reaches canplay, heartbeat and pause must not read
+    // the element — its currentTime still belongs to the previous episode.
+    if (!mediaMatchesEpisode && !hasSnappedProgress) {
+      return;
+    }
+    const duration = Math.floor(
+      hasSnappedProgress ? options.totalTime ?? 0 : player.duration ?? 0
+    );
+    const livePlayTime = hasSnappedProgress
+      ? options.playTime ?? 0
+      : player.currentTime ?? 0;
     const rawPlayTime = resolvePlayTimeForWatchProgressSave({
       livePlayTime,
       rememberedPlayhead: Math.max(
@@ -5483,6 +5531,7 @@ function usePlayPageSession() {
         clearInterval(saveIntervalRef.current);
       }
       clearSourceChangeTimeoutTimer();
+      clearEndedAutoAdvanceTimer();
     };
   }, []);
 
@@ -5836,6 +5885,10 @@ function usePlayPageSession() {
                   : undefined,
             });
           }
+          progressMediaEpochRef.current = {
+            episodeIndex: currentEpisodeIndexRef.current,
+            ready: true,
+          };
           return true;
         };
 
@@ -6766,19 +6819,37 @@ function usePlayPageSession() {
           const idx = currentEpisodeIndexRef.current;
           if (d && d.episodes && idx < d.episodes.length - 1) {
             const player = artPlayerRef.current;
-            const playTime = Math.floor(player?.currentTime || 0);
-            const totalTime = Math.floor(player?.duration || 0);
+            const endedProgress = resolveEpisodeProgressSnapshot({
+              episodeIndex: idx,
+              playTime: player?.currentTime || 0,
+              totalTime: player?.duration || 0,
+            });
+            const nextEpisodeIndex = idx + 1;
             const result = dispatchPlaybackSessionEvent({
               type: 'video.ended',
-              nextEpisodeIndex: idx + 1,
+              nextEpisodeIndex,
               nowMs: Date.now(),
             });
+            // Session episode moves to next immediately. Keep saves of the
+            // finished episode on the snapped media until that next episode
+            // actually reaches canplay — or a manual pick replaces it.
+            beginEpisodeProgressEpoch(nextEpisodeIndex);
             void executeSaveProgressEffects(result.effects, {
-              playTime,
-              totalTime,
+              playTime: endedProgress.playTime,
+              totalTime: endedProgress.totalTime,
             }).then(() => {
-              setTimeout(() => {
-                setCurrentEpisodeIndex(idx + 1);
+              clearEndedAutoAdvanceTimer();
+              endedAutoAdvanceTimerRef.current = window.setTimeout(() => {
+                endedAutoAdvanceTimerRef.current = null;
+                if (
+                  !shouldAutoAdvanceEndedEpisode({
+                    endedEpisodeIndex: idx,
+                    currentEpisodeIndex: currentEpisodeIndexRef.current,
+                  })
+                ) {
+                  return;
+                }
+                setCurrentEpisodeIndex(nextEpisodeIndex);
               }, 1000);
             });
           }

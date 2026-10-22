@@ -72,6 +72,11 @@ export interface HlsAdSkipWindow {
    * - persisted: loaded from shared Ad Skip Window store (#38)
    */
   origin?: 'analyzer' | 'user-mark' | 'persisted';
+  /**
+   * Episode this window was loaded or marked for. Confirmation must not be
+   * written when playback has since moved to another episode.
+   */
+  scopeEpisodeIndex?: number;
   /** Resolved Ad Window Trust Tier; omit → treated as cold-start recoverable. */
   trustTier?: AdWindowTrustTier;
   confirmCount?: number;

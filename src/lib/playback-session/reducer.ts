@@ -578,6 +578,24 @@ function pickRecoveryCancelFields(
   };
 }
 
+/**
+ * Ad windows are timed ranges for one source+episode. Carrying them onto the
+ * next episode makes that timeline seek the old range, and a later confirm
+ * writes the foreign window into the new episode's shared store.
+ * Analyzer reloads on the same episode do not use this — they still preserve
+ * session user-marks via `adSkipWindows.loaded`.
+ */
+function clearAdSkipWindows(state: PlaybackSessionState): PlaybackSessionState {
+  return {
+    ...state,
+    adSkipWindows: [],
+    lastAdSkipWindowKey: null,
+    adSkipInFlightWindowKey: null,
+    suppressedAdSkipWindowKeys: new Set(),
+    recoverableAdSkip: null,
+  };
+}
+
 function switchEpisodeScope(
   state: PlaybackSessionState,
   episodeIndex: number
@@ -594,7 +612,7 @@ function switchEpisodeScope(
     episodeIndex
   );
   return {
-    ...clearStallEpisode(state),
+    ...clearAdSkipWindows(clearStallEpisode(state)),
     currentEpisodeIndex: episodeIndex,
     badPointsByScope: persisted,
     badPoints: nextBadPoints,
@@ -610,7 +628,7 @@ function switchTitleScope(
   episodeIndex: number
 ): PlaybackSessionState {
   return {
-    ...clearStallEpisode(state),
+    ...clearAdSkipWindows(clearStallEpisode(state)),
     contentKey,
     currentEpisodeIndex: episodeIndex,
     badPoints: [],
@@ -808,7 +826,7 @@ export function reducePlaybackSession(
       return withIntentTransition(
         state,
         {
-          ...clearStallEpisode(state),
+          ...clearAdSkipWindows(clearStallEpisode(state)),
           playbackIntent: 'playing',
           resumeIntentAfterSeek: null,
           currentSourceKey: event.sourceKey,

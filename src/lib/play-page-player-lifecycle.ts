@@ -48,6 +48,41 @@ export function consumePlayIdentityInitSkip(skipNext: boolean): {
   return { runInit: true, clearSkip: false };
 }
 
+/**
+ * `video:ended` schedules the next episode after the completion save. A manual
+ * episode pick in that gap must win — only advance when the page is still on
+ * the episode that ended.
+ */
+export function shouldAutoAdvanceEndedEpisode(input: {
+  endedEpisodeIndex: number;
+  currentEpisodeIndex: number;
+}): boolean {
+  return input.currentEpisodeIndex === input.endedEpisodeIndex;
+}
+
+/**
+ * While a new episode's media is still the previous element, live currentTime
+ * and duration belong to the episode being left. Callers must pass the snapped
+ * values instead of reading the player.
+ */
+export function resolveEpisodeProgressSnapshot(input: {
+  episodeIndex: number;
+  playTime: number;
+  totalTime: number;
+}): { episodeIndex: number; playTime: number; totalTime: number } {
+  const playTime = Number.isFinite(input.playTime)
+    ? Math.max(0, Math.floor(input.playTime))
+    : 0;
+  const totalTime = Number.isFinite(input.totalTime)
+    ? Math.max(0, Math.floor(input.totalTime))
+    : 0;
+  return {
+    episodeIndex: input.episodeIndex,
+    playTime,
+    totalTime,
+  };
+}
+
 /** Prefer a non-empty detail/search title over wiping the play URL title. */
 export function resolvePlayUrlTitle(input: {
   detailTitle?: string | null;

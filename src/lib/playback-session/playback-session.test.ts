@@ -1509,6 +1509,36 @@ describe('Playback Session Ad Skip Window effects', () => {
     );
   });
 
+  it('does not keep the previous episode windows when the next episode loads empty', () => {
+    const marked = reducePlaybackSession(
+      loadSources({ currentEpisodeIndex: 0 }),
+      {
+        type: 'user.markAdSkip',
+        nowMs: 10_000,
+        window: {
+          startTimeSeconds: 10,
+          endTimeSeconds: 14,
+          ruleId: 'user-mark',
+          confidence: 'high',
+          action: 'filter',
+          origin: 'user-mark',
+        },
+      }
+    ).state;
+    const switched = reducePlaybackSession(marked, {
+      type: 'user.switchEpisode',
+      episodeIndex: 1,
+      nowMs: 11_000,
+    }).state;
+
+    const loaded = reducePlaybackSession(switched, {
+      type: 'adSkipWindows.loaded',
+      windows: [],
+    });
+
+    expect(loaded.state.adSkipWindows).toEqual([]);
+  });
+
   it('preserves persisted Ad Skip Windows across analyzer reloads', () => {
     const withPersisted = reducePlaybackSession(
       createInitialPlaybackSessionState(),
@@ -1655,6 +1685,68 @@ describe('Playback Session progress-save effects', () => {
       reason: 'episode-change',
       episodeIndex: 1,
     });
+  });
+
+  it('drops the previous episode ad windows when the episode changes', () => {
+    const marked = reducePlaybackSession(
+      loadSources({ currentEpisodeIndex: 0 }),
+      {
+        type: 'user.markAdSkip',
+        nowMs: 10_000,
+        window: {
+          startTimeSeconds: 10,
+          endTimeSeconds: 14,
+          ruleId: 'user-mark',
+          confidence: 'high',
+          action: 'filter',
+          origin: 'user-mark',
+        },
+      }
+    ).state;
+
+    const switched = reducePlaybackSession(marked, {
+      type: 'user.switchEpisode',
+      episodeIndex: 1,
+      nowMs: 11_000,
+    });
+
+    expect(switched.state.currentEpisodeIndex).toBe(1);
+    expect(switched.state.adSkipWindows).toEqual([]);
+    expect(switched.state.lastAdSkipWindowKey).toBeNull();
+    expect(switched.state.recoverableAdSkip).toBeNull();
+  });
+
+  it('drops ad windows when ended advances and when the source changes', () => {
+    const withWindow = reducePlaybackSession(
+      loadSources({ currentEpisodeIndex: 0 }),
+      {
+        type: 'adSkipWindows.loaded',
+        windows: [
+          {
+            startTimeSeconds: 10,
+            endTimeSeconds: 14,
+            ruleId: 'user-mark',
+            confidence: 'high',
+            action: 'filter',
+            origin: 'persisted',
+          },
+        ],
+      }
+    ).state;
+
+    const ended = reducePlaybackSession(withWindow, {
+      type: 'video.ended',
+      nextEpisodeIndex: 1,
+      nowMs: 12_000,
+    });
+    expect(ended.state.adSkipWindows).toEqual([]);
+
+    const switchedSource = reducePlaybackSession(withWindow, {
+      type: 'user.switchSource',
+      sourceKey: 'direct-5',
+      nowMs: 12_000,
+    });
+    expect(switchedSource.state.adSkipWindows).toEqual([]);
   });
 
   it('emits a completed save intent before ended→next auto-advance', () => {
