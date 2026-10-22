@@ -115,15 +115,20 @@ export function selectProgressiveSourceProbeCandidates({
     .slice(0, limit);
 }
 
+/**
+ * A failed background probe is weak evidence (CORS, a slow first segment), so
+ * it is not a verdict either way: auto-recovery must not count it as verified,
+ * yet a user may still try it and blind fallback may reach it last.
+ */
 export function createProgressiveSourceProbeFailureStatus({
   domain,
   reason,
 }: ProgressiveSourceProbeFailureStatusInput): SourceStatus {
   return {
-    kind: 'playable',
+    kind: 'unavailable',
     reason: reason
-      ? `后台测速未通过（${reason}），可尝试播放`
-      : '后台测速未通过，可尝试播放',
+      ? `后台测速未通过（${reason}），可手动尝试`
+      : '后台测速未通过，可手动尝试',
     playbackMode: 'direct',
     domain,
     updatedAt: Date.now(),

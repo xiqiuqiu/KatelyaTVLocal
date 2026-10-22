@@ -54,6 +54,7 @@ import {
 } from '@/lib/hls-recovery';
 import { stopVideoElementLoading } from '@/lib/media-cleanup';
 import {
+  buildPlayIdentityKey,
   consumePlayIdentityInitSkip,
   isArtPlayerBoundToContainer,
   resolveEpisodeProgressSnapshot,
@@ -61,6 +62,7 @@ import {
   shouldApplyQueuedResumeForEpisode,
   shouldAutoAdvanceEndedEpisode,
   shouldSkipLeavingProgressSave,
+  shouldSkipPlayIdentityInitForUrlRewrite,
 } from '@/lib/play-page-player-lifecycle';
 import {
   type PlayRecordSaveReason,
@@ -885,14 +887,7 @@ function usePlayPageSession() {
   const searchParams = useSearchParams();
   const isTvMode = resolveIsTvMode(searchParams);
   const playbackPreparation = usePlaybackPreparation();
-  const playIdentityKey = [
-    searchParams.get('source') || '',
-    searchParams.get('id') || '',
-    searchParams.get('stitle') || '',
-    searchParams.get('title') || '',
-    searchParams.get('stype') || '',
-    searchParams.get('prefer') || '',
-  ].join('\0');
+  const playIdentityKey = buildPlayIdentityKey(searchParams);
   // Soft source switches update the URL via replaceState (Next syncs that into
   // useSearchParams). Skip the one identity-init that would otherwise flip
   // `loading` and unmount the ArtPlayer host while artPlayerRef stays stale.
@@ -1239,6 +1234,12 @@ function usePlayPageSession() {
   const resumeTimeRef = useRef<number | null>(null);
   /** Bumped when a new title init replaces an in-flight source preference. */
   const sourcePreferenceGenerationRef = useRef(0);
+  /**
+   * Owns the batched preference request. Separate from the init effect's
+   * controller so a skipped identity init (URL rewrite) does not abort batches
+   * that are still filling in statuses for the current title.
+   */
+  const sourcePreferenceAbortRef = useRef<AbortController | null>(null);
   const resumeEpisodeIndexRef = useRef<number | null>(null);
   const sourceChangeMediaAttemptRef = useRef<{
     attemptId: number;
@@ -2774,24 +2775,10 @@ function usePlayPageSession() {
           effect.type === 'switchSource'
       );
       if (switchEffect) {
-        void handleSourceChange(
-          switchEffect.source.source,
-          switchEffect.source.id,
-          switchEffect.source.title,
-          {
-            autoRecovery: true,
-            resumeTime: switchEffect.resumeTime,
-            reason: '播放源加载超时，自动切换到其他播放源',
-            autoPlayAfterReady: true,
-          }
-        ).then((switched) => {
-          if (!switched) {
-            dispatchPlaybackSessionEvent({
-              type: 'recovery.switchFailed',
-              sourceKey: switchEffect.sourceKey,
-            });
-          }
-        });
+        void runAutoRecoverySourceSwitch(
+          switchEffect,
+          '播放源加载超时，自动切换到其他播放源'
+        );
         return;
       }
 
@@ -3292,29 +3279,10 @@ function usePlayPageSession() {
         resumeTime: switchEffect.resumeTime,
       }
     );
-    if (switchEffect.resumeTime != null) {
-      resumeTimeRef.current = switchEffect.resumeTime;
-      resumeEpisodeIndexRef.current = currentEpisodeIndexRef.current;
-      sourceSwitchSavePendingRef.current = true;
-    }
-    void handleSourceChange(
-      switchEffect.source.source,
-      switchEffect.source.id,
-      switchEffect.source.title,
-      {
-        autoRecovery: true,
-        resumeTime: switchEffect.resumeTime,
-        reason: '当前线路持续卡顿，自动切换播放源',
-        autoPlayAfterReady: true,
-      }
-    ).then((switched) => {
-      if (!switched) {
-        dispatchPlaybackSessionEvent({
-          type: 'recovery.switchFailed',
-          sourceKey: switchEffect.sourceKey,
-        });
-      }
-    });
+    void runAutoRecoverySourceSwitch(
+      switchEffect,
+      '当前线路持续卡顿，自动切换播放源'
+    );
   };
 
   const getNextRecoverySource = () => {
@@ -3941,7 +3909,7 @@ function usePlayPageSession() {
         // observations so admin monitors do not treat them as playback errors.
         emitPlaybackDebugLog(
           'progressive-source-probe-miss',
-          '候选源后台测速未通过，保持可尝试',
+          '候选源后台测速未通过，仅保留手动尝试',
           {
             sourceKey,
             reason,
@@ -4308,6 +4276,83 @@ function usePlayPageSession() {
     updateVideoUrlRef.current = updateVideoUrl;
   });
 
+  /**
+   * Carry out an R3 switchSource effect. A target this device recorded as
+   * unavailable is skipped and the session picks the next candidate, so one
+   * stale record cannot turn auto-recovery into a terminal error page.
+   */
+  const runAutoRecoverySourceSwitch = async (
+    effect: Extract<PlaybackSessionEffect, { type: 'switchSource' }>,
+    reason: string
+  ): Promise<boolean> => {
+    let target = effect;
+    for (
+      let remaining = availableSourcesRef.current.length;
+      remaining >= 0;
+      remaining -= 1
+    ) {
+      const remembered = getRememberedSourceStatusForSource(
+        target.sourceKey,
+        target.source.episodes || []
+      );
+      if (remembered?.kind !== 'unavailable') {
+        if (target.resumeTime != null) {
+          resumeTimeRef.current = target.resumeTime;
+          resumeEpisodeIndexRef.current = currentEpisodeIndexRef.current;
+          sourceSwitchSavePendingRef.current = true;
+        }
+        const switched = await handleSourceChange(
+          target.source.source,
+          target.source.id,
+          target.source.title,
+          {
+            autoRecovery: true,
+            resumeTime: target.resumeTime,
+            reason,
+            autoPlayAfterReady: true,
+          }
+        );
+        if (!switched) {
+          dispatchPlaybackSessionEvent({
+            type: 'recovery.switchFailed',
+            sourceKey: target.sourceKey,
+          });
+        }
+        return switched;
+      }
+
+      emitPlaybackDebugLog(
+        'switch-source-skip-remembered-unavailable',
+        '候选线路本机近期不可用，跳过并尝试下一条',
+        {
+          reason,
+          sourceKey: target.sourceKey,
+          rememberedReason: remembered.reason,
+        }
+      );
+      const skipped = dispatchPlaybackSessionEvent({
+        type: 'recovery.switchSkipped',
+        sourceKey: target.sourceKey,
+        reason: target.reason,
+        nowMs: Date.now(),
+        snapshot: getCurrentVideoSnapshot(),
+      });
+      const next = skipped.effects.find(
+        (
+          candidate
+        ): candidate is Extract<
+          PlaybackSessionEffect,
+          { type: 'switchSource' }
+        > => candidate.type === 'switchSource'
+      );
+      if (!next) {
+        return false;
+      }
+      target = next;
+    }
+    return false;
+  };
+
   const trySwitchToNextAvailableSource = async (reason: string) => {
     if (playbackPolicyRef.current?.deviceUnsupported) {
       return false;
@@ -4357,13 +4402,6 @@ function usePlayPageSession() {
 
     const nextSource = switchEffect.source;
     const recoveryResumeTime = switchEffect.resumeTime;
-    if (recoveryResumeTime) {
-      resumeTimeRef.current = recoveryResumeTime;
-      resumeEpisodeIndexRef.current = currentEpisodeIndexRef.current;
-      sourceSwitchSavePendingRef.current = true;
-    }
-
-    const nextSourceKey = switchEffect.sourceKey;
 
     console.warn(`${reason}，自动切换到播放源: ${nextSource.source_name}`);
     emitPlaybackDebugLog('switch-source', '已自动切换到其他播放源', {
@@ -4376,23 +4414,9 @@ function usePlayPageSession() {
     });
     hlsAutoSourceSwitchSessionRef.current = currentSessionId;
 
-    const switched = await handleSourceChange(
-      nextSource.source,
-      nextSource.id,
-      nextSource.title,
-      {
-        autoRecovery: true,
-        resumeTime: recoveryResumeTime,
-        reason,
-        autoPlayAfterReady: true,
-      }
-    );
+    const switched = await runAutoRecoverySourceSwitch(switchEffect, reason);
 
     if (!switched) {
-      dispatchPlaybackSessionEvent({
-        type: 'recovery.switchFailed',
-        sourceKey: nextSourceKey,
-      });
       hlsAutoSourceSwitchSessionRef.current = null;
       return false;
     }
@@ -4743,6 +4767,9 @@ function usePlayPageSession() {
 
     let cancelled = false;
     const controller = new AbortController();
+    sourcePreferenceAbortRef.current?.abort();
+    const preferenceController = new AbortController();
+    sourcePreferenceAbortRef.current = preferenceController;
 
     const urlSource = searchParams.get('source') || '';
     const urlId = searchParams.get('id') || '';
@@ -4983,7 +5010,7 @@ function usePlayPageSession() {
           optimizationEnabled
         ) {
           const preferredSource = await preferBestSource(sourcesInfo, {
-            signal: controller.signal,
+            signal: preferenceController.signal,
           });
           if (cancelled) return;
           if (!preferredSource) {
@@ -5007,6 +5034,23 @@ function usePlayPageSession() {
 
         setAvailableSources(sourcesInfo);
         console.log(detailData.source, detailData.id);
+        // A pinned source (history, shared link) skips preference, which used to
+        // leave mid-play recovery with no evidence at all. Rank in the
+        // background without delaying startup; the pick itself is ignored.
+        if (
+          urlSource &&
+          urlId &&
+          !needPreferRef.current &&
+          !fellBackFromHistory &&
+          optimizationEnabled &&
+          sourcesInfo.length > 1
+        ) {
+          void preferBestSource(sourcesInfo, {
+            signal: preferenceController.signal,
+          }).catch((error) => {
+            console.warn('后台线路优选失败', error);
+          });
+        }
 
         setNeedPrefer(false);
         setCurrentSource(detailData.source);
@@ -5065,6 +5109,17 @@ function usePlayPageSession() {
           newUrl.searchParams.set('title', resolvedTitle);
         }
         newUrl.searchParams.delete('prefer');
+        // This rewrite only records what init already resolved. Letting it
+        // re-enter init would wipe the preference results just gathered and,
+        // with prefer gone, never rank sources again for this title.
+        if (
+          shouldSkipPlayIdentityInitForUrlRewrite(
+            new URLSearchParams(window.location.search),
+            newUrl.searchParams
+          )
+        ) {
+          skipPlayIdentityInitRef.current = true;
+        }
         window.history.replaceState({}, '', newUrl.toString());
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
@@ -5088,6 +5143,8 @@ function usePlayPageSession() {
       controller.abort();
     };
   }, [playIdentityKey]);
+
+  useEffect(() => () => sourcePreferenceAbortRef.current?.abort(), []);
 
   // 处理换源
   const handleSourceChange = async (
@@ -5134,10 +5191,19 @@ function usePlayPageSession() {
       );
       if (rememberedStatus?.kind === 'unavailable') {
         dispatchVideoPlaybackUi({ type: 'loading.end' });
-        setPlaybackError(
-          rememberedStatus.reason || '该播放源当前不可用',
-          'source-unavailable'
-        );
+        const message = rememberedStatus.reason || '该播放源当前不可用';
+        // Stay on the line that is still playing; only a page with no live
+        // player falls back to the error view.
+        if (artPlayerRef.current) {
+          if (!options.autoRecovery) {
+            showPlayerNotice(
+              artPlayerRef.current,
+              `该线路近期不可用：${message}`
+            );
+          }
+        } else {
+          setPlaybackError(message, 'source-unavailable');
+        }
         return false;
       }
 
@@ -6377,30 +6443,10 @@ function usePlayPageSession() {
                   if (switchEffect) {
                     state.lastRecoveryAction = 'switch-source';
                     state.lastRecoveryActionAt = now;
-                    if (switchEffect.resumeTime != null) {
-                      resumeTimeRef.current = switchEffect.resumeTime;
-                      resumeEpisodeIndexRef.current =
-                        currentEpisodeIndexRef.current;
-                      sourceSwitchSavePendingRef.current = true;
-                    }
-                    void handleSourceChange(
-                      switchEffect.source.source,
-                      switchEffect.source.id,
-                      switchEffect.source.title,
-                      {
-                        autoRecovery: true,
-                        resumeTime: switchEffect.resumeTime,
-                        reason: reason || 'HLS.js 恢复切源',
-                        autoPlayAfterReady: true,
-                      }
-                    ).then((switched) => {
-                      if (!switched) {
-                        dispatchPlaybackSessionEvent({
-                          type: 'recovery.switchFailed',
-                          sourceKey: switchEffect.sourceKey,
-                        });
-                      }
-                    });
+                    void runAutoRecoverySourceSwitch(
+                      switchEffect,
+                      reason || 'HLS.js 恢复切源'
+                    );
                     return;
                   }
 

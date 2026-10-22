@@ -462,6 +462,77 @@ describe('initial source selection', () => {
   });
 });
 
+describe('failed background probes', () => {
+  const probeFailed: SourceStatus = {
+    kind: 'unavailable',
+    reason: '后台测速未通过（CORS），可手动尝试',
+    fromMemory: true,
+    localConfidence: 'low',
+  };
+  const sources = [
+    createSource('current', '1'),
+    createSource('failed', '2'),
+    createSource('untested', '3'),
+  ];
+
+  it('are not verified recovery candidates', () => {
+    expect(
+      selectRecoveryCandidate({
+        sources,
+        currentSourceKey: 'current-1',
+        currentEpisodeIndex: 0,
+        statuses: new Map([['failed-2', probeFailed]]),
+      })
+    ).toBeNull();
+  });
+
+  it('rank behind untested lines in blind fallback', () => {
+    const statuses = new Map([['failed-2', probeFailed]]);
+    const first = selectRecoveryCandidate({
+      sources,
+      currentSourceKey: 'current-1',
+      currentEpisodeIndex: 0,
+      statuses,
+      allowUnverifiedFallback: true,
+    });
+    expect(first?.sourceKey).toBe('untested-3');
+
+    const second = selectRecoveryCandidate({
+      sources,
+      currentSourceKey: 'current-1',
+      currentEpisodeIndex: 0,
+      statuses,
+      attemptedSourceKeys: new Set(['untested-3']),
+      allowUnverifiedFallback: true,
+    });
+    expect(second?.sourceKey).toBe('failed-2');
+  });
+
+  it('can still be tried manually after a probe', () => {
+    const item = buildSourceAvailabilityList({
+      sources,
+      currentSourceKey: 'current-1',
+      currentEpisodeIndex: 0,
+      statuses: new Map([['failed-2', probeFailed]]),
+    }).find((entry) => entry.sourceKey === 'failed-2');
+    expect(item?.manualSwitch.mode).toBe('probe-first');
+  });
+
+  it('keeps a confident unavailable record out of blind fallback', () => {
+    expect(
+      selectRecoveryCandidate({
+        sources: sources.slice(0, 2),
+        currentSourceKey: 'current-1',
+        currentEpisodeIndex: 0,
+        statuses: new Map<string, SourceStatus>([
+          ['failed-2', { kind: 'unavailable', fromMemory: true }],
+        ]),
+        allowUnverifiedFallback: true,
+      })
+    ).toBeNull();
+  });
+});
+
 describe('source status evidence freshness', () => {
   const rememberedUnavailable: SourceStatus = {
     kind: 'unavailable',

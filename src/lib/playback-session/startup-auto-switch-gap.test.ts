@@ -135,6 +135,96 @@ describe('startup hang auto-switch feedback loop', () => {
     expect(result.state.recoveryStage).toBe('exhausted');
   });
 
+  it('a skipped recovery target moves on to the next candidate', () => {
+    const third = createSource('third', '3');
+    const synced = reducePlaybackSession(playingState(), {
+      type: 'sources.loaded',
+      sources: [current, alt, third],
+      currentSourceKey: 'bad-1',
+      currentEpisodeIndex: 0,
+      sourceStatuses: new Map<string, SourceStatus>([
+        ['good-2', { kind: 'direct' }],
+        ['third-3', { kind: 'direct' }],
+      ]),
+    }).state;
+    const first = reducePlaybackSession(synced, startupHardFailure);
+    const firstTarget = first.effects.find(
+      (effect) => effect.type === 'switchSource'
+    );
+    expect(firstTarget).toMatchObject({ sourceKey: 'good-2' });
+
+    const skipped = reducePlaybackSession(first.state, {
+      type: 'recovery.switchSkipped',
+      sourceKey: 'good-2',
+      reason: 'auto-recovery',
+      nowMs: 10_100,
+      snapshot: { currentTime: 0 },
+    });
+
+    expect(skipped.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'switchSource',
+          sourceKey: 'third-3',
+        }),
+      ])
+    );
+    expect(skipped.state.recoveredSourceKeys.has('good-2')).toBe(true);
+
+    const exhausted = reducePlaybackSession(skipped.state, {
+      type: 'recovery.switchSkipped',
+      sourceKey: 'third-3',
+      reason: 'auto-recovery',
+      nowMs: 10_200,
+      snapshot: { currentTime: 0 },
+    });
+    expect(
+      exhausted.effects.some((effect) => effect.type === 'switchSource')
+    ).toBe(false);
+    expect(exhausted.state.recoveryStage).toBe('exhausted');
+    expect(
+      exhausted.effects.some((effect) => effect.type === 'showInPlayerFailure')
+    ).toBe(true);
+  });
+
+  it('caps blind startup switches on a cold title', () => {
+    const sources = [
+      current,
+      ...['a', 'b', 'c', 'd'].map((s) => createSource(s, '9')),
+    ];
+    let state = reducePlaybackSession(playingState(), {
+      type: 'sources.loaded',
+      sources,
+      currentSourceKey: 'bad-1',
+      currentEpisodeIndex: 0,
+    }).state;
+    const tried: string[] = [];
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const result = reducePlaybackSession(state, {
+        ...startupHardFailure,
+        nowMs: 10_000 + attempt * 30_000,
+      });
+      const target = result.effects.find(
+        (effect) => effect.type === 'switchSource'
+      );
+      if (!target || target.type !== 'switchSource') {
+        expect(result.state.recoveryStage).toBe('exhausted');
+        break;
+      }
+      tried.push(target.sourceKey);
+      state = reducePlaybackSession(result.state, {
+        type: 'sources.loaded',
+        sources,
+        currentSourceKey: target.sourceKey,
+        currentEpisodeIndex: 0,
+        recoveredSourceKeys: result.state.recoveredSourceKeys,
+      }).state;
+    }
+
+    expect(tried).toEqual(['a-9', 'b-9']);
+  });
+
   it('mid-playback hard failure tries one unverified source before exhausting', () => {
     const synced = reducePlaybackSession(playingState(), {
       type: 'sources.loaded',

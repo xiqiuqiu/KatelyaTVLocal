@@ -197,10 +197,21 @@ function getAvailabilityKind(
   }
 }
 
+/** A failed local background probe: excluded from verified recovery only. */
+function isSoftUnavailable(status: SourceStatus | undefined): boolean {
+  return status?.kind === 'unavailable' && status.localConfidence === 'low';
+}
+
 function getManualSwitchDecision(
   availabilityKind: AvailabilityKind,
   status: SourceStatus | undefined
 ): SourceAvailabilityDecision {
+  if (availabilityKind === 'unavailable' && isSoftUnavailable(status)) {
+    return {
+      mode: 'probe-first',
+      reason: status?.reason || '后台测速未通过，可手动尝试',
+    };
+  }
   switch (availabilityKind) {
     case 'current':
       return { mode: 'blocked', reason: '当前正在播放此线路' };
@@ -369,6 +380,10 @@ function pickUnverifiedStartupFallbackCandidate(
   items: SourceAvailabilityItem[],
   attempted: Set<string>
 ): SourceAvailabilityItem | null {
+  // Untested lines first; a line whose background probe already failed is
+  // only worth a blind try once nothing untested is left.
+  const fallbackTier = (item: SourceAvailabilityItem) =>
+    item.availabilityKind === 'unavailable' ? 1 : 0;
   return (
     items
       .filter(
@@ -377,9 +392,15 @@ function pickUnverifiedStartupFallbackCandidate(
           !attempted.has(item.sourceKey) &&
           item.episode.exists &&
           (item.availabilityKind === 'unknown' ||
-            item.availabilityKind === 'probing')
+            item.availabilityKind === 'probing' ||
+            (item.availabilityKind === 'unavailable' &&
+              isSoftUnavailable(item.effectiveStatus)))
       )
-      .sort((left, right) => left.orderIndex - right.orderIndex)[0] || null
+      .sort(
+        (left, right) =>
+          fallbackTier(left) - fallbackTier(right) ||
+          left.orderIndex - right.orderIndex
+      )[0] || null
   );
 }
 

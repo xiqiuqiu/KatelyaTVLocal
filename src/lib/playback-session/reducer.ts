@@ -46,6 +46,7 @@ const DEFAULT_SOURCE_SWITCH_SETTLE_MS = 2000;
 const AD_SKIP_UNDO_DISMISS_MS = 5000;
 /** R3 disclosure bar — heavier / longer-lived than Ad Skip undo (ADR 0007). */
 const AUTO_SOURCE_SWITCH_UNDO_DISMISS_MS = 12_000;
+const MAX_UNVERIFIED_RECOVERY_ATTEMPTS = 2;
 
 export function createInitialPlaybackSessionState(
   input: Partial<PlaybackSessionState> = {}
@@ -61,6 +62,7 @@ export function createInitialPlaybackSessionState(
     sourceScores: new Map(),
     measuredVideoInfo: new Map(),
     recoveredSourceKeys: new Set(),
+    unverifiedRecoveryAttempts: 0,
     badPoints: [],
     badPointsByScope: new Map(),
     adSkipWindows: [],
@@ -170,16 +172,17 @@ function createRecoverySwitchEffect(
     measured: state.measuredVideoInfo,
     sourceSelectionScores: toSelectionScores(state.sources, state.sourceScores),
     attemptedSourceKeys: state.recoveredSourceKeys,
-    allowUnverifiedFallback: shouldAllowUnverifiedRecoveryFallback(
-      reason,
-      snapshot,
-      evidence
-    ),
+    allowUnverifiedFallback:
+      state.unverifiedRecoveryAttempts < MAX_UNVERIFIED_RECOVERY_ATTEMPTS &&
+      shouldAllowUnverifiedRecoveryFallback(reason, snapshot, evidence),
   });
 
   if (!selected) {
     return null;
   }
+  const unverifiedRecoveryAttempts = selected.autoRecovery.eligible
+    ? state.unverifiedRecoveryAttempts
+    : state.unverifiedRecoveryAttempts + 1;
 
   const candidate = selected.source;
   const sourceKey = selected.sourceKey;
@@ -224,6 +227,7 @@ function createRecoverySwitchEffect(
       badPoints
     ),
     recoveredSourceKeys: nextRecoveredSourceKeys,
+    unverifiedRecoveryAttempts,
   };
 
   return {
@@ -617,6 +621,7 @@ function switchEpisodeScope(
     badPointsByScope: persisted,
     badPoints: nextBadPoints,
     recoveredSourceKeys: new Set(),
+    unverifiedRecoveryAttempts: 0,
     recoveryResumeTime: null,
     pendingResumeTime: null,
   };
@@ -634,6 +639,7 @@ function switchTitleScope(
     badPoints: [],
     badPointsByScope: new Map(),
     recoveredSourceKeys: new Set(),
+    unverifiedRecoveryAttempts: 0,
     recoveryResumeTime: null,
     pendingResumeTime: null,
   };
@@ -828,6 +834,8 @@ export function reducePlaybackSession(
         state,
         {
           ...clearAdSkipWindows(clearStallEpisode(state)),
+          // A user-picked line starts a fresh blind-try budget.
+          unverifiedRecoveryAttempts: 0,
           playbackIntent: 'playing',
           resumeIntentAfterSeek: null,
           currentSourceKey: event.sourceKey,
@@ -1244,6 +1252,24 @@ export function reducePlaybackSession(
         },
         effects: [],
       };
+    }
+
+    case 'recovery.switchSkipped': {
+      // The skipped target stays on recoveredSourceKeys so selection moves on;
+      // the ladder already reached R3, so retry without re-climbing it. Each
+      // skip consumes one candidate, and exhaustion surfaces the in-player
+      // failure instead of a terminal page.
+      return tryEmitR3(
+        {
+          ...state,
+          recoveryInFlight: null,
+          recoverableAutoSourceSwitch: null,
+        },
+        event.snapshot,
+        event.nowMs,
+        event.reason,
+        { platform: 'hlsjs', hardFailure: true }
+      );
     }
 
     case 'recovery.cancel': {

@@ -34,6 +34,32 @@ export function isArtPlayerBoundToContainer(
   );
 }
 
+type SearchParamsLike = { get(name: string): string | null };
+
+/** URL params that select what the play page initialises. */
+export function buildPlayIdentityKey(params: SearchParamsLike): string {
+  return [
+    params.get('source') || '',
+    params.get('id') || '',
+    params.get('stitle') || '',
+    params.get('title') || '',
+    params.get('stype') || '',
+    params.get('prefer') || '',
+  ].join('\0');
+}
+
+/**
+ * The page rewrote its own URL to reflect state it already holds. Skip the
+ * identity init only when the rewrite actually changes the key — a skip armed
+ * for an unchanged key would linger and swallow the next real navigation.
+ */
+export function shouldSkipPlayIdentityInitForUrlRewrite(
+  from: SearchParamsLike,
+  to: SearchParamsLike
+): boolean {
+  return buildPlayIdentityKey(from) !== buildPlayIdentityKey(to);
+}
+
 /**
  * Soft source switches set a one-shot skip so URL identity churn does not tear
  * down the in-page player via the loading gate.

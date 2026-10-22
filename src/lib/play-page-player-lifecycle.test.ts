@@ -6,6 +6,7 @@ import {
   shouldApplyQueuedResumeForEpisode,
   shouldAutoAdvanceEndedEpisode,
   shouldSkipLeavingProgressSave,
+  shouldSkipPlayIdentityInitForUrlRewrite,
 } from '@/lib/play-page-player-lifecycle';
 
 describe('play-page player lifecycle', () => {
@@ -44,6 +45,37 @@ describe('play-page player lifecycle', () => {
       expect(isArtPlayerBoundToContainer({ template: {} }, host)).toBe(false);
 
       host.remove();
+    });
+  });
+
+  describe('shouldSkipPlayIdentityInitForUrlRewrite', () => {
+    const params = (query: string) => new URLSearchParams(query);
+
+    it('skips when init drops prefer after choosing the requested source', () => {
+      expect(
+        shouldSkipPlayIdentityInitForUrlRewrite(
+          params('source=a&id=1&title=T&prefer=true'),
+          params('source=a&id=1&title=T&year=2001')
+        )
+      ).toBe(true);
+    });
+
+    it('skips when init settles on a different preferred source', () => {
+      expect(
+        shouldSkipPlayIdentityInitForUrlRewrite(
+          params('source=a&id=1&title=T&prefer=true'),
+          params('source=b&id=2&title=T')
+        )
+      ).toBe(true);
+    });
+
+    it('does not arm a skip when only non-identity params change', () => {
+      expect(
+        shouldSkipPlayIdentityInitForUrlRewrite(
+          params('source=a&id=1&title=T'),
+          params('source=a&id=1&title=T&year=2001')
+        )
+      ).toBe(false);
     });
   });
 

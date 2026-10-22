@@ -120,7 +120,7 @@ describe('starvation switches source immediately', () => {
     ).toEqual(expect.objectContaining({ sourceKey: 'verified-2' }));
   });
 
-  it('does not treat a hard failure mid-playback as an unverified switch', () => {
+  it('lets a mid-playback hard failure try one unverified source', () => {
     const state = playingWith(
       [current, unknown],
       new Map<string, SourceStatus>([['unknown-3', { kind: 'idle' }]])
@@ -138,8 +138,8 @@ describe('starvation switches source immediately', () => {
     });
 
     expect(
-      result.effects.some((effect) => effect.type === 'switchSource')
-    ).toBe(false);
+      result.effects.find((effect) => effect.type === 'switchSource')
+    ).toEqual(expect.objectContaining({ sourceKey: 'unknown-3' }));
   });
 
   it('keeps a single soft stall on the same-source ladder', () => {
