@@ -126,6 +126,40 @@ describe('startup hang auto-switch feedback loop', () => {
     ).toBe(true);
   });
 
+  it('source-change timeout while intent is paused shows the failure panel', () => {
+    const synced = reducePlaybackSession(playingState(), {
+      type: 'sources.loaded',
+      sources: [current, alt],
+      currentSourceKey: 'bad-1',
+      currentEpisodeIndex: 0,
+      sourceStatuses: new Map<string, SourceStatus>([
+        ['good-2', { kind: 'direct' }],
+      ]),
+    }).state;
+    const started = reducePlaybackSession(synced, {
+      type: 'sourceChange.started',
+      attemptId: 1,
+      sourceKey: 'bad-1',
+    }).state;
+    const paused = reducePlaybackSession(started, { type: 'user.pause' }).state;
+
+    const result = reducePlaybackSession(paused, {
+      type: 'timer.sourceChangeTimeout',
+      attemptId: 1,
+      sourceKey: 'bad-1',
+      nowMs: 25_000,
+      snapshot: { currentTime: 36 },
+    });
+
+    expect(
+      result.effects.some((effect) => effect.type === 'switchSource')
+    ).toBe(false);
+    expect(
+      result.effects.some((effect) => effect.type === 'showInPlayerFailure')
+    ).toBe(true);
+    expect(result.state.recoveryStage).toBe('exhausted');
+  });
+
   it('repro guard: unsynced empty session still cannot invent candidates', () => {
     const result = reducePlaybackSession(playingState(), startupHardFailure);
 

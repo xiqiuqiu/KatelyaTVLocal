@@ -358,10 +358,46 @@ export function selectInitialSourceCandidate(
   );
 }
 
+function getEpisodeHost(item: SourceAvailabilityItem): string | null {
+  if (!item.episode.url) return null;
+  try {
+    return new URL(item.episode.url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Hosts of the failing line and of lines already tried. A sibling on the same
+ * CDN usually fails the same way, so it is tried only after other hosts.
+ */
+function getFailedHosts(
+  items: SourceAvailabilityItem[],
+  attempted: Set<string>
+): Set<string> {
+  const hosts = new Set<string>();
+  items.forEach((item) => {
+    if (item.isCurrent || attempted.has(item.sourceKey)) {
+      const host = getEpisodeHost(item);
+      if (host) hosts.add(host);
+    }
+  });
+  return hosts;
+}
+
+function failedHostTier(
+  item: SourceAvailabilityItem,
+  failedHosts: Set<string>
+): number {
+  const host = getEpisodeHost(item);
+  return host && failedHosts.has(host) ? 1 : 0;
+}
+
 function pickAutoRecoveryCandidate(
   items: SourceAvailabilityItem[],
   attempted: Set<string>
 ): SourceAvailabilityItem | null {
+  const failedHosts = getFailedHosts(items, attempted);
   return (
     items
       .filter(
@@ -371,7 +407,10 @@ function pickAutoRecoveryCandidate(
           !attempted.has(item.sourceKey)
       )
       .sort(
-        (left, right) => left.autoRecovery.rank - right.autoRecovery.rank
+        (left, right) =>
+          failedHostTier(left, failedHosts) -
+            failedHostTier(right, failedHosts) ||
+          left.autoRecovery.rank - right.autoRecovery.rank
       )[0] || null
   );
 }
@@ -382,8 +421,10 @@ function pickUnverifiedStartupFallbackCandidate(
 ): SourceAvailabilityItem | null {
   // Untested lines first; a line whose background probe already failed is
   // only worth a blind try once nothing untested is left.
+  const failedHosts = getFailedHosts(items, attempted);
   const fallbackTier = (item: SourceAvailabilityItem) =>
-    item.availabilityKind === 'unavailable' ? 1 : 0;
+    (item.availabilityKind === 'unavailable' ? 2 : 0) +
+    failedHostTier(item, failedHosts);
   return (
     items
       .filter(

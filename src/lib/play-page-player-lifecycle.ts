@@ -75,6 +75,36 @@ export function consumePlayIdentityInitSkip(skipNext: boolean): {
 }
 
 /**
+ * ArtPlayer's `switch` setter pauses the playing video before swapping the
+ * URL. Arm a one-shot marker only when that pause will actually fire (video
+ * playing); an armed marker with no pause event would swallow the user's next
+ * real pause.
+ */
+export function shouldArmSystemPauseForUrlSwitch(input: {
+  videoPaused: boolean | undefined;
+  currentUrl: string | undefined;
+  nextUrl: string;
+}): boolean {
+  // ArtPlayer returns early without pausing when the URL is unchanged.
+  return input.videoPaused === false && input.currentUrl !== input.nextUrl;
+}
+
+/**
+ * Classify a `video:pause`. A pause the page caused itself (URL switch) must
+ * not become user-paused intent, or every later automatic recovery is gated
+ * and a failed switch hangs with a spinner.
+ */
+export function consumeSystemPause(systemPausePending: boolean): {
+  isUserPause: boolean;
+  clearPending: boolean;
+} {
+  if (systemPausePending) {
+    return { isUserPause: false, clearPending: true };
+  }
+  return { isUserPause: true, clearPending: false };
+}
+
+/**
  * `video:ended` schedules the next episode after the completion save. A manual
  * episode pick in that gap must win — only advance when the page is still on
  * the episode that ended.

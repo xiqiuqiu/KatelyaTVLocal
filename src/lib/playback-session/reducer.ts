@@ -1529,19 +1529,48 @@ export function reducePlaybackSession(
         return { state, effects: [] };
       }
 
-      return handleStallCandidate(
-        {
-          ...state,
-          sourceChangeInFlight: false,
-          sourceChangeSourceKey: null,
-        },
-        event.snapshot,
-        event.nowMs,
-        {
-          hardFailure: true,
-          forceR3Evaluation: true,
-          r3Reason: 'source-timeout',
+      {
+        const timedOut = handleStallCandidate(
+          {
+            ...state,
+            sourceChangeInFlight: false,
+            sourceChangeSourceKey: null,
+          },
+          event.snapshot,
+          event.nowMs,
+          {
+            hardFailure: true,
+            forceR3Evaluation: true,
+            r3Reason: 'source-timeout',
+          }
+        );
+        // The new line never became playable. If intent gates every automatic
+        // step, the user would be left on a spinner; surface the failure panel
+        // so they can retry or pick a line themselves.
+        const acted = timedOut.effects.some(
+          (effect) =>
+            effect.type === 'switchSource' ||
+            effect.type === 'showInPlayerFailure'
+        );
+        if (acted) {
+          return timedOut;
         }
-      );
+        return {
+          state: {
+            ...timedOut.state,
+            recoveryStage: 'exhausted',
+            stallEpisodeActive: false,
+            recoveryInFlight: null,
+          },
+          effects: [
+            ...timedOut.effects,
+            {
+              type: 'showInPlayerFailure',
+              reason: 'recovery-exhausted',
+              actions: ['retry', 'switch-source', 'leave'],
+            },
+          ],
+        };
+      }
   }
 }

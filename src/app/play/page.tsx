@@ -56,10 +56,12 @@ import { stopVideoElementLoading } from '@/lib/media-cleanup';
 import {
   buildPlayIdentityKey,
   consumePlayIdentityInitSkip,
+  consumeSystemPause,
   isArtPlayerBoundToContainer,
   resolveEpisodeProgressSnapshot,
   resolvePlayUrlTitle,
   shouldApplyQueuedResumeForEpisode,
+  shouldArmSystemPauseForUrlSwitch,
   shouldAutoAdvanceEndedEpisode,
   shouldSkipLeavingProgressSave,
   shouldSkipPlayIdentityInitForUrlRewrite,
@@ -1327,6 +1329,8 @@ function usePlayPageSession() {
     })
   );
   const systemSeekInFlightRef = useRef(false);
+  /** Set right before ArtPlayer's URL switch pauses the playing video. */
+  const systemPausePendingRef = useRef(false);
   const hlsAutoSourceSwitchSessionRef = useRef<number | null>(null);
   const hlsRecoveryStateRef = useRef({
     stallCount: 0,
@@ -2779,6 +2783,13 @@ function usePlayPageSession() {
           switchEffect,
           '播放源加载超时，自动切换到其他播放源'
         );
+        return;
+      }
+      if (
+        timeoutResult.effects.some(
+          (effect) => effect.type === 'showInPlayerFailure'
+        )
+      ) {
         return;
       }
 
@@ -4608,6 +4619,7 @@ function usePlayPageSession() {
 
   const disposeCurrentPlayer = () => {
     startHlsPlaybackSession();
+    systemPausePendingRef.current = false;
     clearTvPlayerControlBindings();
     const player = artPlayerRef.current;
     const video = player?.video as HTMLVideoElement | undefined;
@@ -5831,6 +5843,14 @@ function usePlayPageSession() {
           artPlayerRef.current &&
           isArtPlayerBoundToContainer(artPlayerRef.current, artRef.current)
         ) {
+          // ArtPlayer's switch pauses first; that pause is ours, not the user's.
+          systemPausePendingRef.current = shouldArmSystemPauseForUrlSwitch({
+            videoPaused: (
+              artPlayerRef.current.video as HTMLVideoElement | undefined
+            )?.paused,
+            currentUrl: artPlayerRef.current.url,
+            nextUrl: videoUrl,
+          });
           artPlayerRef.current.switch = videoUrl;
           artPlayerRef.current.title = `${videoTitle} - 第${
             currentEpisodeIndex + 1
@@ -6916,6 +6936,14 @@ function usePlayPageSession() {
 
         artPlayerRef.current.on('video:pause', () => {
           resetProgressiveSourceProbeStability();
+          const pause = consumeSystemPause(systemPausePendingRef.current);
+          if (pause.clearPending) {
+            systemPausePendingRef.current = false;
+          }
+          if (!pause.isUserPause) {
+            syncTvPlayerControls();
+            return;
+          }
           const video = artPlayerRef.current.video as
             | HTMLVideoElement
             | undefined;

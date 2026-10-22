@@ -1,9 +1,11 @@
 import {
   consumePlayIdentityInitSkip,
+  consumeSystemPause,
   isArtPlayerBoundToContainer,
   resolveEpisodeProgressSnapshot,
   resolvePlayUrlTitle,
   shouldApplyQueuedResumeForEpisode,
+  shouldArmSystemPauseForUrlSwitch,
   shouldAutoAdvanceEndedEpisode,
   shouldSkipLeavingProgressSave,
   shouldSkipPlayIdentityInitForUrlRewrite,
@@ -76,6 +78,39 @@ describe('play-page player lifecycle', () => {
           params('source=a&id=1&title=T&year=2001')
         )
       ).toBe(false);
+    });
+  });
+
+  describe('system pause from a URL switch', () => {
+    it('arms only when the switch will really pause a playing video', () => {
+      const urls = { currentUrl: 'a.m3u8', nextUrl: 'b.m3u8' };
+      expect(
+        shouldArmSystemPauseForUrlSwitch({ videoPaused: false, ...urls })
+      ).toBe(true);
+      expect(
+        shouldArmSystemPauseForUrlSwitch({ videoPaused: true, ...urls })
+      ).toBe(false);
+      expect(
+        shouldArmSystemPauseForUrlSwitch({ videoPaused: undefined, ...urls })
+      ).toBe(false);
+      expect(
+        shouldArmSystemPauseForUrlSwitch({
+          videoPaused: false,
+          currentUrl: 'a.m3u8',
+          nextUrl: 'a.m3u8',
+        })
+      ).toBe(false);
+    });
+
+    it('treats the armed pause as system and the next one as the user', () => {
+      expect(consumeSystemPause(true)).toEqual({
+        isUserPause: false,
+        clearPending: true,
+      });
+      expect(consumeSystemPause(false)).toEqual({
+        isUserPause: true,
+        clearPending: false,
+      });
     });
   });
 
