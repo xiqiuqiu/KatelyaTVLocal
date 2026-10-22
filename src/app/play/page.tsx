@@ -18,6 +18,7 @@ import {
   getAdSkipConfig,
   getAllPlayRecords,
   recordAdSkipWindowConfirmation,
+  requestPlayRecordsFromApi,
   savePlayRecordKeys,
 } from '@/lib/db.client';
 import type { M3U8AdFilterDebugInfo } from '@/lib/hls-ad-filter';
@@ -978,6 +979,8 @@ function usePlayPageSession() {
   const sourceFallbackAttemptedRef = useRef(false);
   const sourceSwitchSavePendingRef = useRef(false);
   const endedAutoAdvanceTimerRef = useRef<number | null>(null);
+  /** This playback session confirmed a backward user seek. */
+  const userRewoundRef = useRef(false);
   /**
    * Set when the session episode changes before the player element does.
    * Heartbeat and pause must not read that element until the new media is ready.
@@ -2880,6 +2883,58 @@ function usePlayPageSession() {
     clearWaitingRecoveryTimer();
     state.userPausedAt = 0;
     state.manualInteractionUntil = now + HLS_MANUAL_INTERACTION_GRACE_MS;
+    void adoptFurtherServerPlayhead();
+  };
+
+  const adoptFurtherServerPlayhead = async () => {
+    if (userRewoundRef.current) {
+      return;
+    }
+    const player = artPlayerRef.current;
+    const source = currentSourceRef.current;
+    const id = currentIdRef.current;
+    if (!player || !source || !id) {
+      return;
+    }
+    const episodeIndex = currentEpisodeIndexRef.current;
+    const livePlayTime = player.currentTime || 0;
+    try {
+      const records = await requestPlayRecordsFromApi();
+      if (
+        userRewoundRef.current ||
+        currentEpisodeIndexRef.current !== episodeIndex ||
+        currentSourceRef.current !== source ||
+        currentIdRef.current !== id
+      ) {
+        return;
+      }
+      const latest = planLatestWatchProgressForContent({
+        contentKey: getPlaybackContentKey(),
+        records: Object.fromEntries(
+          Object.entries(records).map(([key, record]) => [
+            key,
+            { ...record, search_title: record.search_title || '' },
+          ])
+        ),
+        legacyRoute: { source, id },
+        authorityMode: getWatchProgressAuthorityMode(),
+      });
+      const record = latest.record;
+      if (!record || record.index !== episodeIndex + 1) {
+        return;
+      }
+      if (record.play_time < livePlayTime + 30) {
+        return;
+      }
+      const video = player.video as HTMLVideoElement | undefined;
+      if (!video) {
+        return;
+      }
+      systemSeekInFlightRef.current = true;
+      video.currentTime = record.play_time;
+    } catch (err) {
+      console.warn('对齐服务端播放进度失败:', err);
+    }
   };
 
   useEffect(() => {
@@ -2992,6 +3047,18 @@ function usePlayPageSession() {
       return;
     }
     const classification = resolveSeekIntentClassification(currentTime);
+    const lastObserved =
+      hlsRecoveryStateRef.current.lastPlaybackTime ||
+      currentPlayTimeRef.current ||
+      0;
+    if (
+      classification === 'user' &&
+      typeof currentTime === 'number' &&
+      Number.isFinite(currentTime) &&
+      currentTime + 1.5 < lastObserved
+    ) {
+      userRewoundRef.current = true;
+    }
     if (classification !== 'user') {
       emitPlaybackDebugLog(
         'intent.seek.ignored',
@@ -5470,7 +5537,10 @@ function usePlayPageSession() {
       await savePlayRecordKeys(
         [writePlan.primaryKey, ...writePlan.dualWriteKeys],
         record,
-        options
+        {
+          ...options,
+          userRewound: userRewoundRef.current,
+        }
       );
 
       lastSaveTimeRef.current = saveTime;

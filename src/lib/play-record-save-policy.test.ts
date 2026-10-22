@@ -1,6 +1,7 @@
 import {
   type PlayRecordSaveSnapshot,
   getPlayRecordHeartbeatIntervalMs,
+  mergePlayRecordProgress,
   resolvePlayTimeForWatchProgressSave,
   shouldSavePlayRecord,
 } from '@/lib/play-record-save-policy';
@@ -30,6 +31,42 @@ describe('getPlayRecordHeartbeatIntervalMs', () => {
   it('falls back to the default heartbeat for other storage types', () => {
     expect(getPlayRecordHeartbeatIntervalMs('localstorage')).toBe(5000);
     expect(getPlayRecordHeartbeatIntervalMs(undefined)).toBe(5000);
+  });
+});
+
+describe('mergePlayRecordProgress', () => {
+  it('keeps the further playhead when an earlier write has no rewind', () => {
+    expect(
+      mergePlayRecordProgress({
+        existingPlayTime: 339,
+        existingEpisodeIndex: 2,
+        incomingPlayTime: 106,
+        incomingEpisodeIndex: 2,
+      })
+    ).toEqual({ playTime: 339, keptFurtherProgress: true });
+  });
+
+  it('accepts an earlier playhead when this session seeked backward', () => {
+    expect(
+      mergePlayRecordProgress({
+        existingPlayTime: 339,
+        existingEpisodeIndex: 2,
+        incomingPlayTime: 106,
+        incomingEpisodeIndex: 2,
+        userRewound: true,
+      })
+    ).toEqual({ playTime: 106, keptFurtherProgress: false });
+  });
+
+  it('replaces the row when the episode changed', () => {
+    expect(
+      mergePlayRecordProgress({
+        existingPlayTime: 339,
+        existingEpisodeIndex: 2,
+        incomingPlayTime: 12,
+        incomingEpisodeIndex: 3,
+      })
+    ).toEqual({ playTime: 12, keptFurtherProgress: false });
   });
 });
 

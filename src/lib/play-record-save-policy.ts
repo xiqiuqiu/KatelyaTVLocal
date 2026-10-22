@@ -76,6 +76,44 @@ export function resolvePlayTimeForWatchProgressSave(input: {
   return live;
 }
 
+export interface PlayRecordProgressMergeInput {
+  existingPlayTime: number;
+  existingEpisodeIndex: number;
+  incomingPlayTime: number;
+  incomingEpisodeIndex: number;
+  /**
+   * True only when this playback session confirmed a user seek backward.
+   * Heartbeat, pause, and an old tab waking up must leave this false.
+   */
+  userRewound?: boolean;
+}
+
+/**
+ * Same-episode writes must not replace a further playhead with an earlier one
+ * unless the user deliberately seeked backward. A later episode still replaces
+ * the row, because legacy keys store one episode per source+id.
+ */
+export function mergePlayRecordProgress(input: PlayRecordProgressMergeInput): {
+  playTime: number;
+  keptFurtherProgress: boolean;
+} {
+  const existingPlayTime = Number.isFinite(input.existingPlayTime)
+    ? input.existingPlayTime
+    : 0;
+  const incomingPlayTime = Number.isFinite(input.incomingPlayTime)
+    ? input.incomingPlayTime
+    : 0;
+  const sameEpisode = input.existingEpisodeIndex === input.incomingEpisodeIndex;
+  if (
+    sameEpisode &&
+    !input.userRewound &&
+    incomingPlayTime < existingPlayTime
+  ) {
+    return { playTime: existingPlayTime, keptFurtherProgress: true };
+  }
+  return { playTime: incomingPlayTime, keptFurtherProgress: false };
+}
+
 export function shouldSavePlayRecord(
   previous: PlayRecordSaveSnapshot | null,
   next: PlayRecordSaveSnapshot,

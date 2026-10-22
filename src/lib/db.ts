@@ -76,6 +76,13 @@ export class DbManager {
     return this.storage.getPlayRecord(userName, key);
   }
 
+  async getPlayRecordByKey(
+    userName: string,
+    key: string
+  ): Promise<PlayRecord | null> {
+    return this.storage.getPlayRecord(userName, key);
+  }
+
   async savePlayRecord(
     userName: string,
     source: string,

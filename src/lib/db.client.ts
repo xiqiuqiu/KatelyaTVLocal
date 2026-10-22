@@ -459,7 +459,9 @@ function markPlayRecordsMutated(): void {
   recentPlayRecordsFetchPromises.clear();
 }
 
-function requestPlayRecordsFromApi(): Promise<Record<string, PlayRecord>> {
+export function requestPlayRecordsFromApi(): Promise<
+  Record<string, PlayRecord>
+> {
   if (!playRecordsFetchPromise) {
     playRecordsFetchPromise = fetchFromApi<Record<string, PlayRecord>>(
       `/api/playrecords`
@@ -621,6 +623,7 @@ async function persistPlayRecordByKey(
   record: PlayRecord,
   options?: {
     keepalive?: boolean;
+    userRewound?: boolean;
   }
 ): Promise<void> {
   // 数据库存储模式：乐观更新策略（包括 redis、d1、upstash）
@@ -641,7 +644,11 @@ async function persistPlayRecordByKey(
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ key, record }),
+        body: JSON.stringify({
+          key,
+          record,
+          ...(options?.userRewound ? { userRewound: true } : {}),
+        }),
         keepalive: options?.keepalive,
       });
 
@@ -682,6 +689,7 @@ export async function savePlayRecord(
   record: PlayRecord,
   options?: {
     keepalive?: boolean;
+    userRewound?: boolean;
   }
 ): Promise<void> {
   const key = generateStorageKey(source, id);
@@ -696,6 +704,7 @@ export async function savePlayRecordKeys(
   record: PlayRecord,
   options?: {
     keepalive?: boolean;
+    userRewound?: boolean;
   }
 ): Promise<void> {
   const uniqueKeys = Array.from(new Set(keys.filter(Boolean)));
