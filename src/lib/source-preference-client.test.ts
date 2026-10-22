@@ -140,4 +140,53 @@ describe('source preference client batching', () => {
       },
     ]);
   });
+
+  it('reports each merged batch and stops after the signal aborts', async () => {
+    const batches: string[][] = [];
+    const controller = new AbortController();
+    const fetchMock = jest.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        sources: Array<{ sourceKey: string }>;
+      };
+      if (body.sources[0]?.sourceKey === 'source-2') {
+        controller.abort();
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          orderedSourceKeys: body.sources.map((source) => source.sourceKey),
+          results: body.sources.map((source) => ({
+            sourceKey: source.sourceKey,
+            kind: 'direct',
+            reason: 'ok',
+            rankingSource: 'live',
+          })),
+          generatedAt: 1710000000000,
+          rankingSource: 'live',
+          confidence: 'low',
+        }),
+      };
+    });
+    const sources = Array.from({ length: 6 }, (_, index) => ({
+      sourceKey: `source-${index}`,
+      episodeUrl: `https://example.com/${index}.m3u8`,
+    }));
+
+    const response = await fetchSourcePreferencesInBatches(sources, {
+      fetcher: fetchMock as unknown as typeof fetch,
+      batchSize: 2,
+      signal: controller.signal,
+      onBatch: (batch) => {
+        batches.push(batch.results.map((result) => result.sourceKey));
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(batches).toEqual([
+      ['source-0', 'source-1'],
+      ['source-0', 'source-1', 'source-2', 'source-3'],
+    ]);
+    expect(response.results).toHaveLength(4);
+  });
 });

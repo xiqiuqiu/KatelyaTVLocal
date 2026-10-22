@@ -143,10 +143,10 @@ function shouldAllowUnverifiedRecoveryFallback(
   if (reason === 'source-timeout') {
     return true;
   }
-  // Sustained starvation has the same evidence gap mid-episode: background
-  // probing pauses while recovery is active, so unverified sources never become
-  // direct/playable. One unverified try is allowed only on this path.
-  if (isStarvationSwitch(evidence)) {
+  // Sustained starvation and a mid-play hard failure share the evidence gap:
+  // preference batches can still be in flight, so every alternate stays unknown.
+  // One unverified try is recorded on recoveredSourceKeys and is not repeated.
+  if (isStarvationSwitch(evidence) || evidence?.hardFailure) {
     return true;
   }
   return (snapshot.currentTime || 0) < 1;

@@ -1237,6 +1237,8 @@ function usePlayPageSession() {
 
   // 用于记录是否需要在播放器 ready 后跳转到指定进度
   const resumeTimeRef = useRef<number | null>(null);
+  /** Bumped when a new title init replaces an in-flight source preference. */
+  const sourcePreferenceGenerationRef = useRef(0);
   const resumeEpisodeIndexRef = useRef<number | null>(null);
   const sourceChangeMediaAttemptRef = useRef<{
     attemptId: number;
@@ -3995,8 +3997,13 @@ function usePlayPageSession() {
 
   // 播放源优选函数
   const preferBestSource = async (
-    sources: SearchResult[]
+    sources: SearchResult[],
+    options: { signal?: AbortSignal } = {}
   ): Promise<SearchResult | null> => {
+    const preferenceGeneration = ++sourcePreferenceGenerationRef.current;
+    const preferenceStillCurrent = () =>
+      preferenceGeneration === sourcePreferenceGenerationRef.current &&
+      !options.signal?.aborted;
     if (sources.length === 1) {
       const source = sources[0];
       const rememberedStatus = getRememberedSourceStatusForSource(
@@ -4049,6 +4056,9 @@ function usePlayPageSession() {
         ReturnType<typeof fetchSourcePreferencesInBatches>
       >
     ) => {
+      if (!preferenceStillCurrent()) {
+        return;
+      }
       preferenceData.results.forEach((result) => {
         const existingStatus = statusMap.get(result.sourceKey);
         const measured = buildVideoInfoFromPreferenceResult(result);
@@ -4116,7 +4126,14 @@ function usePlayPageSession() {
 
     // 不再硬编码关闭实时探测：冷内容（D1 无该 source-id 数据）交给后端按
     // SOURCE_RANKING_FALLBACK_TO_LIVE 决定是否实时探测兜底，避免仅凭原始顺序敲定首源。
-    const preferencePromise = fetchSourcePreferencesInBatches(requestSources);
+    const preferencePromise = fetchSourcePreferencesInBatches(requestSources, {
+      signal: options.signal,
+      onBatch: (data) => {
+        if (preferenceStillCurrent()) {
+          applyPreferenceResults(data);
+        }
+      },
+    });
     let preferenceSettled = false;
     const settledPromise = preferencePromise
       .then((data) => {
@@ -4155,7 +4172,7 @@ function usePlayPageSession() {
         window.setTimeout(resolve, SOURCE_PREFERENCE_FAST_BUDGET_MS, null)
       ),
     ]);
-    if (fastData) {
+    if (fastData && preferenceStillCurrent()) {
       applyPreferenceResults(fastData);
     }
 
@@ -4177,7 +4194,7 @@ function usePlayPageSession() {
           )
         ),
       ]);
-      if (extendedData) {
+      if (extendedData && preferenceStillCurrent()) {
         applyPreferenceResults(extendedData);
       }
     }
@@ -4185,7 +4202,7 @@ function usePlayPageSession() {
     // 若扩展预算内仍未落地，继续后台补齐（只刷新角标/评分）。
     if (!preferenceSettled) {
       void settledPromise.then((data) => {
-        if (data) {
+        if (data && preferenceStillCurrent()) {
           applyPreferenceResults(data);
         }
       });
@@ -4965,7 +4982,9 @@ function usePlayPageSession() {
             fellBackFromHistory) &&
           optimizationEnabled
         ) {
-          const preferredSource = await preferBestSource(sourcesInfo);
+          const preferredSource = await preferBestSource(sourcesInfo, {
+            signal: controller.signal,
+          });
           if (cancelled) return;
           if (!preferredSource) {
             setPlaybackError(

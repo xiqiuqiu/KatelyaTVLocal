@@ -129,13 +129,13 @@ describe('startup hang auto-switch feedback loop', () => {
   it('repro guard: unsynced empty session still cannot invent candidates', () => {
     const result = reducePlaybackSession(playingState(), startupHardFailure);
 
-    expect(result.effects.some((effect) => effect.type === 'switchSource')).toBe(
-      false
-    );
+    expect(
+      result.effects.some((effect) => effect.type === 'switchSource')
+    ).toBe(false);
     expect(result.state.recoveryStage).toBe('exhausted');
   });
 
-  it('mid-playback hard failure does not use unverified idle fallback', () => {
+  it('mid-playback hard failure tries one unverified source before exhausting', () => {
     const synced = reducePlaybackSession(playingState(), {
       type: 'sources.loaded',
       sources: [current, alt],
@@ -157,9 +157,37 @@ describe('startup hang auto-switch feedback loop', () => {
       },
     });
 
-    expect(result.effects.some((effect) => effect.type === 'switchSource')).toBe(
-      false
-    );
-    expect(result.state.recoveryStage).toBe('exhausted');
+    expect(
+      result.effects.some(
+        (effect) =>
+          effect.type === 'switchSource' && effect.sourceKey === 'good-2'
+      )
+    ).toBe(true);
+
+    const switched = reducePlaybackSession(result.state, {
+      type: 'sources.loaded',
+      sources: [current, alt],
+      currentSourceKey: 'good-2',
+      currentEpisodeIndex: 0,
+      sourceStatuses: new Map<string, SourceStatus>([
+        ['good-2', { kind: 'unavailable', reason: '未知线路起播失败' }],
+      ]),
+      recoveredSourceKeys: result.state.recoveredSourceKeys,
+    }).state;
+    const secondFailure = reducePlaybackSession(switched, {
+      type: 'recovery.runtimeEvidence',
+      nowMs: 70_000,
+      snapshot: { currentTime: 120 },
+      evidence: {
+        platform: 'hlsjs',
+        hardFailure: true,
+        stallCandidate: true,
+      },
+    });
+
+    expect(
+      secondFailure.effects.some((effect) => effect.type === 'switchSource')
+    ).toBe(false);
+    expect(secondFailure.state.recoveryStage).toBe('exhausted');
   });
 });

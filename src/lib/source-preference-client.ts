@@ -14,6 +14,9 @@ interface FetchSourcePreferencesOptions {
   fetcher?: Fetcher;
   batchSize?: number;
   endpoint?: string;
+  signal?: AbortSignal;
+  /** Called with the merged results so far after each successful batch. */
+  onBatch?: (response: SourcePreferenceResponse) => void;
 }
 
 function getStatusPriority(kind: SourcePreferenceResult['kind']): number {
@@ -84,54 +87,71 @@ export async function fetchSourcePreferencesInBatches(
   );
   const responses: SourcePreferenceResponse[] = [];
 
-  for (let start = 0; start < sources.length; start += batchSize) {
-    const batch = sources.slice(start, start + batchSize);
-    const response = await fetcher(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      cache: 'no-store',
-      body: JSON.stringify({
-        sources: batch,
-        ...(options.allowLiveProbeFallback === undefined
-          ? {}
-          : { allowLiveProbeFallback: options.allowLiveProbeFallback }),
-        ...(options.includeFreshProbeMetrics === undefined
-          ? {}
-          : { includeFreshProbeMetrics: options.includeFreshProbeMetrics }),
-      }),
+  const mergedResponse = (): SourcePreferenceResponse => {
+    const resultMap = new Map<string, SourcePreferenceResult>();
+    responses.forEach((response) => {
+      response.results.forEach((result) => {
+        if (result.sourceKey) {
+          resultMap.set(result.sourceKey, result);
+        }
+      });
     });
+    const orderedResults = sortPreferenceResults(
+      Array.from(resultMap.values())
+    );
+    return {
+      orderedSourceKeys: orderedResults.map((result) => result.sourceKey),
+      results: orderedResults,
+      generatedAt: Date.now(),
+      rankingSource: getRankingSource(responses),
+      confidence: responses.some((response) => response.confidence === 'medium')
+        ? 'medium'
+        : 'low',
+    };
+  };
+
+  for (let start = 0; start < sources.length; start += batchSize) {
+    if (options.signal?.aborted) {
+      break;
+    }
+    const batch = sources.slice(start, start + batchSize);
+    let response: Response;
+    try {
+      response = await fetcher(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+        signal: options.signal,
+        body: JSON.stringify({
+          sources: batch,
+          ...(options.allowLiveProbeFallback === undefined
+            ? {}
+            : { allowLiveProbeFallback: options.allowLiveProbeFallback }),
+          ...(options.includeFreshProbeMetrics === undefined
+            ? {}
+            : { includeFreshProbeMetrics: options.includeFreshProbeMetrics }),
+        }),
+      });
+    } catch (error) {
+      if (options.signal?.aborted) {
+        break;
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       continue;
     }
 
     responses.push((await response.json()) as SourcePreferenceResponse);
+    options.onBatch?.(mergedResponse());
   }
 
   if (responses.length === 0) {
     throw new Error('批量探测失败');
   }
 
-  const resultMap = new Map<string, SourcePreferenceResult>();
-  responses.forEach((response) => {
-    response.results.forEach((result) => {
-      if (result.sourceKey) {
-        resultMap.set(result.sourceKey, result);
-      }
-    });
-  });
-
-  const orderedResults = sortPreferenceResults(Array.from(resultMap.values()));
-
-  return {
-    orderedSourceKeys: orderedResults.map((result) => result.sourceKey),
-    results: orderedResults,
-    generatedAt: Date.now(),
-    rankingSource: getRankingSource(responses),
-    confidence: responses.some((response) => response.confidence === 'medium')
-      ? 'medium'
-      : 'low',
-  };
+  return mergedResponse();
 }
