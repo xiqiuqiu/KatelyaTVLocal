@@ -462,6 +462,132 @@ describe('initial source selection', () => {
   });
 });
 
+describe('same-host recovery candidates', () => {
+  const sources = [
+    createSource('subo', '1', ['https://cdn.subo.example/1.m3u8']),
+    createSource('subocaiji', '2', ['https://cdn.subo.example/2.m3u8']),
+    createSource('other', '3', ['https://cdn.other.example/3.m3u8']),
+  ];
+  const scores = new Map(
+    sources.map((source, index) => [
+      `${source.source}-${source.id}`,
+      createSelectionScore(source, 100 - index, index),
+    ])
+  );
+
+  it('tries another host before a sibling of the failing line', () => {
+    const statuses = new Map<string, SourceStatus>([
+      ['subocaiji-2', { kind: 'direct' }],
+      ['other-3', { kind: 'direct' }],
+    ]);
+    expect(
+      selectRecoveryCandidate({
+        sources,
+        currentSourceKey: 'subo-1',
+        currentEpisodeIndex: 0,
+        statuses,
+        sourceSelectionScores: scores,
+      })?.sourceKey
+    ).toBe('other-3');
+  });
+
+  it('still reaches the same-host sibling once other hosts are tried', () => {
+    expect(
+      selectRecoveryCandidate({
+        sources,
+        currentSourceKey: 'subo-1',
+        currentEpisodeIndex: 0,
+        sourceSelectionScores: scores,
+        attemptedSourceKeys: new Set(['other-3']),
+        allowUnverifiedFallback: true,
+      })?.sourceKey
+    ).toBe('subocaiji-2');
+  });
+
+  it('demotes same-host siblings in blind fallback too', () => {
+    expect(
+      selectRecoveryCandidate({
+        sources,
+        currentSourceKey: 'subo-1',
+        currentEpisodeIndex: 0,
+        sourceSelectionScores: scores,
+        allowUnverifiedFallback: true,
+      })?.sourceKey
+    ).toBe('other-3');
+  });
+});
+
+describe('failed background probes', () => {
+  const probeFailed: SourceStatus = {
+    kind: 'unavailable',
+    reason: '后台测速未通过（CORS），可手动尝试',
+    fromMemory: true,
+    localConfidence: 'low',
+  };
+  const sources = [
+    createSource('current', '1'),
+    createSource('failed', '2'),
+    createSource('untested', '3'),
+  ];
+
+  it('are not verified recovery candidates', () => {
+    expect(
+      selectRecoveryCandidate({
+        sources,
+        currentSourceKey: 'current-1',
+        currentEpisodeIndex: 0,
+        statuses: new Map([['failed-2', probeFailed]]),
+      })
+    ).toBeNull();
+  });
+
+  it('rank behind untested lines in blind fallback', () => {
+    const statuses = new Map([['failed-2', probeFailed]]);
+    const first = selectRecoveryCandidate({
+      sources,
+      currentSourceKey: 'current-1',
+      currentEpisodeIndex: 0,
+      statuses,
+      allowUnverifiedFallback: true,
+    });
+    expect(first?.sourceKey).toBe('untested-3');
+
+    const second = selectRecoveryCandidate({
+      sources,
+      currentSourceKey: 'current-1',
+      currentEpisodeIndex: 0,
+      statuses,
+      attemptedSourceKeys: new Set(['untested-3']),
+      allowUnverifiedFallback: true,
+    });
+    expect(second?.sourceKey).toBe('failed-2');
+  });
+
+  it('can still be tried manually after a probe', () => {
+    const item = buildSourceAvailabilityList({
+      sources,
+      currentSourceKey: 'current-1',
+      currentEpisodeIndex: 0,
+      statuses: new Map([['failed-2', probeFailed]]),
+    }).find((entry) => entry.sourceKey === 'failed-2');
+    expect(item?.manualSwitch.mode).toBe('probe-first');
+  });
+
+  it('keeps a confident unavailable record out of blind fallback', () => {
+    expect(
+      selectRecoveryCandidate({
+        sources: sources.slice(0, 2),
+        currentSourceKey: 'current-1',
+        currentEpisodeIndex: 0,
+        statuses: new Map<string, SourceStatus>([
+          ['failed-2', { kind: 'unavailable', fromMemory: true }],
+        ]),
+        allowUnverifiedFallback: true,
+      })
+    ).toBeNull();
+  });
+});
+
 describe('source status evidence freshness', () => {
   const rememberedUnavailable: SourceStatus = {
     kind: 'unavailable',

@@ -1,6 +1,8 @@
 import {
   type PlayRecordSaveSnapshot,
+  applyKeptPlayRecordProgress,
   getPlayRecordHeartbeatIntervalMs,
+  mergePlayRecordProgress,
   resolvePlayTimeForWatchProgressSave,
   shouldSavePlayRecord,
 } from '@/lib/play-record-save-policy';
@@ -30,6 +32,42 @@ describe('getPlayRecordHeartbeatIntervalMs', () => {
   it('falls back to the default heartbeat for other storage types', () => {
     expect(getPlayRecordHeartbeatIntervalMs('localstorage')).toBe(5000);
     expect(getPlayRecordHeartbeatIntervalMs(undefined)).toBe(5000);
+  });
+});
+
+describe('mergePlayRecordProgress', () => {
+  it('keeps the further playhead when an earlier write has no rewind', () => {
+    expect(
+      mergePlayRecordProgress({
+        existingPlayTime: 339,
+        existingEpisodeIndex: 2,
+        incomingPlayTime: 106,
+        incomingEpisodeIndex: 2,
+      })
+    ).toEqual({ playTime: 339, keptFurtherProgress: true });
+  });
+
+  it('accepts an earlier playhead when this session seeked backward', () => {
+    expect(
+      mergePlayRecordProgress({
+        existingPlayTime: 339,
+        existingEpisodeIndex: 2,
+        incomingPlayTime: 106,
+        incomingEpisodeIndex: 2,
+        userRewound: true,
+      })
+    ).toEqual({ playTime: 106, keptFurtherProgress: false });
+  });
+
+  it('replaces the row when the episode changed', () => {
+    expect(
+      mergePlayRecordProgress({
+        existingPlayTime: 339,
+        existingEpisodeIndex: 2,
+        incomingPlayTime: 12,
+        incomingEpisodeIndex: 3,
+      })
+    ).toEqual({ playTime: 12, keptFurtherProgress: false });
   });
 });
 
@@ -229,5 +267,46 @@ describe('resolvePlayTimeForWatchProgressSave', () => {
         rememberedPlayhead: 2421.4,
       })
     ).toBe(2435);
+  });
+
+  it('ignores a remembered playhead that belongs to another episode', () => {
+    expect(
+      resolvePlayTimeForWatchProgressSave({
+        livePlayTime: 8,
+        rememberedPlayhead: 2758,
+        rememberedEpisodeIndex: 0,
+        episodeIndex: 4,
+      })
+    ).toBe(8);
+  });
+});
+
+describe('applyKeptPlayRecordProgress', () => {
+  const existing = {
+    play_time: 350,
+    total_time: 2758,
+    save_time: 1000,
+    source_name: '如意',
+  };
+  const incoming = {
+    play_time: 72,
+    total_time: 2700,
+    save_time: 2000,
+    source_name: '另一源',
+  };
+
+  it('keeps stored metadata when the further playhead is kept', () => {
+    expect(applyKeptPlayRecordProgress(incoming, existing, true)).toEqual({
+      play_time: 350,
+      total_time: 2758,
+      save_time: 1000,
+      source_name: '如意',
+    });
+  });
+
+  it('keeps the incoming record when progress was not held back', () => {
+    expect(applyKeptPlayRecordProgress(incoming, existing, false)).toBe(
+      incoming
+    );
   });
 });

@@ -8,6 +8,10 @@ import {
   normalizePlayRecordLimit,
   parsePlayRecordKey,
 } from '@/lib/play-record-key';
+import {
+  applyKeptPlayRecordProgress,
+  mergePlayRecordProgress,
+} from '@/lib/play-record-save-policy';
 import { PlayRecord } from '@/lib/types';
 import { isWatchProgressStorageKey } from '@/lib/watch-progress';
 
@@ -46,7 +50,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { key, record }: { key: string; record: PlayRecord } = body;
+    const {
+      key,
+      record,
+      userRewound,
+    }: { key: string; record: PlayRecord; userRewound?: boolean } = body;
 
     if (!key || !record) {
       return NextResponse.json(
@@ -63,10 +71,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const finalRecord = {
+    const existing = await db.getPlayRecordByKey(authInfo.username, key);
+    const merged = existing
+      ? mergePlayRecordProgress({
+          existingPlayTime: existing.play_time,
+          existingEpisodeIndex: existing.index,
+          incomingPlayTime: record.play_time,
+          incomingEpisodeIndex: record.index,
+          userRewound: userRewound === true,
+        })
+      : null;
+    const incomingRecord = {
       ...record,
+      play_time: merged?.playTime ?? record.play_time,
       save_time: record.save_time ?? Date.now(),
     } as PlayRecord;
+    const finalRecord =
+      existing && merged
+        ? applyKeptPlayRecordProgress(
+            incomingRecord,
+            existing,
+            merged.keptFurtherProgress
+          )
+        : incomingRecord;
 
     if (isWatchProgressStorageKey(key)) {
       await db.savePlayRecordByKey(authInfo.username, key, finalRecord);

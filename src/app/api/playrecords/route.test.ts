@@ -79,6 +79,7 @@ jest.mock('@/lib/db', () => ({
     deletePlayRecord: jest.fn(),
     deletePlayRecordByKey: jest.fn(),
     getAllPlayRecords: jest.fn(),
+    getPlayRecordByKey: jest.fn(),
     getRecentPlayRecords: jest.fn(),
     savePlayRecord: jest.fn(),
     savePlayRecordByKey: jest.fn(),
@@ -140,6 +141,101 @@ describe('playrecords route', () => {
         title: '示例影片',
         index: 1,
       })
+    );
+  });
+
+  it('keeps a further same-episode playhead when the incoming save did not rewind', async () => {
+    mockedDb.getPlayRecordByKey.mockResolvedValue({
+      title: '示例影片',
+      source_name: '测试源',
+      cover: 'https://example.com/poster.jpg',
+      year: '2026',
+      index: 2,
+      total_episodes: 22,
+      play_time: 339,
+      total_time: 2700,
+      save_time: 1000,
+      search_title: '示例影片',
+    });
+
+    const response = await POST(
+      new Request('https://app.example.com/api/playrecords', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          key: 'source-a+video-1',
+          record: {
+            title: '示例影片',
+            source_name: '测试源',
+            cover: 'https://example.com/poster.jpg',
+            year: '2026',
+            index: 2,
+            total_episodes: 22,
+            play_time: 106,
+            total_time: 2700,
+            save_time: 2000,
+            search_title: '示例影片',
+          },
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedDb.savePlayRecord).toHaveBeenCalledWith(
+      'alice',
+      'source-a',
+      'video-1',
+      expect.objectContaining({
+        play_time: 339,
+        save_time: 1000,
+        total_time: 2700,
+        source_name: '测试源',
+      })
+    );
+  });
+
+  it('stores the earlier playhead when the client declares a user rewind', async () => {
+    mockedDb.getPlayRecordByKey.mockResolvedValue({
+      title: '示例影片',
+      source_name: '测试源',
+      cover: 'https://example.com/poster.jpg',
+      year: '2026',
+      index: 2,
+      total_episodes: 22,
+      play_time: 339,
+      total_time: 2700,
+      save_time: 1000,
+      search_title: '示例影片',
+    });
+
+    const response = await POST(
+      new Request('https://app.example.com/api/playrecords', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          key: 'wp:示例::2026#1',
+          userRewound: true,
+          record: {
+            title: '示例影片',
+            source_name: '测试源',
+            cover: 'https://example.com/poster.jpg',
+            year: '2026',
+            index: 2,
+            total_episodes: 22,
+            play_time: 106,
+            total_time: 2700,
+            save_time: 2000,
+            search_title: '示例影片',
+          },
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedDb.savePlayRecordByKey).toHaveBeenCalledWith(
+      'alice',
+      'wp:示例::2026#1',
+      expect.objectContaining({ play_time: 106 })
     );
   });
 

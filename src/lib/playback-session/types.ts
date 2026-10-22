@@ -97,6 +97,11 @@ export interface PlaybackSessionState {
   sourceScores: Map<string, PlaybackSessionSourceScore>;
   measuredVideoInfo: Map<string, SourceVideoInfo>;
   recoveredSourceKeys: Set<string>;
+  /**
+   * Blind (unverified) recovery switches spent in this episode scope. Capped
+   * so a cold title cannot chain through every untested line.
+   */
+  unverifiedRecoveryAttempts: number;
   /** Bad points visible for the active Bad Point Scope only. */
   badPoints: PlaybackBadPoint[];
   /** Scoped storage: `${contentKey}::${episodeIndex}` → points. */
@@ -237,6 +242,17 @@ export type PlaybackSessionEvent =
       automatic: boolean;
     }
   | { type: 'recovery.switchFailed'; sourceKey: string }
+  | {
+      /**
+       * The R3 target turned out to be known-unusable before loading (e.g. a
+       * local failure record). Keep it excluded and pick the next candidate.
+       */
+      type: 'recovery.switchSkipped';
+      sourceKey: string;
+      reason: 'auto-recovery' | 'source-timeout';
+      nowMs: number;
+      snapshot: VideoSnapshot;
+    }
   | {
       type: 'recovery.runtimeEvidence';
       snapshot: VideoSnapshot;

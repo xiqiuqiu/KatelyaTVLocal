@@ -1,5 +1,6 @@
 import { probeSourcePlaybackUpstream } from '@/lib/source-preference';
 import {
+  isPlatformProbeFailure,
   persistOfflineProbeResult,
   probePlaybackForRanking,
 } from '@/lib/source-ranking/probe';
@@ -44,27 +45,29 @@ describe('source ranking offline probe', () => {
       upstreamStatus: 200,
       probeTimeMs: 321,
     });
-    jest.spyOn(Date, 'now')
+    jest
+      .spyOn(Date, 'now')
       .mockReturnValueOnce(1710000000000)
       .mockReturnValueOnce(1710000000100)
       .mockReturnValueOnce(1710000000350);
     const fetchMock = jest.fn();
     global.fetch = fetchMock;
-    fetchMock.mockResolvedValueOnce(
-      mockTextResponse(
-        `#EXTM3U
+    fetchMock
+      .mockResolvedValueOnce(
+        mockTextResponse(
+          `#EXTM3U
 #EXT-X-STREAM-INF:BANDWIDTH=2400000,RESOLUTION=1920x1080
 high/index.m3u8`
+        )
       )
-    ).mockResolvedValueOnce(
-      mockTextResponse(
-        `#EXTM3U
+      .mockResolvedValueOnce(
+        mockTextResponse(
+          `#EXTM3U
 #EXTINF:4,
 seg-1.ts`
+        )
       )
-    ).mockResolvedValueOnce(
-      mockBinaryResponse(256 * 1024)
-    );
+      .mockResolvedValueOnce(mockBinaryResponse(256 * 1024));
 
     const result = await probePlaybackForRanking(
       'https://media.example.com/video.m3u8',
@@ -161,6 +164,33 @@ seg-1.ts`
       1710000000000
     );
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not persist a workers subrequest failure as an unavailable source', async () => {
+    const prepare = jest.fn();
+
+    await persistOfflineProbeResult(
+      { DB: { prepare } },
+      'run-1',
+      {
+        sourceKey: 'ruyi-88096',
+        sourceName: '如意',
+        titleSample: '蒸蒸日上',
+        episodeUrl: 'https://media.example.com/video.m3u8',
+      },
+      {
+        kind: 'unavailable',
+        reason: 'Too many subrequests',
+      }
+    );
+
+    expect(
+      isPlatformProbeFailure({
+        kind: 'unavailable',
+        reason: 'Too many subrequests',
+      })
+    ).toBe(true);
+    expect(prepare).not.toHaveBeenCalled();
   });
 
   it('maps unavailable upstream probe results into offline ranking shape', async () => {

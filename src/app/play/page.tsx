@@ -18,6 +18,7 @@ import {
   getAdSkipConfig,
   getAllPlayRecords,
   recordAdSkipWindowConfirmation,
+  requestPlayRecordsFromApi,
   savePlayRecordKeys,
 } from '@/lib/db.client';
 import type { M3U8AdFilterDebugInfo } from '@/lib/hls-ad-filter';
@@ -53,9 +54,17 @@ import {
 } from '@/lib/hls-recovery';
 import { stopVideoElementLoading } from '@/lib/media-cleanup';
 import {
+  buildPlayIdentityKey,
   consumePlayIdentityInitSkip,
+  consumeSystemPause,
   isArtPlayerBoundToContainer,
+  resolveEpisodeProgressSnapshot,
   resolvePlayUrlTitle,
+  shouldApplyQueuedResumeForEpisode,
+  shouldArmSystemPauseForUrlSwitch,
+  shouldAutoAdvanceEndedEpisode,
+  shouldSkipLeavingProgressSave,
+  shouldSkipPlayIdentityInitForUrlRewrite,
 } from '@/lib/play-page-player-lifecycle';
 import {
   type PlayRecordSaveReason,
@@ -164,6 +173,7 @@ import {
 import {
   adaptWatchProgressPlayhead,
   buildWatchProgressContentKey,
+  buildWatchProgressStorageKey,
   getWatchProgressAuthorityMode,
   isWatchProgressDualWriteEnabled,
   planEpisodeChangeSave,
@@ -879,14 +889,7 @@ function usePlayPageSession() {
   const searchParams = useSearchParams();
   const isTvMode = resolveIsTvMode(searchParams);
   const playbackPreparation = usePlaybackPreparation();
-  const playIdentityKey = [
-    searchParams.get('source') || '',
-    searchParams.get('id') || '',
-    searchParams.get('stitle') || '',
-    searchParams.get('title') || '',
-    searchParams.get('stype') || '',
-    searchParams.get('prefer') || '',
-  ].join('\0');
+  const playIdentityKey = buildPlayIdentityKey(searchParams);
   // Soft source switches update the URL via replaceState (Next syncs that into
   // useSearchParams). Skip the one identity-init that would otherwise flip
   // `loading` and unmount the ArtPlayer host while artPlayerRef stays stale.
@@ -975,6 +978,24 @@ function usePlayPageSession() {
     useRef<PlaybackDebugCanplaySnapshot | null>(null);
   const sourceFallbackAttemptedRef = useRef(false);
   const sourceSwitchSavePendingRef = useRef(false);
+  const endedAutoAdvanceTimerRef = useRef<number | null>(null);
+  /**
+   * Set as soon as video.ended starts saving, before the 1s timer exists.
+   * A manual pick in that gap must not save the finished playhead again.
+   */
+  const endedAutoAdvancePendingRef = useRef(false);
+  /** This playback session confirmed a backward user seek. */
+  const userRewoundRef = useRef(false);
+  /** Bumped on each rewind so an older in-flight save cannot clear a newer one. */
+  const userRewoundGenerationRef = useRef(0);
+  /**
+   * Set when the session episode changes before the player element does.
+   * Heartbeat and pause must not read that element until the new media is ready.
+   */
+  const progressMediaEpochRef = useRef<{
+    episodeIndex: number;
+    ready: boolean;
+  }>({ episodeIndex: 0, ready: true });
   const sourceDurationBeforeSwitchRef = useRef<number | null>(null);
   const sourceSwitchAutoPlayPendingRef = useRef(false);
   const playbackPolicyLogKeysRef = useLazyRef(() => new Set<string>());
@@ -1213,6 +1234,15 @@ function usePlayPageSession() {
 
   // 用于记录是否需要在播放器 ready 后跳转到指定进度
   const resumeTimeRef = useRef<number | null>(null);
+  /** Bumped when a new title init replaces an in-flight source preference. */
+  const sourcePreferenceGenerationRef = useRef(0);
+  /**
+   * Owns the batched preference request. Separate from the init effect's
+   * controller so a skipped identity init (URL rewrite) does not abort batches
+   * that are still filling in statuses for the current title.
+   */
+  const sourcePreferenceAbortRef = useRef<AbortController | null>(null);
+  const resumeEpisodeIndexRef = useRef<number | null>(null);
   const sourceChangeMediaAttemptRef = useRef<{
     attemptId: number;
     sourceKey: string;
@@ -1299,6 +1329,8 @@ function usePlayPageSession() {
     })
   );
   const systemSeekInFlightRef = useRef(false);
+  /** Set right before ArtPlayer's URL switch pauses the playing video. */
+  const systemPausePendingRef = useRef(false);
   const hlsAutoSourceSwitchSessionRef = useRef<number | null>(null);
   const hlsRecoveryStateRef = useRef({
     stallCount: 0,
@@ -1335,6 +1367,12 @@ function usePlayPageSession() {
   const [videoDuration, setVideoDuration] = useState<number>(0);
 
   const publishPlayTimeForUi = (currentTime: number) => {
+    const epoch = progressMediaEpochRef.current;
+    // The element still belongs to the episode being left until the new one
+    // reaches canplay. Do not republish that playhead onto the new episode.
+    if (!epoch.ready) {
+      return;
+    }
     currentPlayTimeRef.current = resolveRememberedPlayhead({
       liveCurrentTime: currentTime,
       rememberedPlayhead: currentPlayTimeRef.current,
@@ -2154,6 +2192,7 @@ function usePlayPageSession() {
 
   const applySessionRecoveryResumeTime = (resumeTime: number) => {
     resumeTimeRef.current = resumeTime;
+    resumeEpisodeIndexRef.current = currentEpisodeIndexRef.current;
     sourceSwitchSavePendingRef.current = true;
     const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
     if (video && Number.isFinite(resumeTime) && resumeTime > 0) {
@@ -2304,19 +2343,35 @@ function usePlayPageSession() {
   const persistAdSkipWindowConfirmation = (
     window: Pick<
       HlsAdSkipWindow,
-      'startTimeSeconds' | 'endTimeSeconds' | 'ruleId'
+      | 'startTimeSeconds'
+      | 'endTimeSeconds'
+      | 'ruleId'
+      | 'scopeSource'
+      | 'scopeId'
+      | 'scopeEpisodeIndex'
     >,
     kind: 'confirm' | 'undo'
   ) => {
     const source = currentSourceRef.current;
     const id = currentIdRef.current;
+    const episodeIndex =
+      window.scopeEpisodeIndex ?? currentEpisodeIndexRef.current;
     if (!source || !id) {
+      return;
+    }
+    // A window carried from another line or episode must not be confirmed onto
+    // the source that is on screen now.
+    if (
+      (window.scopeSource != null && window.scopeSource !== source) ||
+      (window.scopeId != null && window.scopeId !== id) ||
+      episodeIndex !== currentEpisodeIndexRef.current
+    ) {
       return;
     }
     void recordAdSkipWindowConfirmation({
       source,
       id,
-      episodeIndex: currentEpisodeIndexRef.current,
+      episodeIndex,
       window: {
         startTimeSeconds: window.startTimeSeconds,
         endTimeSeconds: window.endTimeSeconds,
@@ -2444,6 +2499,7 @@ function usePlayPageSession() {
         }
         if (effect.resumeTime != null) {
           resumeTimeRef.current = effect.resumeTime;
+          resumeEpisodeIndexRef.current = currentEpisodeIndexRef.current;
         }
         void handleSourceChange(previous.source, previous.id, previous.title, {
           autoRecovery: false,
@@ -2492,7 +2548,12 @@ function usePlayPageSession() {
       }
     }
 
-    if (generation !== adSkipLoadGenerationRef.current) {
+    if (
+      generation !== adSkipLoadGenerationRef.current ||
+      currentSourceRef.current !== source ||
+      currentIdRef.current !== id ||
+      currentEpisodeIndexRef.current !== episodeIndex
+    ) {
       return;
     }
 
@@ -2501,7 +2562,12 @@ function usePlayPageSession() {
       windows: mergeAdSkipWindowsForLoad({
         persisted,
         analyzer: analyzerWindows,
-      }),
+      }).map((window) => ({
+        ...window,
+        scopeSource: source,
+        scopeId: id,
+        scopeEpisodeIndex: episodeIndex,
+      })),
     });
   };
 
@@ -2563,7 +2629,12 @@ function usePlayPageSession() {
     }
 
     const platform = getPlaybackRuntimePlatform();
-    const markedWindow = toUserMarkAdSkipWindow(snapped);
+    const markedWindow = {
+      ...toUserMarkAdSkipWindow(snapped),
+      scopeSource: currentSourceRef.current,
+      scopeId: currentIdRef.current,
+      scopeEpisodeIndex: currentEpisodeIndexRef.current,
+    };
     dispatchPlaybackSessionEvent({
       type: 'user.markAdSkip',
       nowMs: Date.now(),
@@ -2708,24 +2779,17 @@ function usePlayPageSession() {
           effect.type === 'switchSource'
       );
       if (switchEffect) {
-        void handleSourceChange(
-          switchEffect.source.source,
-          switchEffect.source.id,
-          switchEffect.source.title,
-          {
-            autoRecovery: true,
-            resumeTime: switchEffect.resumeTime,
-            reason: '播放源加载超时，自动切换到其他播放源',
-            autoPlayAfterReady: true,
-          }
-        ).then((switched) => {
-          if (!switched) {
-            dispatchPlaybackSessionEvent({
-              type: 'recovery.switchFailed',
-              sourceKey: switchEffect.sourceKey,
-            });
-          }
-        });
+        void runAutoRecoverySourceSwitch(
+          switchEffect,
+          '播放源加载超时，自动切换到其他播放源'
+        );
+        return;
+      }
+      if (
+        timeoutResult.effects.some(
+          (effect) => effect.type === 'showInPlayerFailure'
+        )
+      ) {
         return;
       }
 
@@ -2855,6 +2919,65 @@ function usePlayPageSession() {
     clearWaitingRecoveryTimer();
     state.userPausedAt = 0;
     state.manualInteractionUntil = now + HLS_MANUAL_INTERACTION_GRACE_MS;
+    void adoptFurtherServerPlayhead();
+  };
+
+  const adoptFurtherServerPlayhead = async () => {
+    if (userRewoundRef.current) {
+      return;
+    }
+    const player = artPlayerRef.current;
+    const source = currentSourceRef.current;
+    const id = currentIdRef.current;
+    if (!player || !source || !id) {
+      return;
+    }
+    const episodeIndex = currentEpisodeIndexRef.current;
+    const livePlayTime = player.currentTime || 0;
+    try {
+      const records = await requestPlayRecordsFromApi();
+      if (
+        userRewoundRef.current ||
+        currentEpisodeIndexRef.current !== episodeIndex ||
+        currentSourceRef.current !== source ||
+        currentIdRef.current !== id
+      ) {
+        return;
+      }
+      const normalized = Object.fromEntries(
+        Object.entries(records).map(([key, record]) => [
+          key,
+          { ...record, search_title: record.search_title || '' },
+        ])
+      );
+      const episodeKey = buildWatchProgressStorageKey(
+        getPlaybackContentKey(),
+        episodeIndex
+      );
+      const record =
+        getWatchProgressAuthorityMode() === 'legacy'
+          ? planLatestWatchProgressForContent({
+              contentKey: getPlaybackContentKey(),
+              records: normalized,
+              legacyRoute: { source, id },
+              authorityMode: 'legacy',
+            }).record
+          : normalized[episodeKey];
+      if (!record || record.index !== episodeIndex + 1) {
+        return;
+      }
+      if (record.play_time < livePlayTime + 30) {
+        return;
+      }
+      const video = player.video as HTMLVideoElement | undefined;
+      if (!video) {
+        return;
+      }
+      systemSeekInFlightRef.current = true;
+      video.currentTime = record.play_time;
+    } catch (err) {
+      console.warn('对齐服务端播放进度失败:', err);
+    }
   };
 
   useEffect(() => {
@@ -2967,6 +3090,19 @@ function usePlayPageSession() {
       return;
     }
     const classification = resolveSeekIntentClassification(currentTime);
+    const lastObserved =
+      hlsRecoveryStateRef.current.lastPlaybackTime ||
+      currentPlayTimeRef.current ||
+      0;
+    if (
+      classification === 'user' &&
+      typeof currentTime === 'number' &&
+      Number.isFinite(currentTime) &&
+      currentTime + 1.5 < lastObserved
+    ) {
+      userRewoundGenerationRef.current += 1;
+      userRewoundRef.current = true;
+    }
     if (classification !== 'user') {
       emitPlaybackDebugLog(
         'intent.seek.ignored',
@@ -3081,6 +3217,9 @@ function usePlayPageSession() {
   };
 
   const markHlsPlaybackProgress = (currentTime: number) => {
+    if (!progressMediaEpochRef.current.ready) {
+      return;
+    }
     const state = hlsRecoveryStateRef.current;
     const now = Date.now();
     const update = getHlsRecoveryProgressUpdate({
@@ -3151,28 +3290,10 @@ function usePlayPageSession() {
         resumeTime: switchEffect.resumeTime,
       }
     );
-    if (switchEffect.resumeTime != null) {
-      resumeTimeRef.current = switchEffect.resumeTime;
-      sourceSwitchSavePendingRef.current = true;
-    }
-    void handleSourceChange(
-      switchEffect.source.source,
-      switchEffect.source.id,
-      switchEffect.source.title,
-      {
-        autoRecovery: true,
-        resumeTime: switchEffect.resumeTime,
-        reason: '当前线路持续卡顿，自动切换播放源',
-        autoPlayAfterReady: true,
-      }
-    ).then((switched) => {
-      if (!switched) {
-        dispatchPlaybackSessionEvent({
-          type: 'recovery.switchFailed',
-          sourceKey: switchEffect.sourceKey,
-        });
-      }
-    });
+    void runAutoRecoverySourceSwitch(
+      switchEffect,
+      '当前线路持续卡顿，自动切换播放源'
+    );
   };
 
   const getNextRecoverySource = () => {
@@ -3232,6 +3353,7 @@ function usePlayPageSession() {
       bufferedRanges,
     });
     if (nudgedTime !== null) {
+      systemSeekInFlightRef.current = true;
       video.currentTime = nudgedTime;
       return true;
     }
@@ -3798,7 +3920,7 @@ function usePlayPageSession() {
         // observations so admin monitors do not treat them as playback errors.
         emitPlaybackDebugLog(
           'progressive-source-probe-miss',
-          '候选源后台测速未通过，保持可尝试',
+          '候选源后台测速未通过，仅保留手动尝试',
           {
             sourceKey,
             reason,
@@ -3854,8 +3976,13 @@ function usePlayPageSession() {
 
   // 播放源优选函数
   const preferBestSource = async (
-    sources: SearchResult[]
+    sources: SearchResult[],
+    options: { signal?: AbortSignal } = {}
   ): Promise<SearchResult | null> => {
+    const preferenceGeneration = ++sourcePreferenceGenerationRef.current;
+    const preferenceStillCurrent = () =>
+      preferenceGeneration === sourcePreferenceGenerationRef.current &&
+      !options.signal?.aborted;
     if (sources.length === 1) {
       const source = sources[0];
       const rememberedStatus = getRememberedSourceStatusForSource(
@@ -3908,6 +4035,9 @@ function usePlayPageSession() {
         ReturnType<typeof fetchSourcePreferencesInBatches>
       >
     ) => {
+      if (!preferenceStillCurrent()) {
+        return;
+      }
       preferenceData.results.forEach((result) => {
         const existingStatus = statusMap.get(result.sourceKey);
         const measured = buildVideoInfoFromPreferenceResult(result);
@@ -3975,7 +4105,14 @@ function usePlayPageSession() {
 
     // 不再硬编码关闭实时探测：冷内容（D1 无该 source-id 数据）交给后端按
     // SOURCE_RANKING_FALLBACK_TO_LIVE 决定是否实时探测兜底，避免仅凭原始顺序敲定首源。
-    const preferencePromise = fetchSourcePreferencesInBatches(requestSources);
+    const preferencePromise = fetchSourcePreferencesInBatches(requestSources, {
+      signal: options.signal,
+      onBatch: (data) => {
+        if (preferenceStillCurrent()) {
+          applyPreferenceResults(data);
+        }
+      },
+    });
     let preferenceSettled = false;
     const settledPromise = preferencePromise
       .then((data) => {
@@ -4014,7 +4151,7 @@ function usePlayPageSession() {
         window.setTimeout(resolve, SOURCE_PREFERENCE_FAST_BUDGET_MS, null)
       ),
     ]);
-    if (fastData) {
+    if (fastData && preferenceStillCurrent()) {
       applyPreferenceResults(fastData);
     }
 
@@ -4036,7 +4173,7 @@ function usePlayPageSession() {
           )
         ),
       ]);
-      if (extendedData) {
+      if (extendedData && preferenceStillCurrent()) {
         applyPreferenceResults(extendedData);
       }
     }
@@ -4044,7 +4181,7 @@ function usePlayPageSession() {
     // 若扩展预算内仍未落地，继续后台补齐（只刷新角标/评分）。
     if (!preferenceSettled) {
       void settledPromise.then((data) => {
-        if (data) {
+        if (data && preferenceStillCurrent()) {
           applyPreferenceResults(data);
         }
       });
@@ -4150,6 +4287,83 @@ function usePlayPageSession() {
     updateVideoUrlRef.current = updateVideoUrl;
   });
 
+  /**
+   * Carry out an R3 switchSource effect. A target this device recorded as
+   * unavailable is skipped and the session picks the next candidate, so one
+   * stale record cannot turn auto-recovery into a terminal error page.
+   */
+  const runAutoRecoverySourceSwitch = async (
+    effect: Extract<PlaybackSessionEffect, { type: 'switchSource' }>,
+    reason: string
+  ): Promise<boolean> => {
+    let target = effect;
+    for (
+      let remaining = availableSourcesRef.current.length;
+      remaining >= 0;
+      remaining -= 1
+    ) {
+      const remembered = getRememberedSourceStatusForSource(
+        target.sourceKey,
+        target.source.episodes || []
+      );
+      if (remembered?.kind !== 'unavailable') {
+        if (target.resumeTime != null) {
+          resumeTimeRef.current = target.resumeTime;
+          resumeEpisodeIndexRef.current = currentEpisodeIndexRef.current;
+          sourceSwitchSavePendingRef.current = true;
+        }
+        const switched = await handleSourceChange(
+          target.source.source,
+          target.source.id,
+          target.source.title,
+          {
+            autoRecovery: true,
+            resumeTime: target.resumeTime,
+            reason,
+            autoPlayAfterReady: true,
+          }
+        );
+        if (!switched) {
+          dispatchPlaybackSessionEvent({
+            type: 'recovery.switchFailed',
+            sourceKey: target.sourceKey,
+          });
+        }
+        return switched;
+      }
+
+      emitPlaybackDebugLog(
+        'switch-source-skip-remembered-unavailable',
+        '候选线路本机近期不可用，跳过并尝试下一条',
+        {
+          reason,
+          sourceKey: target.sourceKey,
+          rememberedReason: remembered.reason,
+        }
+      );
+      const skipped = dispatchPlaybackSessionEvent({
+        type: 'recovery.switchSkipped',
+        sourceKey: target.sourceKey,
+        reason: target.reason,
+        nowMs: Date.now(),
+        snapshot: getCurrentVideoSnapshot(),
+      });
+      const next = skipped.effects.find(
+        (
+          candidate
+        ): candidate is Extract<
+          PlaybackSessionEffect,
+          { type: 'switchSource' }
+        > => candidate.type === 'switchSource'
+      );
+      if (!next) {
+        return false;
+      }
+      target = next;
+    }
+    return false;
+  };
+
   const trySwitchToNextAvailableSource = async (reason: string) => {
     if (playbackPolicyRef.current?.deviceUnsupported) {
       return false;
@@ -4199,12 +4413,6 @@ function usePlayPageSession() {
 
     const nextSource = switchEffect.source;
     const recoveryResumeTime = switchEffect.resumeTime;
-    if (recoveryResumeTime) {
-      resumeTimeRef.current = recoveryResumeTime;
-      sourceSwitchSavePendingRef.current = true;
-    }
-
-    const nextSourceKey = switchEffect.sourceKey;
 
     console.warn(`${reason}，自动切换到播放源: ${nextSource.source_name}`);
     emitPlaybackDebugLog('switch-source', '已自动切换到其他播放源', {
@@ -4217,23 +4425,9 @@ function usePlayPageSession() {
     });
     hlsAutoSourceSwitchSessionRef.current = currentSessionId;
 
-    const switched = await handleSourceChange(
-      nextSource.source,
-      nextSource.id,
-      nextSource.title,
-      {
-        autoRecovery: true,
-        resumeTime: recoveryResumeTime,
-        reason,
-        autoPlayAfterReady: true,
-      }
-    );
+    const switched = await runAutoRecoverySourceSwitch(switchEffect, reason);
 
     if (!switched) {
-      dispatchPlaybackSessionEvent({
-        type: 'recovery.switchFailed',
-        sourceKey: nextSourceKey,
-      });
       hlsAutoSourceSwitchSessionRef.current = null;
       return false;
     }
@@ -4425,6 +4619,7 @@ function usePlayPageSession() {
 
   const disposeCurrentPlayer = () => {
     startHlsPlaybackSession();
+    systemPausePendingRef.current = false;
     clearTvPlayerControlBindings();
     const player = artPlayerRef.current;
     const video = player?.video as HTMLVideoElement | undefined;
@@ -4584,6 +4779,9 @@ function usePlayPageSession() {
 
     let cancelled = false;
     const controller = new AbortController();
+    sourcePreferenceAbortRef.current?.abort();
+    const preferenceController = new AbortController();
+    sourcePreferenceAbortRef.current = preferenceController;
 
     const urlSource = searchParams.get('source') || '';
     const urlId = searchParams.get('id') || '';
@@ -4823,7 +5021,9 @@ function usePlayPageSession() {
             fellBackFromHistory) &&
           optimizationEnabled
         ) {
-          const preferredSource = await preferBestSource(sourcesInfo);
+          const preferredSource = await preferBestSource(sourcesInfo, {
+            signal: preferenceController.signal,
+          });
           if (cancelled) return;
           if (!preferredSource) {
             setPlaybackError(
@@ -4846,6 +5046,23 @@ function usePlayPageSession() {
 
         setAvailableSources(sourcesInfo);
         console.log(detailData.source, detailData.id);
+        // A pinned source (history, shared link) skips preference, which used to
+        // leave mid-play recovery with no evidence at all. Rank in the
+        // background without delaying startup; the pick itself is ignored.
+        if (
+          urlSource &&
+          urlId &&
+          !needPreferRef.current &&
+          !fellBackFromHistory &&
+          optimizationEnabled &&
+          sourcesInfo.length > 1
+        ) {
+          void preferBestSource(sourcesInfo, {
+            signal: preferenceController.signal,
+          }).catch((error) => {
+            console.warn('后台线路优选失败', error);
+          });
+        }
 
         setNeedPrefer(false);
         setCurrentSource(detailData.source);
@@ -4883,6 +5100,7 @@ function usePlayPageSession() {
             );
           }
           resumeTimeRef.current = restoredResumeTime ?? escape.resumeTime ?? 0;
+          resumeEpisodeIndexRef.current = restoredEpisodeIndex;
         } else if (currentEpisodeIndex >= detailData.episodes.length) {
           setCurrentEpisodeIndex(0);
         }
@@ -4903,6 +5121,17 @@ function usePlayPageSession() {
           newUrl.searchParams.set('title', resolvedTitle);
         }
         newUrl.searchParams.delete('prefer');
+        // This rewrite only records what init already resolved. Letting it
+        // re-enter init would wipe the preference results just gathered and,
+        // with prefer gone, never rank sources again for this title.
+        if (
+          shouldSkipPlayIdentityInitForUrlRewrite(
+            new URLSearchParams(window.location.search),
+            newUrl.searchParams
+          )
+        ) {
+          skipPlayIdentityInitRef.current = true;
+        }
         window.history.replaceState({}, '', newUrl.toString());
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
@@ -4927,6 +5156,8 @@ function usePlayPageSession() {
     };
   }, [playIdentityKey]);
 
+  useEffect(() => () => sourcePreferenceAbortRef.current?.abort(), []);
+
   // 处理换源
   const handleSourceChange = async (
     newSource: string,
@@ -4942,6 +5173,7 @@ function usePlayPageSession() {
       });
       // 旧源清单不能用于新源的结构块吸附
       latestMediaPlaylistRef.current = null;
+      clearEndedAutoAdvanceTimer();
       sourceSwitchSavePendingRef.current = false;
       sourceSwitchAutoPlayPendingRef.current = false;
       sourceDurationBeforeSwitchRef.current =
@@ -4971,10 +5203,19 @@ function usePlayPageSession() {
       );
       if (rememberedStatus?.kind === 'unavailable') {
         dispatchVideoPlaybackUi({ type: 'loading.end' });
-        setPlaybackError(
-          rememberedStatus.reason || '该播放源当前不可用',
-          'source-unavailable'
-        );
+        const message = rememberedStatus.reason || '该播放源当前不可用';
+        // Stay on the line that is still playing; only a page with no live
+        // player falls back to the error view.
+        if (artPlayerRef.current) {
+          if (!options.autoRecovery) {
+            showPlayerNotice(
+              artPlayerRef.current,
+              `该线路近期不可用：${message}`
+            );
+          }
+        } else {
+          setPlaybackError(message, 'source-unavailable');
+        }
         return false;
       }
 
@@ -5038,6 +5279,7 @@ function usePlayPageSession() {
         );
       }
       resumeTimeRef.current = resumePlan.resumeTime;
+      resumeEpisodeIndexRef.current = targetIndex;
       sourceSwitchSavePendingRef.current = resumePlan.saveAfterCanPlay;
       sourceSwitchAutoPlayPendingRef.current = Boolean(
         options.autoPlayAfterReady
@@ -5099,6 +5341,9 @@ function usePlayPageSession() {
       setCurrentId(newId);
       setDetail(newDetail);
       setCurrentEpisodeIndex(targetIndex);
+      // A rewind on the line being left must not block the new line from
+      // adopting a further server playhead.
+      userRewoundRef.current = false;
       if (!options.autoRecovery) {
         dispatchPlaybackSessionEvent({
           type: 'user.switchSource',
@@ -5126,49 +5371,74 @@ function usePlayPageSession() {
   // 集数切换
   // ---------------------------------------------------------------------------
   // 处理集数切换
+  const clearEndedAutoAdvanceTimer = () => {
+    endedAutoAdvancePendingRef.current = false;
+    if (endedAutoAdvanceTimerRef.current != null) {
+      window.clearTimeout(endedAutoAdvanceTimerRef.current);
+      endedAutoAdvanceTimerRef.current = null;
+    }
+  };
+
+  const beginEpisodeProgressEpoch = (episodeIndex: number) => {
+    progressMediaEpochRef.current = { episodeIndex, ready: false };
+    // A rewind, playhead, last save, or queued resume from the episode being
+    // left must not travel with the page onto the next episode.
+    userRewoundRef.current = false;
+    currentPlayTimeRef.current = 0;
+    hlsRecoveryStateRef.current.lastPlaybackTime = 0;
+    lastSavedSnapshotRef.current = null;
+    resumeTimeRef.current = null;
+    resumeEpisodeIndexRef.current = null;
+    sourceSwitchSavePendingRef.current = false;
+    sourceDurationBeforeSwitchRef.current = null;
+  };
+
+  const switchToEpisodeIndex = (episodeIndex: number) => {
+    const d = detailRef.current;
+    const idx = currentEpisodeIndexRef.current;
+    if (!d?.episodes || episodeIndex < 0 || episodeIndex >= d.episodes.length) {
+      return;
+    }
+    if (episodeIndex === idx) {
+      return;
+    }
+    const skipLeavingSave = shouldSkipLeavingProgressSave({
+      pendingEndedAutoAdvance:
+        endedAutoAdvancePendingRef.current ||
+        endedAutoAdvanceTimerRef.current != null,
+    });
+    clearEndedAutoAdvanceTimer();
+    const leaving = resolveEpisodeProgressSnapshot({
+      episodeIndex: idx,
+      playTime: artPlayerRef.current?.currentTime ?? 0,
+      totalTime: artPlayerRef.current?.duration ?? 0,
+    });
+    const result = dispatchPlaybackSessionEvent({
+      type: 'user.switchEpisode',
+      episodeIndex,
+      nowMs: Date.now(),
+    });
+    beginEpisodeProgressEpoch(episodeIndex);
+    if (!skipLeavingSave) {
+      void executeSaveProgressEffects(result.effects, {
+        playTime: leaving.playTime,
+        totalTime: leaving.totalTime,
+      });
+    }
+    setCurrentEpisodeIndex(episodeIndex);
+  };
+
   const handleEpisodeChange = (episodeNumber: number) => {
     // episodeNumber是显示的集数（从1开始），需要转换为索引（从0开始）
-    const episodeIndex = episodeNumber - 1;
-    if (episodeIndex >= 0 && episodeIndex < totalEpisodes) {
-      const result = dispatchPlaybackSessionEvent({
-        type: 'user.switchEpisode',
-        episodeIndex,
-        nowMs: Date.now(),
-      });
-      void executeSaveProgressEffects(result.effects);
-      setCurrentEpisodeIndex(episodeIndex);
-    }
+    switchToEpisodeIndex(episodeNumber - 1);
   };
 
   const handlePreviousEpisode = () => {
-    const d = detailRef.current;
-    const idx = currentEpisodeIndexRef.current;
-    if (d && d.episodes && idx > 0) {
-      const episodeIndex = idx - 1;
-      const result = dispatchPlaybackSessionEvent({
-        type: 'user.switchEpisode',
-        episodeIndex,
-        nowMs: Date.now(),
-      });
-      void executeSaveProgressEffects(result.effects);
-      setCurrentEpisodeIndex(episodeIndex);
-    }
+    switchToEpisodeIndex(currentEpisodeIndexRef.current - 1);
   };
 
   const handleNextEpisode = () => {
-    console.log('尝试切换到下一集');
-    const d = detailRef.current;
-    const idx = currentEpisodeIndexRef.current;
-    if (d && d.episodes && idx < d.episodes.length - 1) {
-      const episodeIndex = idx + 1;
-      const result = dispatchPlaybackSessionEvent({
-        type: 'user.switchEpisode',
-        episodeIndex,
-        nowMs: Date.now(),
-      });
-      void executeSaveProgressEffects(result.effects);
-      setCurrentEpisodeIndex(episodeIndex);
-    }
+    switchToEpisodeIndex(currentEpisodeIndexRef.current + 1);
   };
 
   // ---------------------------------------------------------------------------
@@ -5348,16 +5618,36 @@ function usePlayPageSession() {
     }
 
     const player = artPlayerRef.current;
-    const duration = Math.floor(options?.totalTime ?? player.duration ?? 0);
     const episodeIndex =
       options?.episodeIndex ?? currentEpisodeIndexRef.current;
-    const livePlayTime = options?.playTime ?? player.currentTime ?? 0;
+    const mediaEpoch = progressMediaEpochRef.current;
+    const mediaMatchesEpisode =
+      mediaEpoch.ready && mediaEpoch.episodeIndex === episodeIndex;
+    const hasSnappedProgress =
+      options?.playTime != null && options?.totalTime != null;
+    // Episode change snaps the leaving episode before the element switches.
+    // Until the new episode reaches canplay, heartbeat and pause must not read
+    // the element — its currentTime still belongs to the previous episode.
+    if (!mediaMatchesEpisode && !hasSnappedProgress) {
+      return;
+    }
+    const duration = Math.floor(
+      hasSnappedProgress ? options.totalTime ?? 0 : player.duration ?? 0
+    );
+    const livePlayTime = hasSnappedProgress
+      ? options.playTime ?? 0
+      : player.currentTime ?? 0;
+    const rememberedSnapshot = lastSavedSnapshotRef.current;
     const rawPlayTime = resolvePlayTimeForWatchProgressSave({
       livePlayTime,
       rememberedPlayhead: Math.max(
         getRememberedPlayheadSeconds(),
-        lastSavedSnapshotRef.current?.playTime ?? 0
+        rememberedSnapshot?.episodeIndex === episodeIndex
+          ? rememberedSnapshot.playTime
+          : 0
       ),
+      rememberedEpisodeIndex: rememberedSnapshot?.episodeIndex,
+      episodeIndex,
     });
     const sealed =
       reason === 'episode-ended' || options?.completed
@@ -5418,15 +5708,29 @@ function usePlayPageSession() {
       route_id: currentIdRef.current,
     };
 
+    const rewindGeneration = userRewoundRef.current
+      ? userRewoundGenerationRef.current
+      : 0;
     try {
       await savePlayRecordKeys(
         [writePlan.primaryKey, ...writePlan.dualWriteKeys],
         record,
-        options
+        {
+          ...options,
+          userRewound: rewindGeneration > 0,
+        }
       );
 
       lastSaveTimeRef.current = saveTime;
       lastSavedSnapshotRef.current = snapshot;
+      // A rewind only authorizes the save that records it. A save that started
+      // before this rewind must not clear the flag when it returns.
+      if (
+        rewindGeneration > 0 &&
+        userRewoundGenerationRef.current === rewindGeneration
+      ) {
+        userRewoundRef.current = false;
+      }
     } catch (err) {
       console.error('保存播放进度失败:', err);
     }
@@ -5483,6 +5787,7 @@ function usePlayPageSession() {
         clearInterval(saveIntervalRef.current);
       }
       clearSourceChangeTimeoutTimer();
+      clearEndedAutoAdvanceTimer();
     };
   }, []);
 
@@ -5538,6 +5843,14 @@ function usePlayPageSession() {
           artPlayerRef.current &&
           isArtPlayerBoundToContainer(artPlayerRef.current, artRef.current)
         ) {
+          // ArtPlayer's switch pauses first; that pause is ours, not the user's.
+          systemPausePendingRef.current = shouldArmSystemPauseForUrlSwitch({
+            videoPaused: (
+              artPlayerRef.current.video as HTMLVideoElement | undefined
+            )?.paused,
+            currentUrl: artPlayerRef.current.url,
+            nextUrl: videoUrl,
+          });
           artPlayerRef.current.switch = videoUrl;
           artPlayerRef.current.title = `${videoTitle} - 第${
             currentEpisodeIndex + 1
@@ -5654,7 +5967,14 @@ function usePlayPageSession() {
           );
 
           let clearQueuedResume = true;
-          if (resumeTimeRef.current && resumeTimeRef.current > 0) {
+          if (
+            resumeTimeRef.current &&
+            resumeTimeRef.current > 0 &&
+            shouldApplyQueuedResumeForEpisode({
+              queuedEpisodeIndex: resumeEpisodeIndexRef.current,
+              currentEpisodeIndex: currentEpisodeIndexRef.current,
+            })
+          ) {
             try {
               const duration = player.duration || 0;
               const videoReadyState = (
@@ -5726,6 +6046,7 @@ function usePlayPageSession() {
                     }
                   );
                 } else {
+                  systemSeekInFlightRef.current = true;
                   player.currentTime = target;
                   console.log('成功恢复播放进度到:', resumeTimeRef.current);
                   emitPlaybackDebugLog(
@@ -5751,6 +6072,7 @@ function usePlayPageSession() {
           }
           if (clearQueuedResume) {
             resumeTimeRef.current = null;
+            resumeEpisodeIndexRef.current = null;
             if (
               isPlaybackRecoverySessionAuthorityEnabled() &&
               (playbackSessionStateRef.current.recoveryInFlight === 'resume' ||
@@ -5836,6 +6158,10 @@ function usePlayPageSession() {
                   : undefined,
             });
           }
+          progressMediaEpochRef.current = {
+            episodeIndex: currentEpisodeIndexRef.current,
+            ready: true,
+          };
           return true;
         };
 
@@ -6137,28 +6463,10 @@ function usePlayPageSession() {
                   if (switchEffect) {
                     state.lastRecoveryAction = 'switch-source';
                     state.lastRecoveryActionAt = now;
-                    if (switchEffect.resumeTime != null) {
-                      resumeTimeRef.current = switchEffect.resumeTime;
-                      sourceSwitchSavePendingRef.current = true;
-                    }
-                    void handleSourceChange(
-                      switchEffect.source.source,
-                      switchEffect.source.id,
-                      switchEffect.source.title,
-                      {
-                        autoRecovery: true,
-                        resumeTime: switchEffect.resumeTime,
-                        reason: reason || 'HLS.js 恢复切源',
-                        autoPlayAfterReady: true,
-                      }
-                    ).then((switched) => {
-                      if (!switched) {
-                        dispatchPlaybackSessionEvent({
-                          type: 'recovery.switchFailed',
-                          sourceKey: switchEffect.sourceKey,
-                        });
-                      }
-                    });
+                    void runAutoRecoverySourceSwitch(
+                      switchEffect,
+                      reason || 'HLS.js 恢复切源'
+                    );
                     return;
                   }
 
@@ -6628,6 +6936,14 @@ function usePlayPageSession() {
 
         artPlayerRef.current.on('video:pause', () => {
           resetProgressiveSourceProbeStability();
+          const pause = consumeSystemPause(systemPausePendingRef.current);
+          if (pause.clearPending) {
+            systemPausePendingRef.current = false;
+          }
+          if (!pause.isUserPause) {
+            syncTvPlayerControls();
+            return;
+          }
           const video = artPlayerRef.current.video as
             | HTMLVideoElement
             | undefined;
@@ -6766,19 +7082,41 @@ function usePlayPageSession() {
           const idx = currentEpisodeIndexRef.current;
           if (d && d.episodes && idx < d.episodes.length - 1) {
             const player = artPlayerRef.current;
-            const playTime = Math.floor(player?.currentTime || 0);
-            const totalTime = Math.floor(player?.duration || 0);
+            const endedProgress = resolveEpisodeProgressSnapshot({
+              episodeIndex: idx,
+              playTime: player?.currentTime || 0,
+              totalTime: player?.duration || 0,
+            });
+            const nextEpisodeIndex = idx + 1;
             const result = dispatchPlaybackSessionEvent({
               type: 'video.ended',
-              nextEpisodeIndex: idx + 1,
+              nextEpisodeIndex,
               nowMs: Date.now(),
             });
+            // Session episode moves to next immediately. Keep saves of the
+            // finished episode on the snapped media until that next episode
+            // actually reaches canplay — or a manual pick replaces it.
+            beginEpisodeProgressEpoch(nextEpisodeIndex);
+            endedAutoAdvancePendingRef.current = true;
             void executeSaveProgressEffects(result.effects, {
-              playTime,
-              totalTime,
+              playTime: endedProgress.playTime,
+              totalTime: endedProgress.totalTime,
             }).then(() => {
-              setTimeout(() => {
-                setCurrentEpisodeIndex(idx + 1);
+              if (!endedAutoAdvancePendingRef.current) {
+                return;
+              }
+              endedAutoAdvanceTimerRef.current = window.setTimeout(() => {
+                endedAutoAdvanceTimerRef.current = null;
+                endedAutoAdvancePendingRef.current = false;
+                if (
+                  !shouldAutoAdvanceEndedEpisode({
+                    endedEpisodeIndex: idx,
+                    currentEpisodeIndex: currentEpisodeIndexRef.current,
+                  })
+                ) {
+                  return;
+                }
+                setCurrentEpisodeIndex(nextEpisodeIndex);
               }, 1000);
             });
           }

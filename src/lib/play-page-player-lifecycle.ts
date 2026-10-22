@@ -34,6 +34,32 @@ export function isArtPlayerBoundToContainer(
   );
 }
 
+type SearchParamsLike = { get(name: string): string | null };
+
+/** URL params that select what the play page initialises. */
+export function buildPlayIdentityKey(params: SearchParamsLike): string {
+  return [
+    params.get('source') || '',
+    params.get('id') || '',
+    params.get('stitle') || '',
+    params.get('title') || '',
+    params.get('stype') || '',
+    params.get('prefer') || '',
+  ].join('\0');
+}
+
+/**
+ * The page rewrote its own URL to reflect state it already holds. Skip the
+ * identity init only when the rewrite actually changes the key — a skip armed
+ * for an unchanged key would linger and swallow the next real navigation.
+ */
+export function shouldSkipPlayIdentityInitForUrlRewrite(
+  from: SearchParamsLike,
+  to: SearchParamsLike
+): boolean {
+  return buildPlayIdentityKey(from) !== buildPlayIdentityKey(to);
+}
+
 /**
  * Soft source switches set a one-shot skip so URL identity churn does not tear
  * down the in-page player via the loading gate.
@@ -46,6 +72,96 @@ export function consumePlayIdentityInitSkip(skipNext: boolean): {
     return { runInit: false, clearSkip: true };
   }
   return { runInit: true, clearSkip: false };
+}
+
+/**
+ * ArtPlayer's `switch` setter pauses the playing video before swapping the
+ * URL. Arm a one-shot marker only when that pause will actually fire (video
+ * playing); an armed marker with no pause event would swallow the user's next
+ * real pause.
+ */
+export function shouldArmSystemPauseForUrlSwitch(input: {
+  videoPaused: boolean | undefined;
+  currentUrl: string | undefined;
+  nextUrl: string;
+}): boolean {
+  // ArtPlayer returns early without pausing when the URL is unchanged.
+  return input.videoPaused === false && input.currentUrl !== input.nextUrl;
+}
+
+/**
+ * Classify a `video:pause`. A pause the page caused itself (URL switch) must
+ * not become user-paused intent, or every later automatic recovery is gated
+ * and a failed switch hangs with a spinner.
+ */
+export function consumeSystemPause(systemPausePending: boolean): {
+  isUserPause: boolean;
+  clearPending: boolean;
+} {
+  if (systemPausePending) {
+    return { isUserPause: false, clearPending: true };
+  }
+  return { isUserPause: true, clearPending: false };
+}
+
+/**
+ * `video:ended` schedules the next episode after the completion save. A manual
+ * episode pick in that gap must win — only advance when the page is still on
+ * the episode that ended.
+ */
+export function shouldAutoAdvanceEndedEpisode(input: {
+  endedEpisodeIndex: number;
+  currentEpisodeIndex: number;
+}): boolean {
+  return input.currentEpisodeIndex === input.endedEpisodeIndex;
+}
+
+/**
+ * `video.ended` already saved the finished episode and moved the session index
+ * forward. A manual pick during the auto-advance gap must not save that same
+ * completion again against the session's next episode.
+ */
+export function shouldSkipLeavingProgressSave(input: {
+  pendingEndedAutoAdvance: boolean;
+}): boolean {
+  return input.pendingEndedAutoAdvance;
+}
+
+/**
+ * A queued resume belongs to the episode that parked it. Applying it after an
+ * episode change seeks the new episode to the previous episode's playhead.
+ */
+export function shouldApplyQueuedResumeForEpisode(input: {
+  queuedEpisodeIndex: number | null;
+  currentEpisodeIndex: number;
+}): boolean {
+  return (
+    input.queuedEpisodeIndex != null &&
+    input.queuedEpisodeIndex === input.currentEpisodeIndex
+  );
+}
+
+/**
+ * While a new episode's media is still the previous element, live currentTime
+ * and duration belong to the episode being left. Callers must pass the snapped
+ * values instead of reading the player.
+ */
+export function resolveEpisodeProgressSnapshot(input: {
+  episodeIndex: number;
+  playTime: number;
+  totalTime: number;
+}): { episodeIndex: number; playTime: number; totalTime: number } {
+  const playTime = Number.isFinite(input.playTime)
+    ? Math.max(0, Math.floor(input.playTime))
+    : 0;
+  const totalTime = Number.isFinite(input.totalTime)
+    ? Math.max(0, Math.floor(input.totalTime))
+    : 0;
+  return {
+    episodeIndex: input.episodeIndex,
+    playTime,
+    totalTime,
+  };
 }
 
 /** Prefer a non-empty detail/search title over wiping the play URL title. */

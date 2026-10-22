@@ -110,17 +110,17 @@ describe('progressive source probe scheduling', () => {
     ).toEqual(['fast-2']);
   });
 
-  it('keeps browser-only background probe failures playable', () => {
+  it('marks background probe failures as soft unavailable, not verified', () => {
     const status = createProgressiveSourceProbeFailureStatus({
       domain: 'media.example.com',
       reason: 'metadata probe failed',
     });
 
-    expect(status.kind).toBe('playable');
+    expect(status.kind).toBe('unavailable');
     expect(status.playbackMode).toBe('direct');
     expect(status.domain).toBe('media.example.com');
     expect(status.reason).toBe(
-      '后台测速未通过（metadata probe failed），可尝试播放'
+      '后台测速未通过（metadata probe failed），可手动尝试'
     );
     expect(status.localConfidence).toBe('low');
   });

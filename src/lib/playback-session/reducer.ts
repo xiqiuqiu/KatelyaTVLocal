@@ -46,6 +46,7 @@ const DEFAULT_SOURCE_SWITCH_SETTLE_MS = 2000;
 const AD_SKIP_UNDO_DISMISS_MS = 5000;
 /** R3 disclosure bar — heavier / longer-lived than Ad Skip undo (ADR 0007). */
 const AUTO_SOURCE_SWITCH_UNDO_DISMISS_MS = 12_000;
+const MAX_UNVERIFIED_RECOVERY_ATTEMPTS = 2;
 
 export function createInitialPlaybackSessionState(
   input: Partial<PlaybackSessionState> = {}
@@ -61,6 +62,7 @@ export function createInitialPlaybackSessionState(
     sourceScores: new Map(),
     measuredVideoInfo: new Map(),
     recoveredSourceKeys: new Set(),
+    unverifiedRecoveryAttempts: 0,
     badPoints: [],
     badPointsByScope: new Map(),
     adSkipWindows: [],
@@ -143,10 +145,10 @@ function shouldAllowUnverifiedRecoveryFallback(
   if (reason === 'source-timeout') {
     return true;
   }
-  // Sustained starvation has the same evidence gap mid-episode: background
-  // probing pauses while recovery is active, so unverified sources never become
-  // direct/playable. One unverified try is allowed only on this path.
-  if (isStarvationSwitch(evidence)) {
+  // Sustained starvation and a mid-play hard failure share the evidence gap:
+  // preference batches can still be in flight, so every alternate stays unknown.
+  // One unverified try is recorded on recoveredSourceKeys and is not repeated.
+  if (isStarvationSwitch(evidence) || evidence?.hardFailure) {
     return true;
   }
   return (snapshot.currentTime || 0) < 1;
@@ -170,16 +172,17 @@ function createRecoverySwitchEffect(
     measured: state.measuredVideoInfo,
     sourceSelectionScores: toSelectionScores(state.sources, state.sourceScores),
     attemptedSourceKeys: state.recoveredSourceKeys,
-    allowUnverifiedFallback: shouldAllowUnverifiedRecoveryFallback(
-      reason,
-      snapshot,
-      evidence
-    ),
+    allowUnverifiedFallback:
+      state.unverifiedRecoveryAttempts < MAX_UNVERIFIED_RECOVERY_ATTEMPTS &&
+      shouldAllowUnverifiedRecoveryFallback(reason, snapshot, evidence),
   });
 
   if (!selected) {
     return null;
   }
+  const unverifiedRecoveryAttempts = selected.autoRecovery.eligible
+    ? state.unverifiedRecoveryAttempts
+    : state.unverifiedRecoveryAttempts + 1;
 
   const candidate = selected.source;
   const sourceKey = selected.sourceKey;
@@ -224,6 +227,7 @@ function createRecoverySwitchEffect(
       badPoints
     ),
     recoveredSourceKeys: nextRecoveredSourceKeys,
+    unverifiedRecoveryAttempts,
   };
 
   return {
@@ -578,6 +582,24 @@ function pickRecoveryCancelFields(
   };
 }
 
+/**
+ * Ad windows are timed ranges for one source+episode. Carrying them onto the
+ * next episode makes that timeline seek the old range, and a later confirm
+ * writes the foreign window into the new episode's shared store.
+ * Analyzer reloads on the same episode do not use this — they still preserve
+ * session user-marks via `adSkipWindows.loaded`.
+ */
+function clearAdSkipWindows(state: PlaybackSessionState): PlaybackSessionState {
+  return {
+    ...state,
+    adSkipWindows: [],
+    lastAdSkipWindowKey: null,
+    adSkipInFlightWindowKey: null,
+    suppressedAdSkipWindowKeys: new Set(),
+    recoverableAdSkip: null,
+  };
+}
+
 function switchEpisodeScope(
   state: PlaybackSessionState,
   episodeIndex: number
@@ -594,11 +616,12 @@ function switchEpisodeScope(
     episodeIndex
   );
   return {
-    ...clearStallEpisode(state),
+    ...clearAdSkipWindows(clearStallEpisode(state)),
     currentEpisodeIndex: episodeIndex,
     badPointsByScope: persisted,
     badPoints: nextBadPoints,
     recoveredSourceKeys: new Set(),
+    unverifiedRecoveryAttempts: 0,
     recoveryResumeTime: null,
     pendingResumeTime: null,
   };
@@ -610,12 +633,13 @@ function switchTitleScope(
   episodeIndex: number
 ): PlaybackSessionState {
   return {
-    ...clearStallEpisode(state),
+    ...clearAdSkipWindows(clearStallEpisode(state)),
     contentKey,
     currentEpisodeIndex: episodeIndex,
     badPoints: [],
     badPointsByScope: new Map(),
     recoveredSourceKeys: new Set(),
+    unverifiedRecoveryAttempts: 0,
     recoveryResumeTime: null,
     pendingResumeTime: null,
   };
@@ -655,11 +679,12 @@ export function reducePlaybackSession(
 
       // A new source (e.g. an auto-recovery switch, which does not dispatch
       // user.switchSource) starts on a fresh timeline: forget the carried
-      // escape budget so the new source is not immediately R3-capped.
+      // escape budget so the new source is not immediately R3-capped, and drop
+      // ad windows so the old line cannot be confirmed onto the new one.
       const sourceChanged = event.currentSourceKey !== state.currentSourceKey;
       const rebased =
         sourceChanged && !titleChanged && !episodeChanged
-          ? resetEscapeBudget(scoped)
+          ? clearAdSkipWindows(resetEscapeBudget(scoped))
           : scoped;
 
       return {
@@ -808,7 +833,9 @@ export function reducePlaybackSession(
       return withIntentTransition(
         state,
         {
-          ...clearStallEpisode(state),
+          ...clearAdSkipWindows(clearStallEpisode(state)),
+          // A user-picked line starts a fresh blind-try budget.
+          unverifiedRecoveryAttempts: 0,
           playbackIntent: 'playing',
           resumeIntentAfterSeek: null,
           currentSourceKey: event.sourceKey,
@@ -1227,6 +1254,24 @@ export function reducePlaybackSession(
       };
     }
 
+    case 'recovery.switchSkipped': {
+      // The skipped target stays on recoveredSourceKeys so selection moves on;
+      // the ladder already reached R3, so retry without re-climbing it. Each
+      // skip consumes one candidate, and exhaustion surfaces the in-player
+      // failure instead of a terminal page.
+      return tryEmitR3(
+        {
+          ...state,
+          recoveryInFlight: null,
+          recoverableAutoSourceSwitch: null,
+        },
+        event.snapshot,
+        event.nowMs,
+        event.reason,
+        { platform: 'hlsjs', hardFailure: true }
+      );
+    }
+
     case 'recovery.cancel': {
       const cancelled = cancelInFlightAdSkip(
         cancelRecoveryEpisode(state),
@@ -1484,19 +1529,48 @@ export function reducePlaybackSession(
         return { state, effects: [] };
       }
 
-      return handleStallCandidate(
-        {
-          ...state,
-          sourceChangeInFlight: false,
-          sourceChangeSourceKey: null,
-        },
-        event.snapshot,
-        event.nowMs,
-        {
-          hardFailure: true,
-          forceR3Evaluation: true,
-          r3Reason: 'source-timeout',
+      {
+        const timedOut = handleStallCandidate(
+          {
+            ...state,
+            sourceChangeInFlight: false,
+            sourceChangeSourceKey: null,
+          },
+          event.snapshot,
+          event.nowMs,
+          {
+            hardFailure: true,
+            forceR3Evaluation: true,
+            r3Reason: 'source-timeout',
+          }
+        );
+        // The new line never became playable. If intent gates every automatic
+        // step, the user would be left on a spinner; surface the failure panel
+        // so they can retry or pick a line themselves.
+        const acted = timedOut.effects.some(
+          (effect) =>
+            effect.type === 'switchSource' ||
+            effect.type === 'showInPlayerFailure'
+        );
+        if (acted) {
+          return timedOut;
         }
-      );
+        return {
+          state: {
+            ...timedOut.state,
+            recoveryStage: 'exhausted',
+            stallEpisodeActive: false,
+            recoveryInFlight: null,
+          },
+          effects: [
+            ...timedOut.effects,
+            {
+              type: 'showInPlayerFailure',
+              reason: 'recovery-exhausted',
+              actions: ['retry', 'switch-source', 'leave'],
+            },
+          ],
+        };
+      }
   }
 }

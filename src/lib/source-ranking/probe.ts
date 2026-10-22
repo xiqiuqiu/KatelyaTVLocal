@@ -156,7 +156,10 @@ function parseMasterPlaylist(
   )[0];
 }
 
-function parseFirstMediaSegment(content: string, baseUrl: string): string | null {
+function parseFirstMediaSegment(
+  content: string,
+  baseUrl: string
+): string | null {
   const lines = content.split(/\r?\n/).map((line) => line.trim());
 
   for (const line of lines) {
@@ -211,7 +214,7 @@ async function probeFirstSegment(
   const buffer = await response.arrayBuffer();
   const latencyMs = Math.max(1, Date.now() - startedAt);
   const speedKbps = Number(
-    (((buffer.byteLength * 8) / latencyMs) * 1000 / 1000).toFixed(2)
+    ((((buffer.byteLength * 8) / latencyMs) * 1000) / 1000).toFixed(2)
   );
 
   return {
@@ -294,6 +297,20 @@ export async function probePlaybackForRanking(
   };
 }
 
+/**
+ * A Workers subrequest cap is not a statement about the source. Persisting it
+ * makes the next read treat that line as unavailable and skip live probes.
+ */
+export function isPlatformProbeFailure(result: {
+  kind: string;
+  reason?: string | null;
+}): boolean {
+  return (
+    result.kind === 'unavailable' &&
+    /too many subrequests/i.test(result.reason || '')
+  );
+}
+
 export async function persistOfflineProbeResult(
   env: SourceProbeEnvLike,
   runId: string,
@@ -301,6 +318,9 @@ export async function persistOfflineProbeResult(
   result: OfflineProbeResult,
   measuredAt = Date.now()
 ): Promise<void> {
+  if (isPlatformProbeFailure(result)) {
+    return;
+  }
   await env.DB.prepare(
     `INSERT INTO source_probe_results
      (id, run_id, source_key, source_name, title_sample, episode_url, playback_domain, probe_kind, probe_reason, upstream_status, probe_time_ms, resolution_label, first_segment_latency_ms, first_segment_speed_kbps, measured_at)
