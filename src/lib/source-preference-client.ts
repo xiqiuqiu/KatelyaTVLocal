@@ -4,7 +4,7 @@ import {
   SourcePreferenceResult,
 } from './types';
 
-const DEFAULT_SOURCE_PREFERENCE_BATCH_SIZE = 20;
+const DEFAULT_SOURCE_PREFERENCE_BATCH_SIZE = 6;
 
 type Fetcher = typeof fetch;
 
@@ -104,10 +104,14 @@ export async function fetchSourcePreferencesInBatches(
     });
 
     if (!response.ok) {
-      throw new Error(`批量探测失败: ${response.status}`);
+      continue;
     }
 
     responses.push((await response.json()) as SourcePreferenceResponse);
+  }
+
+  if (responses.length === 0) {
+    throw new Error('批量探测失败');
   }
 
   const resultMap = new Map<string, SourcePreferenceResult>();

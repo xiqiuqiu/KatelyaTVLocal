@@ -374,17 +374,21 @@ export async function probeSourcePlaybackWithCache(
   const cacheRequest = buildProbeCacheRequest(targetUrl, origin);
 
   if (cache) {
-    const cachedResponse = await cache.match(cacheRequest);
-    if (cachedResponse) {
-      const cachedPayload = (await cachedResponse
-        .json()
-        .catch(() => null)) as SourceProbeMetrics | null;
-      if (cachedPayload) {
-        return {
-          ...cachedPayload,
-          cacheState: 'hit',
-        };
+    try {
+      const cachedResponse = await cache.match(cacheRequest);
+      if (cachedResponse) {
+        const cachedPayload = (await cachedResponse
+          .json()
+          .catch(() => null)) as SourceProbeMetrics | null;
+        if (cachedPayload) {
+          return {
+            ...cachedPayload,
+            cacheState: 'hit',
+          };
+        }
       }
+    } catch {
+      // Cache API 子请求超额时不能让整批优选变成 500。
     }
   }
 
@@ -396,15 +400,19 @@ export async function probeSourcePlaybackWithCache(
 
   if (cache) {
     const ttl = getProbeCacheTtl(freshResult);
-    await cache.put(
-      cacheRequest,
-      new Response(JSON.stringify(freshResult), {
-        headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'cache-control': `public, max-age=${ttl}`,
-        },
-      })
-    );
+    try {
+      await cache.put(
+        cacheRequest,
+        new Response(JSON.stringify(freshResult), {
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': `public, max-age=${ttl}`,
+          },
+        })
+      );
+    } catch {
+      // 写缓存失败仍返回这次探测结果。
+    }
   }
 
   return {

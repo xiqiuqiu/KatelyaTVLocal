@@ -41,20 +41,63 @@ describe('source preference client batching', () => {
 
     const response = await fetchSourcePreferencesInBatches(sources, {
       fetcher: fetchMock as unknown as typeof fetch,
-      batchSize: 20,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(8);
     expect(
       requests.map(
         (request) => (request as { sources: unknown[] }).sources.length
       )
-    ).toEqual([20, 20, 5]);
+    ).toEqual([6, 6, 6, 6, 6, 6, 6, 3]);
     expect(response.results).toHaveLength(45);
     expect(response.orderedSourceKeys).toEqual(
       response.results.map((result) => result.sourceKey)
     );
     expect(response.rankingSource).toBe('live');
+  });
+
+  it('keeps later batches when one batch fails', async () => {
+    let call = 0;
+    const fetchMock = jest.fn(async (_url: string, init?: RequestInit) => {
+      call += 1;
+      const body = JSON.parse(String(init?.body)) as {
+        sources: Array<{ sourceKey: string }>;
+      };
+      if (call === 1) {
+        return { ok: false, status: 500, json: async () => ({}) };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          orderedSourceKeys: body.sources.map((source) => source.sourceKey),
+          results: body.sources.map((source) => ({
+            sourceKey: source.sourceKey,
+            kind: 'direct',
+            reason: 'ok',
+            rankingSource: 'live',
+          })),
+          generatedAt: 1710000000000,
+          rankingSource: 'live',
+          confidence: 'low',
+        }),
+      };
+    });
+    const sources = Array.from({ length: 4 }, (_, index) => ({
+      sourceKey: `source-${index}`,
+      episodeUrl: `https://example.com/${index}.m3u8`,
+    }));
+
+    const response = await fetchSourcePreferencesInBatches(sources, {
+      fetcher: fetchMock as unknown as typeof fetch,
+      batchSize: 2,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(response.results.map((result) => result.sourceKey)).toEqual([
+      'source-2',
+      'source-3',
+    ]);
   });
 
   it('passes the live fallback preference to every batch request', async () => {

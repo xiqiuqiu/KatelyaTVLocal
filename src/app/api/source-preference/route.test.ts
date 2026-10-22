@@ -253,6 +253,49 @@ describe('source preference route', () => {
     ]);
   });
 
+  it('live-probes at most six distinct episode urls', async () => {
+    mockedReadLatestSourceRanks.mockResolvedValue([]);
+    mockedProbeSourcePlaybackWithCache.mockResolvedValue({
+      kind: 'direct',
+      reason: '直连',
+      probeTimeMs: 100,
+      cacheState: 'miss',
+    });
+    const sources = Array.from({ length: 8 }, (_, index) => ({
+      sourceKey: `source-${index}`,
+      episodeUrl:
+        index === 6
+          ? 'https://example.com/0.m3u8'
+          : `https://example.com/${index}.m3u8`,
+    }));
+
+    const response = await POST(
+      new Request('https://app.example.com/api/source-preference', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ allowLiveProbeFallback: true, sources }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedProbeSourcePlaybackWithCache).toHaveBeenCalledTimes(6);
+    const payload = (await response.json()) as {
+      results: Array<{ sourceKey: string }>;
+    };
+    expect(payload.results.map((result) => result.sourceKey)).toEqual([
+      'source-0',
+      'source-1',
+      'source-2',
+      'source-3',
+      'source-4',
+      'source-5',
+    ]);
+    expect(mockedProbeSourcePlaybackWithCache).not.toHaveBeenCalledWith(
+      'https://example.com/6.m3u8',
+      expect.anything()
+    );
+  });
+
   it('does not live probe when fallback is disabled and d1 has no matching rank', async () => {
     mockedReadLatestSourceRanks.mockResolvedValue([]);
 

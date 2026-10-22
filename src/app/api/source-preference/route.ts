@@ -2,9 +2,7 @@ import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextResponse } from 'next/server';
 
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
-import {
-  probeSourcePlaybackWithCache,
-} from '@/lib/source-preference';
+import { probeSourcePlaybackWithCache } from '@/lib/source-preference';
 import { formatSourceSpeedKbps } from '@/lib/source-preference-video-info';
 import {
   persistOfflineProbeResult,
@@ -22,6 +20,11 @@ export const runtime = 'edge';
 
 const MAX_SOURCE_PREFERENCE_ITEMS = 40;
 const SOURCE_PREFERENCE_CONCURRENCY = 6;
+/**
+ * 免费版 Workers 每次调用最多 50 次子请求。一条冷探测大约要
+ * cache.match + 上游 fetch + cache.put，再加嵌套分片。同一请求只实时探测前 6 条。
+ */
+const MAX_LIVE_PROBES_PER_REQUEST = 6;
 const FRESH_PROBE_METRICS_LIMIT = 8;
 const FRESH_PROBE_METRICS_CONCURRENCY = 2;
 const FRESH_PROBE_SPEED_TTL_MS = 6 * 60 * 60 * 1000;
@@ -110,12 +113,33 @@ export async function OPTIONS() {
   return handleOptionsRequest();
 }
 
+function selectLiveProbeSources(
+  sources: SourcePreferenceRequest['sources']
+): SourcePreferenceRequest['sources'] {
+  const selected: SourcePreferenceRequest['sources'] = [];
+  const seenEpisodeUrls = new Set<string>();
+  for (const source of sources) {
+    if (selected.length >= MAX_LIVE_PROBES_PER_REQUEST) {
+      break;
+    }
+    const episodeUrl = source.episodeUrl || '';
+    if (episodeUrl && seenEpisodeUrls.has(episodeUrl)) {
+      continue;
+    }
+    if (episodeUrl) {
+      seenEpisodeUrls.add(episodeUrl);
+    }
+    selected.push(source);
+  }
+  return selected;
+}
+
 async function probeSourcesLive(
   sources: SourcePreferenceRequest['sources'],
   origin: string
 ): Promise<SourcePreferenceResult[]> {
   return mapWithConcurrency(
-    sources,
+    selectLiveProbeSources(sources),
     SOURCE_PREFERENCE_CONCURRENCY,
     async (source): Promise<SourcePreferenceResult> => {
       if (!source?.sourceKey) {
@@ -136,10 +160,18 @@ async function probeSourcesLive(
         };
       }
 
-      const probeResult = await probeSourcePlaybackWithCache(
-        source.episodeUrl,
-        origin
-      );
+      let probeResult;
+      try {
+        probeResult = await probeSourcePlaybackWithCache(
+          source.episodeUrl,
+          origin
+        );
+      } catch (error) {
+        probeResult = {
+          kind: 'unavailable' as const,
+          reason: error instanceof Error ? error.message : '探测失败',
+        };
+      }
 
       return {
         sourceKey: source.sourceKey,
@@ -233,9 +265,7 @@ async function probeFreshMetricsForVisibleSources({
         );
 
         const existing = existingResults.get(source.sourceKey);
-        const speedLabel = formatSourceSpeedKbps(
-          result.firstSegmentSpeedKbps
-        );
+        const speedLabel = formatSourceSpeedKbps(result.firstSegmentSpeedKbps);
 
         return {
           ...(existing || {}),
@@ -269,7 +299,9 @@ async function probeFreshMetricsForVisibleSources({
       }
     }
   ).then((results) =>
-    results.filter((result): result is SourcePreferenceResult => result !== null)
+    results.filter(
+      (result): result is SourcePreferenceResult => result !== null
+    )
   );
 }
 
@@ -313,10 +345,7 @@ export async function POST(request: Request) {
     .filter(Boolean);
   const rankedResults =
     runtime.enabled && runtime.hasD1
-      ? await readLatestSourceRanks(
-          rankingEnv,
-          validSourceKeys
-        )
+      ? await readLatestSourceRanks(rankingEnv, validSourceKeys)
       : [];
 
   const rankedKeys = new Set(rankedResults.map((result) => result.sourceKey));
