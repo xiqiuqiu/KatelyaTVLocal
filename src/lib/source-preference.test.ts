@@ -205,6 +205,9 @@ describe('cloudflare-first source preference', () => {
         { timeoutMs: 1000 }
       );
 
+      // 等缓存读取完成、上游请求启动后再推进超时。
+      await Promise.resolve();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
       jest.advanceTimersByTime(1000);
 
       await expect(resultPromise).resolves.toEqual(
