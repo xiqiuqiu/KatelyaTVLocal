@@ -3,6 +3,7 @@ import {
   isArtPlayerBoundToContainer,
   resolveEpisodeProgressSnapshot,
   resolvePlayUrlTitle,
+  shouldApplyQueuedResumeForEpisode,
   shouldAutoAdvanceEndedEpisode,
   shouldSkipLeavingProgressSave,
 } from '@/lib/play-page-player-lifecycle';
@@ -83,6 +84,29 @@ describe('play-page player lifecycle', () => {
       ).toBe(true);
       expect(
         shouldSkipLeavingProgressSave({ pendingEndedAutoAdvance: false })
+      ).toBe(false);
+    });
+  });
+
+  describe('shouldApplyQueuedResumeForEpisode', () => {
+    it('applies a queued resume only for the episode that parked it', () => {
+      expect(
+        shouldApplyQueuedResumeForEpisode({
+          queuedEpisodeIndex: 0,
+          currentEpisodeIndex: 0,
+        })
+      ).toBe(true);
+      expect(
+        shouldApplyQueuedResumeForEpisode({
+          queuedEpisodeIndex: 0,
+          currentEpisodeIndex: 4,
+        })
+      ).toBe(false);
+      expect(
+        shouldApplyQueuedResumeForEpisode({
+          queuedEpisodeIndex: null,
+          currentEpisodeIndex: 4,
+        })
       ).toBe(false);
     });
   });

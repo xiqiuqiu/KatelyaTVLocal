@@ -72,6 +72,20 @@ export function shouldSkipLeavingProgressSave(input: {
 }
 
 /**
+ * A queued resume belongs to the episode that parked it. Applying it after an
+ * episode change seeks the new episode to the previous episode's playhead.
+ */
+export function shouldApplyQueuedResumeForEpisode(input: {
+  queuedEpisodeIndex: number | null;
+  currentEpisodeIndex: number;
+}): boolean {
+  return (
+    input.queuedEpisodeIndex != null &&
+    input.queuedEpisodeIndex === input.currentEpisodeIndex
+  );
+}
+
+/**
  * While a new episode's media is still the previous element, live currentTime
  * and duration belong to the episode being left. Callers must pass the snapped
  * values instead of reading the player.
