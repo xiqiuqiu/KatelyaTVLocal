@@ -365,33 +365,49 @@ export async function probeSourcePlaybackUpstream(
   }
 }
 
+export async function readCachedSourceProbe(
+  targetUrl: string,
+  origin: string
+): Promise<SourceProbeMetrics | null> {
+  const cache = getCloudflareCache();
+  if (!cache) {
+    return null;
+  }
+  try {
+    const cachedResponse = await cache.match(
+      buildProbeCacheRequest(targetUrl, origin)
+    );
+    if (!cachedResponse) {
+      return null;
+    }
+    const cachedPayload = (await cachedResponse
+      .json()
+      .catch(() => null)) as SourceProbeMetrics | null;
+    if (!cachedPayload) {
+      return null;
+    }
+    return {
+      ...cachedPayload,
+      cacheState: 'hit',
+    };
+  } catch {
+    // Cache API 子请求超额时不能让整批优选变成 500。
+    return null;
+  }
+}
+
 export async function probeSourcePlaybackWithCache(
   targetUrl: string,
   origin: string,
   options?: SourceProbeOptions
 ): Promise<SourceProbeMetrics> {
-  const cache = getCloudflareCache();
-  const cacheRequest = buildProbeCacheRequest(targetUrl, origin);
-
-  if (cache) {
-    try {
-      const cachedResponse = await cache.match(cacheRequest);
-      if (cachedResponse) {
-        const cachedPayload = (await cachedResponse
-          .json()
-          .catch(() => null)) as SourceProbeMetrics | null;
-        if (cachedPayload) {
-          return {
-            ...cachedPayload,
-            cacheState: 'hit',
-          };
-        }
-      }
-    } catch {
-      // Cache API 子请求超额时不能让整批优选变成 500。
-    }
+  const cached = await readCachedSourceProbe(targetUrl, origin);
+  if (cached) {
+    return cached;
   }
 
+  const cache = getCloudflareCache();
+  const cacheRequest = buildProbeCacheRequest(targetUrl, origin);
   const freshResult = await probeSourcePlaybackUpstream(
     targetUrl,
     origin,

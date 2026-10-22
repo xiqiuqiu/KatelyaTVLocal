@@ -1749,6 +1749,33 @@ describe('Playback Session progress-save effects', () => {
     expect(switchedSource.state.adSkipWindows).toEqual([]);
   });
 
+  it('drops ad windows when an automatic recovery reports a new source', () => {
+    const withWindow = reducePlaybackSession(loadSources(), {
+      type: 'adSkipWindows.loaded',
+      windows: [
+        {
+          startTimeSeconds: 10,
+          endTimeSeconds: 14,
+          ruleId: 'user-mark',
+          confidence: 'high',
+          action: 'filter',
+          origin: 'persisted',
+        },
+      ],
+    }).state;
+
+    const recovered = reducePlaybackSession(withWindow, {
+      type: 'sources.loaded',
+      sources: withWindow.sources,
+      currentSourceKey: 'direct-5',
+      currentEpisodeIndex: withWindow.currentEpisodeIndex,
+    });
+
+    expect(recovered.state.currentSourceKey).toBe('direct-5');
+    expect(recovered.state.adSkipWindows).toEqual([]);
+    expect(recovered.state.recoverableAdSkip).toBeNull();
+  });
+
   it('emits a completed save intent before ended→next auto-advance', () => {
     const state = loadSources({ currentEpisodeIndex: 0 });
 

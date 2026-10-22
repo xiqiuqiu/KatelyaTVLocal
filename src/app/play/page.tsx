@@ -2325,7 +2325,12 @@ function usePlayPageSession() {
   const persistAdSkipWindowConfirmation = (
     window: Pick<
       HlsAdSkipWindow,
-      'startTimeSeconds' | 'endTimeSeconds' | 'ruleId' | 'scopeEpisodeIndex'
+      | 'startTimeSeconds'
+      | 'endTimeSeconds'
+      | 'ruleId'
+      | 'scopeSource'
+      | 'scopeId'
+      | 'scopeEpisodeIndex'
     >,
     kind: 'confirm' | 'undo'
   ) => {
@@ -2336,9 +2341,13 @@ function usePlayPageSession() {
     if (!source || !id) {
       return;
     }
-    // A window carried from another episode must not be confirmed onto the
-    // episode that is on screen now.
-    if (episodeIndex !== currentEpisodeIndexRef.current) {
+    // A window carried from another line or episode must not be confirmed onto
+    // the source that is on screen now.
+    if (
+      (window.scopeSource != null && window.scopeSource !== source) ||
+      (window.scopeId != null && window.scopeId !== id) ||
+      episodeIndex !== currentEpisodeIndexRef.current
+    ) {
       return;
     }
     void recordAdSkipWindowConfirmation({
@@ -2520,11 +2529,15 @@ function usePlayPageSession() {
       }
     }
 
-    if (generation !== adSkipLoadGenerationRef.current) {
+    if (
+      generation !== adSkipLoadGenerationRef.current ||
+      currentSourceRef.current !== source ||
+      currentIdRef.current !== id ||
+      currentEpisodeIndexRef.current !== episodeIndex
+    ) {
       return;
     }
 
-    const scopedEpisodeIndex = currentEpisodeIndexRef.current;
     dispatchPlaybackSessionEvent({
       type: 'adSkipWindows.loaded',
       windows: mergeAdSkipWindowsForLoad({
@@ -2532,7 +2545,9 @@ function usePlayPageSession() {
         analyzer: analyzerWindows,
       }).map((window) => ({
         ...window,
-        scopeEpisodeIndex: scopedEpisodeIndex,
+        scopeSource: source,
+        scopeId: id,
+        scopeEpisodeIndex: episodeIndex,
       })),
     });
   };
@@ -2597,6 +2612,8 @@ function usePlayPageSession() {
     const platform = getPlaybackRuntimePlatform();
     const markedWindow = {
       ...toUserMarkAdSkipWindow(snapped),
+      scopeSource: currentSourceRef.current,
+      scopeId: currentIdRef.current,
       scopeEpisodeIndex: currentEpisodeIndexRef.current,
     };
     dispatchPlaybackSessionEvent({

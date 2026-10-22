@@ -673,11 +673,12 @@ export function reducePlaybackSession(
 
       // A new source (e.g. an auto-recovery switch, which does not dispatch
       // user.switchSource) starts on a fresh timeline: forget the carried
-      // escape budget so the new source is not immediately R3-capped.
+      // escape budget so the new source is not immediately R3-capped, and drop
+      // ad windows so the old line cannot be confirmed onto the new one.
       const sourceChanged = event.currentSourceKey !== state.currentSourceKey;
       const rebased =
         sourceChanged && !titleChanged && !episodeChanged
-          ? resetEscapeBudget(scoped)
+          ? clearAdSkipWindows(resetEscapeBudget(scoped))
           : scoped;
 
       return {

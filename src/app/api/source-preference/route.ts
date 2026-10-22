@@ -2,9 +2,13 @@ import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextResponse } from 'next/server';
 
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
-import { probeSourcePlaybackWithCache } from '@/lib/source-preference';
+import {
+  probeSourcePlaybackWithCache,
+  readCachedSourceProbe,
+} from '@/lib/source-preference';
 import { formatSourceSpeedKbps } from '@/lib/source-preference-video-info';
 import {
+  isPlatformProbeFailure,
   persistOfflineProbeResult,
   probePlaybackForRanking,
 } from '@/lib/source-ranking/probe';
@@ -113,35 +117,22 @@ export async function OPTIONS() {
   return handleOptionsRequest();
 }
 
-function selectLiveProbeSources(
-  sources: SourcePreferenceRequest['sources']
-): SourcePreferenceRequest['sources'] {
-  const selected: SourcePreferenceRequest['sources'] = [];
-  const seenEpisodeUrls = new Set<string>();
-  for (const source of sources) {
-    if (selected.length >= MAX_LIVE_PROBES_PER_REQUEST) {
-      break;
-    }
-    const episodeUrl = source.episodeUrl || '';
-    if (episodeUrl && seenEpisodeUrls.has(episodeUrl)) {
-      continue;
-    }
-    if (episodeUrl) {
-      seenEpisodeUrls.add(episodeUrl);
-    }
-    selected.push(source);
-  }
-  return selected;
-}
-
 async function probeSourcesLive(
   sources: SourcePreferenceRequest['sources'],
   origin: string
-): Promise<SourcePreferenceResult[]> {
-  return mapWithConcurrency(
-    selectLiveProbeSources(sources),
+): Promise<{
+  results: SourcePreferenceResult[];
+  upstreamProbes: number;
+}> {
+  const probedByEpisodeUrl = new Map<
+    string,
+    Promise<SourcePreferenceResult | null>
+  >();
+  let upstreamProbes = 0;
+  const probed = await mapWithConcurrency(
+    sources,
     SOURCE_PREFERENCE_CONCURRENCY,
-    async (source): Promise<SourcePreferenceResult> => {
+    async (source): Promise<SourcePreferenceResult | null> => {
       if (!source?.sourceKey) {
         return {
           sourceKey: '',
@@ -160,26 +151,75 @@ async function probeSourcesLive(
         };
       }
 
-      let probeResult;
-      try {
-        probeResult = await probeSourcePlaybackWithCache(
-          source.episodeUrl,
-          origin
-        );
-      } catch (error) {
-        probeResult = {
-          kind: 'unavailable' as const,
-          reason: error instanceof Error ? error.message : '探测失败',
-        };
+      const shared = probedByEpisodeUrl.get(source.episodeUrl);
+      if (shared) {
+        const sharedResult = await shared;
+        return sharedResult
+          ? { ...sharedResult, sourceKey: source.sourceKey }
+          : null;
       }
 
-      return {
-        sourceKey: source.sourceKey,
-        ...probeResult,
-        rankingSource: 'live',
+      let resolveProbe: (result: SourcePreferenceResult | null) => void = () =>
+        undefined;
+      const probePromise = new Promise<SourcePreferenceResult | null>(
+        (resolve) => {
+          resolveProbe = resolve;
+        }
+      );
+      probedByEpisodeUrl.set(source.episodeUrl, probePromise);
+
+      const reserveUpstreamProbe = () => {
+        if (upstreamProbes >= MAX_LIVE_PROBES_PER_REQUEST) {
+          return false;
+        }
+        upstreamProbes += 1;
+        return true;
       };
+      const upstreamProbeReserved = reserveUpstreamProbe();
+
+      let probeResult: SourcePreferenceResult | null = null;
+      try {
+        const cached = await readCachedSourceProbe(source.episodeUrl, origin);
+        if (cached) {
+          if (upstreamProbeReserved) {
+            upstreamProbes -= 1;
+          }
+          probeResult = {
+            sourceKey: source.sourceKey,
+            ...cached,
+            rankingSource: 'live',
+          };
+        } else if (!upstreamProbeReserved) {
+          probeResult = null;
+        } else {
+          const probedUpstream = await probeSourcePlaybackWithCache(
+            source.episodeUrl,
+            origin
+          );
+          probeResult = {
+            sourceKey: source.sourceKey,
+            ...probedUpstream,
+            rankingSource: 'live',
+          };
+        }
+      } catch (error) {
+        probeResult = {
+          sourceKey: source.sourceKey,
+          kind: 'unavailable',
+          reason: error instanceof Error ? error.message : '探测失败',
+          rankingSource: 'live',
+        };
+      }
+      resolveProbe(probeResult);
+      return probeResult;
     }
   );
+  return {
+    results: probed.filter(
+      (result): result is SourcePreferenceResult => result !== null
+    ),
+    upstreamProbes,
+  };
 }
 
 function getFreshProbeEnv(env?: RuntimeSource): FreshProbeEnv | null {
@@ -219,18 +259,24 @@ async function probeFreshMetricsForVisibleSources({
   env,
   origin,
   now,
+  upstreamProbesUsed,
 }: {
   sources: SourcePreferenceRequest['sources'];
   existingResults: Map<string, SourcePreferenceResult>;
   env: RuntimeSource | undefined;
   origin: string;
   now: number;
+  upstreamProbesUsed: number;
 }): Promise<SourcePreferenceResult[]> {
   const freshProbeEnv = getFreshProbeEnv(env);
   if (!freshProbeEnv) {
     return [];
   }
 
+  const remainingProbeBudget = Math.max(
+    0,
+    MAX_LIVE_PROBES_PER_REQUEST - upstreamProbesUsed
+  );
   const candidates = sources
     .filter(
       (source) =>
@@ -238,7 +284,7 @@ async function probeFreshMetricsForVisibleSources({
         Boolean(source.episodeUrl) &&
         !hasFreshSpeedMetric(existingResults.get(source.sourceKey), now)
     )
-    .slice(0, FRESH_PROBE_METRICS_LIMIT);
+    .slice(0, Math.min(FRESH_PROBE_METRICS_LIMIT, remainingProbeBudget));
 
   return mapWithConcurrency(
     candidates,
@@ -249,6 +295,9 @@ async function probeFreshMetricsForVisibleSources({
           source.episodeUrl as string,
           origin
         );
+        if (isPlatformProbeFailure(result)) {
+          return null;
+        }
         const measuredAt = Date.now();
 
         await persistOfflineProbeResult(
@@ -357,12 +406,13 @@ export async function POST(request: Request) {
   const shouldFallbackToLive =
     allowLiveProbeFallback &&
     (rankedResults.length === 0 || missingSources.length > 0);
-  const liveResults = shouldFallbackToLive
+  const liveProbe = shouldFallbackToLive
     ? await probeSourcesLive(
         rankedResults.length > 0 ? missingSources : payload.sources,
         origin
       )
-    : [];
+    : { results: [], upstreamProbes: 0 };
+  const liveResults = liveProbe.results;
 
   const resultMap = new Map<string, SourcePreferenceResult>();
   rankedResults.forEach((result) => {
@@ -383,6 +433,7 @@ export async function POST(request: Request) {
       env: rankingEnv,
       origin,
       now: Date.now(),
+      upstreamProbesUsed: liveProbe.upstreamProbes,
     });
 
     freshMetricResults.forEach((result) => {

@@ -1,6 +1,9 @@
 import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 
-import { probeSourcePlaybackWithCache } from '@/lib/source-preference';
+import {
+  probeSourcePlaybackWithCache,
+  readCachedSourceProbe,
+} from '@/lib/source-preference';
 import {
   persistOfflineProbeResult,
   probePlaybackForRanking,
@@ -98,10 +101,14 @@ jest.mock('@/lib/source-ranking/read', () => ({
   readLatestSourceRanks: jest.fn(),
 }));
 
-jest.mock('@/lib/source-ranking/probe', () => ({
-  persistOfflineProbeResult: jest.fn(),
-  probePlaybackForRanking: jest.fn(),
-}));
+jest.mock('@/lib/source-ranking/probe', () => {
+  const actual = jest.requireActual('@/lib/source-ranking/probe');
+  return {
+    ...actual,
+    persistOfflineProbeResult: jest.fn(),
+    probePlaybackForRanking: jest.fn(),
+  };
+});
 
 jest.mock('@/lib/source-ranking/runtime', () => ({
   getSourceRankingRuntime: jest.fn(),
@@ -113,6 +120,7 @@ jest.mock('@/lib/source-preference', () => {
   return {
     ...actual,
     probeSourcePlaybackWithCache: jest.fn(),
+    readCachedSourceProbe: jest.fn(),
   };
 });
 
@@ -139,6 +147,8 @@ describe('source preference route', () => {
     probeSourcePlaybackWithCache as jest.MockedFunction<
       typeof probeSourcePlaybackWithCache
     >;
+  const mockedReadCachedSourceProbe =
+    readCachedSourceProbe as jest.MockedFunction<typeof readCachedSourceProbe>;
 
   beforeAll(() => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -289,10 +299,87 @@ describe('source preference route', () => {
       'source-3',
       'source-4',
       'source-5',
+      'source-6',
     ]);
     expect(mockedProbeSourcePlaybackWithCache).not.toHaveBeenCalledWith(
       'https://example.com/6.m3u8',
       expect.anything()
+    );
+  });
+
+  it('copies a probed episode url onto every source that shares it', async () => {
+    mockedReadLatestSourceRanks.mockResolvedValue([]);
+    mockedProbeSourcePlaybackWithCache.mockResolvedValue({
+      kind: 'direct',
+      reason: '直连',
+      probeTimeMs: 80,
+      cacheState: 'miss',
+    });
+    const sources = [
+      { sourceKey: 'alpha', episodeUrl: 'https://example.com/shared.m3u8' },
+      { sourceKey: 'beta', episodeUrl: 'https://example.com/shared.m3u8' },
+      { sourceKey: 'gamma', episodeUrl: 'https://example.com/other.m3u8' },
+    ];
+
+    const response = await POST(
+      new Request('https://app.example.com/api/source-preference', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ allowLiveProbeFallback: true, sources }),
+      })
+    );
+
+    expect(mockedProbeSourcePlaybackWithCache).toHaveBeenCalledTimes(2);
+    const payload = (await response.json()) as {
+      results: Array<{ sourceKey: string; kind: string }>;
+    };
+    expect(payload.results.map((result) => result.sourceKey).sort()).toEqual([
+      'alpha',
+      'beta',
+      'gamma',
+    ]);
+    expect(
+      payload.results.find((result) => result.sourceKey === 'beta')?.kind
+    ).toBe('direct');
+  });
+
+  it('does not spend the live probe cap on cache hits', async () => {
+    mockedReadLatestSourceRanks.mockResolvedValue([]);
+    mockedReadCachedSourceProbe.mockImplementation(async (episodeUrl: string) =>
+      episodeUrl.endsWith('/cached.m3u8')
+        ? { kind: 'direct', reason: '缓存', cacheState: 'hit' }
+        : null
+    );
+    mockedProbeSourcePlaybackWithCache.mockResolvedValue({
+      kind: 'proxy',
+      reason: '需要代理',
+      cacheState: 'miss',
+    });
+    const sources = [
+      ...Array.from({ length: 6 }, (_, index) => ({
+        sourceKey: `cached-${index}`,
+        episodeUrl: `https://example.com/${index}/cached.m3u8`,
+      })),
+      {
+        sourceKey: 'fresh',
+        episodeUrl: 'https://example.com/fresh.m3u8',
+      },
+    ];
+
+    const response = await POST(
+      new Request('https://app.example.com/api/source-preference', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ allowLiveProbeFallback: true, sources }),
+      })
+    );
+
+    expect(mockedProbeSourcePlaybackWithCache).toHaveBeenCalledTimes(1);
+    const payload = (await response.json()) as {
+      results: Array<{ sourceKey: string }>;
+    };
+    expect(payload.results.map((result) => result.sourceKey)).toContain(
+      'fresh'
     );
   });
 
@@ -536,6 +623,6 @@ describe('source preference route', () => {
       })
     );
 
-    expect(mockedProbePlaybackForRanking).toHaveBeenCalledTimes(8);
+    expect(mockedProbePlaybackForRanking).toHaveBeenCalledTimes(6);
   });
 });
