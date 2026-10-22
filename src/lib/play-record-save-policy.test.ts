@@ -1,5 +1,6 @@
 import {
   type PlayRecordSaveSnapshot,
+  applyKeptPlayRecordProgress,
   getPlayRecordHeartbeatIntervalMs,
   mergePlayRecordProgress,
   resolvePlayTimeForWatchProgressSave,
@@ -266,5 +267,46 @@ describe('resolvePlayTimeForWatchProgressSave', () => {
         rememberedPlayhead: 2421.4,
       })
     ).toBe(2435);
+  });
+
+  it('ignores a remembered playhead that belongs to another episode', () => {
+    expect(
+      resolvePlayTimeForWatchProgressSave({
+        livePlayTime: 8,
+        rememberedPlayhead: 2758,
+        rememberedEpisodeIndex: 0,
+        episodeIndex: 4,
+      })
+    ).toBe(8);
+  });
+});
+
+describe('applyKeptPlayRecordProgress', () => {
+  const existing = {
+    play_time: 350,
+    total_time: 2758,
+    save_time: 1000,
+    source_name: '如意',
+  };
+  const incoming = {
+    play_time: 72,
+    total_time: 2700,
+    save_time: 2000,
+    source_name: '另一源',
+  };
+
+  it('keeps stored metadata when the further playhead is kept', () => {
+    expect(applyKeptPlayRecordProgress(incoming, existing, true)).toEqual({
+      play_time: 350,
+      total_time: 2758,
+      save_time: 1000,
+      source_name: '如意',
+    });
+  });
+
+  it('keeps the incoming record when progress was not held back', () => {
+    expect(applyKeptPlayRecordProgress(incoming, existing, false)).toBe(
+      incoming
+    );
   });
 });

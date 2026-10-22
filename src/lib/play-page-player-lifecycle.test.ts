@@ -4,6 +4,7 @@ import {
   resolveEpisodeProgressSnapshot,
   resolvePlayUrlTitle,
   shouldAutoAdvanceEndedEpisode,
+  shouldSkipLeavingProgressSave,
 } from '@/lib/play-page-player-lifecycle';
 
 describe('play-page player lifecycle', () => {
@@ -71,6 +72,17 @@ describe('play-page player lifecycle', () => {
           endedEpisodeIndex: 0,
           currentEpisodeIndex: 4,
         })
+      ).toBe(false);
+    });
+  });
+
+  describe('shouldSkipLeavingProgressSave', () => {
+    it('skips the leaving save while an ended auto-advance is still pending', () => {
+      expect(
+        shouldSkipLeavingProgressSave({ pendingEndedAutoAdvance: true })
+      ).toBe(true);
+      expect(
+        shouldSkipLeavingProgressSave({ pendingEndedAutoAdvance: false })
       ).toBe(false);
     });
   });

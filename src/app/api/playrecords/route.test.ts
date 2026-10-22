@@ -185,7 +185,12 @@ describe('playrecords route', () => {
       'alice',
       'source-a',
       'video-1',
-      expect.objectContaining({ play_time: 339, save_time: 2000 })
+      expect.objectContaining({
+        play_time: 339,
+        save_time: 1000,
+        total_time: 2700,
+        source_name: '测试源',
+      })
     );
   });
 

@@ -59,6 +59,7 @@ import {
   resolveEpisodeProgressSnapshot,
   resolvePlayUrlTitle,
   shouldAutoAdvanceEndedEpisode,
+  shouldSkipLeavingProgressSave,
 } from '@/lib/play-page-player-lifecycle';
 import {
   type PlayRecordSaveReason,
@@ -1349,6 +1350,12 @@ function usePlayPageSession() {
   const [videoDuration, setVideoDuration] = useState<number>(0);
 
   const publishPlayTimeForUi = (currentTime: number) => {
+    const epoch = progressMediaEpochRef.current;
+    // The element still belongs to the episode being left until the new one
+    // reaches canplay. Do not republish that playhead onto the new episode.
+    if (!epoch.ready) {
+      return;
+    }
     currentPlayTimeRef.current = resolveRememberedPlayhead({
       liveCurrentTime: currentTime,
       rememberedPlayhead: currentPlayTimeRef.current,
@@ -3173,6 +3180,9 @@ function usePlayPageSession() {
   };
 
   const markHlsPlaybackProgress = (currentTime: number) => {
+    if (!progressMediaEpochRef.current.ready) {
+      return;
+    }
     const state = hlsRecoveryStateRef.current;
     const now = Date.now();
     const update = getHlsRecoveryProgressUpdate({
@@ -3324,6 +3334,7 @@ function usePlayPageSession() {
       bufferedRanges,
     });
     if (nudgedTime !== null) {
+      systemSeekInFlightRef.current = true;
       video.currentTime = nudgedTime;
       return true;
     }
@@ -5192,6 +5203,9 @@ function usePlayPageSession() {
       setCurrentId(newId);
       setDetail(newDetail);
       setCurrentEpisodeIndex(targetIndex);
+      // A rewind on the line being left must not block the new line from
+      // adopting a further server playhead.
+      userRewoundRef.current = false;
       if (!options.autoRecovery) {
         dispatchPlaybackSessionEvent({
           type: 'user.switchSource',
@@ -5228,6 +5242,12 @@ function usePlayPageSession() {
 
   const beginEpisodeProgressEpoch = (episodeIndex: number) => {
     progressMediaEpochRef.current = { episodeIndex, ready: false };
+    // A rewind, playhead, or last save from the episode being left must not
+    // travel with the page onto the next episode.
+    userRewoundRef.current = false;
+    currentPlayTimeRef.current = 0;
+    hlsRecoveryStateRef.current.lastPlaybackTime = 0;
+    lastSavedSnapshotRef.current = null;
   };
 
   const switchToEpisodeIndex = (episodeIndex: number) => {
@@ -5239,6 +5259,9 @@ function usePlayPageSession() {
     if (episodeIndex === idx) {
       return;
     }
+    const skipLeavingSave = shouldSkipLeavingProgressSave({
+      pendingEndedAutoAdvance: endedAutoAdvanceTimerRef.current != null,
+    });
     clearEndedAutoAdvanceTimer();
     const leaving = resolveEpisodeProgressSnapshot({
       episodeIndex: idx,
@@ -5251,10 +5274,12 @@ function usePlayPageSession() {
       nowMs: Date.now(),
     });
     beginEpisodeProgressEpoch(episodeIndex);
-    void executeSaveProgressEffects(result.effects, {
-      playTime: leaving.playTime,
-      totalTime: leaving.totalTime,
-    });
+    if (!skipLeavingSave) {
+      void executeSaveProgressEffects(result.effects, {
+        playTime: leaving.playTime,
+        totalTime: leaving.totalTime,
+      });
+    }
     setCurrentEpisodeIndex(episodeIndex);
   };
 
@@ -5467,12 +5492,17 @@ function usePlayPageSession() {
     const livePlayTime = hasSnappedProgress
       ? options.playTime ?? 0
       : player.currentTime ?? 0;
+    const rememberedSnapshot = lastSavedSnapshotRef.current;
     const rawPlayTime = resolvePlayTimeForWatchProgressSave({
       livePlayTime,
       rememberedPlayhead: Math.max(
         getRememberedPlayheadSeconds(),
-        lastSavedSnapshotRef.current?.playTime ?? 0
+        rememberedSnapshot?.episodeIndex === episodeIndex
+          ? rememberedSnapshot.playTime
+          : 0
       ),
+      rememberedEpisodeIndex: episodeIndex,
+      episodeIndex,
     });
     const sealed =
       reason === 'episode-ended' || options?.completed
@@ -5845,6 +5875,7 @@ function usePlayPageSession() {
                     }
                   );
                 } else {
+                  systemSeekInFlightRef.current = true;
                   player.currentTime = target;
                   console.log('成功恢复播放进度到:', resumeTimeRef.current);
                   emitPlaybackDebugLog(

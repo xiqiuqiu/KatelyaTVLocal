@@ -63,10 +63,18 @@ export function isCollapsedWatchProgressRegression(
 export function resolvePlayTimeForWatchProgressSave(input: {
   livePlayTime: number;
   rememberedPlayhead: number;
+  /** When set, a remembered playhead from another episode is ignored. */
+  rememberedEpisodeIndex?: number | null;
+  episodeIndex?: number | null;
 }): number {
   const live = Math.max(0, Math.floor(input.livePlayTime || 0));
   const remembered = Math.max(0, Math.floor(input.rememberedPlayhead || 0));
+  const sameEpisode =
+    input.rememberedEpisodeIndex == null ||
+    input.episodeIndex == null ||
+    input.rememberedEpisodeIndex === input.episodeIndex;
   if (
+    sameEpisode &&
     remembered >= MID_EPISODE_PLAYTIME_SECONDS &&
     live <= NEAR_START_PLAYTIME_SECONDS &&
     remembered - live >= MIN_PROGRESS_DELTA_SECONDS
@@ -112,6 +120,30 @@ export function mergePlayRecordProgress(input: PlayRecordProgressMergeInput): {
     return { playTime: existingPlayTime, keptFurtherProgress: true };
   }
   return { playTime: incomingPlayTime, keptFurtherProgress: false };
+}
+
+/**
+ * When an earlier playhead is rejected, keep the stored progress metadata too.
+ * An old tab must not refresh save_time or duration while its playhead is dropped.
+ */
+export function applyKeptPlayRecordProgress<
+  T extends {
+    play_time: number;
+    total_time: number;
+    save_time: number;
+    source_name: string;
+  }
+>(incoming: T, existing: T, keptFurtherProgress: boolean): T {
+  if (!keptFurtherProgress) {
+    return incoming;
+  }
+  return {
+    ...incoming,
+    play_time: existing.play_time,
+    total_time: existing.total_time,
+    save_time: existing.save_time,
+    source_name: existing.source_name,
+  };
 }
 
 export function shouldSavePlayRecord(

@@ -61,6 +61,17 @@ export function shouldAutoAdvanceEndedEpisode(input: {
 }
 
 /**
+ * `video.ended` already saved the finished episode and moved the session index
+ * forward. A manual pick during the auto-advance gap must not save that same
+ * completion again against the session's next episode.
+ */
+export function shouldSkipLeavingProgressSave(input: {
+  pendingEndedAutoAdvance: boolean;
+}): boolean {
+  return input.pendingEndedAutoAdvance;
+}
+
+/**
  * While a new episode's media is still the previous element, live currentTime
  * and duration belong to the episode being left. Callers must pass the snapped
  * values instead of reading the player.
