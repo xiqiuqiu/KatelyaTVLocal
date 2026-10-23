@@ -1,4 +1,5 @@
-import type { SearchResult } from '@/lib/types';
+import { selectRecoveryCandidate } from '@/lib/source-availability/index';
+import type { SearchResult, SourceStatus } from '@/lib/types';
 
 import { getRewoundPlaybackResumeTime } from './playback-source-switch';
 import { buildWatchProgressContentKey } from './watch-progress';
@@ -21,6 +22,7 @@ interface ResolvePlaybackHistoryRecoveryInput {
   /** Explicit URL episode (0-based). Null/undefined = omitted from URL. */
   urlEpisodeIndex?: number | null;
   contentKey?: string | null;
+  sourceStatuses?: Map<string, SourceStatus>;
 }
 
 interface ResolvePlaybackHistoryRecoveryResult {
@@ -127,6 +129,7 @@ export function resolvePlaybackHistoryRecovery({
   historyRecord,
   urlEpisodeIndex,
   contentKey: contentKeyInput,
+  sourceStatuses,
 }: ResolvePlaybackHistoryRecoveryInput): ResolvePlaybackHistoryRecoveryResult {
   const searchMatch = searchResults.find((source) =>
     isRequestedSource(source, currentSource, currentId)
@@ -138,7 +141,7 @@ export function resolvePlaybackHistoryRecovery({
   const fallbackDetail =
     isFromPlayRecord && searchResults.length > 0 ? searchResults[0] : null;
 
-  const detail = searchMatch || detailMatch || fallbackDetail;
+  let detail = searchMatch || detailMatch || fallbackDetail;
   if (!detail) {
     return {
       detail: null,
@@ -151,12 +154,30 @@ export function resolvePlaybackHistoryRecovery({
     };
   }
 
-  const fellBackFromHistory = !searchMatch && !detailMatch && !!fallbackDetail;
+  let fellBackFromHistory: boolean =
+    !searchMatch && !detailMatch && !!fallbackDetail;
   const sources = detailMatch
     ? detailResults
     : searchResults.length > 0
     ? searchResults
     : [detail];
+  if (
+    isFromPlayRecord &&
+    sourceStatuses?.get(`${detail.source}-${detail.id}`)?.kind === 'unavailable'
+  ) {
+    const alternate = selectRecoveryCandidate({
+      sources,
+      currentSourceKey: `${detail.source}-${detail.id}`,
+      currentEpisodeIndex:
+        resolveResumeEpisodeIndex(detail, historyRecord, urlEpisodeIndex) ?? 0,
+      statuses: sourceStatuses,
+      allowUnverifiedFallback: true,
+    });
+    if (alternate) {
+      detail = alternate.source;
+      fellBackFromHistory = true;
+    }
+  }
   const contentKey =
     contentKeyInput ||
     buildWatchProgressContentKey({

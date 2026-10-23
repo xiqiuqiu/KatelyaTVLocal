@@ -1,4 +1,11 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { ReactNode } from 'react';
@@ -7,6 +14,7 @@ import { getAllPlayRecords } from '@/lib/db.client';
 import { reducePlaybackSession } from '@/lib/playback-session';
 import { getSourceSwitchResumePlan } from '@/lib/playback-source-switch';
 import type { SearchResult } from '@/lib/types';
+import { rememberSourcePlaybackQuality } from '@/lib/utils';
 
 import PlayPage from '@/app/play/page';
 
@@ -168,13 +176,15 @@ jest.mock('@/components/EpisodeSelector', () => ({
   default: ({
     availableSources,
     onSourceChange,
+    activeTab,
   }: {
     availableSources: SearchResult[];
     onSourceChange: MockSourceChangeHandler;
+    activeTab?: 'episodes' | 'sources';
   }) => {
     mockSourceChangeHandler = onSourceChange;
     return (
-      <div data-testid='episode-selector-sources'>
+      <div data-testid='episode-selector-sources' data-active-tab={activeTab}>
         {availableSources.map((source) => source.source_name).join(',')}
       </div>
     );
@@ -287,6 +297,11 @@ jest.mock('artplayer', () => ({
         options.customType?.m3u8?.(video as unknown as HTMLVideoElement, value);
       },
     });
+    Object.defineProperty(player, 'url', {
+      set(value: string) {
+        options.customType?.m3u8?.(video as unknown as HTMLVideoElement, value);
+      },
+    });
     mockArtPlayerInstance = player;
     // Mirror production: ArtPlayer invokes customType for m3u8 urls on create.
     if (
@@ -313,6 +328,7 @@ jest.mock('hls.js', () => {
     destroy = jest.fn();
     loadSource = jest.fn();
     startLoad = jest.fn();
+    stopLoad = jest.fn();
     on = jest.fn(
       (
         event: string,
@@ -1003,6 +1019,160 @@ describe('PlayPage source initialization', () => {
     } finally {
       reducer.mockImplementation(actual.reducePlaybackSession);
     }
+  });
+});
+
+describe('PlayPage failed history recovery controls', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    mockHlsSupported = true;
+    mockAutoFireManifestParsed = false;
+    mockDefaultPlayerDuration = 240;
+    mockManifestParsedHandlers.length = 0;
+    mockArtPlayerEventHandlers.clear();
+    mockArtPlayerEventHandlerLists.clear();
+    mockSearchParams = new URLSearchParams(
+      'source=bfzy&id=149697&title=测试&year=2026&from=playrecord'
+    );
+    jest.mocked(getAllPlayRecords).mockResolvedValue({
+      'bfzy+149697': {
+        title: '测试',
+        year: '2026',
+        source_name: '暴风资源',
+        cover: '',
+        index: 16,
+        total_episodes: 16,
+        play_time: 120,
+        total_time: 240,
+        save_time: Date.now(),
+        search_title: '测试',
+      },
+    });
+    const sources = [
+      createSource({
+        source: 'bfzy',
+        id: '149697',
+        title: '测试',
+        source_name: '暴风资源',
+        episodes: Array.from(
+          { length: 16 },
+          (_, i) => `https://bad.example/${i}.m3u8`
+        ),
+      }),
+      createSource({
+        source: 'other',
+        id: '1',
+        title: '测试',
+        source_name: '其他线路',
+        episodes: Array.from(
+          { length: 15 },
+          (_, i) => `https://good.example/${i}.m3u8`
+        ),
+      }),
+    ];
+    global.fetch = jest.fn(
+      async (input: RequestInfo | URL) =>
+        ({
+          ok: true,
+          json: async () =>
+            input.toString().startsWith('/api/search')
+              ? { results: sources }
+              : {},
+        } as Response)
+    );
+  });
+
+  afterEach(() => {
+    mockHlsSupported = false;
+    mockAutoFireManifestParsed = true;
+    mockDefaultPlayerDuration = 120;
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  async function showHistoryFailure() {
+    render(<PlayPage />);
+    await screen.findByTestId('episode-selector-sources');
+    await act(async () => {
+      jest.advanceTimersByTime(26_000);
+      await Promise.resolve();
+    });
+    expect(
+      screen.getByRole('heading', { name: '当前线路无法继续恢复' })
+    ).toBeVisible();
+  }
+
+  it('starts history on an alternate for the same episode when the saved route is known to have failed', async () => {
+    rememberSourcePlaybackQuality('bfzy-149697', 'bad.example', {
+      mode: 'unavailable',
+      lastError: 'manifestLoadError',
+    });
+    window.localStorage.setItem('enableOptimization', 'false');
+    const fetchFixture = global.fetch;
+    global.fetch = jest.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const response = await fetchFixture(input, init);
+        if (!input.toString().startsWith('/api/search')) return response;
+        const data = await response.json();
+        data.results[1].episodes.push('https://good.example/15.m3u8');
+        return { ok: true, json: async () => data } as Response;
+      }
+    );
+    render(<PlayPage />);
+    await screen.findByTestId('episode-selector-sources');
+    expect(new URL(window.location.href).searchParams.get('source')).toBe(
+      'other'
+    );
+    act(() => {
+      mockManifestParsedHandlers[mockManifestParsedHandlers.length - 1]?.();
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+    expect(mockArtPlayerInstance?.currentTime).toBe(118.5);
+    expect(screen.queryByRole('button', { name: '离开' })).toBeNull();
+  });
+
+  it('opens the source tab from manual recovery instead of only hiding the failure', async () => {
+    await showHistoryFailure();
+    fireEvent.click(screen.getByRole('button', { name: '手动换源' }));
+    expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+      'data-active-tab',
+      'sources'
+    );
+    expect(screen.queryByRole('button', { name: '离开' })).toBeNull();
+  });
+
+  it('explains missing alternate episodes and opens an explicit episode choice', async () => {
+    await showHistoryFailure();
+    expect(
+      screen.getByText(
+        '其他线路暂未提供第 16 集。可重试当前线路，或选择其他集数后换线。'
+      )
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '选择其他集数' }));
+    expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+      'data-active-tab',
+      'episodes'
+    );
+  });
+
+  it('reconnects the existing player on retry and preserves the pending history position', async () => {
+    await showHistoryFailure();
+    const attempts = mockManifestParsedHandlers.length;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '重试' }));
+      await Promise.resolve();
+    });
+    expect(mockManifestParsedHandlers).toHaveLength(attempts + 1);
+    expect(screen.getByTestId('player-loading')).toBeVisible();
+    act(() => {
+      mockManifestParsedHandlers[mockManifestParsedHandlers.length - 1]?.();
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+    expect(mockArtPlayerInstance?.currentTime).toBe(118.5);
   });
 });
 

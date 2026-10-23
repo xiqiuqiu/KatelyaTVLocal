@@ -2,7 +2,7 @@ import {
   type PlaybackHistoryRecord,
   resolvePlaybackHistoryRecovery,
 } from '@/lib/playback-history-recovery';
-import type { SearchResult } from '@/lib/types';
+import type { SearchResult, SourceStatus } from '@/lib/types';
 
 function createSource(overrides: Partial<SearchResult> = {}): SearchResult {
   return {
@@ -28,6 +28,53 @@ function createRecord(
 }
 
 describe('resolvePlaybackHistoryRecovery', () => {
+  it('replaces a remembered failed history route with a source for the same episode', () => {
+    const requested = createSource();
+    const alternate = createSource({ source: 'alternate', id: '2' });
+    const result = resolvePlaybackHistoryRecovery({
+      currentSource: requested.source,
+      currentId: requested.id,
+      searchResults: [requested, alternate],
+      detailResults: [],
+      isFromPlayRecord: true,
+      historyRecord: createRecord(),
+      sourceStatuses: new Map<string, SourceStatus>([
+        ['source-a-1', { kind: 'unavailable', fromMemory: true }],
+        ['alternate-2', { kind: 'direct' }],
+      ]),
+    });
+    expect(result.detail).toBe(alternate);
+    expect(result.sources).toEqual([requested, alternate]);
+    expect(result.fellBackFromHistory).toBe(true);
+    expect(result.resumeEpisodeIndex).toBe(1);
+    expect(result.resumeTime).toBe(94.5);
+  });
+
+  it('does not silently downgrade episode 16 when alternate sources only have 15 episodes', () => {
+    const requested = createSource({
+      episodes: Array(16).fill('episode.m3u8'),
+    });
+    const alternate = createSource({
+      source: 'alternate',
+      id: '2',
+      episodes: Array(15).fill('episode.m3u8'),
+    });
+    const result = resolvePlaybackHistoryRecovery({
+      currentSource: requested.source,
+      currentId: requested.id,
+      searchResults: [requested, alternate],
+      detailResults: [],
+      isFromPlayRecord: true,
+      historyRecord: createRecord({ index: 16 }),
+      sourceStatuses: new Map<string, SourceStatus>([
+        ['source-a-1', { kind: 'unavailable', fromMemory: true }],
+        ['alternate-2', { kind: 'direct' }],
+      ]),
+    });
+    expect(result.detail).toBe(requested);
+    expect(result.resumeEpisodeIndex).toBe(15);
+  });
+
   it('keeps the requested source when search results still contain it', () => {
     const requested = createSource({ source: 'old-source', id: 'old-id' });
     const fallback = createSource({ source: 'new-source', id: 'new-id' });

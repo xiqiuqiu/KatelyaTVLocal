@@ -39,6 +39,31 @@ jest.mock('@/lib/utils', () => {
 });
 
 describe('EpisodeSelector playback sidebar controls', () => {
+  it('opens the tab requested by the failure recovery actions', () => {
+    const onTabChange = jest.fn();
+    const view = render(
+      <EpisodeSelector
+        totalEpisodes={16}
+        value={16}
+        activeTab='episodes'
+        onTabChange={onTabChange}
+      />
+    );
+    view.rerender(
+      <EpisodeSelector
+        totalEpisodes={16}
+        value={16}
+        activeTab='sources'
+        onTabChange={onTabChange}
+      />
+    );
+    expect(screen.getByRole('tab', { name: '线路' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    fireEvent.click(screen.getByRole('tab', { name: '选集' }));
+    expect(onTabChange).toHaveBeenCalledWith('episodes');
+  });
   const mockedFetchSourcePreferencesInBatches =
     fetchSourcePreferencesInBatches as jest.MockedFunction<
       typeof fetchSourcePreferencesInBatches

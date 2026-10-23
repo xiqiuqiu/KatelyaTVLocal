@@ -114,6 +114,8 @@ function mergeStatusMaps(
 }
 
 interface EpisodeSelectorProps {
+  activeTab?: 'episodes' | 'sources';
+  onTabChange?: (tab: 'episodes' | 'sources') => void;
   tvMode?: boolean;
   /** 总集数 */
   totalEpisodes: number;
@@ -144,6 +146,8 @@ interface EpisodeSelectorProps {
  * 选集组件，支持分页、自动滚动聚焦当前分页标签，以及换源功能。
  */
 function useEpisodeSelectorState({
+  activeTab: controlledTab,
+  onTabChange,
   tvMode = false,
   totalEpisodes,
   episodesPerPage = 10,
@@ -209,9 +213,11 @@ function useEpisodeSelectorState({
 
   // 主要的 tab 状态：'episodes' 或 'sources'
   // 当只有一集时默认展示 "换源"，并隐藏 "选集" 标签
-  const [activeTab, setActiveTab] = useState<'episodes' | 'sources'>(
+  const [localTab, setLocalTab] = useState<'episodes' | 'sources'>(
     totalEpisodes > 1 ? 'episodes' : 'sources'
   );
+  const activeTab = controlledTab ?? localTab;
+  const setActiveTab = onTabChange ?? setLocalTab;
 
   // 当前分页索引（0 开始）
   const initialPage = Math.floor((value - 1) / episodesPerPage);

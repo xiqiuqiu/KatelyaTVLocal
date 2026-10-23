@@ -594,6 +594,14 @@ function PlayVideoSurface({
 }: {
   session: Extract<ReturnType<typeof usePlayPageSession>, { phase: 'ready' }>;
 }) {
+  const missingAlternateEpisode =
+    session.availableSources.length > 1 &&
+    session.availableSources.every(
+      (source) =>
+        (source.source === session.currentSource &&
+          source.id === session.currentId) ||
+        !source.episodes[session.currentEpisodeIndex]
+    );
   return (
     <Surface
       variant='plain'
@@ -647,29 +655,36 @@ function PlayVideoSurface({
               <p className='mt-2 text-sm leading-6 text-white/70'>
                 {session.inPlayerFailure.reason === 'source-unavailable-paused'
                   ? '已保持暂停。可以重试当前线路、手动切换其他源，或离开播放页。'
+                  : missingAlternateEpisode
+                  ? `其他线路暂未提供第 ${
+                      session.currentEpisodeIndex + 1
+                    } 集。可重试当前线路，或选择其他集数后换线。`
                   : '可以重试当前线路、手动切换其他源，或离开播放页。'}
               </p>
               <div className='mt-5 grid gap-2'>
                 <button
                   type='button'
-                  onClick={() => {
-                    session.setInPlayerFailure(null);
-                    window.location.reload();
-                  }}
+                  onClick={session.handleRetryPlayback}
                   className='inline-flex min-h-11 items-center justify-center rounded-ui-md bg-white px-4 text-sm font-semibold text-black transition hover:bg-white/90'
                 >
                   重试
                 </button>
                 <button
                   type='button'
-                  onClick={() => {
-                    session.setInPlayerFailure(null);
-                    session.setIsEpisodeSelectorCollapsed(false);
-                  }}
+                  onClick={() => session.handleOpenRecoveryPanel('sources')}
                   className='inline-flex min-h-11 items-center justify-center rounded-ui-md border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15'
                 >
                   手动换源
                 </button>
+                {session.totalEpisodes > 1 && (
+                  <button
+                    type='button'
+                    onClick={() => session.handleOpenRecoveryPanel('episodes')}
+                    className='inline-flex min-h-11 items-center justify-center rounded-ui-md border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15'
+                  >
+                    选择其他集数
+                  </button>
+                )}
                 <button
                   type='button'
                   onClick={() => session.router.back()}
@@ -802,6 +817,8 @@ function PlayEpisodeColumn({
         className={`${session.isEpisodeSelectorCollapsed ? 'hidden' : 'block'}`}
       >
         <EpisodeSelector
+          activeTab={session.episodeSelectorTab}
+          onTabChange={session.setEpisodeSelectorTab}
           tvMode={session.isTvMode}
           totalEpisodes={session.totalEpisodes}
           value={session.currentEpisodeIndex + 1}
@@ -1363,6 +1380,9 @@ function usePlayPageSession() {
   // 折叠状态（仅在 lg 及以上屏幕有效）
   const [isEpisodeSelectorCollapsed, setIsEpisodeSelectorCollapsed] =
     useState(false);
+  const [episodeSelectorTab, setEpisodeSelectorTab] = useState<
+    'episodes' | 'sources' | undefined
+  >();
 
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -4978,6 +4998,10 @@ function usePlayPageSession() {
               title: urlSearchTitle || urlTitle,
               year: urlYear,
             }),
+            sourceStatuses: buildPlaybackSessionSourceStatuses([
+              ...searchResults,
+              ...detailResults,
+            ]),
           });
 
           if (!recovery.detail) {
@@ -4995,6 +5019,9 @@ function usePlayPageSession() {
           fellBackFromHistory = recovery.fellBackFromHistory;
           restoredEpisodeIndex = recovery.resumeEpisodeIndex;
           restoredResumeTime = recovery.resumeTime;
+          if (restoredEpisodeIndex != null) {
+            currentEpisodeIndexRef.current = restoredEpisodeIndex;
+          }
         }
 
         if (!detailData || sourcesInfo.length === 0) {
@@ -5035,9 +5062,16 @@ function usePlayPageSession() {
             fellBackFromHistory) &&
           optimizationEnabled
         ) {
-          const preferredSource = await preferBestSource(sourcesInfo, {
-            signal: preferenceController.signal,
-          });
+          const preferredSource = await preferBestSource(
+            sourcesInfo.filter(
+              (source) =>
+                restoredEpisodeIndex == null ||
+                Boolean(source.episodes[restoredEpisodeIndex])
+            ),
+            {
+              signal: preferenceController.signal,
+            }
+          );
           if (cancelled) return;
           if (!preferredSource) {
             setPlaybackError(
@@ -5381,6 +5415,54 @@ function usePlayPageSession() {
       setPlaybackError(err instanceof Error ? err.message : '换源失败');
       return false;
     }
+  };
+
+  const handleOpenRecoveryPanel = (tab: 'episodes' | 'sources') => {
+    clearWaitingRecoveryTimer();
+    clearSourceChangeTimeoutTimer();
+    artPlayerRef.current?.video?.hls?.stopLoad();
+    dispatchPlaybackSessionEvent({ type: 'recovery.cancel' });
+    dispatchVideoPlaybackUi({ type: 'loading.end' });
+    setInPlayerFailure(null);
+    setEpisodeSelectorTab(tab);
+    setIsEpisodeSelectorCollapsed(false);
+  };
+
+  const handleRetryPlayback = () => {
+    const player = artPlayerRef.current;
+    const source = detailRef.current;
+    if (!player || !source || !videoUrlRef.current) return;
+
+    const resumeTime =
+      resumeTimeRef.current ?? getCurrentVideoSnapshot().currentTime;
+    dispatchPlaybackSessionEvent({
+      type: 'user.switchSource',
+      sourceKey: getCurrentSourceKey(),
+      nowMs: Date.now(),
+    });
+    autoRecoveredSourceKeysRef.current = new Set();
+    syncPlaybackSessionSources();
+    startHlsPlaybackSession();
+    resetHlsRecoveryCounters();
+    clearEndedAutoAdvanceTimer();
+    resumeTimeRef.current = resumeTime;
+    resumeEpisodeIndexRef.current = currentEpisodeIndexRef.current;
+    hlsRecoveryStateRef.current.lastPlaybackTime = resumeTime;
+    sourceSwitchSavePendingRef.current = resumeTime > 0;
+    sourceSwitchAutoPlayPendingRef.current = true;
+    sourceSwitchAutomaticRef.current = false;
+    setInPlayerFailure(null);
+    setSourceSwitchProgress(null);
+    dispatchVideoPlaybackUi({ type: 'loading.start', stage: 'initing' });
+    scheduleSourceChangeTimeout({
+      source,
+      targetIndex: currentEpisodeIndexRef.current,
+      resumeTime,
+      playbackUrl: videoUrlRef.current,
+      reason: '用户重试当前线路',
+    });
+    // ArtPlayer's switch setter ignores an unchanged URL; url reloads its loader.
+    player.url = videoUrlRef.current;
   };
 
   useEffect(() => {
@@ -6096,6 +6178,7 @@ function usePlayPageSession() {
           if (clearQueuedResume) {
             resumeTimeRef.current = null;
             resumeEpisodeIndexRef.current = null;
+            sourceDurationBeforeSwitchRef.current = null;
             if (
               isPlaybackRecoverySessionAuthorityEnabled() &&
               (playbackSessionStateRef.current.recoveryInFlight === 'resume' ||
@@ -7239,6 +7322,10 @@ function usePlayPageSession() {
     handleToggleFavorite,
     inPlayerFailure,
     isEpisodeSelectorCollapsed,
+    episodeSelectorTab,
+    setEpisodeSelectorTab,
+    handleOpenRecoveryPanel,
+    handleRetryPlayback,
     isSkipSettingMode,
     isTvMode,
     isVideoLoading,
