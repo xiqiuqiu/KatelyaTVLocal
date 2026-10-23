@@ -4,11 +4,10 @@ import {
   getHlsAdSkipWindowKey,
 } from '@/lib/hls-ad-skip';
 import {
-  getAutoRecoveryResumePlan,
+  getRewoundPlaybackResumeTime,
   resolveAutoSourceSwitchSeedTime,
   shouldIgnoreSourceChangeTimeout,
 } from '@/lib/playback-source-switch';
-import { rememberPlaybackBadPoint } from '@/lib/playback-stuck-escape';
 import { selectRecoveryCandidate } from '@/lib/source-availability/index';
 import type { SourceSelectionScore } from '@/lib/source-selection';
 import type { SearchResult } from '@/lib/types';
@@ -158,7 +157,6 @@ function createRecoverySwitchEffect(
   state: PlaybackSessionState,
   snapshot: VideoSnapshot,
   reason: 'auto-recovery' | 'source-timeout',
-  nowMs: number,
   evidence?: RecoveryRuntimeEvidence | null
 ): {
   state: PlaybackSessionState;
@@ -191,48 +189,29 @@ function createRecoverySwitchEffect(
     snapshotCurrentTime: snapshot.currentTime,
     badPoints: state.badPoints,
   });
-  const escape = getAutoRecoveryResumePlan({
-    currentPlayTime: seedTime,
-    badPoints: state.badPoints,
-    sourceKey: state.currentSourceKey,
-    mode: 'cross-source',
-    nearbySegmentDurationSeconds: snapshot.nearbySegmentDurationSeconds,
-  });
-  const resumeTime = escape.resumeTime;
-  const badPoints =
-    escape.recordBadPointAt != null
-      ? rememberPlaybackBadPoint(state.badPoints, {
-          sourceKey: state.currentSourceKey,
-          timeSeconds: escape.recordBadPointAt,
-          nowMs,
-          escapeEndSeconds:
-            escape.action === 'skip-forward'
-              ? resumeTime ?? undefined
-              : undefined,
-        })
-      : state.badPoints;
+  // A failed connection is not a bad content interval. Carry a queued resume
+  // unchanged; only the first switch gets the small continuity rewind.
+  const resumeTime =
+    state.recoveryResumeTime != null &&
+    Number.isFinite(state.recoveryResumeTime) &&
+    state.recoveryResumeTime > 1
+      ? seedTime
+      : getRewoundPlaybackResumeTime(seedTime);
   const nextRecoveredSourceKeys = new Set(state.recoveredSourceKeys);
   if (state.currentSourceKey) {
     nextRecoveredSourceKeys.add(state.currentSourceKey);
   }
   nextRecoveredSourceKeys.add(sourceKey);
 
-  const withBadPoints = {
+  const switched = {
     ...state,
-    badPoints,
-    badPointsByScope: persistBadPointsForScope(
-      state.badPointsByScope,
-      state.contentKey,
-      state.currentEpisodeIndex,
-      badPoints
-    ),
     recoveredSourceKeys: nextRecoveredSourceKeys,
     unverifiedRecoveryAttempts,
   };
 
   return {
     state: {
-      ...setRecoveryResumeTime(withBadPoints, resumeTime),
+      ...setRecoveryResumeTime(switched, resumeTime),
       recoveryStage: 'R3',
       stallEpisodeActive: false,
       recoveryInFlight: 'R3',
@@ -264,7 +243,6 @@ function tryEmitR3(
     state,
     snapshot,
     reason,
-    nowMs,
     evidence
   );
   if (!recovery) {
@@ -361,6 +339,14 @@ function handleStallCandidate(
   );
 
   if (!sameSourceGate && !autoSwitchGate) {
+    const disclosureEffects: PlaybackSessionEffect[] = [];
+    if (state.playbackIntent === 'user-paused' && options.hardFailure) {
+      disclosureEffects.push({
+        type: 'showInPlayerFailure',
+        reason: 'source-unavailable-paused',
+        actions: ['retry', 'switch-source', 'leave'],
+      });
+    }
     const denied =
       getAutomaticEffectGate(gateState, 'same-source-recovery', nowMs)
         .deniedBy ||
@@ -369,6 +355,7 @@ function handleStallCandidate(
     return {
       state,
       effects: [
+        ...disclosureEffects,
         {
           type: 'emitDebugEvent',
           eventType: 'intent.gate.denied',
@@ -1547,14 +1534,12 @@ export function reducePlaybackSession(
         // The new line never became playable. If intent gates every automatic
         // step, the user would be left on a spinner; surface the failure panel
         // so they can retry or pick a line themselves.
-        const acted = timedOut.effects.some(
-          (effect) =>
-            effect.type === 'switchSource' ||
-            effect.type === 'showInPlayerFailure'
-        );
-        if (acted) {
+        if (timedOut.effects.some((effect) => effect.type === 'switchSource')) {
           return timedOut;
         }
+        const disclosed = timedOut.effects.some(
+          (effect) => effect.type === 'showInPlayerFailure'
+        );
         return {
           state: {
             ...timedOut.state,
@@ -1562,14 +1547,16 @@ export function reducePlaybackSession(
             stallEpisodeActive: false,
             recoveryInFlight: null,
           },
-          effects: [
-            ...timedOut.effects,
-            {
-              type: 'showInPlayerFailure',
-              reason: 'recovery-exhausted',
-              actions: ['retry', 'switch-source', 'leave'],
-            },
-          ],
+          effects: disclosed
+            ? timedOut.effects
+            : [
+                ...timedOut.effects,
+                {
+                  type: 'showInPlayerFailure',
+                  reason: 'recovery-exhausted',
+                  actions: ['retry', 'switch-source', 'leave'],
+                },
+              ],
         };
       }
   }

@@ -49,6 +49,73 @@ describe('startup hang auto-switch feedback loop', () => {
   const current = createSource('bad', '1');
   const alt = createSource('good', '2');
 
+  it.each([33, 36.8])(
+    'keeps the resume point stable through eight failed connections at %s seconds',
+    (stalledAt) => {
+      const sources = Array.from({ length: 10 }, (_, index) =>
+        createSource(`line${index}`, '1')
+      );
+      let state = reducePlaybackSession(playingState(), {
+        type: 'sources.loaded',
+        sources,
+        currentSourceKey: 'line0-1',
+        currentEpisodeIndex: 0,
+        sourceStatuses: new Map(
+          sources.map((source) => [
+            `${source.source}-${source.id}`,
+            { kind: 'direct' as const },
+          ])
+        ),
+      }).state;
+      const first = reducePlaybackSession(state, {
+        type: 'video.error',
+        nowMs: 10_000,
+        snapshot: { currentTime: stalledAt },
+      });
+      const initialSwitch = first.effects.find(
+        (effect) => effect.type === 'switchSource'
+      );
+      if (initialSwitch?.type !== 'switchSource') {
+        throw new Error('expected initial source switch');
+      }
+      state = first.state;
+      let sourceKey = initialSwitch.sourceKey;
+      const resumeTimes = [initialSwitch.resumeTime];
+      for (let attemptId = 1; attemptId <= 8; attemptId += 1) {
+        state = reducePlaybackSession(state, {
+          type: 'sources.loaded',
+          sources,
+          currentSourceKey: sourceKey,
+          currentEpisodeIndex: 0,
+          sourceStatuses: state.sourceStatuses,
+        }).state;
+        state = reducePlaybackSession(state, {
+          type: 'sourceChange.started',
+          attemptId,
+          sourceKey,
+        }).state;
+        const failed = reducePlaybackSession(state, {
+          type: 'timer.sourceChangeTimeout',
+          attemptId,
+          sourceKey,
+          nowMs: 10_000 + attemptId * 25_000,
+          snapshot: { currentTime: 0 },
+        });
+        const next = failed.effects.find(
+          (effect) => effect.type === 'switchSource'
+        );
+        if (next?.type !== 'switchSource') {
+          throw new Error('expected next source switch');
+        }
+        resumeTimes.push(next.resumeTime);
+        sourceKey = next.sourceKey;
+        state = failed.state;
+      }
+      expect(resumeTimes).toEqual(Array(9).fill(initialSwitch.resumeTime));
+      expect(state.badPoints).toEqual([]);
+    }
+  );
+
   it('control: synced session with direct alt switches on startup hard failure', () => {
     const synced = reducePlaybackSession(playingState(), {
       type: 'sources.loaded',

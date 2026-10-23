@@ -338,7 +338,7 @@ export type PlaybackSessionEffect =
     }
   | {
       type: 'showInPlayerFailure';
-      reason: 'recovery-exhausted';
+      reason: 'recovery-exhausted' | 'source-unavailable-paused';
       actions: Array<'retry' | 'switch-source' | 'leave'>;
     }
   | {

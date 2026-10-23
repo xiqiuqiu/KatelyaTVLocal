@@ -640,10 +640,14 @@ function PlayVideoSurface({
                 播放中断
               </p>
               <h3 className='mt-2 text-lg font-semibold'>
-                当前线路无法继续恢复
+                {session.inPlayerFailure.reason === 'source-unavailable-paused'
+                  ? '暂停期间线路已中断'
+                  : '当前线路无法继续恢复'}
               </h3>
               <p className='mt-2 text-sm leading-6 text-white/70'>
-                可以重试当前线路、手动切换其他源，或离开播放页。
+                {session.inPlayerFailure.reason === 'source-unavailable-paused'
+                  ? '已保持暂停。可以重试当前线路、手动切换其他源，或离开播放页。'
+                  : '可以重试当前线路、手动切换其他源，或离开播放页。'}
               </p>
               <div className='mt-5 grid gap-2'>
                 <button
@@ -680,7 +684,10 @@ function PlayVideoSurface({
 
         {/* 换源加载蒙层 */}
         {session.isVideoLoading && !session.inPlayerFailure && (
-          <PlayerLoadingOverlay stage={session.videoLoadingStage} />
+          <PlayerLoadingOverlay
+            stage={session.videoLoadingStage}
+            sourceSwitchProgress={session.sourceSwitchProgress}
+          />
         )}
 
         {session.playbackDebugEnabled && (
@@ -1400,7 +1407,11 @@ function usePlayPageSession() {
   } | null>(null);
   /** In-Player Failure State when the recovery ladder is exhausted (#48). */
   const [inPlayerFailure, setInPlayerFailure] = useState<{
-    reason: 'recovery-exhausted';
+    reason: 'recovery-exhausted' | 'source-unavailable-paused';
+  } | null>(null);
+  const [sourceSwitchProgress, setSourceSwitchProgress] = useState<{
+    attempt: number;
+    sourceName: string;
   } | null>(null);
   const [adSkipMarkFeedback, setAdSkipMarkFeedback] = useState<string | null>(
     null
@@ -2508,11 +2519,11 @@ function usePlayPageSession() {
           autoPlayAfterReady: true,
         });
       },
-      onShowInPlayerFailure: () => {
+      onShowInPlayerFailure: (effect) => {
         clearAutoSourceSwitchUndoDismissTimer();
         setAutoSourceSwitchUndoToast(null);
         playbackPreparation.markTerminalFailure();
-        setInPlayerFailure({ reason: 'recovery-exhausted' });
+        setInPlayerFailure({ reason: effect.reason });
       },
     });
 
@@ -2914,6 +2925,9 @@ function usePlayPageSession() {
 
   const markHlsUserPlay = () => {
     const now = Date.now();
+    setInPlayerFailure((failure) =>
+      failure?.reason === 'source-unavailable-paused' ? null : failure
+    );
     dispatchPlaybackSessionEvent({ type: 'user.play' });
     const state = hlsRecoveryStateRef.current;
     clearWaitingRecoveryTimer();
@@ -5243,6 +5257,15 @@ function usePlayPageSession() {
         return false;
       }
 
+      setInPlayerFailure(null);
+      setSourceSwitchProgress((progress) =>
+        options.autoRecovery
+          ? {
+              attempt: (progress?.attempt ?? 0) + 1,
+              sourceName: newDetail.source_name || newDetail.source,
+            }
+          : null
+      );
       startHlsPlaybackSession();
       resetHlsRecoveryCounters();
       sourceFallbackAttemptedRef.current = false;
@@ -6094,6 +6117,8 @@ function usePlayPageSession() {
           }, 0);
 
           dispatchVideoPlaybackUi({ type: 'loading.end' });
+          setSourceSwitchProgress(null);
+          setInPlayerFailure(null);
 
           const shouldAutoPlayAfterSourceSwitch =
             sourceSwitchAutoPlayPendingRef.current;
@@ -7022,6 +7047,17 @@ function usePlayPageSession() {
             }
           );
 
+          if (
+            playbackSessionStateRef.current.playbackIntent === 'user-paused'
+          ) {
+            dispatchPlaybackSessionEvent({
+              type: 'video.error',
+              nowMs: Date.now(),
+              snapshot: getCurrentVideoSnapshot(),
+            });
+            return;
+          }
+
           if (playbackSessionStateRef.current.sourceChangeInFlight) {
             emitPlaybackDebugLog(
               'player-error-deferred',
@@ -7226,6 +7262,7 @@ function usePlayPageSession() {
     videoCover,
     videoDuration,
     videoLoadingStage,
+    sourceSwitchProgress,
     videoTitle,
     videoUrl,
     videoYear,

@@ -112,6 +112,11 @@ describe('Playback Session Intent gate', () => {
       },
     });
     expect(afterFatal.effects).toEqual([
+      {
+        type: 'showInPlayerFailure',
+        reason: 'source-unavailable-paused',
+        actions: ['retry', 'switch-source', 'leave'],
+      },
       expect.objectContaining({
         type: 'emitDebugEvent',
         eventType: 'intent.gate.denied',
@@ -712,7 +717,7 @@ describe('Playback Session automatic recovery', () => {
     ).toEqual([]);
   });
 
-  it('skips forward on a later R3 near a recorded stuck point', () => {
+  it('keeps the queued resume on a later R3 without recording connection failures as bad points', () => {
     const first = reducePlaybackSession(
       loadSources({
         sourceStatuses: new Map<string, SourceStatus>([
@@ -739,7 +744,7 @@ describe('Playback Session automatic recovery', () => {
         }),
       ])
     );
-    expect(first.state.badPoints).toHaveLength(1);
+    expect(first.state.badPoints).toEqual([]);
 
     const afterSwitch = reducePlaybackSession(
       {
@@ -768,7 +773,34 @@ describe('Playback Session automatic recovery', () => {
     const switchEffect = afterSwitch.effects.find(
       (effect) => effect.type === 'switchSource'
     ) as { resumeTime: number | null };
-    expect(switchEffect.resumeTime).toBeGreaterThan(438.123);
+    expect(switchEffect.resumeTime).toBe(436.62);
+    expect(afterSwitch.state.badPoints).toEqual([]);
+  });
+
+  it('carries an R2 escape target across sources without extending its known fault interval', () => {
+    const state = createInitialPlaybackSessionState({
+      ...loadPlayableAlts(),
+      recoveryResumeTime: 40,
+      badPoints: [
+        {
+          sourceKey: 'current-1',
+          timeSeconds: 33,
+          escapeEndSeconds: 40,
+          hitCount: 2,
+          updatedAtMs: 1_000,
+        },
+      ],
+    });
+    const result = reducePlaybackSession(state, {
+      type: 'video.error',
+      nowMs: 10_000,
+      snapshot: { currentTime: 0 },
+    });
+    expect(result.effects).toContainEqual(
+      expect.objectContaining({ type: 'switchSource', resumeTime: 40 })
+    );
+    expect(result.state.badPoints).toBe(state.badPoints);
+    expect(result.state.badPointsByScope).toBe(state.badPointsByScope);
   });
 
   it('ignores stale source change timeout attempts', () => {

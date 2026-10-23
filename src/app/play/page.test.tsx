@@ -139,7 +139,16 @@ jest.mock('@/components/player/PlayerHeader', () => ({
 
 jest.mock('@/components/player/PlayerLoadingOverlay', () => ({
   __esModule: true,
-  default: () => <div data-testid='player-loading' />,
+  default: (props: Record<string, unknown>) => {
+    const Overlay = jest.requireActual(
+      '@/components/player/PlayerLoadingOverlay'
+    ).default;
+    return (
+      <div data-testid='player-loading'>
+        <Overlay {...props} />
+      </div>
+    );
+  },
 }));
 
 jest.mock('@/components/player/PlayerSidebar', () => ({
@@ -1282,6 +1291,71 @@ describe('PlayPage automatic source-switch resume', () => {
       mockArtPlayerEventHandlers.get('video:canplay')?.();
     });
   }
+
+  it('shows the current connection attempt throughout a long automatic switch', async () => {
+    await settleWithSources();
+    mockAutoFireManifestParsed = false;
+    await act(async () => {
+      await mockSourceChangeHandler?.('new', '2', '测试', {
+        autoRecovery: true,
+        resumeTime: 35.3,
+      });
+    });
+    expect(screen.getByText('正在尝试第 1 条备用线路')).toBeVisible();
+    expect(screen.getByText('当前线路：新源')).toBeVisible();
+    act(() => jest.advanceTimersByTime(13_000));
+    expect(screen.getByText('正在尝试第 1 条备用线路')).toBeVisible();
+    await act(async () => {
+      await mockSourceChangeHandler?.('old', '1', '测试', {
+        autoRecovery: true,
+        resumeTime: 35.3,
+      });
+    });
+    expect(screen.getByText('正在尝试第 2 条备用线路')).toBeVisible();
+    expect(screen.getByText('当前线路：旧源')).toBeVisible();
+    act(() => {
+      mockManifestParsedHandlers[mockManifestParsedHandlers.length - 1]?.();
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+    });
+    expect(screen.queryByTestId('player-loading')).toBeNull();
+  });
+
+  it.each(['hls', 'player'])(
+    'discloses a %s failure while keeping user pause intact',
+    async (runtime) => {
+      mockHlsSupported = true;
+      await settleWithSources();
+      act(() => mockArtPlayerEventHandlers.get('video:canplay')?.());
+      const player = mockArtPlayerInstance;
+      if (!player) throw new Error('player was not created');
+      player.video.paused = true;
+      act(() => mockArtPlayerEventHandlers.get('video:pause')?.());
+      player.video.play.mockClear();
+      await act(async () => {
+        if (runtime === 'hls') {
+          mockHlsErrorHandlers[mockHlsErrorHandlers.length - 1]?.('error', {
+            fatal: true,
+            type: 'networkError',
+            details: 'fragLoadError',
+          });
+        } else {
+          mockArtPlayerEventHandlers.get('error')?.(new Event('error'));
+        }
+        await Promise.resolve();
+      });
+      expect(
+        screen.getByRole('heading', { name: '暂停期间线路已中断' })
+      ).toBeVisible();
+      expect(player.video.play).not.toHaveBeenCalled();
+      expect(new URL(window.location.href).searchParams.get('source')).not.toBe(
+        'new'
+      );
+      act(() => mockArtPlayerEventHandlers.get('video:play')?.());
+      expect(
+        screen.queryByRole('heading', { name: '暂停期间线路已中断' })
+      ).toBeNull();
+    }
+  );
 
   async function setupStarvationPlayback() {
     mockHlsSupported = true;

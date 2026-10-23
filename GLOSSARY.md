@@ -96,8 +96,8 @@ The visibility container for Bad Points: `(contentKey, episodeIndex)`. Same-epis
 _Avoid_: a single tab-global bad-point list shared across unrelated titles; carrying episode A's fault times into episode B
 
 **Recovery Resume Time**:
-The single authoritative playhead the system intends to apply after reload, bad-point escape, or source switch inside a Playback Session. Automatic same-episode switches seed from an escape-adjusted time and re-plan against cross-source timeline hazards so resume does not land inside a Known Fault Interval.
-_Avoid_: parallel per-runtime resume clocks; carrying a raw stuck timestamp inside a Known Fault Interval onto the next source unchanged; treating Recovery Resume Time as cross-session watch history
+The single authoritative playhead the system intends to apply after reload, bad-point escape, or source switch inside a Playback Session. Automatic same-episode switches carry an already-planned resume time unchanged, including an R2 escape target. Without a queued target, the first switch applies a small continuity rewind. Failed source connections neither create Bad Points nor advance the resume time.
+_Avoid_: parallel per-runtime resume clocks; treating connection failure as a bad content interval; repeatedly advancing a queued target across failed sources; treating Recovery Resume Time as cross-session watch history
 
 **Watch Progress**:
 The cross-session authoritative record of where the user left off for one episode of one title. Its identity is `(contentKey, episodeIndex)`; `source` and `id` are resume-route preferences on that record, not the progress identity. Same-episode source changes keep one shared progress identity and adapt time onto the new route; episode changes seal the previous episode's progress as its own record.

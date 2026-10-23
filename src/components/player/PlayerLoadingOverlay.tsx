@@ -2,12 +2,18 @@ import { LoadingRing } from '@/components/ui/LoadingPrimitives';
 
 interface PlayerLoadingOverlayProps {
   stage: 'initing' | 'sourceChanging';
+  sourceSwitchProgress?: { attempt: number; sourceName: string } | null;
 }
 
 export default function PlayerLoadingOverlay({
   stage,
+  sourceSwitchProgress,
 }: PlayerLoadingOverlayProps) {
-  const title = stage === 'sourceChanging' ? '切换播放源中' : '正在加载视频';
+  const title = sourceSwitchProgress
+    ? `正在尝试第 ${sourceSwitchProgress.attempt} 条备用线路`
+    : stage === 'sourceChanging'
+    ? '切换播放源中'
+    : '正在加载视频';
 
   return (
     <div
@@ -24,7 +30,9 @@ export default function PlayerLoadingOverlay({
             {title}
           </p>
           <p className='text-sm text-[rgb(var(--ui-text-muted))]'>
-            正在连接当前线路并同步播放器状态
+            {sourceSwitchProgress
+              ? `当前线路：${sourceSwitchProgress.sourceName}`
+              : '正在连接当前线路并同步播放器状态'}
           </p>
         </div>
       </div>
