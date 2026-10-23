@@ -365,7 +365,7 @@ function buildVideoCardFacts({
     query,
     rate,
     resultDescription: description || aggregateData?.first.desc || '',
-    searchMetaClass: `mt-1.5 flex flex-wrap items-center gap-1.5 text-[rgb(var(--ui-text-muted))] ${
+    searchMetaClass: `ui-video-facts mt-1.5 flex flex-wrap items-center gap-1.5 text-[rgb(var(--ui-text-muted))] ${
       isSmall ? 'text-[10px]' : 'text-xs'
     }`,
     showAggregateCount: isResult && isAggregate,
@@ -754,7 +754,7 @@ function VideoCardBadges({ model }: { model: VideoCardModel }) {
     <div className='absolute right-3 top-3 z-20 flex flex-col items-end gap-2'>
       {model.showRating ? (
         <span
-          className={`inline-flex items-center justify-center rounded-md bg-black/80 font-semibold text-amber-200 ${model.badgeSizeClass}`}
+          className={`ui-video-rating inline-flex items-center justify-center rounded-md bg-black/80 font-semibold text-amber-200 ${model.badgeSizeClass}`}
         >
           {model.rate}
         </span>
@@ -903,7 +903,7 @@ function VideoCardResultPanel({ model }: { model: VideoCardModel }) {
       {model.showResultDescription ? (
         <p className='ui-search-description'>{model.resultDescription}</p>
       ) : null}
-      <div className='mt-4 flex flex-wrap gap-2'>
+      <div className='ui-search-actions mt-4 flex flex-wrap gap-2'>
         <button
           type='button'
           aria-label={`查看并播放 ${model.actualTitle}`}

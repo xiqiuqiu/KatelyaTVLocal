@@ -42,7 +42,7 @@ export default function PlayFavoriteButton({
         e.stopPropagation();
         onToggle();
       }}
-      className='inline-flex min-h-11 items-center gap-2 rounded-ui-sm border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-4 py-2 text-sm font-medium text-[rgb(var(--ui-text))] transition-colors hover:bg-[rgb(var(--ui-surface-strong))]'
+      className='ui-secondary-button'
       aria-pressed={favorited}
       aria-label={favorited ? '取消收藏' : '收藏影片'}
       type='button'

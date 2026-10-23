@@ -56,7 +56,7 @@ export default function PlayDetailSection({
       : null;
 
   return (
-    <section aria-label='影片详情'>
+    <section aria-label='影片详情' className='ui-play-detail'>
       <Surface
         variant='plain'
         className='grid grid-cols-[80px_minmax(0,1fr)] items-start gap-4 py-4 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-6 sm:py-6'

@@ -482,12 +482,12 @@ function PlayErrorView({
 
   return (
     <PageLayout activePath='/play' tvMode={session.isTvMode}>
-      <div className='flex min-h-[70vh] items-center justify-center px-3'>
+      <div className='ui-play-error flex min-h-[70vh] items-center justify-center px-3'>
         <Surface
           variant='plain'
           className='ui-loading-panel mx-auto w-full max-w-xl px-6 py-8 text-center sm:px-8 sm:py-10'
         >
-          <div className='mx-auto flex h-20 w-20 items-center justify-center rounded-ui-md bg-[rgba(var(--ui-critical),0.12)] text-[rgb(var(--ui-critical))]'>
+          <div className='mx-auto flex h-20 w-20 items-center justify-center rounded-ui-md bg-[rgb(var(--ui-critical)/0.12)] text-[rgb(var(--ui-critical))]'>
             <AlertCircle className='h-10 w-10' strokeWidth={1.6} />
           </div>
 
@@ -500,14 +500,14 @@ function PlayErrorView({
             </p>
           </div>
 
-          <div className='mt-7 rounded-ui-md border border-[rgba(var(--ui-critical),0.22)] bg-[rgba(var(--ui-critical),0.08)] px-4 py-3 text-sm font-medium text-[rgb(var(--ui-text))]'>
+          <div className='mt-7 rounded-ui-md border border-[rgb(var(--ui-critical)/0.22)] bg-[rgb(var(--ui-critical)/0.08)] px-4 py-3 text-sm font-medium text-[rgb(var(--ui-text))]'>
             <p className='font-semibold text-[rgb(var(--ui-critical))]'>
               {copy.eyebrow}
             </p>
             <p className='mt-1'>{session.error}</p>
           </div>
 
-          <div className='mt-8 grid gap-3 sm:grid-cols-3'>
+          <div className='mt-8 grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(140px,1fr))]'>
             <button
               type='button'
               onClick={() => window.location.reload()}
@@ -575,7 +575,7 @@ function PlayPageHeading({
                 { scroll: false }
               );
             }}
-            className='inline-flex min-h-11 items-center rounded-ui-sm border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-4 text-sm font-semibold text-[rgb(var(--ui-text))] transition hover:bg-[rgb(var(--ui-surface-strong))]'
+            className='ui-secondary-button'
           >
             {session.isTvMode ? '退出电视模式' : '电视模式'}
           </button>
@@ -814,7 +814,7 @@ function PlayEpisodeColumn({
                 !session.isEpisodeSelectorCollapsed
               )
             }
-            className='min-h-11 rounded-ui-sm border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-3 py-2 text-sm font-medium text-[rgb(var(--ui-text-muted))] transition hover:bg-[rgb(var(--ui-surface-strong))] hover:text-[rgb(var(--ui-text))]'
+            className='ui-secondary-button'
             title='隐藏选集面板'
             type='button'
           >
@@ -849,7 +849,7 @@ function PlayEpisodeColumn({
       {session.isEpisodeSelectorCollapsed && (
         <button
           onClick={() => session.setIsEpisodeSelectorCollapsed(false)}
-          className='w-full min-h-11 rounded-ui-sm border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-4 py-3 text-sm font-medium text-[rgb(var(--ui-text))] transition hover:bg-[rgb(var(--ui-surface-strong))]'
+          className='ui-secondary-button w-full'
           title='显示选集面板'
           type='button'
         >

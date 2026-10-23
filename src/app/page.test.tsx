@@ -159,6 +159,12 @@ describe('Home page composition', () => {
     expect(
       screen.getByRole('heading', { name: '首页', level: 1 })
     ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation', { name: '影片分类' })).getByRole(
+        'link',
+        { name: '电影' }
+      )
+    ).toHaveAttribute('href', '/douban?type=movie');
   });
 
   it('keeps TV mode on catalog cards, continue watching and history', async () => {
@@ -176,6 +182,9 @@ describe('Home page composition', () => {
     expect(
       screen.queryByRole('region', { name: '精选推荐' })
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('navigation', { name: '影片分类' })
+    ).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: '更多' })).toHaveAttribute(
       'href',
       '/history?tv=1'
@@ -185,6 +194,25 @@ describe('Home page composition', () => {
       'true'
     );
   });
+
+  it.each([false, true])(
+    'offers discovery when a catalog is empty, preserving TV mode (%s)',
+    async (tvMode) => {
+      if (tvMode) mockSearchParams.set('tv', '1');
+      render(<HomePage />);
+      await screen.findByText('庆余年');
+
+      const section = screen.getByRole('region', { name: '热门剧集' });
+      expect(section).toHaveAttribute('aria-busy', 'false');
+      expect(
+        within(section).getByText('片单暂未显示，可以前往发现页继续浏览。')
+      ).toBeInTheDocument();
+      expect(
+        within(section).getByRole('link', { name: '前往发现' })
+      ).toHaveAttribute('href', `/douban?type=tv&tv=${tvMode ? '1' : '0'}`);
+    }
+  );
+
   it('keeps TV favorites accessible and confirms before clearing the collection', async () => {
     mockSearchParams = new URLSearchParams('tab=favorites&tv=1');
     jest.mocked(dbClient.getAllFavorites).mockResolvedValueOnce({

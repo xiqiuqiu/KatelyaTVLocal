@@ -16,14 +16,7 @@ import {
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import {
-  Fragment,
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { getRuntimeCurrentUser } from '@/lib/auth';
@@ -51,6 +44,12 @@ interface AuthInfo {
   username?: string | null;
   role?: 'owner' | 'admin' | 'user';
 }
+
+const personalSettingsCategories = [
+  { id: 'device', label: '外观与设备', icon: Palette },
+  { id: 'library', label: '观看与收藏', icon: History },
+  { id: 'account', label: '账号与安全', icon: User },
+];
 
 const iconButtonClassName = 'ui-icon-button';
 
@@ -102,6 +101,19 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
       )?.id || 'content'
     );
   }, [session.initialManagementSection]);
+  const selectCategory = (value: string) => {
+    const group = managementSettingsGroups.find((item) => item.id === value);
+    if (group && session.showAdminPanel) {
+      setCategory('management');
+      setManagementGroup(group.id);
+      setManagementMounted(true);
+    } else if (personalSettingsCategories.some((item) => item.id === value)) {
+      setCategory(value);
+    }
+    panelRef.current
+      ?.querySelector('.ui-settings-content')
+      ?.scrollTo?.({ top: 0 });
+  };
   return (
     <>
       {/* 背景遮罩 - 普通菜单无需模糊 */}
@@ -124,7 +136,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
         data-management={category === 'management' || undefined}
         data-tv-browse={session.tvMode}
         data-open={session.isMenuVisible ? 'true' : 'false'}
-        className='ui-user-menu-panel z-[1001] rounded-ui-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] p-3 text-[rgb(var(--ui-text))] shadow-ui-strong transition-opacity duration-[180ms] data-[open=false]:pointer-events-none data-[open=false]:opacity-0 data-[open=true]:opacity-100'
+        className='ui-user-menu-panel z-[1001] rounded-ui-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] p-0 text-[rgb(var(--ui-text))] shadow-ui-strong transition-opacity duration-[180ms] data-[open=false]:pointer-events-none data-[open=false]:opacity-0 data-[open=true]:opacity-100'
         onKeyDown={(event) => {
           if (event.key !== 'Tab') return;
           const controls = Array.from(
@@ -147,7 +159,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
           }
         }}
       >
-        <div className='ui-settings-header mb-3 flex shrink-0 items-center justify-between border-b border-[rgb(var(--ui-border))] px-3 pb-2'>
+        <div className='ui-settings-header flex shrink-0 items-center justify-between gap-4'>
           <h2 className='text-lg font-semibold'>设置与账号</h2>
           <button
             type='button'
@@ -160,66 +172,84 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
             <X aria-hidden className='h-5 w-5' />
           </button>
         </div>
-        <div className='ui-settings-layout grid min-h-0 gap-6 md:grid-cols-[9rem_minmax(0,1fr)]'>
+        <label className='ui-settings-mobile-nav'>
+          设置分类
+          <select
+            value={category === 'management' ? managementGroup : category}
+            onChange={(event) => selectCategory(event.target.value)}
+          >
+            <optgroup label='个人设置'>
+              {personalSettingsCategories.map(({ id, label }) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </optgroup>
+            {session.showAdminPanel && (
+              <optgroup label='站点管理'>
+                {managementSettingsGroups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.label}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+        </label>
+        <div className='ui-settings-layout grid min-h-0'>
           <nav aria-label='设置分类' className='ui-settings-nav'>
-            {[
-              { id: 'library', label: '观看与收藏', icon: History },
-              { id: 'device', label: '外观与设备', icon: Palette },
-              { id: 'account', label: '账号与安全', icon: User },
-              ...(session.showAdminPanel
-                ? [{ id: 'management', label: '站点管理', icon: Shield }]
-                : []),
-            ].map(({ id, label, icon: Icon }) => (
-              <Fragment key={id}>
+            <div
+              className='ui-settings-nav-group'
+              role='group'
+              aria-label='个人设置'
+            >
+              <p className='ui-settings-nav-label'>个人设置</p>
+              {personalSettingsCategories.map(({ id, label, icon: Icon }) => (
                 <button
+                  key={id}
                   type='button'
                   aria-pressed={category === id}
-                  aria-expanded={
-                    id === 'management' ? category === id : undefined
-                  }
                   aria-controls={`user-settings-${id}`}
                   data-active={category === id || undefined}
                   className={menuItemClassName}
-                  onClick={() => {
-                    setCategory(id);
-                    if (id === 'management') setManagementMounted(true);
-                    document
-                      .querySelector('.ui-settings-content')
-                      ?.scrollTo?.({ top: 0 });
-                  }}
+                  onClick={() => selectCategory(id)}
                 >
                   <Icon aria-hidden className='h-5 w-5 shrink-0' />
                   {label}
                 </button>
-                {id === 'management' && category === 'management' && (
-                  <div
-                    className='ui-settings-subnav'
-                    role='group'
-                    aria-label='站点管理分类'
+              ))}
+            </div>
+            {session.showAdminPanel && (
+              <div
+                className='ui-settings-nav-group'
+                role='group'
+                aria-label='站点管理分类'
+              >
+                <p className='ui-settings-nav-label'>站点管理</p>
+                {managementSettingsGroups.map((group) => (
+                  <button
+                    key={group.id}
+                    type='button'
+                    aria-pressed={
+                      category === 'management' && managementGroup === group.id
+                    }
+                    aria-controls='user-settings-management'
+                    data-active={
+                      (category === 'management' &&
+                        managementGroup === group.id) ||
+                      undefined
+                    }
+                    className={menuItemClassName}
+                    onClick={() => selectCategory(group.id)}
                   >
-                    {managementSettingsGroups.map((group) => (
-                      <button
-                        key={group.id}
-                        type='button'
-                        aria-pressed={managementGroup === group.id}
-                        aria-controls='user-settings-management'
-                        data-active={managementGroup === group.id || undefined}
-                        onClick={() => {
-                          setManagementGroup(group.id);
-                          document
-                            .querySelector('.ui-settings-content')
-                            ?.scrollTo?.({ top: 0 });
-                        }}
-                      >
-                        {group.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </Fragment>
-            ))}
+                    <Shield aria-hidden className='h-5 w-5 shrink-0' />
+                    {group.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </nav>
-          <div className='ui-settings-content min-h-0 min-w-0 space-y-6 overflow-y-auto px-1 pb-2'>
+          <div className='ui-settings-content min-h-0 min-w-0 overflow-y-auto'>
             <section
               id='user-settings-library'
               hidden={category !== 'library'}
@@ -228,7 +258,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
             >
               <h3
                 id='user-settings-library-title'
-                className='mb-2 px-3 text-base font-semibold'
+                className='ui-settings-title'
               >
                 观看与收藏
               </h3>
@@ -241,8 +271,8 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
                 className={menuItemClassName}
                 onClick={session.handleCloseMenu}
               >
-                <Heart aria-hidden className='h-5 w-5' />
-                我的收藏
+                <Heart aria-hidden className='h-5 w-5 shrink-0' />
+                <span>我的收藏</span>
               </Link>
               <Link
                 href={
@@ -253,8 +283,8 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
                 className={menuItemClassName}
                 onClick={session.handleCloseMenu}
               >
-                <History aria-hidden className='h-5 w-5' />
-                播放历史
+                <History aria-hidden className='h-5 w-5 shrink-0' />
+                <span>播放历史</span>
               </Link>
             </section>
 
@@ -264,13 +294,10 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
               aria-labelledby='user-settings-device-title'
               className='ui-settings-group'
             >
-              <h3
-                id='user-settings-device-title'
-                className='mb-2 px-3 text-base font-semibold'
-              >
+              <h3 id='user-settings-device-title' className='ui-settings-title'>
                 外观与设备
               </h3>
-              <div className='flex items-center justify-between gap-4 px-3 py-2'>
+              <div className='ui-settings-row flex items-center justify-between gap-4'>
                 <div>
                   <div className='text-base font-medium'>外观</div>
                   <p className='mt-1 text-sm text-[rgb(var(--ui-text-muted))]'>
@@ -309,11 +336,11 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
             >
               <h3
                 id='user-settings-account-title'
-                className='mb-3 px-3 text-base font-semibold'
+                className='ui-settings-title'
               >
                 账号与安全
               </h3>
-              <div className='space-y-2 rounded-ui-sm bg-[rgb(var(--ui-surface-strong))] p-3'>
+              <div className='ui-settings-account space-y-2'>
                 <div className='flex flex-wrap items-center justify-between gap-2'>
                   <span className='break-all text-base font-semibold'>
                     {session.authInfo?.username || 'default'}
@@ -518,14 +545,14 @@ function ChangePasswordPanel({ session }: { session: UserMenuSession }) {
             id='user-menu-password-cancel'
             data-tv-back
             onClick={session.handleCloseChangePassword}
-            className='flex-1 rounded-ui-sm min-h-11 border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface-strong))] px-4 py-2 text-sm font-medium text-[rgb(var(--ui-text))] transition-colors hover:brightness-110 disabled:opacity-50'
+            className='ui-secondary-button flex-1'
             disabled={session.passwordLoading}
           >
             取消
           </button>
           <button
             onClick={session.handleSubmitChangePassword}
-            className='min-h-11 flex-1 rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-2 text-sm font-medium text-[rgb(var(--ui-on-accent))] transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50'
+            className='ui-primary-button flex-1'
             disabled={
               session.passwordLoading ||
               !session.newPassword ||

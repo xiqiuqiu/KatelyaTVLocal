@@ -274,14 +274,15 @@ function DoubanPageClient() {
       tvMode={tvMode}
       modeHref={`/douban?${searchParams.toString()}`}
     >
-      <div className='ui-discovery-page space-y-8'>
+      <div className='ui-discovery-page ui-library-page space-y-8'>
         <PageHeader
+          className='ui-library-header'
           subtitle={pageHeaderMeta.subtitle}
           title={pageHeaderMeta.title}
         />
 
         <section className='space-y-4'>
-          <Surface className='p-4 sm:p-6' variant='plain'>
+          <Surface className='ui-discovery-controls' variant='plain'>
             <DoubanSelector
               type={type as 'movie' | 'tv' | 'show'}
               primarySelection={primarySelection}
@@ -292,7 +293,7 @@ function DoubanPageClient() {
           </Surface>
         </section>
 
-        <div className='min-w-0'>
+        <div className='ui-library-posters min-w-0'>
           <SectionHeader
             className='mb-4'
             subtitle='来自豆瓣的精选内容'
@@ -359,7 +360,7 @@ function DoubanPageClient() {
           {/* 没有更多数据提示 */}
           {!hasMore && doubanData.length > 0 && (
             <Surface
-              className='mt-8 px-6 py-5 text-center text-[rgb(var(--ui-text-muted))]'
+              className='ui-discovery-end mt-8 px-6 py-5 text-center text-[rgb(var(--ui-text-muted))]'
               variant='plain'
             >
               已加载全部内容
@@ -380,10 +381,7 @@ function DoubanPageClient() {
             </div>
           )}
           {!loading && selectorsReady && !error && doubanData.length === 0 && (
-            <Surface
-              className='mt-8 px-6 py-5 text-center text-[rgb(var(--ui-text-muted))]'
-              variant='plain'
-            >
+            <Surface className='ui-empty-state mt-8' variant='plain'>
               暂无相关内容
             </Surface>
           )}
@@ -396,22 +394,22 @@ function DoubanPageClient() {
 const DoubanFallback = () => {
   return (
     <PageLayout activePath='/douban'>
-      <div className='space-y-4 sm:px-8 sm:py-6 lg:px-12 lg:py-8'>
+      <div className='ui-discovery-page ui-library-page space-y-8'>
         <PageHeader
+          className='ui-library-header'
           subtitle={getDoubanPageMeta('movie').subtitle}
           title={getDoubanPageMeta('movie').title}
         />
-        <div className='min-w-0'>
-          <Surface
-            variant='frosted'
-            className='min-h-[70vh] rounded-ui-xl bg-transparent sm:min-h-[500px] sm:bg-[rgba(var(--ui-surface),0.3)] sm:p-8 sm:shadow-ui-soft'
-          >
-            <PosterGrid className='grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6'>
-              {Array.from({ length: 25 }, (_, index) => index).map((index) => (
-                <DoubanCardSkeleton key={index} index={index} />
-              ))}
-            </PosterGrid>
-          </Surface>
+        <div
+          className='ui-library-posters min-w-0'
+          aria-label='正在加载片单'
+          aria-busy='true'
+        >
+          <PosterGrid className='grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6'>
+            {Array.from({ length: 25 }, (_, index) => index).map((index) => (
+              <DoubanCardSkeleton key={index} index={index} />
+            ))}
+          </PosterGrid>
         </div>
       </div>
     </PageLayout>

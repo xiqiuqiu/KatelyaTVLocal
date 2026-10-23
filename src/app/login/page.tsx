@@ -295,9 +295,9 @@ function LoginPageClient() {
                 height={56}
                 className='h-14 w-14 rounded-ui-md object-cover'
               />
-              <h1 className='mt-8 text-4xl font-semibold tracking-tight'>
+              <h2 className='ui-auth-story-title mt-8 font-semibold'>
                 你的私人放映厅
-              </h1>
+              </h2>
               <p className='mt-4 text-base leading-7 text-[rgb(var(--ui-text-muted))]'>
                 找一部想看的，接着上次的进度。
               </p>
@@ -315,10 +315,10 @@ function LoginPageClient() {
 
           <section className='ui-auth-form-panel min-w-0 px-5 py-8 sm:px-10 lg:p-12'>
             <div className='ui-auth-form mx-auto w-full max-w-[460px]'>
-              <div className='mb-6'>
-                <h2 className='ui-auth-title text-2xl font-semibold leading-tight sm:text-3xl'>
+              <div className='ui-auth-form-heading'>
+                <h1 className='ui-auth-title font-semibold'>
                   {authMode === 'register' ? '创建账号' : '欢迎回来'}
-                </h2>
+                </h1>
                 <p className='ui-auth-hint mt-3 text-base leading-6 text-[rgb(var(--ui-text-muted))]'>
                   {authMode === 'register'
                     ? '完成验证，加入你的私人放映厅'
@@ -364,6 +364,7 @@ function LoginPageClient() {
 
               <form
                 onSubmit={handleAuthSubmit}
+                aria-busy={loading}
                 autoComplete='on'
                 className='space-y-5'
               >

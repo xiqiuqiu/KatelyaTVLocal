@@ -2,7 +2,7 @@
 
 'use client';
 
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Clapperboard, Film, Tv } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -37,16 +37,41 @@ export const runtime = 'edge';
 const BottomKatelyaLogo = () => {
   const { siteName } = useSite();
   return (
-    <footer className='mt-8 border-t border-[rgb(var(--ui-border))] py-6 text-sm text-[rgb(var(--ui-text-muted))]'>
-      <div className='text-center'>
-        <div className='font-semibold'>{siteName}</div>
-        <div className='mt-2 text-sm text-[rgb(var(--ui-text-muted))] opacity-75'>
-          影视聚合搜索与在线播放
-        </div>
-      </div>
+    <footer className='ui-home-footer text-sm text-[rgb(var(--ui-text-muted))]'>
+      <div className='font-semibold'>{siteName}</div>
+      <div>影视聚合搜索与在线播放</div>
     </footer>
   );
 };
+
+function HomeCatalogHeader({ tvMode = false }: { tvMode?: boolean }) {
+  return (
+    <header className='ui-home-heading'>
+      <PageHeader
+        title='首页'
+        subtitle='电影、剧集与综艺，发现下一部想看的。'
+      />
+      {!tvMode && (
+        <nav aria-label='影片分类' className='ui-home-categories'>
+          {catalogNavigationItems.map((item) => {
+            const Icon =
+              item.key === 'movie'
+                ? Film
+                : item.key === 'tv'
+                ? Tv
+                : Clapperboard;
+            return (
+              <ActionLink key={item.key} href={item.href}>
+                <Icon aria-hidden className='h-4 w-4' />
+                {item.label}
+              </ActionLink>
+            );
+          })}
+        </nav>
+      )}
+    </header>
+  );
+}
 
 function HomePosterSection({
   href,
@@ -64,7 +89,11 @@ function HomePosterSection({
   type?: string;
 }) {
   return (
-    <section className='space-y-4'>
+    <section
+      aria-label={title}
+      aria-busy={loading}
+      className='ui-home-poster-section space-y-4'
+    >
       <SectionHeader
         action={
           tvMode ? null : (
@@ -76,38 +105,48 @@ function HomePosterSection({
         }
         title={title}
       />
-      <PosterGrid
-        className={
-          tvMode
-            ? 'grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5'
-            : 'grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6'
-        }
-      >
-        {loading
-          ? Array.from({ length: 12 }).map((_, index) => (
-              <div key={index} className='w-full'>
-                <SkeletonPosterCard
-                  delayIndex={index}
-                  widths={['78%', '54%']}
-                />
-              </div>
-            ))
-          : items.map((item, index) => (
-              <div key={`${item.id}-${index}`} className='w-full'>
-                <VideoCard
-                  douban_id={item.id}
-                  from='douban'
-                  poster={item.poster}
-                  rate={item.rate}
-                  size={tvMode ? 'default' : 'small'}
-                  tvMode={tvMode}
-                  title={item.title}
-                  type={type}
-                  year={item.year}
-                />
-              </div>
-            ))}
-      </PosterGrid>
+      {!loading && items.length === 0 ? (
+        <div className='ui-home-empty'>
+          <p>片单暂未显示，可以前往发现页继续浏览。</p>
+          <ActionLink href={buildTvModeHref(href, tvMode)}>
+            前往发现
+            <ChevronRight aria-hidden className='h-4 w-4' />
+          </ActionLink>
+        </div>
+      ) : (
+        <PosterGrid
+          className={
+            tvMode
+              ? 'grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5'
+              : 'grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6'
+          }
+        >
+          {loading
+            ? Array.from({ length: 12 }).map((_, index) => (
+                <div key={index} className='w-full'>
+                  <SkeletonPosterCard
+                    delayIndex={index}
+                    widths={['78%', '54%']}
+                  />
+                </div>
+              ))
+            : items.map((item, index) => (
+                <div key={`${item.id}-${index}`} className='w-full'>
+                  <VideoCard
+                    douban_id={item.id}
+                    from='douban'
+                    poster={item.poster}
+                    rate={item.rate}
+                    size={tvMode ? 'default' : 'small'}
+                    tvMode={tvMode}
+                    title={item.title}
+                    type={type}
+                    year={item.year}
+                  />
+                </div>
+              ))}
+        </PosterGrid>
+      )}
     </section>
   );
 }
@@ -137,6 +176,7 @@ function HomeFavoritesHeader({
 }) {
   return (
     <PageHeader
+      className='ui-library-header'
       subtitle={
         favoriteItems.length
           ? `${favoriteItems.length} 部已收藏影片`
@@ -189,7 +229,7 @@ function HomeFavorites({
   tvMode: boolean;
 }) {
   return (
-    <div className='ui-home-content'>
+    <div className='ui-home-content ui-favorites-page ui-library-page'>
       <HomeFavoritesHeader
         currentHeaderMeta={currentHeaderMeta}
         favoriteItems={favoriteItems}
@@ -198,7 +238,7 @@ function HomeFavorites({
       />
       <div className='ui-home-content'>
         <>
-          <section className='space-y-4'>
+          <section className='ui-library-posters space-y-4'>
             <SectionHeader
               action={
                 managingFavorites && favoriteItems.length > 0 ? (
@@ -314,50 +354,35 @@ function HomeCatalog({
   tvMode: boolean;
 }) {
   return (
-    <div className='ui-home-content'>
-      <div className='ui-home-content'>
-        <>
-          <div className='flex flex-wrap items-center justify-between gap-3'>
-            <h1 className='text-2xl font-semibold'>首页</h1>
-            {!tvMode && (
-              <nav aria-label='影片分类' className='flex items-center gap-2'>
-                {catalogNavigationItems.map((item) => (
-                  <ActionLink key={item.key} href={item.href}>
-                    {item.label}
-                  </ActionLink>
-                ))}
-              </nav>
-            )}
-          </div>
-          <ContinueWatching tvMode={tvMode} />
+    <div className='ui-home-content ui-home-catalog'>
+      <HomeCatalogHeader tvMode={tvMode} />
+      <ContinueWatching tvMode={tvMode} />
 
-          <HomePosterSection
-            href='/douban?type=movie'
-            items={hotMovies.slice(0, 12)}
-            loading={loading}
-            title={pageSectionLabels.popularMovies}
-            tvMode={tvMode}
-            type='movie'
-          />
-          <HomePosterSection
-            href='/douban?type=tv'
-            items={hotTvShows.slice(0, 10)}
-            loading={loading}
-            title={pageSectionLabels.popularShows}
-            tvMode={tvMode}
-          />
-          <HomePosterSection
-            href='/douban?type=show'
-            items={hotVarietyShows.slice(0, 10)}
-            loading={loading}
-            title={pageSectionLabels.popularVariety}
-            tvMode={tvMode}
-          />
+      <HomePosterSection
+        href='/douban?type=movie'
+        items={hotMovies.slice(0, 12)}
+        loading={loading}
+        title={pageSectionLabels.popularMovies}
+        tvMode={tvMode}
+        type='movie'
+      />
+      <HomePosterSection
+        href='/douban?type=tv'
+        items={hotTvShows.slice(0, 10)}
+        loading={loading}
+        title={pageSectionLabels.popularShows}
+        tvMode={tvMode}
+      />
+      <HomePosterSection
+        href='/douban?type=show'
+        items={hotVarietyShows.slice(0, 10)}
+        loading={loading}
+        title={pageSectionLabels.popularVariety}
+        tvMode={tvMode}
+      />
 
-          {/* 首页底部 Logo */}
-          <BottomKatelyaLogo />
-        </>
-      </div>
+      {/* 首页底部 Logo */}
+      <BottomKatelyaLogo />
     </div>
   );
 }
@@ -528,32 +553,31 @@ function HomeClient() {
 const HomeFallback = () => {
   return (
     <PageLayout activePath='/'>
-      <div className='ui-home-content'>
-        <div className='ui-home-content'>
-          <ContinueWatching />
+      <div className='ui-home-content ui-home-catalog'>
+        <HomeCatalogHeader />
+        <ContinueWatching />
 
-          {[
-            pageSectionLabels.popularMovies,
-            pageSectionLabels.popularShows,
-            pageSectionLabels.popularVariety,
-          ].map((title, sectionIndex) => (
-            <section key={sectionIndex} className='space-y-4'>
-              <SectionHeader title={title} />
-              <PosterGrid className='grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6'>
-                {Array.from({ length: 12 }).map((_, index) => (
-                  <div key={index} className='w-full'>
-                    <SkeletonPosterCard
-                      delayIndex={index}
-                      widths={['78%', '54%']}
-                    />
-                  </div>
-                ))}
-              </PosterGrid>
-            </section>
-          ))}
+        {[
+          pageSectionLabels.popularMovies,
+          pageSectionLabels.popularShows,
+          pageSectionLabels.popularVariety,
+        ].map((title, sectionIndex) => (
+          <section key={sectionIndex} className='space-y-4'>
+            <SectionHeader title={title} />
+            <PosterGrid className='grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6'>
+              {Array.from({ length: 12 }).map((_, index) => (
+                <div key={index} className='w-full'>
+                  <SkeletonPosterCard
+                    delayIndex={index}
+                    widths={['78%', '54%']}
+                  />
+                </div>
+              ))}
+            </PosterGrid>
+          </section>
+        ))}
 
-          <BottomKatelyaLogo />
-        </div>
+        <BottomKatelyaLogo />
       </div>
     </PageLayout>
   );

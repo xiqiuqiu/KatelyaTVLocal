@@ -341,11 +341,11 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         <h4 className='text-sm font-medium text-[rgb(var(--ui-text))] mb-3'>
           用户统计
         </h4>
-        <div className='p-4 bg-[rgb(var(--ui-success)/0.1)] rounded-lg border border-[rgb(var(--ui-accent))]'>
-          <div className='text-2xl font-bold text-[rgb(var(--ui-success))]'>
+        <div className='ui-admin-user-count'>
+          <span className='text-[rgb(var(--ui-text-muted))]'>总用户数</span>
+          <strong className='font-semibold tabular-nums'>
             {config.UserConfig.Users.length}
-          </div>
-          <div className='text-sm text-[rgb(var(--ui-success))]'>总用户数</div>
+          </strong>
         </div>
       </div>
 
