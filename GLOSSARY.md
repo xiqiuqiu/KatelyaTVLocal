@@ -76,7 +76,7 @@ Whether and how a Playback Recovery Stage action is shown to the user. Self-heal
 _Avoid_: toast spam for brief stalls; silent automatic source switch; full-page error routes that leave the play page
 
 **In-Player Failure State**:
-The user-facing hard-stop when recovery is exhausted: a blocking error layer on the video surface while remaining on the play page, offering retry, manual source switch, or leave.
+The user-facing hard-stop when recovery is exhausted and buffered playback can no longer continue: a blocking error layer on the video surface while remaining on the play page, offering retry, manual source switch, or leave. While buffered playback remains possible, disclose exhausted candidates with a nonblocking notice and keep the picture visible.
 _Avoid_: navigating away from the play page; soft-freezing on the last frame without a clear failure affordance
 
 **Bad Point**:

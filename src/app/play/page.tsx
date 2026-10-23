@@ -206,7 +206,7 @@ const SOURCE_PREFERENCE_FAST_BUDGET_MS = 500;
 // 用充分的服务端排名/实时探测数据换取“首源不踩不可用源”，避免起播卡死后才慢慢自动切源。
 const SOURCE_PREFERENCE_MAX_BUDGET_MS = 3000;
 const SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS = 1800;
-const SOURCE_CHANGE_TIMEOUT_MS = 25000;
+const SOURCE_CHANGE_TIMEOUT_MS = 10_000;
 const PROGRESSIVE_SOURCE_PROBE_STABLE_DELAY_MS = 10000;
 const PROGRESSIVE_SOURCE_PROBE_INTERVAL_MS = 20000;
 const HLS_MANUAL_INTERACTION_GRACE_MS = 4000;
@@ -641,7 +641,17 @@ function PlayVideoSurface({
         )}
 
         {/* In-Player Failure State：恢复阶梯耗尽，仍留在播放页 (#48) */}
-        {session.inPlayerFailure && (
+        {session.inPlayerFailure?.deferred && (
+          <div className='pointer-events-none absolute inset-x-0 bottom-14 z-40 flex justify-center px-3'>
+            <p
+              role='status'
+              className='rounded-ui-sm bg-black/80 px-4 py-2 text-sm text-white'
+            >
+              备用线路已用完，继续播放已缓冲内容
+            </p>
+          </div>
+        )}
+        {session.inPlayerFailure && !session.inPlayerFailure.deferred && (
           <div className='absolute inset-0 z-[80] flex items-center justify-center bg-black/85 px-4'>
             <div className='w-full max-w-sm rounded-ui-md border border-white/15 bg-black/90 p-5 text-center text-white shadow-ui-strong'>
               <p className='text-xs font-semibold uppercase tracking-[0.22em] text-amber-200/90'>
@@ -1428,6 +1438,7 @@ function usePlayPageSession() {
   /** In-Player Failure State when the recovery ladder is exhausted (#48). */
   const [inPlayerFailure, setInPlayerFailure] = useState<{
     reason: 'recovery-exhausted' | 'source-unavailable-paused';
+    deferred?: boolean;
   } | null>(null);
   const [sourceSwitchProgress, setSourceSwitchProgress] = useState<{
     attempt: number;
@@ -2543,7 +2554,20 @@ function usePlayPageSession() {
         clearAutoSourceSwitchUndoDismissTimer();
         setAutoSourceSwitchUndoToast(null);
         playbackPreparation.markTerminalFailure();
-        setInPlayerFailure({ reason: effect.reason });
+        const video = artPlayerRef.current?.video as
+          | HTMLVideoElement
+          | undefined;
+        const deferred = Boolean(
+          effect.reason === 'recovery-exhausted' &&
+            progressMediaEpochRef.current.ready &&
+            video &&
+            !video.paused &&
+            !video.ended &&
+            !video.seeking &&
+            video.readyState >= 3 &&
+            getForwardBufferSecondsFromVideo(video) > 0.25
+        );
+        setInPlayerFailure({ reason: effect.reason, deferred });
       },
     });
 
@@ -5428,6 +5452,18 @@ function usePlayPageSession() {
     setIsEpisodeSelectorCollapsed(false);
   };
 
+  const revealDrainedPlaybackFailure = (video: HTMLVideoElement) => {
+    if (
+      artPlayerRef.current?.video !== video ||
+      video.seeking ||
+      (video.readyState >= 3 && getForwardBufferSecondsFromVideo(video) > 0.25)
+    )
+      return;
+    setInPlayerFailure((failure) =>
+      failure?.deferred ? { ...failure, deferred: false } : failure
+    );
+  };
+
   const handleRetryPlayback = () => {
     const player = artPlayerRef.current;
     const source = detailRef.current;
@@ -5485,6 +5521,7 @@ function usePlayPageSession() {
   };
 
   const beginEpisodeProgressEpoch = (episodeIndex: number) => {
+    setInPlayerFailure(null);
     progressMediaEpochRef.current = { episodeIndex, ready: false };
     // A rewind, playhead, last save, or queued resume from the episode being
     // left must not travel with the page onto the next episode.
@@ -5753,6 +5790,7 @@ function usePlayPageSession() {
       ),
       rememberedEpisodeIndex: rememberedSnapshot?.episodeIndex,
       episodeIndex,
+      userRewound: userRewoundRef.current,
     });
     const sealed =
       reason === 'episode-ended' || options?.completed
@@ -5794,7 +5832,14 @@ function usePlayPageSession() {
       savedAt: saveTime,
     } satisfies PlayRecordSaveSnapshot;
 
-    if (!shouldSavePlayRecord(lastSavedSnapshotRef.current, snapshot, reason)) {
+    if (
+      !shouldSavePlayRecord(
+        lastSavedSnapshotRef.current,
+        snapshot,
+        reason,
+        userRewoundRef.current
+      )
+    ) {
       return;
     }
 
@@ -6201,7 +6246,7 @@ function usePlayPageSession() {
 
           dispatchVideoPlaybackUi({ type: 'loading.end' });
           setSourceSwitchProgress(null);
-          setInPlayerFailure(null);
+          setInPlayerFailure((failure) => (failure?.deferred ? failure : null));
 
           const shouldAutoPlayAfterSourceSwitch =
             sourceSwitchAutoPlayPendingRef.current;
@@ -6483,7 +6528,7 @@ function usePlayPageSession() {
                   isUserPaused: useLegacyGuard ? legacyIsUserPaused : false,
                   isSeeking: useLegacyGuard
                     ? state.isSeeking || video.seeking
-                    : video.seeking,
+                    : video.seeking && !fatal,
                   nowMs: now,
                   manualInteractionUntilMs: useLegacyGuard
                     ? state.manualInteractionUntil
@@ -7037,6 +7082,10 @@ function usePlayPageSession() {
           lastVolumeRef.current = artPlayerRef.current.volume;
         });
 
+        artPlayerRef.current.on('video:waiting', () => {
+          revealDrainedPlaybackFailure(artPlayerRef.current.video);
+        });
+
         artPlayerRef.current.on('video:play', () => {
           markHlsUserPlay();
           syncTvPlayerControls();
@@ -7131,7 +7180,9 @@ function usePlayPageSession() {
           );
 
           if (
-            playbackSessionStateRef.current.playbackIntent === 'user-paused'
+            playbackSessionStateRef.current.playbackIntent === 'user-paused' ||
+            playbackSessionStateRef.current.resumeIntentAfterSeek ===
+              'user-paused'
           ) {
             dispatchPlaybackSessionEvent({
               type: 'video.error',

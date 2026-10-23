@@ -20,7 +20,7 @@ Mainstream players (YouTube-style buffering, hls.js hole nudge) keep sub-second 
 
 3. **Small edge rewind only.** A reduced edge rewind (about 1–2s or a fraction of segment duration) may clear a segment boundary before the forward escape. It does not consume the one-forward-escape quota. Do not keep a large multi-second rewind as the default first motion.
 
-4. **Recovery Disclosure.** R0–R1 and that single Segment-Scaled Escape stay silent by default (player buffering chrome is fine). R3 must disclose in-player with a short undo window and with the source list always reflecting the current source — same recoverable short-bar pattern as Ad Skip undo, but heavier and longer-lived. When the ladder is exhausted, show an In-Player Failure State (blocking error on the video surface, stay on the play page) with retry, manual source switch, and leave — not a separate error route.
+4. **Recovery Disclosure.** R0–R1 and that single Segment-Scaled Escape stay silent by default (player buffering chrome is fine). R3 must disclose in-player with a short undo window and with the source list always reflecting the current source — same recoverable short-bar pattern as Ad Skip undo, but heavier and longer-lived. When the ladder is exhausted, keep any remaining buffered playback visible with a nonblocking notice. Once buffered playback cannot continue, show an In-Player Failure State (blocking error on the video surface, stay on the play page) with retry, manual source switch, and leave — not a separate error route.
 
 5. **Playback Intent wins.** Explicit pause, scrub, or manual source switch cancels in-flight automatic recovery; manual source switch ends the Stall Episode and starts a user-chosen Source Attempt.
 

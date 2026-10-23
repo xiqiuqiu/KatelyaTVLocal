@@ -72,6 +72,19 @@ describe('mergePlayRecordProgress', () => {
 });
 
 describe('shouldSavePlayRecord', () => {
+  it.each(['pause', 'beforeunload', 'visibility-hidden', 'heartbeat'] as const)(
+    'persists an explicit rewind to the opening seconds on %s',
+    (reason) => {
+      expect(
+        shouldSavePlayRecord(
+          createSnapshot({ playTime: 322 }),
+          createSnapshot({ playTime: 11, savedAt: 2000 }),
+          reason,
+          true
+        )
+      ).toBe(true);
+    }
+  );
   it('always saves the first snapshot', () => {
     expect(shouldSavePlayRecord(null, createSnapshot(), 'heartbeat')).toBe(
       true
@@ -251,6 +264,15 @@ describe('shouldSavePlayRecord', () => {
 });
 
 describe('resolvePlayTimeForWatchProgressSave', () => {
+  it('uses the chosen playhead after a user rewind into the opening seconds', () => {
+    expect(
+      resolvePlayTimeForWatchProgressSave({
+        livePlayTime: 11,
+        rememberedPlayhead: 322,
+        userRewound: true,
+      })
+    ).toBe(11);
+  });
   it('keeps mid-episode remembered playhead when live only advanced a few seconds from collapse', () => {
     expect(
       resolvePlayTimeForWatchProgressSave({

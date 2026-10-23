@@ -66,6 +66,7 @@ export function resolvePlayTimeForWatchProgressSave(input: {
   /** When set, a remembered playhead from another episode is ignored. */
   rememberedEpisodeIndex?: number | null;
   episodeIndex?: number | null;
+  userRewound?: boolean;
 }): number {
   const live = Math.max(0, Math.floor(input.livePlayTime || 0));
   const remembered = Math.max(0, Math.floor(input.rememberedPlayhead || 0));
@@ -74,6 +75,7 @@ export function resolvePlayTimeForWatchProgressSave(input: {
     input.episodeIndex == null ||
     input.rememberedEpisodeIndex === input.episodeIndex;
   if (
+    !input.userRewound &&
     sameEpisode &&
     remembered >= MID_EPISODE_PLAYTIME_SECONDS &&
     live <= NEAR_START_PLAYTIME_SECONDS &&
@@ -149,9 +151,10 @@ export function applyKeptPlayRecordProgress<
 export function shouldSavePlayRecord(
   previous: PlayRecordSaveSnapshot | null,
   next: PlayRecordSaveSnapshot,
-  reason: PlayRecordSaveReason
+  reason: PlayRecordSaveReason,
+  userRewound = false
 ): boolean {
-  if (!previous) {
+  if (!previous || userRewound) {
     return true;
   }
 

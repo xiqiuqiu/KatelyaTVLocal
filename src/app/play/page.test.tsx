@@ -38,6 +38,7 @@ let mockArtPlayerInstance:
       fullscreen: boolean;
       fullscreenWeb: boolean;
       emit?: (event: string) => void;
+      pause: jest.Mock;
       controls: {
         isHover: boolean;
         show: boolean;
@@ -54,6 +55,7 @@ let mockArtPlayerInstance:
         addEventListener?: jest.Mock;
         muted?: boolean;
         play: jest.Mock;
+        pause: jest.Mock;
         hls?: unknown;
       };
     }
@@ -1473,7 +1475,7 @@ describe('PlayPage automatic source-switch resume', () => {
     });
     expect(screen.getByText('正在尝试第 1 条备用线路')).toBeVisible();
     expect(screen.getByText('当前线路：新源')).toBeVisible();
-    act(() => jest.advanceTimersByTime(13_000));
+    act(() => jest.advanceTimersByTime(9_000));
     expect(screen.getByText('正在尝试第 1 条备用线路')).toBeVisible();
     await act(async () => {
       await mockSourceChangeHandler?.('old', '1', '测试', {
@@ -2217,5 +2219,296 @@ describe('PlayPage preparation transition completion', () => {
         ([, event]) => event.type === 'timer.sourceChangeTimeout'
       )
     ).toBe(true);
+  });
+});
+
+describe('PlayPage playback regression coverage', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    mockSearchParams = new URLSearchParams(
+      'source=detail-source&id=detail-id&title=详情影片'
+    );
+    mockAutoFireManifestParsed = true;
+    mockHlsSupported = true;
+    mockDefaultPlayerDuration = 1000;
+    mockArtPlayerEventHandlers.clear();
+    mockArtPlayerEventHandlerLists.clear();
+    mockManifestParsedHandlers.length = 0;
+    mockHlsErrorHandlers.length = 0;
+    jest.mocked(getAllPlayRecords).mockResolvedValue({});
+    global.fetch = jest.fn(
+      async (input: RequestInfo | URL) =>
+        ({
+          ok: true,
+          json: async () =>
+            input.toString().startsWith('/api/detail')
+              ? createSource()
+              : input.toString().startsWith('/api/search')
+              ? { results: [] }
+              : {},
+        } as Response)
+    );
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    mockDefaultPlayerDuration = 120;
+    mockHlsSupported = false;
+  });
+  async function start() {
+    render(<PlayPage />);
+    await settlePlayPage();
+    const player = mockArtPlayerInstance;
+    if (!player) throw new Error('missing player');
+    Object.assign(player.video, {
+      readyState: 4,
+      ended: false,
+      networkState: 2,
+      seeking: false,
+    });
+    act(() => mockArtPlayerEventHandlers.get('video:canplay')?.());
+    return player;
+  }
+  function nativeVideoEvent(name: string) {
+    const calls =
+      mockArtPlayerInstance?.video.addEventListener?.mock.calls ?? [];
+    const callback = calls
+      .filter(([event]) => event === name)
+      .slice(-1)[0]?.[1];
+    if (!callback) throw new Error(`missing ${name} listener`);
+    callback();
+  }
+  it.each(['pause', 'beforeunload'])(
+    'rewind 322 to 5 then save at 11 via %s should retain 11',
+    async (reason) => {
+      const player = await start();
+      player.currentTime = 322;
+      player.video.currentTime = 322;
+      act(() =>
+        mockArtPlayerEventHandlerLists
+          .get('video:timeupdate')
+          ?.forEach((handler) => handler())
+      );
+      await act(async () => {
+        window.dispatchEvent(new Event('beforeunload'));
+        await Promise.resolve();
+      });
+      const saves = jest.requireMock('@/lib/db.client').savePlayRecordKeys;
+      expect(saves.mock.calls.slice(-1)[0][1].play_time).toBe(322);
+      saves.mockClear();
+      act(() => {
+        player.currentTime = 5;
+        player.video.currentTime = 5;
+        player.video.seeking = true;
+        nativeVideoEvent('seeking');
+        player.video.seeking = false;
+        nativeVideoEvent('seeked');
+        player.currentTime = 11;
+        player.video.currentTime = 11;
+        mockArtPlayerEventHandlerLists
+          .get('video:timeupdate')
+          ?.forEach((handler) => handler());
+        jest.advanceTimersByTime(12_000);
+      });
+      await act(async () => {
+        if (reason === 'pause') {
+          player.video.paused = true;
+          mockArtPlayerEventHandlers.get('video:pause')?.();
+          mockArtPlayerEventHandlers.get('pause')?.();
+        } else window.dispatchEvent(new Event('beforeunload'));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const saved = saves.mock.calls.slice(-1)[0];
+      expect(saved).toBeDefined();
+      expect(saved[2].userRewound).toBe(true);
+      const submitted = saved[1].play_time;
+      saves.mockClear();
+      player.currentTime = 40;
+      player.video.currentTime = 40;
+      await act(async () => {
+        jest.advanceTimersByTime(12_000);
+        window.dispatchEvent(new Event('beforeunload'));
+        await Promise.resolve();
+      });
+      const next = saves.mock.calls.slice(-1)[0];
+      expect(next[2].userRewound).toBe(false);
+      const policy = jest.requireActual('@/lib/play-record-save-policy');
+      const merged = policy.mergePlayRecordProgress({
+        existingPlayTime: submitted,
+        existingEpisodeIndex: 0,
+        incomingPlayTime: next[1].play_time,
+        incomingEpisodeIndex: 0,
+        userRewound: next[2].userRewound,
+      });
+      expect(merged).toEqual({ playTime: 40, keptFurtherProgress: false });
+      expect(submitted).toBe(11);
+    }
+  );
+  it.each([true, false])(
+    'paused seek plus fatal error should disclose while video.seeking=%s',
+    async (seeking) => {
+      const player = await start();
+      player.currentTime = 322;
+      player.video.currentTime = 322;
+      act(() =>
+        mockArtPlayerEventHandlerLists
+          .get('video:timeupdate')
+          ?.forEach((handler) => handler())
+      );
+      act(() => {
+        player.video.paused = true;
+        mockArtPlayerEventHandlers.get('video:pause')?.();
+        player.currentTime = 5;
+        player.video.currentTime = 5;
+        player.video.seeking = true;
+        nativeVideoEvent('seeking');
+        player.video.seeking = seeking;
+        mockHlsErrorHandlers[mockHlsErrorHandlers.length - 1]?.('error', {
+          fatal: true,
+          type: 'networkError',
+          details: 'fragLoadError',
+        });
+        jest.advanceTimersByTime(145_000);
+      });
+      expect(player.video.play).not.toHaveBeenCalled();
+      expect(
+        jest
+          .mocked(reducePlaybackSession)
+          .mock.results.flatMap((result) =>
+            result.type === 'return'
+              ? result.value.effects.filter(
+                  (effect) => effect.type === 'switchSource'
+                )
+              : []
+          )
+      ).toEqual([]);
+      const events = jest
+        .mocked(reducePlaybackSession)
+        .mock.calls.map(([, event]) => event);
+      expect(
+        events.some(
+          (event) =>
+            event.type === 'user.seekStarted' &&
+            event.confirmedUserGesture === true
+        )
+      ).toBe(true);
+      expect(
+        screen.queryByRole('heading', { name: '暂停期间线路已中断' })
+      ).toBeTruthy();
+    }
+  );
+  it('candidate exhaustion should not cover a video that can still play 43 buffered seconds', async () => {
+    const player = await start();
+    player.currentTime = 100;
+    player.video.currentTime = 100;
+    Object.assign(player.video, {
+      buffered: { length: 1, start: () => 0, end: () => 143 },
+    });
+    act(() => {
+      mockHlsErrorHandlers[mockHlsErrorHandlers.length - 1]?.('error', {
+        fatal: true,
+        type: 'networkError',
+        details: 'fragLoadError',
+      });
+    });
+    expect(player.video.paused).toBe(false);
+    expect(player.video.pause).not.toHaveBeenCalled();
+    expect(player.pause).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole('heading', { name: '当前线路无法继续恢复' })
+    ).toBeNull();
+    expect(
+      screen.getByText('备用线路已用完，继续播放已缓冲内容')
+    ).toBeVisible();
+    act(() => {
+      player.currentTime = 142;
+      player.video.currentTime = 142;
+      mockArtPlayerEventHandlerLists
+        .get('video:timeupdate')
+        ?.forEach((handler) => handler());
+      mockArtPlayerEventHandlers.get('video:playing')?.();
+    });
+    expect(
+      screen.queryByRole('heading', { name: '当前线路无法继续恢复' })
+    ).toBeNull();
+    act(() => {
+      player.currentTime = 143;
+      player.video.currentTime = 143;
+      mockArtPlayerEventHandlers.get('video:waiting')?.();
+    });
+    expect(
+      screen.getByRole('heading', { name: '当前线路无法继续恢复' })
+    ).toBeVisible();
+  });
+  it('fatal startup error shows failure before the startup watchdog', async () => {
+    mockAutoFireManifestParsed = false;
+    render(<PlayPage />);
+    await settlePlayPage();
+    act(() =>
+      mockHlsErrorHandlers[mockHlsErrorHandlers.length - 1]?.('error', {
+        fatal: true,
+        type: 'networkError',
+        details: 'manifestLoadError',
+      })
+    );
+    expect(
+      screen.getByRole('heading', { name: '当前线路无法继续恢复' })
+    ).toBeVisible();
+  });
+  it('switches to a playable alternate after 10 seconds of silent startup failure', async () => {
+    mockAutoFireManifestParsed = false;
+    const alternate = createSource({
+      source: 'alternate',
+      id: '2',
+      source_name: '备用源',
+      episodes: ['https://good.example/episode.m3u8'],
+    });
+    rememberSourcePlaybackQuality('alternate-2', 'good.example', {
+      mode: 'direct',
+    });
+    const fetchFixture = global.fetch;
+    global.fetch = jest.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (input.toString().startsWith('/api/search')) {
+          return {
+            ok: true,
+            json: async () => ({ results: [createSource(), alternate] }),
+          } as Response;
+        }
+        return fetchFixture(input, init);
+      }
+    );
+    render(<PlayPage />);
+    await screen.findByTestId('episode-selector-sources');
+    act(() => jest.advanceTimersByTime(9_999));
+    expect(new URL(window.location.href).searchParams.get('source')).toBe(
+      'detail-source'
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(1);
+      await Promise.resolve();
+    });
+    expect(new URL(window.location.href).searchParams.get('source')).toBe(
+      'alternate'
+    );
+    expect(screen.getByText('正在尝试第 1 条备用线路')).toBeVisible();
+  });
+  it('silent startup failure stops waiting after 10000ms', async () => {
+    mockAutoFireManifestParsed = false;
+    render(<PlayPage />);
+    await settlePlayPage();
+    act(() => jest.advanceTimersByTime(9_999));
+    expect(
+      screen.queryByRole('heading', { name: '当前线路无法继续恢复' })
+    ).toBeNull();
+    act(() => jest.advanceTimersByTime(1));
+    expect(
+      screen.getByRole('heading', { name: '当前线路无法继续恢复' })
+    ).toBeVisible();
   });
 });

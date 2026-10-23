@@ -340,7 +340,11 @@ function handleStallCandidate(
 
   if (!sameSourceGate && !autoSwitchGate) {
     const disclosureEffects: PlaybackSessionEffect[] = [];
-    if (state.playbackIntent === 'user-paused' && options.hardFailure) {
+    if (
+      (state.playbackIntent === 'user-paused' ||
+        state.resumeIntentAfterSeek === 'user-paused') &&
+      options.hardFailure
+    ) {
       disclosureEffects.push({
         type: 'showInPlayerFailure',
         reason: 'source-unavailable-paused',
