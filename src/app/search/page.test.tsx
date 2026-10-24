@@ -243,6 +243,10 @@ describe('SearchPage', () => {
     });
 
     expect(screen.queryByTestId('ai-find-panel')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '开始搜索' })).toHaveTextContent(
+      '找到下一部想看的'
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '普通搜索' })).toHaveAttribute(
       'aria-pressed',
       'true'
@@ -251,6 +255,9 @@ describe('SearchPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'AI 找片' }));
 
     expect(screen.getByTestId('ai-find-panel')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: '开始搜索' })
+    ).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'AI 找片' })).toHaveAttribute(
       'aria-pressed',
       'true'

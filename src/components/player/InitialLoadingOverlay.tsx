@@ -16,10 +16,10 @@ export default function InitialLoadingOverlay({
   return (
     <div
       aria-label={title ? `正在准备播放 ${title}` : '正在准备播放'}
-      className='space-y-6'
+      className='ui-play-loading space-y-6'
       role='status'
     >
-      <div className='flex flex-wrap items-center justify-between gap-4'>
+      <div className='ui-play-loading-header flex flex-wrap items-center justify-between gap-4'>
         <div>
           <h1 className='text-2xl font-semibold text-[rgb(var(--ui-text))] md:text-3xl'>
             {title || '准备播放'}

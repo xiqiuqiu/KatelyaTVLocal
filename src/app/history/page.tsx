@@ -99,6 +99,7 @@ async function confirmDangerAction(options: {
 function HistoryHeading({ tvMode }: { tvMode: boolean }) {
   return (
     <PageHeader
+      className='ui-library-header'
       action={
         <ActionLink href={tvMode ? buildTvModeHref('/', true) : '/'}>
           返回首页
@@ -138,7 +139,7 @@ function HistoryManageBar({
         action={
           items.length > 0 ? (
             <button
-              className='ui-action-link rounded-ui-sm bg-[rgb(var(--ui-surface-strong))] transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 min-h-11 px-4 text-sm font-medium'
+              className='ui-secondary-button'
               disabled={busy}
               onClick={onToggleManaging}
               type='button'
@@ -160,7 +161,7 @@ function HistoryManageBar({
       {managing && items.length > 0 ? (
         <div className='flex flex-wrap items-center justify-between gap-3 border-y border-[rgb(var(--ui-border))] py-3'>
           <button
-            className='ui-action-link rounded-ui-sm bg-[rgb(var(--ui-surface-strong))] transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 inline-flex min-h-11 items-center gap-2 px-3 text-sm font-medium'
+            className='ui-secondary-button'
             disabled={busy}
             onClick={onToggleSelectAll}
             type='button'
@@ -174,7 +175,7 @@ function HistoryManageBar({
           </button>
           <div className='flex flex-wrap gap-2'>
             <button
-              className='ui-action-link rounded-ui-sm bg-[rgb(var(--ui-surface-strong))] transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 min-h-11 px-3 text-sm font-medium text-[rgb(var(--ui-critical))]'
+              className='ui-secondary-button ui-history-danger'
               disabled={busy || selectedCount === 0}
               onClick={onDeleteSelected}
               type='button'
@@ -182,7 +183,7 @@ function HistoryManageBar({
               删除已选
             </button>
             <button
-              className='ui-action-link rounded-ui-sm bg-[rgb(var(--ui-surface-strong))] transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 min-h-11 px-3 text-sm font-medium text-[rgb(var(--ui-critical))]'
+              className='ui-secondary-button ui-history-danger'
               disabled={busy}
               onClick={onClearAll}
               type='button'
@@ -222,7 +223,11 @@ function HistoryEntries({
   return (
     <>
       {loading ? (
-        <div aria-label='正在加载播放历史' className='space-y-4'>
+        <div
+          aria-label='正在加载播放历史'
+          aria-busy='true'
+          className='space-y-4'
+        >
           {Array.from({ length: 3 }).map((_, index) => (
             <div
               key={index}
@@ -237,7 +242,7 @@ function HistoryEntries({
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className='rounded-ui-md bg-[rgb(var(--ui-surface))] px-4 py-12 text-center'>
+        <div className='ui-empty-state'>
           <Clock3
             aria-hidden
             className='mx-auto mb-4 h-8 w-8 text-[rgb(var(--ui-text-muted))]'
@@ -260,7 +265,7 @@ function HistoryEntries({
           <section
             key={group.title}
             aria-label={group.title}
-            className='space-y-3'
+            className='ui-history-group space-y-3'
           >
             <h2 className='text-lg font-semibold text-[rgb(var(--ui-text))]'>
               {group.title}
@@ -277,6 +282,7 @@ function HistoryEntries({
               return (
                 <div
                   key={item.key}
+                  data-selected={selected}
                   className='ui-history-row flex flex-wrap items-center gap-3 rounded-ui-md bg-[rgb(var(--ui-surface))] p-3 sm:gap-4 sm:p-4'
                 >
                   {managing ? (
@@ -319,13 +325,13 @@ function HistoryEntries({
                   <div className='min-w-0 flex-1 basis-32'>
                     <button
                       tabIndex={tvMode ? -1 : undefined}
-                      className='line-clamp-2 max-w-full text-left text-base font-semibold text-[rgb(var(--ui-text))] transition-colors hover:text-[rgb(var(--ui-accent))]'
+                      className='ui-history-title line-clamp-2 max-w-full text-left text-base font-semibold text-[rgb(var(--ui-text))] transition-colors hover:text-[rgb(var(--ui-accent))]'
                       onClick={() => onOpen(item)}
                       type='button'
                     >
                       {item.title}
                     </button>
-                    <div className='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[rgb(var(--ui-text-muted))]'>
+                    <div className='ui-history-meta mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[rgb(var(--ui-text-muted))]'>
                       <span>
                         {item.total_episodes > 1
                           ? `第 ${item.index}/${item.total_episodes} 集`
@@ -343,7 +349,7 @@ function HistoryEntries({
                         style={{ width: `${progress}%` }}
                       />
                     </div>
-                    <div className='mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-[rgb(var(--ui-text-muted))]'>
+                    <div className='ui-history-meta mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-[rgb(var(--ui-text-muted))]'>
                       <span>{formatProgress(item)}</span>
                       <span>{formatDate(item.save_time)}</span>
                     </div>
@@ -352,7 +358,7 @@ function HistoryEntries({
                     <button
                       data-tv-primary={tvMode || undefined}
                       data-tv-focus-key={`history:${item.key}`}
-                      className='inline-flex min-h-11 items-center justify-center gap-2 rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-2 text-sm font-semibold text-[rgb(var(--ui-on-accent))] transition-colors hover:brightness-110'
+                      className='ui-primary-button'
                       onClick={() => onOpen(item)}
                       type='button'
                     >
@@ -361,7 +367,7 @@ function HistoryEntries({
                     </button>
                     {managing ? (
                       <button
-                        className='ui-action-link rounded-ui-sm bg-[rgb(var(--ui-surface-strong))] transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 inline-flex min-h-11 items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-[rgb(var(--ui-critical))]'
+                        className='ui-secondary-button ui-history-danger'
                         disabled={busy}
                         onClick={() => onDeleteOne(item)}
                         type='button'
@@ -556,7 +562,7 @@ function HistoryClient() {
 
   return (
     <PageLayout activePath='/history' tvMode={tvMode}>
-      <div className='ui-history-page space-y-8'>
+      <div className='ui-history-page ui-library-page space-y-8'>
         <HistoryHeading tvMode={tvMode} />
         <section className='space-y-6' aria-label='历史记录'>
           <HistoryManageBar
@@ -595,7 +601,12 @@ export default function HistoryPage() {
   return (
     <Suspense
       fallback={
-        <PageLayout activePath='/history'>正在加载播放历史…</PageLayout>
+        <PageLayout activePath='/history'>
+          <div className='ui-history-page ui-library-page space-y-8'>
+            <HistoryHeading tvMode={false} />
+            <div role='status'>正在加载播放历史…</div>
+          </div>
+        </PageLayout>
       }
     >
       <HistoryClient />

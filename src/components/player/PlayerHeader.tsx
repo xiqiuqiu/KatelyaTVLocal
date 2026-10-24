@@ -24,7 +24,7 @@ export default function PlayerHeader({
         ) : null}
       </div>
       {actions ? (
-        <div className='flex shrink-0 flex-wrap items-center gap-2'>
+        <div className='ui-player-header-actions flex shrink-0 flex-wrap items-center gap-2'>
           {actions}
         </div>
       ) : null}

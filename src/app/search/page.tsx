@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any */
 'use client';
 
-import { ChevronUp, X } from 'lucide-react';
+import { ChevronUp, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   type Dispatch,
@@ -84,7 +84,7 @@ type SearchPageSession = {
 function SearchPageHeading({ session }: { session: SearchPageSession }) {
   return (
     <PageHeader
-      className='ui-search-header !p-0'
+      className='ui-search-header'
       action={
         session.searchMode === 'normal' && session.showResults ? (
           session.tvMode ? (
@@ -164,7 +164,7 @@ function searchResultsViewKey(session: SearchPageSession) {
 
 function SearchLoadingSection({ session }: { session: SearchPageSession }) {
   return (
-    <section className='space-y-4'>
+    <section aria-label='搜索结果' aria-busy='true' className='space-y-4'>
       <SectionHeader
         subtitle='正在整理结果与可用线路'
         title={pageSectionLabels.searchResults}
@@ -185,7 +185,7 @@ function SearchErrorSection({ session }: { session: SearchPageSession }) {
       <button
         type='button'
         onClick={() => session.setSearchAttempt((attempt) => attempt + 1)}
-        className='rounded-ui-sm border border-[rgb(var(--ui-border))] px-5 py-3'
+        className='ui-primary-button'
       >
         重试搜索
       </button>
@@ -196,10 +196,7 @@ function SearchErrorSection({ session }: { session: SearchPageSession }) {
 function SearchResultCards({ session }: { session: SearchPageSession }) {
   if (session.filteredSearchResults.length === 0) {
     return (
-      <Surface
-        className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
-        variant='plain'
-      >
+      <Surface className='ui-empty-state' variant='plain'>
         该分类下暂无结果
       </Surface>
     );
@@ -309,10 +306,7 @@ function SearchResultSection({ session }: { session: SearchPageSession }) {
           <SearchResultCards session={session} />
         </>
       ) : (
-        <Surface
-          className='px-6 py-10 text-center text-[rgb(var(--ui-text-muted))]'
-          variant='plain'
-        >
+        <Surface className='ui-empty-state' variant='plain'>
           未找到相关结果
         </Surface>
       )}
@@ -392,6 +386,14 @@ function SearchResultsSwitch({ session }: { session: SearchPageSession }) {
     body = <SearchResultSection session={session} />;
   } else if (session.searchHistory.length > 0) {
     body = <SearchHistorySection session={session} />;
+  } else {
+    body = (
+      <section aria-label='开始搜索' className='ui-search-start ui-empty-state'>
+        <Search aria-hidden className='h-8 w-8 text-[rgb(var(--ui-accent))]' />
+        <h2>找到下一部想看的</h2>
+        <p>输入片名、演员或年份，也可以切换到 AI 找片描述线索。</p>
+      </section>
+    );
   }
 
   return (
@@ -774,6 +776,7 @@ const SearchFallback = () => {
     <PageLayout activePath='/search'>
       <div className='ui-search-page space-y-6'>
         <PageHeader
+          className='ui-search-header'
           subtitle={pageMeta['/search'].subtitle}
           title={pageMeta['/search'].title}
         />

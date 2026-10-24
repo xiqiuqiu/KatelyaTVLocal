@@ -86,7 +86,7 @@ describe('UserMenu', () => {
     expect(screen.queryByText('偏好设置')).not.toBeInTheDocument();
     expect(screen.queryByText('TVBox配置')).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: '站点管理' })
+      screen.queryByRole('group', { name: '站点管理分类' })
     ).not.toBeInTheDocument();
   });
 
@@ -108,7 +108,7 @@ describe('UserMenu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
 
     expect(
-      await screen.findByRole('button', { name: '站点管理' })
+      await screen.findByRole('group', { name: '站点管理分类' })
     ).toBeInTheDocument();
     expect(screen.getByText('修改密码')).toBeInTheDocument();
     expect(screen.queryByText('偏好设置')).not.toBeInTheDocument();
@@ -134,7 +134,6 @@ describe('UserMenu', () => {
       render(<UserMenu tvMode={tvMode} />);
 
       fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
-      fireEvent.click(await screen.findByRole('button', { name: '站点管理' }));
       fireEvent.click(screen.getByRole('button', { name: '用户与访问' }));
       expect(await screen.findByTestId('embedded-admin')).toHaveAttribute(
         'data-group',
@@ -166,7 +165,7 @@ describe('UserMenu', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
     expect(
-      await screen.findByRole('button', { name: '站点管理' })
+      await screen.findByRole('group', { name: '站点管理分类' })
     ).toBeInTheDocument();
 
     mockPathname = '/admin';
@@ -174,7 +173,7 @@ describe('UserMenu', () => {
 
     await waitFor(() => {
       expect(
-        screen.queryByRole('button', { name: '站点管理' })
+        screen.queryByRole('group', { name: '站点管理分类' })
       ).not.toBeInTheDocument();
     });
   });
@@ -281,7 +280,7 @@ describe('UserMenu', () => {
     ['admin', true],
     ['owner', true],
   ] as const)(
-    'keeps embedded management permission-gated with three submenus (%s, TV=%s)',
+    'keeps directly reachable management groups permission-gated (%s, TV=%s)',
     async (role, tvMode) => {
       currentUser = { username: role, role };
       window.RUNTIME_CONFIG = {
@@ -307,7 +306,9 @@ describe('UserMenu', () => {
         ).not.toBeInTheDocument();
         return;
       }
-      fireEvent.click(within(dialog).getByRole('button', { name: '站点管理' }));
+      fireEvent.click(
+        within(dialog).getByRole('button', { name: '内容与站点' })
+      );
       const managementRegion = await within(dialog).findByRole('region', {
         name: '站点管理',
       });
@@ -331,6 +332,37 @@ describe('UserMenu', () => {
       expect(global.fetch).toHaveBeenCalledWith('/api/session');
     }
   );
+
+  it('switches mobile settings without remounting unsaved management input', async () => {
+    currentUser = { username: 'admin', role: 'admin' };
+    window.RUNTIME_CONFIG = { STORAGE_TYPE: 'd1', CURRENT_USER: currentUser };
+    (fetch as jest.Mock).mockResolvedValue({
+      json: async () => ({ authenticated: true, user: currentUser }),
+    });
+    render(<UserMenu />);
+    fireEvent.click(screen.getByRole('button', { name: 'User Menu' }));
+    const selector = await screen.findByRole('combobox', { name: '设置分类' });
+    expect(screen.queryByTestId('embedded-admin')).not.toBeInTheDocument();
+    fireEvent.change(selector, { target: { value: 'access' } });
+    const input = await screen.findByLabelText('管理配置输入');
+    fireEvent.change(input, { target: { value: '未保存内容' } });
+    expect(screen.getByTestId('embedded-admin')).toHaveAttribute(
+      'data-group',
+      'access'
+    );
+    fireEvent.change(selector, { target: { value: 'account' } });
+    expect(input).not.toBeVisible();
+    expect(screen.getByRole('region', { name: '账号与安全' })).toBeVisible();
+    fireEvent.change(selector, { target: { value: 'content' } });
+    expect(input).toBeVisible();
+    expect(input).toHaveValue('未保存内容');
+    expect(screen.getByTestId('embedded-admin')).toHaveAttribute(
+      'data-group',
+      'content'
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith('/api/session');
+  });
 
   it('opens legacy management deep links in the correct settings group', async () => {
     currentUser = { username: 'admin', role: 'admin' };

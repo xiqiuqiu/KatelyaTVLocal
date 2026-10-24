@@ -837,7 +837,7 @@ function AiFindTvForm({ session }: { session: AiFindPanelSession }) {
 
 function AiFindDesktopForm({ session }: { session: AiFindPanelSession }) {
   return (
-    <Surface className='p-4 sm:p-6' variant='plain'>
+    <Surface className='ui-ai-find-form p-4 sm:p-6' variant='plain'>
       <form
         className='space-y-5'
         onSubmit={(event) => {
