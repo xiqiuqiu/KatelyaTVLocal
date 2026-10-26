@@ -54,7 +54,13 @@ WHERE excluded.seq > playback_quality.seq
         AND excluded.active_wait_ms >= playback_quality.active_wait_ms)
     OR (playback_quality.status = 'terminal' AND excluded.status = 'terminal'
         AND excluded.outcome = playback_quality.outcome
-        AND playback_quality.prompt_choice IS NULL AND excluded.prompt_choice IS NOT NULL
+        AND playback_quality.row_kind = 'round' AND playback_quality.outcome = 'budget-exhausted'
+        AND excluded.prompt_choice IN ('continue', 'manual', 'leave')
+        AND (excluded.next_round_id IS NULL
+          OR (excluded.prompt_choice IN ('continue', 'manual') AND excluded.next_round_id > playback_quality.round_id))
+        AND ((playback_quality.prompt_choice IS NULL AND playback_quality.next_round_id IS NULL)
+          OR (playback_quality.prompt_choice = excluded.prompt_choice
+            AND playback_quality.next_round_id IS NULL AND excluded.next_round_id IS NOT NULL))
         AND excluded.elapsed_ms = playback_quality.elapsed_ms
         AND excluded.active_wait_ms = playback_quality.active_wait_ms
         AND excluded.click_to_frame_ms IS playback_quality.click_to_frame_ms

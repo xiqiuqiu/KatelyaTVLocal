@@ -2,9 +2,11 @@
 
 import concurrent.futures
 import datetime
+import json
 import pathlib
 import re
 import sqlite3
+import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -98,6 +100,37 @@ def test_budget_choice_and_day():
     db.close()
 
 
+def test_terminal_choice_and_link_protection():
+    db = database()
+    budget = record(status="terminal", outcome="budget-exhausted", elapsedMs=30000, activeWaitMs=30000)
+    assert upsert(db, budget)
+    chosen = {**budget, "seq": 2, "promptChoice": "manual"}
+    assert upsert(db, chosen)
+    assert upsert(db, {**chosen, "seq": 3, "elapsedMs": 80000}) is None
+    assert upsert(db, {**chosen, "seq": 3, "promptChoice": "leave"}) is None
+    linked = {**chosen, "seq": 3, "nextRoundId": 2}
+    assert upsert(db, linked)
+    for revision in [
+        {**linked, "seq": 4, "nextRoundId": 3},
+        {**linked, "seq": 4, "nextRoundId": None},
+        {**linked, "seq": 4, "promptChoice": None},
+        {**linked, "seq": 4, "outcome": "frame-ready", "frameEvidence": "rvfc"},
+        {**linked, "seq": 4, "activeWaitMs": 30001},
+        {**linked, "seq": 4, "pageToFrameMs": 80000},
+        chosen,
+        linked,
+    ]:
+        assert upsert(db, revision) is None
+    row = db.execute("SELECT seq,outcome,prompt_choice,next_round_id,elapsed_ms,active_wait_ms FROM playback_quality").fetchone()
+    assert tuple(row) == (3, "budget-exhausted", "manual", 2, 30000, 30000)
+    leave = {**budget, "sessionId": "left"}
+    assert upsert(db, leave)
+    assert upsert(db, {**leave, "seq": 2, "promptChoice": "leave", "nextRoundId": 2}) is None
+    assert upsert(db, {**leave, "seq": 2, "promptChoice": "leave"})
+    assert upsert(db, {**leave, "seq": 3, "promptChoice": "leave", "nextRoundId": 2}) is None
+    db.close()
+
+
 def test_summary():
     db = database()
     for index in range(1, 21):
@@ -152,7 +185,20 @@ def test_concurrent_quota():
         db.close()
 
 
+def replay_client_records():
+    db = database()
+    for value in json.load(sys.stdin):
+        upsert(db, value)
+    rows = [dict(row) for row in db.execute("SELECT * FROM playback_quality")]
+    groups = [dict(row) for row in db.execute(sql("PLAYBACK_QUALITY_COUNTS_SQL"), (DAY, NOW - 86400000, NOW - 86400000))]
+    print(json.dumps(dict(rows=rows, groups=groups)))
+    db.close()
+
+
 if __name__ == "__main__":
-    for test in [test_idempotency_and_identity, test_budget_choice_and_day, test_summary, test_concurrent_quota]:
+    if sys.argv[1:] == ["--replay-stdin"]:
+        replay_client_records()
+        sys.exit(0)
+    for test in [test_idempotency_and_identity, test_budget_choice_and_day, test_terminal_choice_and_link_protection, test_summary, test_concurrent_quota]:
         test()
         print(f"PASS {test.__name__}")

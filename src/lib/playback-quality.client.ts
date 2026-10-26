@@ -1,7 +1,7 @@
 import type { PlaybackQualityRecord } from './playback-quality';
 
 type Outcome = NonNullable<PlaybackQualityRecord['outcome']>;
-type Clock = { start: number; last: number; active: number };
+type Clock = { start: number; last: number; active: number; endedAt?: number };
 type Sample = { record: PlaybackQualityRecord; clock: Clock };
 type StartInput = Pick<
   PlaybackQualityRecord,
@@ -108,7 +108,9 @@ export function createPlaybackQualityReporter(
   };
 
   const publish = (sample: Sample, keepalive = false, send = true) => {
-    const elapsed = duration(now() - sample.clock.start);
+    const elapsed = duration(
+      (sample.clock.endedAt ?? now()) - sample.clock.start
+    );
     sample.record = {
       ...sample.record,
       seq: sample.record.seq + 1,
@@ -127,6 +129,7 @@ export function createPlaybackQualityReporter(
     send = true
   ) => {
     if (!sample || sample.record.status !== 'pending') return;
+    sample.clock.endedAt = now();
     sample.record.status = 'terminal';
     sample.record.outcome = outcome;
     publish(sample, false, send);

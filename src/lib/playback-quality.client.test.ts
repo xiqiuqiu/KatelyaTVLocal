@@ -1,3 +1,5 @@
+import { spawnSync } from 'child_process';
+
 import type { PlaybackQualityRecord } from './playback-quality';
 import { playbackQualityPayloadSchema } from './playback-quality';
 import {
@@ -51,7 +53,82 @@ function fixture() {
   };
 }
 
+function persist(records: PlaybackQualityRecord[]) {
+  const result = spawnSync(
+    process.platform === 'win32' ? 'python' : 'python3',
+    ['scripts/test-playback-quality-sql.py', '--replay-stdin'],
+    { input: JSON.stringify(records), encoding: 'utf8' }
+  );
+  expect(result.error).toBeUndefined();
+  expect(result.stderr).toBe('');
+  expect(result.status).toBe(0);
+  return JSON.parse(result.stdout);
+}
+
 describe('startup quality observations', () => {
+  it.each(['continue', 'manual', 'leave'] as const)(
+    'persists a delayed %s choice and subsequent outcome through the real SQL',
+    async (choice) => {
+      const f = fixture();
+      f.start();
+      f.source();
+      await settle();
+      f.at(30_000);
+      f.reporter.budgetExhausted();
+      await settle();
+      f.at(80_000);
+      f.reporter.choose(choice);
+      await settle();
+      f.at(90_000);
+      if (choice === 'leave') {
+        f.reporter.finish('abandoned');
+      } else {
+        f.reporter.startRound(
+          choice === 'manual' ? 'manual-source' : 'continue',
+          0
+        );
+        f.reporter.beginSource({
+          attemptId: 2,
+          sourceKey: 'source-2',
+          episodeIndex: 0,
+          contentKey: '测试::2026',
+          reason: choice === 'manual' ? 'manual' : 'initial',
+        });
+        f.at(92_000);
+        f.reporter.frame(2, 'rvfc');
+      }
+      await settle();
+
+      const saved = persist(f.sent);
+      expect(saved.rows).toContainEqual(
+        expect.objectContaining({
+          round_id: 1,
+          row_kind: 'round',
+          outcome: 'budget-exhausted',
+          prompt_choice: choice,
+          next_round_id: choice === 'leave' ? null : 2,
+          elapsed_ms: 30_000,
+          active_wait_ms: 30_000,
+        })
+      );
+      expect(saved.groups).toContainEqual(
+        expect.objectContaining({
+          starts: 1,
+          budgetExhausted: 1,
+          choseContinue: choice === 'continue' ? 1 : 0,
+          choseManual: choice === 'manual' ? 1 : 0,
+          choseLeave: choice === 'leave' ? 1 : 0,
+          firstRoundSuccess: 0,
+          successfulChains: choice === 'leave' ? 0 : 1,
+          completedChains: 1,
+        })
+      );
+      expect(persist([...f.sent, ...f.sent].reverse()).groups).toEqual(
+        saved.groups
+      );
+    }
+  );
+
   it('keeps budget interruption and its choice immutable when the next round succeeds', async () => {
     const f = fixture();
     f.start();
