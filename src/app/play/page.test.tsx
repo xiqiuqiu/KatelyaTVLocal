@@ -924,28 +924,52 @@ describe('PlayPage source initialization', () => {
       expect(media()?.loadSource).toHaveBeenCalledWith(requested().episodes[0]);
     });
 
-    it('reports the missing episode for an expired history id instead of starting an earlier episode', async () => {
+    it.each([true, false])(
+      'shows missing-episode copy when the saved route exists: %s',
+      async (detailExists) => {
+        mockSearchParams.set('from', 'playrecord');
+        mockedGetAllPlayRecords.mockResolvedValue({
+          'detail-source+detail-id': {
+            title: '详情影片',
+            year: '2026',
+            source_name: '详情源',
+            cover: '',
+            index: 3,
+            total_episodes: 3,
+            play_time: 96,
+            total_time: 240,
+            save_time: Date.now(),
+            search_title: '详情影片',
+          },
+        });
+        requests(
+          Promise.resolve(response({ results: [alternate()] })),
+          Promise.resolve(
+            response(detailExists ? requested() : {}, detailExists)
+          )
+        );
+        render(<PlayPage />);
+        await screen.findByRole('heading', { name: '暂未找到这一集' });
+        expect(screen.getByText('目标集暂不可用')).toBeVisible();
+        expect(screen.getByText('当前线路及候选暂未提供第 3 集')).toBeVisible();
+        expect(screen.queryByText('历史记录已过期')).toBeNull();
+        expect(screen.queryByText(/资源可能已经下架/)).toBeNull();
+        expect(screen.getByRole('button', { name: '重新尝试' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: '搜索片名' })).toBeEnabled();
+        expect(media()).toBeUndefined();
+      }
+    );
+
+    it('retains expired-history copy when neither details nor replacement resources exist', async () => {
       mockSearchParams.set('from', 'playrecord');
-      mockedGetAllPlayRecords.mockResolvedValue({
-        'detail-source+detail-id': {
-          title: '详情影片',
-          year: '2026',
-          source_name: '详情源',
-          cover: '',
-          index: 3,
-          total_episodes: 3,
-          play_time: 96,
-          total_time: 240,
-          save_time: Date.now(),
-          search_title: '详情影片',
-        },
-      });
       requests(
-        Promise.resolve(response({ results: [alternate()] })),
+        Promise.resolve(response({ results: [] })),
         Promise.resolve(response({}, false))
       );
       render(<PlayPage />);
-      await screen.findByText('当前线路及候选暂未提供第 3 集');
+      await screen.findByRole('heading', { name: '旧播放记录暂时不可用' });
+      expect(screen.getByText('历史记录已过期')).toBeVisible();
+      expect(screen.queryByText('目标集暂不可用')).toBeNull();
       expect(media()).toBeUndefined();
     });
 

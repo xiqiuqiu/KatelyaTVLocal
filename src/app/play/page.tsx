@@ -350,6 +350,7 @@ type PlaybackErrorKind =
   | 'missing-params'
   | 'not-found'
   | 'history-expired'
+  | 'missing-episode'
   | 'device-unsupported'
   | 'source-unavailable'
   | 'player'
@@ -453,6 +454,12 @@ function PlayErrorView({
       eyebrow: '资源未命中',
       title: '未找到匹配结果',
       description: '当前片名或播放源没有匹配到可播放资源，可以重新搜索片名。',
+    },
+    'missing-episode': {
+      eyebrow: '目标集暂不可用',
+      title: '暂未找到这一集',
+      description:
+        '当前线路和其他候选暂未提供所选集数，可以稍后重试，或搜索片名查找其他资源。',
     },
     'history-expired': {
       eyebrow: '历史记录已过期',
@@ -5187,7 +5194,11 @@ function usePlayPageSession() {
             if (cancelled) return;
             setPlaybackError(
               recovery.error || '未找到匹配结果',
-              urlFromPlayRecord ? 'history-expired' : 'not-found'
+              recovery.errorKind === 'missing-episode'
+                ? 'missing-episode'
+                : urlFromPlayRecord
+                ? 'history-expired'
+                : 'not-found'
             );
             setLoading(false);
             return;

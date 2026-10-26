@@ -33,6 +33,7 @@ interface ResolvePlaybackHistoryRecoveryResult {
   resumeEpisodeIndex: number | null;
   resumeTime: number | null;
   error: string | null;
+  errorKind: 'not-found' | 'missing-episode' | null;
 }
 
 function isRequestedSource(
@@ -151,6 +152,7 @@ export function resolvePlaybackHistoryRecovery({
       resumeEpisodeIndex: null,
       resumeTime: null,
       error: '未找到匹配结果',
+      errorKind: 'not-found',
     };
   }
 
@@ -192,6 +194,7 @@ export function resolvePlaybackHistoryRecovery({
         resumeEpisodeIndex: null,
         resumeTime: null,
         error: `当前线路及候选暂未提供第 ${requestedEpisodeIndex + 1} 集`,
+        errorKind: 'missing-episode',
       };
     }
   }
@@ -214,5 +217,6 @@ export function resolvePlaybackHistoryRecovery({
     contentKey,
     ...resumePosition,
     error: null,
+    errorKind: null,
   };
 }
