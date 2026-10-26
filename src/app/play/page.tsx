@@ -87,6 +87,7 @@ import {
   resolvePlaybackHistoryRecovery,
 } from '@/lib/playback-history-recovery';
 import {
+  consumePlaybackPageEntryTime,
   createPlaybackQualityReporter,
   observePlaybackFirstFrame,
 } from '@/lib/playback-quality.client';
@@ -1012,7 +1013,6 @@ function usePlayPageSession() {
   );
   const playbackQualityRef = useLazyRef(() => createPlaybackQualityReporter());
   const qualityFrameCleanupRef = useRef<(() => void) | null>(null);
-  const pageEntryAtRef = useRef<number | null>(null);
   const playbackDebugEnabledRef = useRef(false);
   const playbackAttemptChannelSkipEmittedRef = useRef(false);
   const playbackDebugLastCanplayRef =
@@ -3872,15 +3872,12 @@ function usePlayPageSession() {
     const navigation = performance.getEntriesByType?.('navigation')[0];
     const clickedAt =
       playbackPreparation.consumeLaunchTiming?.(window.location.href) ?? null;
-    // A document navigation clock belongs only to this page's first mount.
-    const documentEntry =
-      navigation &&
-      new URL(navigation.name).pathname === window.location.pathname;
-    const pageStartedAt =
-      pageEntryAtRef.current === null && clickedAt === null && documentEntry
-        ? navigation.startTime
-        : entryAt;
-    pageEntryAtRef.current = entryAt;
+    const pageStartedAt = consumePlaybackPageEntryTime(
+      navigation,
+      entryAt,
+      window.location.href,
+      clickedAt
+    );
     const sessionId = reporter.getSessionId();
     if (!sessionId) return;
     playbackQualityRef.current.start({
@@ -5396,7 +5393,7 @@ function usePlayPageSession() {
         return false;
       }
 
-      if (!options.autoRecovery && playbackQualityRef.current.isPending()) {
+      if (!options.autoRecovery && playbackQualityRef.current.canRetry()) {
         playbackQualityRef.current.startRound('manual-source', targetIndex);
       }
       setInPlayerFailure(null);
@@ -5553,10 +5550,12 @@ function usePlayPageSession() {
     const source = detailRef.current;
     if (!player || !source || !videoUrlRef.current) return;
 
-    playbackQualityRef.current.startRound(
-      'continue',
-      currentEpisodeIndexRef.current
-    );
+    if (playbackQualityRef.current.canRetry()) {
+      playbackQualityRef.current.startRound(
+        'continue',
+        currentEpisodeIndexRef.current
+      );
+    }
     const resumeTime =
       resumeTimeRef.current ?? getCurrentVideoSnapshot().currentTime;
     dispatchPlaybackSessionEvent({

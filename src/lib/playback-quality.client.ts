@@ -11,6 +11,27 @@ type StartInput = Pick<
 const duration = (value: number) =>
   Math.min(86_400_000, Math.max(0, Math.round(value)));
 
+let documentNavigationConsumed = false;
+
+/** Survives play-page unmounts; a SPA return must not reuse this document's old clock. */
+export function consumePlaybackPageEntryTime(
+  navigation: Pick<PerformanceEntry, 'name' | 'startTime'> | undefined,
+  entryAt: number,
+  href: string,
+  clickedAt: number | null
+): number {
+  if (documentNavigationConsumed) return entryAt;
+  documentNavigationConsumed = true;
+  if (!navigation || clickedAt !== null) return entryAt;
+  try {
+    return new URL(navigation.name).pathname === new URL(href).pathname
+      ? navigation.startTime
+      : entryAt;
+  } catch {
+    return entryAt;
+  }
+}
+
 /** Observes startup only. It never chooses a source, seeks, or starts playback. */
 export function createPlaybackQualityReporter(
   options: { now?: () => number; fetcher?: typeof fetch } = {}
@@ -22,6 +43,11 @@ export function createPlaybackQualityReporter(
   let source: Sample | null = null;
   let roundId = 0;
   let rootRoundId = 0;
+  let rootEntryKind: PlaybackQualityRecord['entryKind'] = 'direct';
+  let rootPageStartedAt = 0;
+  let rootClickedAt: number | null = null;
+  let rootHadHidden = false;
+  let rootAutoplayBlocked = false;
   let hidden = false;
   let paused = false;
   let blocked = false;
@@ -116,7 +142,19 @@ export function createPlaybackQualityReporter(
     finishSample(source, 'cancelled');
     finishSample(round, 'user-intervened');
     roundId += 1;
-    if (roundId === 1 || newRoot) rootRoundId = roundId;
+    if (roundId === 1 || newRoot) {
+      rootRoundId = roundId;
+      rootEntryKind =
+        reason === 'episode'
+          ? 'episode'
+          : input.clickedAt != null
+          ? 'click'
+          : 'direct';
+      rootPageStartedAt = reason === 'episode' ? now() : input.pageStartedAt;
+      rootClickedAt = reason === 'episode' ? null : input.clickedAt ?? null;
+      rootHadHidden = hidden;
+      rootAutoplayBlocked = false;
+    }
     source = null;
     paused = false;
     blocked = false;
@@ -140,12 +178,7 @@ export function createPlaybackQualityReporter(
         sourceKey: null,
         platform: input.platform,
         runtime: 'hlsjs',
-        entryKind:
-          reason === 'episode'
-            ? 'episode'
-            : input.clickedAt != null
-            ? 'click'
-            : 'direct',
+        entryKind: rootEntryKind,
         roundReason: reason,
         sourceReason: null,
         releaseId: process.env.NEXT_PUBLIC_PLAYBACK_RELEASE_ID || 'unknown',
@@ -156,8 +189,8 @@ export function createPlaybackQualityReporter(
         pageToFrameMs: null,
         sourceToFrameMs: null,
         frameEvidence: null,
-        hadHidden: hidden,
-        autoplayBlocked: false,
+        hadHidden: rootHadHidden,
+        autoplayBlocked: rootAutoplayBlocked,
         promptChoice: null,
         nextRoundId: null,
       },
@@ -176,6 +209,7 @@ export function createPlaybackQualityReporter(
       startRound('initial', next.episodeIndex);
     },
     isPending: () => round?.record.status === 'pending',
+    canRetry: () => Boolean(round && round.record.outcome !== 'frame-ready'),
     startRound,
     beginSource(attempt: {
       attemptId: number;
@@ -242,15 +276,8 @@ export function createPlaybackQualityReporter(
         sample.record.sourceKey = source.record.sourceKey;
         sample.record.frameEvidence = evidence;
         sample.record.clickToFrameMs =
-          input.clickedAt == null || sample.record.entryKind === 'episode'
-            ? null
-            : duration(time - input.clickedAt);
-        sample.record.pageToFrameMs = duration(
-          time -
-            (sample.record.entryKind === 'episode'
-              ? round.clock.start
-              : input.pageStartedAt)
-        );
+          rootClickedAt == null ? null : duration(time - rootClickedAt);
+        sample.record.pageToFrameMs = duration(time - rootPageStartedAt);
         sample.record.sourceToFrameMs = duration(time - source.clock.start);
         finishSample(sample, 'frame-ready');
       }
@@ -263,6 +290,7 @@ export function createPlaybackQualityReporter(
     autoplayBlocked() {
       tick();
       blocked = true;
+      rootAutoplayBlocked = true;
       if (round?.record.status === 'pending')
         round.record.autoplayBlocked = true;
       if (source?.record.status === 'pending')
@@ -272,6 +300,7 @@ export function createPlaybackQualityReporter(
       tick();
       hidden = value;
       if (value) {
+        rootHadHidden = true;
         for (const sample of [round, source]) {
           if (sample?.record.status === 'pending')
             sample.record.hadHidden = true;
@@ -310,6 +339,7 @@ export function observePlaybackFirstFrame(
 ): () => void {
   let disposed = false;
   let playing = false;
+  let seeking = false;
   let baseline = video.currentTime;
   let callbackId: number | null = null;
   const ready = () =>
@@ -317,6 +347,7 @@ export function observePlaybackFirstFrame(
     options.isCurrent() &&
     options.isReady() &&
     playing &&
+    !seeking &&
     !video.paused &&
     !video.seeking &&
     (typeof document === 'undefined' || document.visibilityState !== 'hidden');
@@ -334,6 +365,7 @@ export function observePlaybackFirstFrame(
     });
   };
   const onPlaying = () => {
+    if (disposed || !options.isCurrent()) return;
     playing = true;
     baseline = video.currentTime;
     options.onPaused(false);
@@ -355,29 +387,36 @@ export function observePlaybackFirstFrame(
       }
     });
   };
+  const onSeeking = () => {
+    seeking = true;
+  };
   const onSeeked = () => {
+    seeking = false;
     baseline = video.currentTime;
   };
   const onTimeupdate = () => {
     if (!video.requestVideoFrameCallback && ready()) {
       const delta = video.currentTime - baseline;
-      if (delta > 0.01 && delta < 2) complete('playhead');
-      else if (Math.abs(delta) >= 2) baseline = video.currentTime;
+      if (delta > 0.01) complete('playhead');
     }
   };
   const cleanup = () => {
+    if (disposed) return;
     disposed = true;
     if (callbackId !== null) video.cancelVideoFrameCallback?.(callbackId);
+    callbackId = null;
     video.removeEventListener('playing', onPlaying);
     video.removeEventListener('pause', onPause);
     video.removeEventListener('canplay', onCanplay);
     video.removeEventListener('seeked', onSeeked);
+    video.removeEventListener('seeking', onSeeking);
     video.removeEventListener('timeupdate', onTimeupdate);
   };
   video.addEventListener('playing', onPlaying);
   video.addEventListener('pause', onPause);
   video.addEventListener('canplay', onCanplay);
   video.addEventListener('seeked', onSeeked);
+  video.addEventListener('seeking', onSeeking);
   video.addEventListener('timeupdate', onTimeupdate);
   return cleanup;
 }

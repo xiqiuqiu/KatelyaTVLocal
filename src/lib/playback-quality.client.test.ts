@@ -1,6 +1,7 @@
 import type { PlaybackQualityRecord } from './playback-quality';
 import { playbackQualityPayloadSchema } from './playback-quality';
 import {
+  consumePlaybackPageEntryTime,
   createPlaybackQualityReporter,
   observePlaybackFirstFrame,
 } from './playback-quality.client';
@@ -51,6 +52,28 @@ function fixture() {
 }
 
 describe('startup quality observations', () => {
+  it('consumes the document navigation origin once across SPA play-page remounts', () => {
+    const navigation = {
+      name: 'https://app.example/play?source=one',
+      startTime: 0,
+    };
+    expect(
+      consumePlaybackPageEntryTime(
+        navigation,
+        100,
+        'https://app.example/play?source=one',
+        null
+      )
+    ).toBe(0);
+    expect(
+      consumePlaybackPageEntryTime(
+        navigation,
+        60_000,
+        'https://app.example/play?source=two',
+        null
+      )
+    ).toBe(60_000);
+  });
   it('includes preparation time, skips duplicate attempts, and accepts one matching frame', async () => {
     const f = fixture();
     f.start();
@@ -204,6 +227,50 @@ describe('startup quality observations', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps episode origin and hidden history across a failed start and manual retry', async () => {
+    const f = fixture();
+    f.start();
+    f.source();
+    f.at(1000);
+    f.reporter.frame(1, 'rvfc');
+    expect(f.reporter.canRetry()).toBe(false);
+    f.at(600_000);
+    f.reporter.startRound('episode', 1, true);
+    const begin = (attemptId: number) =>
+      f.reporter.beginSource({
+        attemptId,
+        sourceKey: 'episode-source',
+        episodeIndex: 1,
+        contentKey: '测试::2026',
+        reason: 'manual',
+      });
+    begin(2);
+    f.at(600_100);
+    f.reporter.setHidden(true);
+    f.at(600_500);
+    f.reporter.setHidden(false);
+    f.reporter.finish('failed');
+    expect(f.reporter.canRetry()).toBe(true);
+    f.at(600_600);
+    f.reporter.startRound('manual-source', 1);
+    begin(3);
+    f.at(601_000);
+    f.reporter.frame(3, 'rvfc');
+    await settle();
+    expect(f.sent).toContainEqual(
+      expect.objectContaining({
+        rowKind: 'round',
+        roundId: 3,
+        rootRoundId: 2,
+        entryKind: 'episode',
+        outcome: 'frame-ready',
+        pageToFrameMs: 1000,
+        clickToFrameMs: null,
+        hadHidden: true,
+      })
+    );
+  });
+
   it('bounds hidden checkpoints and sends an abandonment snapshot with keepalive', async () => {
     const f = fixture();
     f.start();
@@ -305,11 +372,27 @@ describe('first playback frame observer', () => {
       onPaused: jest.fn(),
     });
     m.video.dispatchEvent(new Event('playing'));
+    m.video.dispatchEvent(new Event('seeking'));
     m.video.currentTime = 300;
     m.video.dispatchEvent(new Event('timeupdate'));
     expect(onFrame).not.toHaveBeenCalled();
     m.video.dispatchEvent(new Event('seeked'));
     m.video.currentTime = 300.2;
+    m.video.dispatchEvent(new Event('timeupdate'));
+    expect(onFrame).toHaveBeenCalledWith('playhead');
+  });
+
+  it('accepts sparse timeupdate progress from an old TV browser', () => {
+    const m = media(false);
+    const onFrame = jest.fn();
+    observePlaybackFirstFrame(m.video, {
+      isCurrent: () => true,
+      isReady: () => true,
+      onFrame,
+      onPaused: jest.fn(),
+    });
+    m.video.dispatchEvent(new Event('playing'));
+    m.video.currentTime = 4;
     m.video.dispatchEvent(new Event('timeupdate'));
     expect(onFrame).toHaveBeenCalledWith('playhead');
   });

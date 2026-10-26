@@ -1,12 +1,20 @@
 /** @type {import('next').NextConfig} */
 /* eslint-disable @typescript-eslint/no-var-requires */
+const playbackReleaseId =
+  process.env.NEXT_PUBLIC_PLAYBACK_RELEASE_ID ||
+  process.env.CF_PAGES_COMMIT_SHA ||
+  process.env.GITHUB_SHA ||
+  'unknown';
+const playbackDeployment =
+  process.env.NEXT_PUBLIC_PLAYBACK_DEPLOYMENT ||
+  process.env.CF_PAGES_BRANCH ||
+  (process.env.DOCKER_ENV === 'true' ? 'docker' : 'local');
 const nextConfig = {
   env: {
-    NEXT_PUBLIC_PLAYBACK_RELEASE_ID:
-      process.env.NEXT_PUBLIC_PLAYBACK_RELEASE_ID ||
-      process.env.CF_PAGES_COMMIT_SHA ||
-      process.env.GITHUB_SHA ||
-      'unknown',
+    NEXT_PUBLIC_PLAYBACK_RELEASE_ID: `${playbackReleaseId.slice(
+      0,
+      80
+    )}@${playbackDeployment.slice(0, 40)}`,
   },
   output: process.env.DOCKER_ENV === 'true' ? 'standalone' : undefined,
   eslint: {

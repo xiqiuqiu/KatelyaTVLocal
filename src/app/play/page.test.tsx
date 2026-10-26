@@ -502,6 +502,152 @@ describe('PlayPage source initialization', () => {
     ).toBe(false);
   });
 
+  it('continues collecting when a failed startup is manually switched to another source', async () => {
+    const originalFetch = global.fetch;
+    const alternate = createSource({
+      source: 'alternate',
+      id: '2',
+      source_name: '备用源',
+      episodes: ['https://example.com/alternate.m3u8'],
+    });
+    global.fetch = jest.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (input.toString().startsWith('/api/search'))
+          return {
+            ok: true,
+            json: async () => ({ results: [createSource(), alternate] }),
+          } as Response;
+        return originalFetch(input, init);
+      }
+    );
+    const reducer = jest.mocked(reducePlaybackSession);
+    const actual = jest.requireActual<typeof import('@/lib/playback-session')>(
+      '@/lib/playback-session'
+    );
+    reducer.mockImplementation((state, event) =>
+      event.type === 'recovery.runtimeEvidence'
+        ? {
+            state,
+            effects: [
+              {
+                type: 'showInPlayerFailure',
+                reason: 'recovery-exhausted',
+                actions: ['retry', 'switch-source', 'leave'],
+              },
+            ],
+          }
+        : actual.reducePlaybackSession(state, event)
+    );
+    try {
+      render(<PlayPage />);
+      await screen.findByTestId('episode-selector-sources');
+      await act(async () => {
+        await Promise.resolve();
+        mockArtPlayerEventHandlers.get('video:canplay')?.();
+      });
+      await act(async () => {
+        mockArtPlayerEventHandlers.get('error')?.(new Error('source failed'));
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await mockSourceChangeHandler?.('alternate', '2', alternate.title);
+        await Promise.resolve();
+      });
+      const records = jest
+        .mocked(global.fetch)
+        .mock.calls.flatMap(([url, init]) =>
+          url === '/api/playback-quality' && typeof init?.body === 'string'
+            ? playbackQualityPayloadSchema.parse(JSON.parse(init.body)).records
+            : []
+        );
+      expect(records).toContainEqual(
+        expect.objectContaining({
+          rowKind: 'round',
+          roundId: 1,
+          outcome: 'failed',
+        })
+      );
+      expect(records).toContainEqual(
+        expect.objectContaining({
+          rowKind: 'source',
+          roundId: 2,
+          rootRoundId: 1,
+          sourceKey: 'alternate-2',
+          status: 'pending',
+        })
+      );
+    } finally {
+      reducer.mockImplementation(actual.reducePlaybackSession);
+    }
+  });
+
+  it('does not count a mid-play retry as another startup after the first frame', async () => {
+    const reducer = jest.mocked(reducePlaybackSession);
+    const actual = jest.requireActual<typeof import('@/lib/playback-session')>(
+      '@/lib/playback-session'
+    );
+    reducer.mockImplementation((state, event) =>
+      event.type === 'recovery.runtimeEvidence'
+        ? {
+            state,
+            effects: [
+              {
+                type: 'showInPlayerFailure',
+                reason: 'recovery-exhausted',
+                actions: ['retry', 'switch-source', 'leave'],
+              },
+            ],
+          }
+        : actual.reducePlaybackSession(state, event)
+    );
+    const records = () =>
+      jest
+        .mocked(global.fetch)
+        .mock.calls.flatMap(([url, init]) =>
+          url === '/api/playback-quality' && typeof init?.body === 'string'
+            ? playbackQualityPayloadSchema.parse(JSON.parse(init.body)).records
+            : []
+        );
+    try {
+      render(<PlayPage />);
+      await settlePlayPage();
+      await act(async () => {
+        mockArtPlayerEventHandlers.get('video:canplay')?.();
+      });
+      const video = mockArtPlayerInstance?.video;
+      if (!video) throw new Error('video not created');
+      await act(async () => {
+        video.addEventListener?.mock.calls
+          .filter(([event]) => event === 'playing')
+          .forEach(([, fn]) => fn());
+        video.currentTime = 0.2;
+        video.addEventListener?.mock.calls
+          .filter(([event]) => event === 'timeupdate')
+          .forEach(([, fn]) => fn());
+        await Promise.resolve();
+      });
+      expect(records()).toContainEqual(
+        expect.objectContaining({ rowKind: 'round', outcome: 'frame-ready' })
+      );
+      const pendingBefore = records().filter(
+        (r) => r.status === 'pending'
+      ).length;
+      await act(async () => {
+        mockArtPlayerEventHandlers.get('error')?.(new Error('mid-play failed'));
+        await Promise.resolve();
+      });
+      fireEvent.click(screen.getByRole('button', { name: /重试/ }));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(records().filter((r) => r.status === 'pending')).toHaveLength(
+        pendingBefore
+      );
+    } finally {
+      reducer.mockImplementation(actual.reducePlaybackSession);
+    }
+  });
+
   it('ends the preparation transition when the player reaches canplay', async () => {
     render(<PlayPage />);
     await settlePlayPage();
@@ -1679,16 +1825,16 @@ describe('PlayPage automatic source-switch resume', () => {
     }
     playback.sample(8000, 32, 0);
     const listeners = playback.player.video.addEventListener?.mock.calls;
-    const seeking = listeners?.find(([event]) => event === 'seeking')?.[1];
-    const seeked = listeners?.find(([event]) => event === 'seeked')?.[1];
-    expect(seeking).toBeDefined();
-    expect(seeked).toBeDefined();
+    const seeking = listeners?.filter(([event]) => event === 'seeking') || [];
+    const seeked = listeners?.filter(([event]) => event === 'seeked') || [];
+    expect(seeking.length).toBeGreaterThan(0);
+    expect(seeked.length).toBeGreaterThan(0);
     playback.player.currentTime = 10;
     playback.player.video.currentTime = 10;
     playback.player.video.seeking = true;
-    act(() => seeking?.());
+    act(() => seeking.forEach(([, listener]) => listener()));
     playback.player.video.seeking = false;
-    act(() => seeked?.());
+    act(() => seeked.forEach(([, listener]) => listener()));
     for (let elapsed = 0; elapsed <= 12_000; elapsed += 250) {
       playback.sample(9000 + elapsed, 10 + elapsed / 1000, 1.5);
     }

@@ -193,7 +193,7 @@ checkpoint 只是覆盖同一行：开始一次；hidden 时有变化才发且�
 - `firstRoundWithin30Rate` 是基线中“首轮 30 秒有效等待内播出”的比例，当前没有强制 30 秒停止；超过 30 秒后成功仍记录成功样本。`budgetExhausted` 在后续任务启用预算前应为 0，不伪造政策结果。
 - `finalSuccessRate` 按同次起播链归并用户重试；同时查看 `starts`、`completed`、`pending`、`unobserved`，不要把没有终态的记录当作失败。首次进入和切集按 `entryKind` 分组。
 - 首帧证据 `rvfc` 与 `playhead` 分开统计；`canplay` 只维持旧线路记忆语义。时长中排除隐藏页面和用户暂停；明确的 NotAllowedError 单独标记，原生 autoplay 静默等待手势仅停止有效等待累计，不据此断言浏览器拒绝。
-- 版本：Pages 使用构建时 `CF_PAGES_COMMIT_SHA`；CI Docker 构建传 `PLAYBACK_RELEASE_ID`。手动 Docker 构建使用 `--build-arg PLAYBACK_RELEASE_ID=<commit>`，也可显式配置 `NEXT_PUBLIC_PLAYBACK_RELEASE_ID`。缺失时为 `unknown`，不拿该分组作发版归因。
+- 版本：Pages 使用构建时 `CF_PAGES_COMMIT_SHA`；CI Docker 构建传 `PLAYBACK_RELEASE_ID`。手动 Docker 构建使用 `--build-arg PLAYBACK_RELEASE_ID=<commit>`，也可显式配置 `NEXT_PUBLIC_PLAYBACK_RELEASE_ID`。标识追加 Pages 分支或 docker/local 部署维度，预览与主分支共享 D1 时不会合并同 SHA 的流量；手动部署可用 `NEXT_PUBLIC_PLAYBACK_DEPLOYMENT` 指定环境。缺失提交时以 `unknown@部署维度` 记录，不拿该分组作发版归因。
 - 保留 30 天；现有鉴权 cron 每次限量清理 2000 条过期数据，需沿用项目 cron 调用安排。未配置定时调用的部署需自行安排清理，接口不会在每次观看时清表。
 - SQL 自检：`python3 scripts/test-playback-quality-sql.py`，已接入现有 CI，执行真实 SQLite 的迁移、幂等、终态、跨日、分位数与并发额度检查。
 
