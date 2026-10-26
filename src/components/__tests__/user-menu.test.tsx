@@ -69,10 +69,10 @@ describe('UserMenu', () => {
       CURRENT_USER: currentUser,
     };
     global.fetch = jest.fn().mockResolvedValue({
-      json: jest.fn().mockResolvedValue({
+      json: jest.fn(async () => ({
         authenticated: true,
         user: currentUser,
-      }),
+      })),
     }) as jest.Mock;
   });
 
