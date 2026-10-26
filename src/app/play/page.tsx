@@ -86,6 +86,10 @@ import {
   type PlaybackHistoryRecord,
   resolvePlaybackHistoryRecovery,
 } from '@/lib/playback-history-recovery';
+import {
+  createPlaybackQualityReporter,
+  observePlaybackFirstFrame,
+} from '@/lib/playback-quality.client';
 import { classifySeekingEvent } from '@/lib/playback-seek-intent';
 import {
   type PlaybackSessionEffect,
@@ -1006,6 +1010,9 @@ function usePlayPageSession() {
       enhancedReportingEnabled: isPlaybackAttemptEnhancedReportingEnabled(),
     })
   );
+  const playbackQualityRef = useLazyRef(() => createPlaybackQualityReporter());
+  const qualityFrameCleanupRef = useRef<(() => void) | null>(null);
+  const pageEntryAtRef = useRef<number | null>(null);
   const playbackDebugEnabledRef = useRef(false);
   const playbackAttemptChannelSkipEmittedRef = useRef(false);
   const playbackDebugLastCanplayRef =
@@ -1223,6 +1230,7 @@ function usePlayPageSession() {
     message: string,
     kind: PlaybackErrorKind = 'generic'
   ) => {
+    playbackQualityRef.current.finish('failed');
     setErrorKind(kind);
     setError(message);
     playbackPreparation.markTerminalFailure();
@@ -1279,6 +1287,7 @@ function usePlayPageSession() {
   const resumeEpisodeIndexRef = useRef<number | null>(null);
   const sourceChangeMediaAttemptRef = useRef<{
     attemptId: number;
+    episodeIndex: number;
     sourceKey: string;
     expectedPlaybackUrl: string | null;
     manifestReady: boolean;
@@ -1353,7 +1362,6 @@ function usePlayPageSession() {
     () => new Set<string>()
   );
   const autoRecoveredSourceKeysRef = useLazyRef(() => new Set<string>());
-  const attemptedLedgerTitleKeyRef = useRef<string | null>(null);
   const playbackSessionStateRef = useLazyRef<PlaybackSessionState>(() =>
     createInitialPlaybackSessionState({
       badPoints:
@@ -2025,7 +2033,20 @@ function usePlayPageSession() {
 
   useEffect(() => {
     const reporter = playbackAttemptReporterRef.current;
+    const quality = playbackQualityRef.current;
+    const onVisibility = () =>
+      quality.setHidden(document.visibilityState === 'hidden');
+    const onPageHide = (event: PageTransitionEvent) => {
+      if (event.persisted) quality.setHidden(true);
+      else quality.finish('abandoned');
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onPageHide);
     return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', onPageHide);
+      quality.finish('abandoned');
+      qualityFrameCleanupRef.current?.();
       const ended = reporter.endAttempt('leave');
       if (!ended || !playbackDebugEnabledRef.current) {
         return;
@@ -2451,6 +2472,17 @@ function usePlayPageSession() {
 
     executePlaybackSessionEffects(result.effects, {
       onSwitchSource: () => {
+        const errorType =
+          event.type === 'recovery.runtimeEvidence'
+            ? event.evidence.hls?.errorType
+            : null;
+        playbackQualityRef.current.sourceFailed(
+          errorType === 'mediaError'
+            ? 'media-error'
+            : errorType === 'networkError'
+            ? 'network-error'
+            : 'failed'
+        );
         // Callers that need auto-switch consume switchSource from the result.
       },
       onSameSourceRecover: (effect) => {
@@ -2551,6 +2583,7 @@ function usePlayPageSession() {
         });
       },
       onShowInPlayerFailure: (effect) => {
+        playbackQualityRef.current.finish('failed');
         clearAutoSourceSwitchUndoDismissTimer();
         setAutoSourceSwitchUndoToast(null);
         playbackPreparation.markTerminalFailure();
@@ -2744,41 +2777,69 @@ function usePlayPageSession() {
     resumeTime,
     reason,
     playbackUrl,
+    reusePendingAttempt = false,
   }: {
     source: SearchResult;
     targetIndex: number;
     resumeTime: number | null;
     reason?: string;
     playbackUrl?: string;
+    reusePendingAttempt?: boolean;
   }) {
     clearSourceChangeTimeoutTimer();
     if (typeof window === 'undefined') {
       return;
     }
 
-    const sourceAttempt = playbackAttemptReporterRef.current.beginSourceAttempt(
-      {
-        sourceKey: getSourceIdentityKey(source.source, source.id),
-        reason: reason?.includes('auto') ? 'auto' : 'manual',
-        episodeIndex: targetIndex,
-        runtime: playbackPolicyRef.current?.runtime || null,
-        contentKey: getPlaybackContentKey(),
-      }
-    );
-    publishPlaybackAttemptEvent(sourceAttempt, 'Source change started');
-    const timeoutAttemptId = sourceAttempt.sourceChangeAttemptId || 1;
-    sourceChangeAttemptIdRef.current = timeoutAttemptId;
     const timeoutSourceKey = getSourceIdentityKey(source.source, source.id);
-    sourceChangeMediaAttemptRef.current = {
-      attemptId: timeoutAttemptId,
-      sourceKey: timeoutSourceKey,
-      expectedPlaybackUrl: playbackUrl || null,
-      manifestReady: false,
-      mediaReady: false,
-      mediaReadyHls: null,
-      hls: null,
-      automatic: sourceSwitchAutomaticRef.current,
-    };
+    const pendingAttempt = sourceChangeMediaAttemptRef.current;
+    const reuse =
+      reusePendingAttempt &&
+      pendingAttempt &&
+      !pendingAttempt.mediaFinalized &&
+      pendingAttempt.sourceKey === timeoutSourceKey &&
+      pendingAttempt.episodeIndex === targetIndex;
+    let timeoutAttemptId: number;
+    if (reuse) {
+      timeoutAttemptId = pendingAttempt.attemptId;
+      pendingAttempt.expectedPlaybackUrl =
+        playbackUrl || pendingAttempt.expectedPlaybackUrl;
+    } else {
+      qualityFrameCleanupRef.current?.();
+      const sourceAttempt =
+        playbackAttemptReporterRef.current.beginSourceAttempt({
+          sourceKey: timeoutSourceKey,
+          reason: sourceSwitchAutomaticRef.current ? 'auto' : 'manual',
+          episodeIndex: targetIndex,
+          runtime: playbackPolicyRef.current?.runtime || null,
+          contentKey: getPlaybackContentKey(),
+        });
+      publishPlaybackAttemptEvent(sourceAttempt, 'Source change started');
+      timeoutAttemptId = sourceAttempt.sourceChangeAttemptId || 1;
+      sourceChangeMediaAttemptRef.current = {
+        attemptId: timeoutAttemptId,
+        episodeIndex: targetIndex,
+        sourceKey: timeoutSourceKey,
+        expectedPlaybackUrl: playbackUrl || null,
+        manifestReady: false,
+        mediaReady: false,
+        mediaReadyHls: null,
+        hls: null,
+        automatic: sourceSwitchAutomaticRef.current,
+      };
+      playbackQualityRef.current.beginSource({
+        attemptId: timeoutAttemptId,
+        sourceKey: timeoutSourceKey,
+        episodeIndex: targetIndex,
+        contentKey: getPlaybackContentKey(),
+        reason: sourceSwitchAutomaticRef.current
+          ? 'auto'
+          : timeoutAttemptId === 1
+          ? 'initial'
+          : 'manual',
+      });
+    }
+    sourceChangeAttemptIdRef.current = timeoutAttemptId;
     dispatchPlaybackSessionEvent({
       type: 'sourceChange.started',
       attemptId: timeoutAttemptId,
@@ -2787,6 +2848,16 @@ function usePlayPageSession() {
 
     sourceChangeTimeoutTimerRef.current = window.setTimeout(() => {
       sourceChangeTimeoutTimerRef.current = null;
+      if (
+        !shouldIgnoreSourceChangeTimeout({
+          attemptId: timeoutAttemptId,
+          currentAttemptId: sourceChangeAttemptIdRef.current,
+          isVideoLoading: isVideoLoadingRef.current,
+          timeoutSourceKey,
+          currentSourceKey: getCurrentSourceKey(),
+        })
+      )
+        playbackQualityRef.current.sourceFailed('source-timeout');
       syncPlaybackSessionSources();
       const timeoutResult = dispatchPlaybackSessionEvent({
         type: 'timer.sourceChangeTimeout',
@@ -2956,6 +3027,7 @@ function usePlayPageSession() {
       return;
     }
 
+    playbackQualityRef.current.setPaused(true);
     const now = Date.now();
     dispatchPlaybackSessionEvent({ type: 'user.pause' });
     const state = hlsRecoveryStateRef.current;
@@ -2968,6 +3040,7 @@ function usePlayPageSession() {
   };
 
   const markHlsUserPlay = () => {
+    playbackQualityRef.current.setPaused(false);
     const now = Date.now();
     setInPlayerFailure((failure) =>
       failure?.reason === 'source-unavailable-paused' ? null : failure
@@ -3438,6 +3511,11 @@ function usePlayPageSession() {
     sessionError: string,
     options: { force?: boolean } = {}
   ) => {
+    playbackQualityRef.current.sourceFailed(
+      sessionError === 'source-change-timeout'
+        ? 'source-timeout'
+        : 'network-error'
+    );
     const sourceKey = getCurrentSourceKey();
     if (!sourceKey) {
       return;
@@ -3758,52 +3836,29 @@ function usePlayPageSession() {
     publishPlaybackAttemptEvent(reported, message);
   };
 
-  useEffect(() => {
-    const titleKey = `${videoTitle}::${videoYear}`;
-    const previousTitleKey = attemptedLedgerTitleKeyRef.current;
-    attemptedLedgerTitleKeyRef.current = titleKey;
-
-    if (previousTitleKey === null) {
-      playbackAttemptChannelSkipEmittedRef.current = false;
-      const started = playbackAttemptReporterRef.current.beginAttempt({
-        contentKey: buildWatchProgressContentKey({
-          title: videoTitle,
-          year: videoYear,
-        }),
-        episodeIndex: currentEpisodeIndexRef.current,
-        sourceKey: getSourceIdentityKey(
-          currentSourceRef.current,
-          currentIdRef.current
-        ),
-        runtime: playbackPolicyRef.current?.runtime || null,
-      });
-      publishPlaybackAttemptEvent(started, 'Playback attempt started');
-      return;
-    }
-
-    if (previousTitleKey === titleKey) {
-      return;
-    }
-
-    playbackAttemptChannelSkipEmittedRef.current = false;
-    const { ended, started } = playbackAttemptReporterRef.current.changeTitle({
-      contentKey: buildWatchProgressContentKey({
-        title: videoTitle,
-        year: videoYear,
-      }),
+  const beginPlaybackAttemptForEntry = (title: string, year: string) => {
+    qualityFrameCleanupRef.current?.();
+    const reporter = playbackAttemptReporterRef.current;
+    const dimensions = {
+      contentKey: buildWatchProgressContentKey({ title, year }),
       episodeIndex: currentEpisodeIndexRef.current,
-      sourceKey: getSourceIdentityKey(
-        currentSourceRef.current,
-        currentIdRef.current
-      ),
+      sourceKey: getCurrentSourceKey(),
       runtime: playbackPolicyRef.current?.runtime || null,
-    });
-    publishPlaybackAttemptEvent(
-      ended,
-      'Playback attempt ended on title change'
-    );
-    publishPlaybackAttemptEvent(started, 'Playback attempt started');
-
+    };
+    playbackAttemptChannelSkipEmittedRef.current = false;
+    if (reporter.getSessionId()) {
+      const { ended, started } = reporter.changeTitle(dimensions);
+      publishPlaybackAttemptEvent(
+        ended,
+        'Playback attempt ended on entry change'
+      );
+      publishPlaybackAttemptEvent(started, 'Playback attempt started');
+    } else {
+      publishPlaybackAttemptEvent(
+        reporter.beginAttempt(dimensions),
+        'Playback attempt started'
+      );
+    }
     const nextLedgers = clearAttemptedLedgersOnTitleChange();
     autoRecoveredSourceKeysRef.current = nextLedgers.autoRecoveryAttempted;
     progressiveSourceProbeAttemptedKeysRef.current =
@@ -3813,7 +3868,31 @@ function usePlayPageSession() {
       recoveredSourceKeys: new Set(),
     };
     resetProgressiveSourceProbeStability();
-  }, [videoTitle, videoYear]);
+    const entryAt = performance.now();
+    const navigation = performance.getEntriesByType?.('navigation')[0];
+    const clickedAt =
+      playbackPreparation.consumeLaunchTiming?.(window.location.href) ?? null;
+    // A document navigation clock belongs only to this page's first mount.
+    const documentEntry =
+      navigation &&
+      new URL(navigation.name).pathname === window.location.pathname;
+    const pageStartedAt =
+      pageEntryAtRef.current === null && clickedAt === null && documentEntry
+        ? navigation.startTime
+        : entryAt;
+    pageEntryAtRef.current = entryAt;
+    const sessionId = reporter.getSessionId();
+    if (!sessionId) return;
+    playbackQualityRef.current.start({
+      sessionId,
+      contentKey: dimensions.contentKey,
+      episodeIndex: dimensions.episodeIndex,
+      platform: getPlaybackProbePlatform(),
+      pageStartedAt,
+      clickedAt,
+    });
+    playbackQualityRef.current.setHidden(document.visibilityState === 'hidden');
+  };
 
   const rememberCurrentSourcePlaybackQuality = (input: {
     mode: SourcePlaybackMode | 'unavailable';
@@ -4325,6 +4404,7 @@ function usePlayPageSession() {
         resumeTime: resumeTimeRef.current,
         reason: '播放源起播超时',
         playbackUrl: nextUrl,
+        reusePendingAttempt: true,
       });
       videoUrlRef.current = nextUrl;
       playbackModeRef.current = playbackPolicy.mode;
@@ -4861,6 +4941,7 @@ function usePlayPageSession() {
     videoTitleRef.current = urlTitle;
     videoYearRef.current = urlYear;
     needPreferRef.current = urlNeedPrefer;
+    beginPlaybackAttemptForEntry(urlTitle || urlSearchTitle, urlYear);
 
     const fetchSourceDetail = async (
       source: string,
@@ -5315,6 +5396,9 @@ function usePlayPageSession() {
         return false;
       }
 
+      if (!options.autoRecovery && playbackQualityRef.current.isPending()) {
+        playbackQualityRef.current.startRound('manual-source', targetIndex);
+      }
       setInPlayerFailure(null);
       setSourceSwitchProgress((progress) =>
         options.autoRecovery
@@ -5469,6 +5553,10 @@ function usePlayPageSession() {
     const source = detailRef.current;
     if (!player || !source || !videoUrlRef.current) return;
 
+    playbackQualityRef.current.startRound(
+      'continue',
+      currentEpisodeIndexRef.current
+    );
     const resumeTime =
       resumeTimeRef.current ?? getCurrentVideoSnapshot().currentTime;
     dispatchPlaybackSessionEvent({
@@ -5521,6 +5609,8 @@ function usePlayPageSession() {
   };
 
   const beginEpisodeProgressEpoch = (episodeIndex: number) => {
+    qualityFrameCleanupRef.current?.();
+    playbackQualityRef.current.startRound('episode', episodeIndex, true);
     setInPlayerFailure(null);
     progressMediaEpochRef.current = { episodeIndex, ready: false };
     // A rewind, playhead, last save, or queued resume from the episode being
@@ -6253,7 +6343,14 @@ function usePlayPageSession() {
           sourceSwitchAutoPlayPendingRef.current = false;
           const canplayVideo = player.video as HTMLVideoElement | undefined;
           if (shouldAutoPlayAfterSourceSwitch) {
-            void canplayVideo?.play().catch(() => undefined);
+            void canplayVideo?.play().catch((error: unknown) => {
+              if (
+                error instanceof DOMException &&
+                error.name === 'NotAllowedError'
+              ) {
+                playbackQualityRef.current.autoplayBlocked();
+              }
+            });
           }
 
           // Keep resume-sync pending while duration is unknown so we do not
@@ -6383,6 +6480,35 @@ function usePlayPageSession() {
 
               applyVideoElementPolicy(video);
               video.hls = hls;
+              qualityFrameCleanupRef.current?.();
+              const qualityAttemptId = sourceChangeAttemptIdRef.current;
+              const qualitySessionId =
+                playbackAttemptReporterRef.current.getSessionId();
+              if (playbackQualityRef.current.isPending()) {
+                qualityFrameCleanupRef.current = observePlaybackFirstFrame(
+                  video,
+                  {
+                    isCurrent: () =>
+                      video.hls === hls &&
+                      sourceChangeAttemptIdRef.current === qualityAttemptId &&
+                      playbackAttemptReporterRef.current.getSessionId() ===
+                        qualitySessionId,
+                    isReady: () =>
+                      progressMediaEpochRef.current.ready &&
+                      progressMediaEpochRef.current.episodeIndex ===
+                        currentEpisodeIndexRef.current &&
+                      sourceChangeMediaAttemptRef.current === null &&
+                      resumeTimeRef.current == null,
+                    onFrame: (evidence) =>
+                      playbackQualityRef.current.frame(
+                        qualityAttemptId,
+                        evidence
+                      ),
+                    onPaused: (paused) =>
+                      playbackQualityRef.current.setPaused(paused),
+                  }
+                );
+              }
               hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 const sourceChangeAttempt = sourceChangeMediaAttemptRef.current;
                 const expectedUrl = sourceChangeAttempt?.expectedPlaybackUrl;

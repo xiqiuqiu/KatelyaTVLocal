@@ -11,6 +11,7 @@ import { join } from 'path';
 import type { ReactNode } from 'react';
 
 import { getAllPlayRecords } from '@/lib/db.client';
+import { playbackQualityPayloadSchema } from '@/lib/playback-quality';
 import { reducePlaybackSession } from '@/lib/playback-session';
 import { getSourceSwitchResumePlan } from '@/lib/playback-source-switch';
 import type { SearchResult } from '@/lib/types';
@@ -446,6 +447,59 @@ describe('PlayPage source initialization', () => {
   it('syncs available sources from detail fallback after search misses the current source', async () => {
     render(<PlayPage />);
     await settlePlayPage();
+  });
+
+  it('keeps metadata enrichment in one quality session and mints one attempt per actual source switch', async () => {
+    const originalFetch = global.fetch;
+    const initial = createSource();
+    const alternate = createSource({
+      source: 'alternate',
+      id: '2',
+      source_name: '备用源',
+      episodes: ['https://example.com/alternate.m3u8'],
+    });
+    global.fetch = jest.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (input.toString().startsWith('/api/search')) {
+          return {
+            ok: true,
+            json: async () => ({ results: [initial, alternate] }),
+          } as Response;
+        }
+        return originalFetch(input, init);
+      }
+    );
+    render(<PlayPage />);
+    await screen.findByTestId('episode-selector-sources');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    if (!mockSourceChangeHandler) throw new Error('source handler not created');
+    await act(async () => {
+      await mockSourceChangeHandler?.('alternate', '2', alternate.title);
+      await Promise.resolve();
+    });
+    const records = jest
+      .mocked(global.fetch)
+      .mock.calls.flatMap(([url, init]) =>
+        url === '/api/playback-quality' && typeof init?.body === 'string'
+          ? playbackQualityPayloadSchema.parse(JSON.parse(init.body)).records
+          : []
+      );
+    expect(new Set(records.map((record) => record.sessionId)).size).toBe(1);
+    expect(
+      new Set(
+        records
+          .filter((record) => record.rowKind === 'source')
+          .map((record) => record.attemptId)
+      )
+    ).toEqual(new Set([1, 2]));
+    expect(
+      records.some(
+        (record) =>
+          record.status === 'terminal' && record.outcome === 'frame-ready'
+      )
+    ).toBe(false);
   });
 
   it('ends the preparation transition when the player reaches canplay', async () => {

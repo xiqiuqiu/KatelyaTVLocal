@@ -136,6 +136,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          build-args: PLAYBACK_RELEASE_ID=${{ github.sha }}
           push: true
           tags: |
             ghcr.io/katelya77/katelyatv:${{ github.ref_name }}

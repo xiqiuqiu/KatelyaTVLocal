@@ -1,6 +1,13 @@
 /** @type {import('next').NextConfig} */
 /* eslint-disable @typescript-eslint/no-var-requires */
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_PLAYBACK_RELEASE_ID:
+      process.env.NEXT_PUBLIC_PLAYBACK_RELEASE_ID ||
+      process.env.CF_PAGES_COMMIT_SHA ||
+      process.env.GITHUB_SHA ||
+      'unknown',
+  },
   output: process.env.DOCKER_ENV === 'true' ? 'standalone' : undefined,
   eslint: {
     dirs: ['src'],

@@ -18,6 +18,8 @@ RUN corepack enable && corepack prepare pnpm@10.12.4 --activate
 WORKDIR /app
 
 # 复制依赖
+ARG PLAYBACK_RELEASE_ID=unknown
+ENV NEXT_PUBLIC_PLAYBACK_RELEASE_ID=$PLAYBACK_RELEASE_ID
 COPY --from=deps /app/node_modules ./node_modules
 # 复制全部源代码
 COPY . .

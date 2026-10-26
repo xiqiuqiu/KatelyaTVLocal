@@ -134,6 +134,37 @@ describe('PlaybackPreparationProvider', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
+  it('hands the click timestamp to the matching play entry once, after the visual handoff', () => {
+    const timestamps: Array<number | null> = [];
+    const href = '/play?title=timing';
+    function TimingConsumer() {
+      const api = usePlaybackPreparation();
+      return (
+        <button
+          type='button'
+          onClick={() => timestamps.push(api.consumeLaunchTiming(href))}
+        >
+          读取时间
+        </button>
+      );
+    }
+    render(
+      <PlaybackPreparationProvider>
+        <Harness href={href} />
+        <TimingConsumer />
+      </PlaybackPreparationProvider>
+    );
+    const clickedAt = performance.now();
+    fireEvent.click(screen.getByRole('button', { name: '播放' }));
+    fireEvent.click(screen.getByRole('button', { name: '首帧' }));
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    fireEvent.click(screen.getByRole('button', { name: '读取时间' }));
+    fireEvent.click(screen.getByRole('button', { name: '读取时间' }));
+    expect(timestamps).toEqual([clickedAt, null]);
+  });
+
   it('keeps the preparation copy inside a short viewport', () => {
     Object.defineProperty(window, 'innerWidth', {
       configurable: true,

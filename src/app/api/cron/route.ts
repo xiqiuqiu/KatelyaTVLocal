@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { parsePlayRecordKey } from '@/lib/play-record-key';
+import { cleanupPlaybackQuality } from '@/lib/playback-quality.server';
 import {
   isAuthorizedCronRequest,
   readCronApiToken,
@@ -83,7 +84,10 @@ export async function GET(request: NextRequest) {
     const refreshPromise = refreshRecordAndFavorites();
     const sourceRanking = await tryRunSourceRankingCron(request, rankingEnv);
 
-    await refreshPromise;
+    await Promise.all([
+      refreshPromise,
+      cleanupPlaybackQuality(rankingEnv).catch(() => undefined),
+    ]);
 
     return NextResponse.json({
       success: true,

@@ -27,6 +27,7 @@ type StartPlaybackPreparationInput = Omit<PlaybackPreparationIntent, 'origin'>;
 type PlaybackPreparationApi = {
   active: boolean;
   start: (input: StartPlaybackPreparationInput) => void;
+  consumeLaunchTiming: (href: string) => number | null;
   markFrameReady: () => void;
   markTerminalFailure: () => void;
   cancel: () => void;
@@ -35,6 +36,7 @@ type PlaybackPreparationApi = {
 const inactiveApi: PlaybackPreparationApi = {
   active: false,
   start: () => undefined,
+  consumeLaunchTiming: () => null,
   markFrameReady: () => undefined,
   markTerminalFailure: () => undefined,
   cancel: () => undefined,
@@ -348,6 +350,9 @@ export default function PlaybackPreparationProvider({
     expiresAt: number;
   } | null>(null);
   const finishTimerRef = useRef<number | null>(null);
+  const launchTimingRef = useRef<{ href: string; startedAt: number } | null>(
+    null
+  );
   stateRef.current = state;
 
   const clearFinishTimer = useCallback(() => {
@@ -376,6 +381,10 @@ export default function PlaybackPreparationProvider({
   const start = useCallback(
     (input: StartPlaybackPreparationInput) => {
       clearFinishTimer();
+      launchTimingRef.current = {
+        href: input.href,
+        startedAt: performance.now(),
+      };
       const generation = generationRef.current + 1;
       generationRef.current = generation;
       visitedTargetRef.current = false;
@@ -434,7 +443,16 @@ export default function PlaybackPreparationProvider({
     [finishPreparation]
   );
 
+  const consumeLaunchTiming = useCallback((href: string) => {
+    const timing = launchTimingRef.current;
+    launchTimingRef.current = null;
+    return timing && hrefMatchesTarget(href, timing.href)
+      ? timing.startedAt
+      : null;
+  }, []);
+
   const cancel = useCallback(() => {
+    launchTimingRef.current = null;
     const current = stateRef.current;
     if (!current.intent || current.phase === 'idle') return;
     if (cancellingGenerationRef.current === current.generation) return;
@@ -579,11 +597,12 @@ export default function PlaybackPreparationProvider({
     () => ({
       active: true,
       start,
+      consumeLaunchTiming,
       markFrameReady,
       markTerminalFailure,
       cancel,
     }),
-    [cancel, markFrameReady, markTerminalFailure, start]
+    [cancel, consumeLaunchTiming, markFrameReady, markTerminalFailure, start]
   );
   const showOverlay = Boolean(state.intent) && !overlayDismissed;
 
