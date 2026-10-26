@@ -1,6 +1,7 @@
 import type { AiFindDebugContext } from '@/lib/ai-find/debug';
 import { logAiFindDebug, sanitizeAiFindDebugText } from '@/lib/ai-find/debug';
 import { API_CONFIG, ApiSite, getConfig } from '@/lib/config';
+import { normalizeSourceQuery } from '@/lib/source-query';
 import type { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
 
@@ -20,6 +21,60 @@ interface ApiSearchItem {
 interface SearchFromApiOptions {
   debugContext?: AiFindDebugContext;
   maxSearchPages?: number;
+}
+
+function parsePlayUrlGroups(value?: string | null): string[][] {
+  if (typeof value !== 'string') return [];
+  return value.split('$$$').map((group) =>
+    group
+      .split('#')
+      .map((episode) => {
+        const candidate = episode.slice(episode.indexOf('$') + 1).trim();
+        const url = candidate.replace(/\s+\([^)]*\)\s*$/, '');
+        try {
+          const parsed = new URL(url);
+          return /^https?:$/.test(parsed.protocol) && !/\s/.test(url)
+            ? url
+            : '';
+        } catch {
+          return '';
+        }
+      })
+      .filter(Boolean)
+  );
+}
+
+function selectPlaylistGroup(groups: string[][]): string[] {
+  let selected: string[] = [];
+  let playlistCount = 0;
+  for (const group of groups) {
+    const playlists = group.filter((url) =>
+      /\.m3u8$/i.test(new URL(url).pathname)
+    );
+    if (playlists.length > playlistCount) {
+      selected = group;
+      playlistCount = playlists.length;
+    }
+  }
+  return selected;
+}
+
+function toSearchResult(item: ApiSearchItem, apiSite: ApiSite): SearchResult {
+  return {
+    id: item.vod_id.toString(),
+    title: item.vod_name.trim().replace(/\s+/g, ' '),
+    poster: item.vod_pic,
+    episodes: Array.from(
+      new Set(selectPlaylistGroup(parsePlayUrlGroups(item.vod_play_url)))
+    ),
+    source: apiSite.key,
+    source_name: apiSite.name,
+    class: item.vod_class,
+    year: item.vod_year ? item.vod_year.match(/\d{4}/)?.[0] || '' : 'unknown',
+    desc: cleanHtmlTags(item.vod_content || ''),
+    type_name: item.type_name,
+    douban_id: item.vod_douban_id,
+  };
 }
 
 function normalizeSearchFromApiOptions(
@@ -43,6 +98,8 @@ export async function searchFromApi(
   query: string,
   options?: AiFindDebugContext | SearchFromApiOptions
 ): Promise<SearchResult[]> {
+  query = normalizeSourceQuery(query);
+  if (!query) return [];
   const startedAt = Date.now();
   const { debugContext, maxSearchPages } =
     normalizeSearchFromApiOptions(options);
@@ -111,45 +168,9 @@ export async function searchFromApi(
       return [];
     }
     // 处理第一页结果
-    const results = data.list.map((item: ApiSearchItem) => {
-      let episodes: string[] = [];
-
-      // 使用正则表达式从 vod_play_url 提取 m3u8 链接
-      if (item.vod_play_url) {
-        const m3u8Regex = /\$(https?:\/\/[^"'\s]+?\.m3u8)/g;
-        // 先用 $$$ 分割
-        const vod_play_url_array = item.vod_play_url.split('$$$');
-        // 对每个分片做匹配，取匹配到最多的作为结果
-        vod_play_url_array.forEach((url: string) => {
-          const matches = url.match(m3u8Regex) || [];
-          if (matches.length > episodes.length) {
-            episodes = matches;
-          }
-        });
-      }
-
-      episodes = Array.from(new Set(episodes)).map((link: string) => {
-        link = link.substring(1); // 去掉开头的 $
-        const parenIndex = link.indexOf('(');
-        return parenIndex > 0 ? link.substring(0, parenIndex) : link;
-      });
-
-      return {
-        id: item.vod_id.toString(),
-        title: item.vod_name.trim().replace(/\s+/g, ' '),
-        poster: item.vod_pic,
-        episodes,
-        source: apiSite.key,
-        source_name: apiName,
-        class: item.vod_class,
-        year: item.vod_year
-          ? item.vod_year.match(/\d{4}/)?.[0] || ''
-          : 'unknown',
-        desc: cleanHtmlTags(item.vod_content || ''),
-        type_name: item.type_name,
-        douban_id: item.vod_douban_id,
-      };
-    });
+    const results = data.list.map((item: ApiSearchItem) =>
+      toSearchResult(item, apiSite)
+    );
 
     const MAX_SEARCH_PAGES: number =
       maxSearchPages ?? (await getConfig()).SiteConfig.SearchDownstreamMaxPage;
@@ -218,37 +239,9 @@ export async function searchFromApi(
               return [];
             }
 
-            return pageData.list.map((item: ApiSearchItem) => {
-              let episodes: string[] = [];
-
-              // 使用正则表达式从 vod_play_url 提取 m3u8 链接
-              if (item.vod_play_url) {
-                const m3u8Regex = /\$(https?:\/\/[^"'\s]+?\.m3u8)/g;
-                episodes = item.vod_play_url.match(m3u8Regex) || [];
-              }
-
-              episodes = Array.from(new Set(episodes)).map((link: string) => {
-                link = link.substring(1); // 去掉开头的 $
-                const parenIndex = link.indexOf('(');
-                return parenIndex > 0 ? link.substring(0, parenIndex) : link;
-              });
-
-              return {
-                id: item.vod_id.toString(),
-                title: item.vod_name.trim().replace(/\s+/g, ' '),
-                poster: item.vod_pic,
-                episodes,
-                source: apiSite.key,
-                source_name: apiName,
-                class: item.vod_class,
-                year: item.vod_year
-                  ? item.vod_year.match(/\d{4}/)?.[0] || ''
-                  : 'unknown',
-                desc: cleanHtmlTags(item.vod_content || ''),
-                type_name: item.type_name,
-                douban_id: item.vod_douban_id,
-              };
-            });
+            return pageData.list.map((item: ApiSearchItem) =>
+              toSearchResult(item, apiSite)
+            );
           } catch (error) {
             logAiFindDebug({
               context: debugContext,
@@ -317,7 +310,7 @@ export async function searchFromApi(
 }
 
 // 匹配 m3u8 链接的正则
-const M3U8_PATTERN = /(https?:\/\/[^"'\s]+?\.m3u8)/g;
+const M3U8_PATTERN = /(https?:\/\/[^"'\s#$<>]+?\.m3u8(?:\?[^"'\s#$<>]*)?)/g;
 
 export async function getDetailFromApi(
   apiSite: ApiSite,
@@ -355,25 +348,9 @@ export async function getDetailFromApi(
   }
 
   const videoDetail = data.list[0];
-  let episodes: string[] = [];
-
-  // 处理播放源拆分
-  if (videoDetail.vod_play_url) {
-    const playSources = videoDetail.vod_play_url.split('$$$');
-    if (playSources.length > 0) {
-      const mainSource = playSources[0];
-      const episodeList = mainSource.split('#');
-      episodes = episodeList
-        .map((ep: string) => {
-          const parts = ep.split('$');
-          return parts.length > 1 ? parts[1] : '';
-        })
-        .filter(
-          (url: string) =>
-            url && (url.startsWith('http://') || url.startsWith('https://'))
-        );
-    }
-  }
+  const groups = parsePlayUrlGroups(videoDetail.vod_play_url);
+  const playlists = selectPlaylistGroup(groups);
+  let episodes = playlists.length > 0 ? playlists : groups[0] || [];
 
   // 如果播放源为空，则尝试从内容中解析 m3u8
   if (episodes.length === 0 && videoDetail.vod_content) {
@@ -423,20 +400,17 @@ async function handleSpecialSourceDetail(
 
   if (apiSite.key === 'ffzy') {
     const ffzyPattern =
-      /\$(https?:\/\/[^"'\s]+?\/\d{8}\/\d+_[a-f0-9]+\/index\.m3u8)/g;
+      /\$(https?:\/\/[^"'\s#$<>]+?\/\d{8}\/\d+_[a-f0-9]+\/index\.m3u8(?:\?[^"'\s#$<>]*)?)/g;
     matches = html.match(ffzyPattern) || [];
   }
 
   if (matches.length === 0) {
-    const generalPattern = /\$(https?:\/\/[^"'\s]+?\.m3u8)/g;
-    matches = html.match(generalPattern) || [];
+    matches = html.match(M3U8_PATTERN) || [];
   }
 
   // 去重并清理链接前缀
   matches = Array.from(new Set(matches)).map((link: string) => {
-    link = link.substring(1); // 去掉开头的 $
-    const parenIndex = link.indexOf('(');
-    return parenIndex > 0 ? link.substring(0, parenIndex) : link;
+    return link.replace(/^\$/, '');
   });
 
   // 提取标题

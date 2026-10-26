@@ -385,7 +385,7 @@ function createSource(overrides: Partial<SearchResult> = {}): SearchResult {
 async function settlePlayPage() {
   await waitFor(() => {
     expect(global.fetch).toHaveBeenCalledWith(
-      '/api/detail?source=detail-source&id=detail-id',
+      '/api/detail?source=detail-source&id=detail-id&v=2',
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
   });
@@ -528,6 +528,70 @@ describe('PlayPage source initialization', () => {
       window.localStorage.clear();
       window.sessionStorage.clear();
     });
+
+    it.each(['card', 'specified'] as const)(
+      'loads the complete same-title source list from the %s entry using fresh normalized search data',
+      async (entry) => {
+        const sources = Array.from({ length: 30 }, (_, index) =>
+          createSource({
+            source: index === 0 ? 'jisu' : `source-${index}`,
+            id: index === 0 ? '151407' : String(index),
+            source_name: `线路${index}`,
+            title: '思想验证区域第二季',
+            year: '2026',
+            episodes: [
+              'https://video.example/one.m3u8',
+              'https://video.example/two.m3u8',
+            ],
+          })
+        );
+        mockSearchParams = new URLSearchParams({
+          title:
+            entry === 'card' ? '思想验证区域 第二季' : '思想验证区域第二季',
+          year: '2026',
+        });
+        if (entry === 'specified') {
+          mockSearchParams.set('source', 'jisu');
+          mockSearchParams.set('id', '151407');
+          mockSearchParams.set('stype', 'tv');
+        }
+        window.history.replaceState(
+          {},
+          '',
+          '/play?' + mockSearchParams.toString()
+        );
+        const original = global.fetch;
+        global.fetch = jest.fn(
+          (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            if (url.startsWith('/api/search?'))
+              return Promise.resolve(
+                response({
+                  results: new URL(url, 'https://app.example').searchParams
+                    .get('q')
+                    ?.includes(' ')
+                    ? sources.slice(0, 3)
+                    : sources,
+                })
+              );
+            if (url.startsWith('/api/detail?'))
+              return Promise.resolve(response(sources[0]));
+            return original(input, init);
+          }
+        );
+        render(<PlayPage />);
+        expect(
+          await screen.findByTestId('episode-selector-sources')
+        ).toHaveTextContent('线路29');
+        expect(media()?.loadSource).toHaveBeenCalledWith(
+          'https://video.example/one.m3u8'
+        );
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/search?q=' + encodeURIComponent('思想验证区域第二季') + '&v=2',
+          expect.objectContaining({ signal: expect.any(AbortSignal) })
+        );
+      }
+    );
 
     describe('30 second startup choices', () => {
       const emitNative = (event: string) => {
@@ -2607,7 +2671,7 @@ describe('PlayPage automatic source-switch resume', () => {
     render(<PlayPage />);
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/search?q=%E6%B5%8B%E8%AF%95',
+        '/api/search?q=%E6%B5%8B%E8%AF%95&v=2',
         expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });
@@ -2948,7 +3012,7 @@ describe('PlayPage automatic source-switch resume', () => {
     render(<PlayPage />);
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/search?q=%E6%B5%8B%E8%AF%95',
+        '/api/search?q=%E6%B5%8B%E8%AF%95&v=2',
         expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });
@@ -3027,7 +3091,7 @@ describe('PlayPage automatic source-switch resume', () => {
     render(<PlayPage />);
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/search?q=%E6%B5%8B%E8%AF%95',
+        '/api/search?q=%E6%B5%8B%E8%AF%95&v=2',
         expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });
@@ -3104,7 +3168,7 @@ describe('PlayPage automatic source-switch resume', () => {
     render(<PlayPage />);
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/search?q=%E6%B5%8B%E8%AF%95',
+        '/api/search?q=%E6%B5%8B%E8%AF%95&v=2',
         expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });
@@ -3252,7 +3316,7 @@ describe('PlayPage preparation transition completion', () => {
     render(<PlayPage />);
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
-        '/api/search?q=%E6%B5%8B%E8%AF%95',
+        '/api/search?q=%E6%B5%8B%E8%AF%95&v=2',
         expect.objectContaining({ signal: expect.any(AbortSignal) })
       );
     });

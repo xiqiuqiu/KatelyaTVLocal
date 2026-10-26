@@ -8,6 +8,7 @@ import {
 } from '@/lib/config';
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
 import { searchFromApi } from '@/lib/downstream';
+import { normalizeSourceQuery } from '@/lib/source-query';
 
 export const runtime = 'edge';
 
@@ -56,7 +57,9 @@ export async function GET(request: Request) {
     }
 
     const results = await searchFromApi(targetSite, query, { maxSearchPages });
-    const result = results.filter((r) => r.title === query);
+    const result = results.filter(
+      (r) => normalizeSourceQuery(r.title) === normalizeSourceQuery(query)
+    );
 
     if (result.length === 0) {
       const response = NextResponse.json(

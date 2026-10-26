@@ -30,6 +30,7 @@ import {
   sortSearchResultGroupsByRanking,
   sortSearchResultsByRanking,
 } from '@/lib/search-result-ranking';
+import { buildSourceSearchUrl } from '@/lib/source-query';
 import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 import { SearchResult } from '@/lib/types';
 import { pageMeta, pageSectionLabels } from '@/lib/ui/page-meta';
@@ -661,10 +662,9 @@ function SearchPageClient() {
         setIsLoading(true);
         setSearchError('');
         if (!tvMode) setResultCategory('all');
-        const response = await fetch(
-          `/api/search?q=${encodeURIComponent(query.trim())}`,
-          { signal: controller.signal }
-        );
+        const response = await fetch(buildSourceSearchUrl(query), {
+          signal: controller.signal,
+        });
         if (!response.ok) {
           throw new Error(`搜索失败 (${response.status})`);
         }

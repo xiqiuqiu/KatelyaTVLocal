@@ -145,6 +145,7 @@ import {
 } from '@/lib/source-availability/index';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
 import { buildVideoInfoFromPreferenceResult } from '@/lib/source-preference-video-info';
+import { buildSourceSearchUrl, SOURCE_DATA_VERSION } from '@/lib/source-query';
 import {
   buildSourceSelectionScores,
   SourceSelectionScore,
@@ -5383,7 +5384,7 @@ function usePlayPageSession() {
       ): Promise<SearchResult[]> => {
         try {
           const detailResponse = await fetch(
-            `/api/detail?source=${source}&id=${id}`,
+            `/api/detail?source=${source}&id=${id}&v=${SOURCE_DATA_VERSION}`,
             { signal: controller.signal }
           );
           if (!detailResponse.ok) {
@@ -5409,10 +5410,9 @@ function usePlayPageSession() {
         // 根据搜索词获取全部源信息
         try {
           setSourceSearchLoading(true);
-          const response = await fetch(
-            `/api/search?q=${encodeURIComponent(query.trim())}`,
-            { signal: controller.signal }
-          );
+          const response = await fetch(buildSourceSearchUrl(query), {
+            signal: controller.signal,
+          });
           if (!response.ok) {
             throw new Error('搜索失败');
           }
@@ -5421,8 +5421,8 @@ function usePlayPageSession() {
           // 处理搜索结果，根据规则过滤
           const results = data.results.filter(
             (result: SearchResult) =>
-              result.title.replaceAll(' ', '').toLowerCase() ===
-                urlTitle.replaceAll(' ', '').toLowerCase() &&
+              result.title.replace(/\s/g, '').toLowerCase() ===
+                urlTitle.replace(/\s/g, '').toLowerCase() &&
               (urlYear
                 ? result.year.toLowerCase() === urlYear.toLowerCase()
                 : true) &&
