@@ -593,6 +593,62 @@ describe('PlayPage source initialization', () => {
       expect(mockArtPlayerInstance?.currentTime).toBe(110);
     });
 
+    it.each([
+      { first: 'search', fromHistory: true },
+      { first: 'detail', fromHistory: true },
+      { first: 'search', fromHistory: false },
+      { first: 'detail', fromHistory: false },
+    ])(
+      'waits for the other response when $first is missing the resumed episode (history entry: $fromHistory)',
+      async ({ first, fromHistory }) => {
+        if (fromHistory) mockSearchParams.set('from', 'playrecord');
+        mockedGetAllPlayRecords.mockResolvedValue({
+          'detail-source+detail-id': {
+            title: '详情影片',
+            year: '2026',
+            source_name: '详情源',
+            cover: '',
+            index: 2,
+            total_episodes: 2,
+            play_time: 96,
+            total_time: 240,
+            save_time: Date.now(),
+            search_title: '详情影片',
+          },
+        });
+        const incomplete = createSource({
+          episodes: [requested().episodes[0]],
+        });
+        const pending = deferred<Response>();
+        requests(
+          first === 'search'
+            ? Promise.resolve(response({ results: [incomplete] }))
+            : pending.promise,
+          first === 'detail'
+            ? Promise.resolve(response(incomplete))
+            : pending.promise
+        );
+        render(<PlayPage />);
+        await act(async () => {
+          for (let i = 0; i < 12; i += 1) await Promise.resolve();
+        });
+        expect(media()).toBeUndefined();
+        await act(async () => {
+          pending.resolve(
+            response(
+              first === 'search' ? requested() : { results: [requested()] }
+            )
+          );
+        });
+        expect(media()?.loadSource).toHaveBeenCalledWith(
+          requested().episodes[1]
+        );
+        expect(
+          screen.queryByRole('heading', { name: '历史播放源已失效' })
+        ).toBeNull();
+      }
+    );
+
     it.each(['missing-episode', 'remembered-unavailable'])(
       'waits for same-episode history fallback for %s',
       async (reason) => {
@@ -866,6 +922,31 @@ describe('PlayPage source initialization', () => {
         search.resolve(response({ results: [requested(), alternate()] }));
       });
       expect(media()?.loadSource).toHaveBeenCalledWith(requested().episodes[0]);
+    });
+
+    it('reports the missing episode for an expired history id instead of starting an earlier episode', async () => {
+      mockSearchParams.set('from', 'playrecord');
+      mockedGetAllPlayRecords.mockResolvedValue({
+        'detail-source+detail-id': {
+          title: '详情影片',
+          year: '2026',
+          source_name: '详情源',
+          cover: '',
+          index: 3,
+          total_episodes: 3,
+          play_time: 96,
+          total_time: 240,
+          save_time: Date.now(),
+          search_title: '详情影片',
+        },
+      });
+      requests(
+        Promise.resolve(response({ results: [alternate()] })),
+        Promise.resolve(response({}, false))
+      );
+      render(<PlayPage />);
+      await screen.findByText('当前线路及候选暂未提供第 3 集');
+      expect(media()).toBeUndefined();
     });
 
     it('does not silently choose another source for an invalid non-history direct entry', async () => {

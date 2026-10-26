@@ -199,7 +199,7 @@ describe('resolvePlaybackHistoryRecovery', () => {
     expect(result.error).toBe('未找到匹配结果');
   });
 
-  it('resets to the first episode when the replacement source has fewer episodes', () => {
+  it('reports missing episodes instead of clamping an expired history route to episode one', () => {
     const replacement = createSource({
       source: 'new-source',
       id: 'new-id',
@@ -215,10 +215,10 @@ describe('resolvePlaybackHistoryRecovery', () => {
       historyRecord: createRecord({ index: 4, play_time: 240 }),
     });
 
-    expect(result.detail).toBe(replacement);
-    expect(result.fellBackFromHistory).toBe(true);
-    expect(result.resumeEpisodeIndex).toBe(0);
+    expect(result.detail).toBeNull();
+    expect(result.resumeEpisodeIndex).toBeNull();
     expect(result.resumeTime).toBeNull();
+    expect(result.error).toContain('第 4 集');
   });
 
   it('restores episode from the play record when the URL omits episode', () => {

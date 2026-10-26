@@ -183,7 +183,7 @@ export function resolvePlaybackHistoryRecovery({
     if (alternate) {
       detail = alternate.source;
       fellBackFromHistory = true;
-    } else if (missingRequestedEpisode && (searchMatch || detailMatch)) {
+    } else if (missingRequestedEpisode) {
       return {
         detail: null,
         sources,

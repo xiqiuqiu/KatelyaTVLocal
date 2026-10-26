@@ -5085,30 +5085,14 @@ function usePlayPageSession() {
         let historyRecord: PlaybackHistoryRecord | null = null;
 
         if (directEntry) {
-          const detailPromise = fetchSourceDetail(urlSource, urlId);
-          const firstRequested = (results: SearchResult[]) => {
-            const target = results.find(
-              (source) =>
-                source.source === urlSource &&
-                source.id === urlId &&
-                source.episodes?.some(Boolean)
-            );
-            if (!target) throw new Error('指定线路尚未获取到有效详情');
-            return target;
-          };
-          const [target, record] = await Promise.all([
-            Promise.any([
-              detailPromise.then(firstRequested),
-              searchPromise.then(firstRequested),
-            ]).catch(() => null),
-            fetchPlaybackHistory(),
-          ]);
-          historyRecord = record;
+          const detailPromise = fetchSourceDetail(urlSource, urlId).then(
+            (results) => {
+              detailResults = results;
+              return results;
+            }
+          );
+          historyRecord = await fetchPlaybackHistory();
           if (cancelled) return;
-          if (target) {
-            // Keep the winning detail even when search finishes during history lookup.
-            detailResults = [target];
-          }
           const episodeParam = searchParams.get('episode');
           const requestedEpisode = Math.max(
             0,
@@ -5116,6 +5100,26 @@ function usePlayPageSession() {
               ? Number.parseInt(episodeParam, 10) - 1
               : (historyRecord?.index ?? 1) - 1
           );
+          const firstRequested = (results: SearchResult[]) => {
+            const target = results.find(
+              (source) =>
+                source.source === urlSource &&
+                source.id === urlId &&
+                source.episodes?.some(Boolean) &&
+                (!(urlFromPlayRecord || historyRecord || episodeParam) ||
+                  source.episodes[requestedEpisode])
+            );
+            if (!target) throw new Error('指定线路尚未获取到有效详情');
+            return target;
+          };
+          const target = await Promise.any([
+            detailPromise.then(firstRequested),
+            searchPromise.then(firstRequested),
+          ]).catch(() => null);
+          if (cancelled) return;
+          if (target) {
+            detailResults = [target];
+          }
           if (
             !target ||
             (urlFromPlayRecord &&
