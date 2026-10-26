@@ -141,6 +141,15 @@ export function createPlaybackQualityReporter(
     tick();
     finishSample(source, 'cancelled');
     finishSample(round, 'user-intervened');
+    if (
+      !newRoot &&
+      round?.record.outcome === 'budget-exhausted' &&
+      round.record.promptChoice &&
+      round.record.nextRoundId == null
+    ) {
+      round.record.nextRoundId = roundId + 1;
+      publish(round);
+    }
     roundId += 1;
     if (roundId === 1 || newRoot) {
       rootRoundId = roundId;
@@ -182,7 +191,7 @@ export function createPlaybackQualityReporter(
         roundReason: reason,
         sourceReason: null,
         releaseId: process.env.NEXT_PUBLIC_PLAYBACK_RELEASE_ID || 'unknown',
-        policyVersion: 'startup-direct-first-v1',
+        policyVersion: 'startup-budget-v1',
         elapsedMs: 0,
         activeWaitMs: 0,
         clickToFrameMs: null,
@@ -253,6 +262,21 @@ export function createPlaybackQualityReporter(
       };
       publish(source);
     },
+    budgetExhausted() {
+      tick();
+      finishSample(source, 'cancelled', false);
+      finishSample(round, 'budget-exhausted', false);
+      void flush();
+    },
+    choose(choice: 'continue' | 'manual' | 'leave') {
+      if (
+        round?.record.outcome !== 'budget-exhausted' ||
+        round.record.promptChoice
+      )
+        return;
+      round.record.promptChoice = choice;
+      publish(round, choice === 'leave');
+    },
     sourceFailed(
       outcome: 'source-timeout' | 'network-error' | 'media-error' | 'failed'
     ) {
@@ -266,13 +290,15 @@ export function createPlaybackQualityReporter(
         blocked ||
         !input ||
         round?.record.status !== 'pending' ||
-        source?.record.status !== 'pending' ||
+        !source ||
         source.record.attemptId !== attemptId
       )
         return;
       tick();
       const time = now();
       for (const sample of [round, source]) {
+        // A timed-out source may recover before replacement; keep its failure immutable.
+        if (sample.record.status !== 'pending') continue;
         sample.record.sourceKey = source.record.sourceKey;
         sample.record.frameEvidence = evidence;
         sample.record.clickToFrameMs =

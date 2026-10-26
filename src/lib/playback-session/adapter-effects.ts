@@ -36,6 +36,12 @@ export function applySameSourceRecoverAction(
 }
 
 export interface PlaybackSessionEffectSink {
+  onStartupBudgetExhausted?: (
+    effect: Extract<PlaybackSessionEffect, { type: 'startupBudgetExhausted' }>
+  ) => void;
+  onStartupSourceTimeout?: (
+    effect: Extract<PlaybackSessionEffect, { type: 'startupSourceTimeout' }>
+  ) => void;
   onSwitchSource: (
     effect: Extract<PlaybackSessionEffect, { type: 'switchSource' }>
   ) => void;
@@ -78,6 +84,12 @@ export function executePlaybackSessionEffects(
 ): void {
   for (const effect of effects) {
     switch (effect.type) {
+      case 'startupBudgetExhausted':
+        sink.onStartupBudgetExhausted?.(effect);
+        break;
+      case 'startupSourceTimeout':
+        sink.onStartupSourceTimeout?.(effect);
+        break;
       case 'switchSource':
         sink.onSwitchSource(effect);
         break;

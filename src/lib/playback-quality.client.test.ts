@@ -52,6 +52,153 @@ function fixture() {
 }
 
 describe('startup quality observations', () => {
+  it('keeps budget interruption and its choice immutable when the next round succeeds', async () => {
+    const f = fixture();
+    f.start();
+    f.source();
+    f.at(30_000);
+    f.reporter.budgetExhausted();
+    f.reporter.frame(1, 'rvfc');
+    f.reporter.choose('continue');
+    f.reporter.choose('leave');
+    f.at(60_000);
+    f.reporter.startRound('continue', 0);
+    f.source(2);
+    f.at(60_500);
+    f.reporter.frame(2, 'rvfc');
+    await settle();
+    expect(f.sent).toContainEqual(
+      expect.objectContaining({
+        rowKind: 'source',
+        roundId: 1,
+        outcome: 'cancelled',
+        activeWaitMs: 30_000,
+      })
+    );
+    expect(f.sent).toContainEqual(
+      expect.objectContaining({
+        rowKind: 'round',
+        roundId: 1,
+        rootRoundId: 1,
+        outcome: 'budget-exhausted',
+        promptChoice: 'continue',
+        nextRoundId: 2,
+        activeWaitMs: 30_000,
+      })
+    );
+    expect(f.sent).toContainEqual(
+      expect.objectContaining({
+        rowKind: 'round',
+        roundId: 2,
+        rootRoundId: 1,
+        outcome: 'frame-ready',
+        activeWaitMs: 500,
+        pageToFrameMs: 60_500,
+      })
+    );
+    expect(
+      f.sent.some((r) => r.roundId === 1 && r.outcome === 'frame-ready')
+    ).toBe(false);
+  });
+
+  it('opens manual selection without starting a round, then links the selected round', async () => {
+    const f = fixture();
+    f.start();
+    f.at(30_000);
+    f.reporter.budgetExhausted();
+    f.reporter.choose('manual');
+    await settle();
+    expect(f.reporter.isPending()).toBe(false);
+    expect(f.sent.at(-1)).toMatchObject({
+      promptChoice: 'manual',
+      nextRoundId: null,
+    });
+    f.at(90_000);
+    f.reporter.startRound('manual-source', 0);
+    await settle();
+    expect(f.sent).toContainEqual(
+      expect.objectContaining({
+        rowKind: 'round',
+        roundId: 1,
+        outcome: 'budget-exhausted',
+        promptChoice: 'manual',
+        nextRoundId: 2,
+      })
+    );
+    expect(f.sent).toContainEqual(
+      expect.objectContaining({
+        rowKind: 'round',
+        roundId: 2,
+        rootRoundId: 1,
+        roundReason: 'manual-source',
+        activeWaitMs: 0,
+      })
+    );
+  });
+
+  it('records return once without inventing a new round', async () => {
+    const f = fixture();
+    f.start();
+    f.at(30_000);
+    f.reporter.budgetExhausted();
+    f.reporter.choose('leave');
+    f.reporter.choose('continue');
+    f.reporter.finish('abandoned');
+    await settle();
+    expect(f.sent.at(-1)).toMatchObject({
+      outcome: 'budget-exhausted',
+      promptChoice: 'leave',
+      nextRoundId: null,
+    });
+    expect(f.fetcher.mock.calls.some(([, init]) => init.keepalive)).toBe(true);
+  });
+
+  it('does not link a new episode to the previous budget choice', async () => {
+    const f = fixture();
+    f.start();
+    f.at(30_000);
+    f.reporter.budgetExhausted();
+    f.reporter.choose('manual');
+    await settle();
+    f.reporter.startRound('episode', 1, true);
+    await settle();
+    expect(f.sent.filter((r) => r.roundId === 1).at(-1)).toMatchObject({
+      outcome: 'budget-exhausted',
+      promptChoice: 'manual',
+      nextRoundId: null,
+    });
+    expect(f.sent.at(-1)).toMatchObject({
+      roundId: 2,
+      rootRoundId: 2,
+      episodeIndex: 1,
+    });
+  });
+
+  it('accepts a current source recovering before replacement without rewriting its timeout', async () => {
+    const f = fixture();
+    f.start();
+    f.source();
+    f.at(10_000);
+    f.reporter.sourceFailed('source-timeout');
+    f.at(12_000);
+    f.reporter.frame(1, 'rvfc');
+    await settle();
+    expect(f.reporter.isPending()).toBe(false);
+    expect(f.sent).toContainEqual(
+      expect.objectContaining({
+        rowKind: 'round',
+        outcome: 'frame-ready',
+        activeWaitMs: 12_000,
+      })
+    );
+    expect(f.sent).toContainEqual(
+      expect.objectContaining({ rowKind: 'source', outcome: 'source-timeout' })
+    );
+    expect(
+      f.sent.some((r) => r.rowKind === 'source' && r.outcome === 'frame-ready')
+    ).toBe(false);
+  });
+
   it('consumes the document navigation origin once across SPA play-page remounts', () => {
     const navigation = {
       name: 'https://app.example/play?source=one',

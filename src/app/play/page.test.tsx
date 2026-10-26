@@ -529,6 +529,443 @@ describe('PlayPage source initialization', () => {
       window.sessionStorage.clear();
     });
 
+    describe('30 second startup choices', () => {
+      const emitNative = (event: string) => {
+        mockArtPlayerInstance?.video.addEventListener?.mock.calls
+          .filter(([name]) => name === event)
+          .forEach(([, listener]) => listener());
+      };
+      async function readyWithoutFrame() {
+        const startedAt = performance.now();
+        requests(
+          Promise.resolve(response({ results: [requested(), alternate()] })),
+          Promise.resolve(response(requested()))
+        );
+        render(<PlayPage />);
+        await screen.findByTestId('episode-selector-sources');
+        act(() => {
+          mockManifestParsedHandlers.at(-1)?.();
+          mockArtPlayerEventHandlers.get('video:canplay')?.();
+        });
+        return startedAt;
+      }
+      const expire = async (ms = 30_000) => {
+        await act(async () => {
+          jest.advanceTimersByTime(ms);
+          await Promise.resolve();
+        });
+      };
+
+      it('offers all three actions before a player exists, aborts requests and ignores late results', async () => {
+        const search = deferred<Response>();
+        const detail = deferred<Response>();
+        requests(search.promise, detail.promise);
+        render(<PlayPage />);
+        await expire(29_999);
+        expect(screen.queryByRole('button', { name: '继续尝试' })).toBeNull();
+        await expire(1);
+        expect(
+          screen.getByText('这次连接已等待 30 秒，暂未开始播放。')
+        ).toBeVisible();
+        for (const name of ['继续尝试', '手动换线', '返回'])
+          expect(screen.getByRole('button', { name })).toBeEnabled();
+        const startupRequests = jest
+          .mocked(global.fetch)
+          .mock.calls.filter(([url]) =>
+            /api\/(search|detail)/.test(String(url))
+          );
+        expect(startupRequests).toHaveLength(2);
+        expect(startupRequests.every(([, init]) => init?.signal?.aborted)).toBe(
+          true
+        );
+        await act(async () => {
+          detail.resolve(response(requested()));
+          search.resolve(response({ results: [requested(), alternate()] }));
+        });
+        expect(media()).toBeUndefined();
+        expect(screen.getByRole('button', { name: '继续尝试' })).toBeVisible();
+        expect(
+          qualityRecords().some(
+            (r) => r.rowKind === 'round' && r.outcome === 'budget-exhausted'
+          )
+        ).toBe(true);
+      });
+
+      it('continues initialization in the same quality chain and grants one new 30 second round', async () => {
+        const search = deferred<Response>();
+        const detail = deferred<Response>();
+        const original = global.fetch;
+        let details = 0;
+        let searches = 0;
+        global.fetch = jest.fn(
+          (input: RequestInfo | URL, init?: RequestInit) => {
+            if (String(input).startsWith('/api/search'))
+              return ++searches === 1
+                ? search.promise
+                : Promise.resolve(response({ results: [requested()] }));
+            if (String(input).startsWith('/api/detail'))
+              return ++details === 1
+                ? detail.promise
+                : Promise.resolve(response(requested()));
+            return original(input, init);
+          }
+        );
+        render(<PlayPage />);
+        await expire();
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: '继续尝试' }));
+        });
+        expect(media()?.loadSource).toHaveBeenCalledWith(
+          requested().episodes[0]
+        );
+        const rounds = qualityRecords().filter((r) => r.rowKind === 'round');
+        expect(new Set(rounds.map((r) => r.sessionId)).size).toBe(1);
+        expect(
+          rounds.some(
+            (r) =>
+              r.roundId === 1 &&
+              r.outcome === 'budget-exhausted' &&
+              r.promptChoice === 'continue' &&
+              r.nextRoundId === 2
+          )
+        ).toBe(true);
+        expect(
+          rounds.some(
+            (r) =>
+              r.roundId === 2 &&
+              r.rootRoundId === 1 &&
+              r.roundReason === 'continue'
+          )
+        ).toBe(true);
+      });
+
+      it('retrieves an empty manual source list without autoplay and only plays after selection', async () => {
+        const pending = deferred<Response>();
+        const original = global.fetch;
+        let searches = 0;
+        global.fetch = jest.fn(
+          (input: RequestInfo | URL, init?: RequestInit) => {
+            if (String(input).startsWith('/api/search'))
+              return ++searches === 1
+                ? pending.promise
+                : Promise.resolve(response({ results: [alternate()] }));
+            if (String(input).startsWith('/api/detail')) return pending.promise;
+            return original(input, init);
+          }
+        );
+        render(<PlayPage />);
+        await expire();
+        fireEvent.click(screen.getByRole('button', { name: '手动换线' }));
+        expect(
+          screen.getByText('暂未获取到线路，可重新获取线路或返回搜索。')
+        ).toBeVisible();
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: '重新获取线路' }));
+        });
+        expect(
+          screen.getByTestId('episode-selector-sources')
+        ).toHaveTextContent('备用源');
+        expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+          'data-source',
+          ''
+        );
+        expect(media()).toBeUndefined();
+        await act(async () => {
+          await mockSourceChangeHandler?.('alternate', '2', '详情影片');
+        });
+        expect(media()?.loadSource).toHaveBeenCalledWith(
+          alternate().episodes[0]
+        );
+      });
+
+      it('stops the current media at 30 seconds after canplay without a frame and resumes only on continue', async () => {
+        await readyWithoutFrame();
+        const video = mockArtPlayerInstance?.video;
+        const oldHls = media();
+        const oldManifest = mockManifestParsedHandlers.at(-1);
+        const oldPlayerError = mockArtPlayerEventHandlers.get('error');
+        await expire();
+        expect(screen.getByRole('button', { name: '继续尝试' })).toBeVisible();
+        expect(video?.pause).toHaveBeenCalled();
+        const attempts = mockManifestParsedHandlers.length;
+        const rememberedBefore = JSON.stringify(window.localStorage);
+        const requestsBefore = jest.mocked(global.fetch).mock.calls.length;
+        await act(async () => {
+          oldManifest?.();
+          mockArtPlayerEventHandlers.get('video:canplay')?.();
+          emitNative('playing');
+          emitNative('timeupdate');
+          oldPlayerError?.();
+        });
+        expect(JSON.stringify(window.localStorage)).toBe(rememberedBefore);
+        expect(
+          jest
+            .mocked(global.fetch)
+            .mock.calls.slice(requestsBefore)
+            .some(
+              ([url, init]) =>
+                String(url).startsWith('/api/source-feedback') &&
+                JSON.parse(String(init?.body)).startupSuccess === false
+            )
+        ).toBe(false);
+        expect(screen.getByRole('button', { name: '继续尝试' })).toBeVisible();
+        expect(mockManifestParsedHandlers).toHaveLength(attempts);
+        expect(
+          qualityRecords().some(
+            (r) => r.rowKind === 'source' && r.outcome === 'cancelled'
+          )
+        ).toBe(true);
+        expect(
+          qualityRecords().some((r) => r.outcome === 'source-timeout')
+        ).toBe(false);
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: '继续尝试' }));
+        });
+        expect(media()).not.toBe(oldHls);
+        expect(mockManifestParsedHandlers).toHaveLength(attempts + 1);
+      });
+
+      it('recreates the player on continue if its host was lost before the first frame', async () => {
+        await readyWithoutFrame();
+        const oldPlayer = mockArtPlayerInstance;
+        await expire();
+        oldPlayer?.template.$player.remove();
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: '继续尝试' }));
+        });
+        expect(mockArtPlayerInstance).not.toBe(oldPlayer);
+        expect(media()?.loadSource).toHaveBeenCalledWith(
+          requested().episodes[0]
+        );
+        act(() => {
+          mockManifestParsedHandlers.at(-1)?.();
+          mockArtPlayerEventHandlers.get('video:canplay')?.();
+          emitNative('playing');
+          if (mockArtPlayerInstance)
+            mockArtPlayerInstance.video.currentTime = 1;
+          emitNative('timeupdate');
+        });
+        await expire(31_000);
+        expect(screen.queryByRole('button', { name: '继续尝试' })).toBeNull();
+        expect(qualityRecords()).toContainEqual(
+          expect.objectContaining({
+            rowKind: 'round',
+            roundId: 2,
+            rootRoundId: 1,
+            outcome: 'frame-ready',
+          })
+        );
+        expect(qualityRecords()).toContainEqual(
+          expect.objectContaining({
+            rowKind: 'source',
+            roundId: 2,
+            attemptId: 2,
+            outcome: 'frame-ready',
+          })
+        );
+      });
+
+      it('explicitly reloads the interrupted current line when manually selected', async () => {
+        await readyWithoutFrame();
+        const previous = media();
+        await expire();
+        fireEvent.click(screen.getByRole('button', { name: '手动换线' }));
+        expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+          'data-source',
+          ''
+        );
+        await act(async () => {
+          await mockSourceChangeHandler?.(
+            'detail-source',
+            'detail-id',
+            '详情影片'
+          );
+        });
+        expect(media()).not.toBe(previous);
+        expect(media()?.loadSource).toHaveBeenCalledWith(
+          requested().episodes[0]
+        );
+        act(() => {
+          mockManifestParsedHandlers.at(-1)?.();
+          mockArtPlayerEventHandlers.get('video:canplay')?.();
+          emitNative('playing');
+          if (mockArtPlayerInstance)
+            mockArtPlayerInstance.video.currentTime = 1;
+          emitNative('timeupdate');
+        });
+        await expire(31_000);
+        expect(screen.queryByRole('button', { name: '继续尝试' })).toBeNull();
+        expect(qualityRecords()).toContainEqual(
+          expect.objectContaining({
+            rowKind: 'round',
+            roundId: 2,
+            rootRoundId: 1,
+            roundReason: 'manual-source',
+            outcome: 'frame-ready',
+          })
+        );
+      });
+
+      it.each(['timer', 'blocked-main-thread'] as const)(
+        'rejects a stale source probe across the budget boundary (%s) and a new round',
+        async (boundary) => {
+          const startedAt = await readyWithoutFrame();
+          await expire(29_000 - (performance.now() - startedAt));
+          const selected = mockSourceChangeHandler;
+          const probe = deferred<void>();
+          const selection = probe.promise.then(() =>
+            selected?.('alternate', '2', '详情影片')
+          );
+          const attempts = mockManifestParsedHandlers.length;
+          const clock =
+            boundary === 'blocked-main-thread'
+              ? jest
+                  .spyOn(performance, 'now')
+                  .mockReturnValue(startedAt + 31_000)
+              : null;
+          if (!clock) await expire(1000);
+          try {
+            await act(async () => {
+              probe.resolve();
+              await selection;
+            });
+          } finally {
+            clock?.mockRestore();
+          }
+          expect(
+            screen.getByRole('button', { name: '继续尝试' })
+          ).toBeVisible();
+          expect(mockManifestParsedHandlers).toHaveLength(attempts);
+          expect(qualityRecords().every((r) => r.roundId === 1)).toBe(true);
+          await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: '继续尝试' }));
+          });
+          const newAttempts = mockManifestParsedHandlers.length;
+          await act(async () => {
+            expect(await selected?.('alternate', '2', '详情影片')).toBe(false);
+          });
+          expect(mockManifestParsedHandlers).toHaveLength(newAttempts);
+          expect(qualityRecords().every((r) => r.roundId <= 2)).toBe(true);
+        }
+      );
+
+      it.each(['pause', 'hidden'] as const)(
+        'preserves the last second while %s and expires only after returning',
+        async (kind) => {
+          const startedAt = await readyWithoutFrame();
+          await expire(29_000 - (performance.now() - startedAt));
+          act(() => {
+            if (kind === 'hidden') {
+              Object.defineProperty(document, 'visibilityState', {
+                configurable: true,
+                value: 'hidden',
+              });
+              document.dispatchEvent(new Event('visibilitychange'));
+            } else {
+              if (mockArtPlayerInstance)
+                mockArtPlayerInstance.video.paused = true;
+              mockArtPlayerEventHandlers.get('video:pause')?.();
+            }
+          });
+          await expire(60_000);
+          expect(screen.queryByRole('button', { name: '继续尝试' })).toBeNull();
+          act(() => {
+            if (kind === 'hidden') {
+              Object.defineProperty(document, 'visibilityState', {
+                configurable: true,
+                value: 'visible',
+              });
+              document.dispatchEvent(new Event('visibilitychange'));
+            } else {
+              if (mockArtPlayerInstance)
+                mockArtPlayerInstance.video.paused = false;
+              mockArtPlayerEventHandlers.get('video:play')?.();
+            }
+          });
+          await expire(999);
+          expect(screen.queryByRole('button', { name: '继续尝试' })).toBeNull();
+          await expire(1);
+          expect(
+            screen.getByRole('button', { name: '继续尝试' })
+          ).toBeVisible();
+        }
+      );
+
+      it('does not charge silent autoplay waiting, and stops the budget only after a real frame', async () => {
+        await readyWithoutFrame();
+        const video = mockArtPlayerInstance?.video;
+        if (!video) throw new Error('video missing');
+        video.paused = true;
+        await act(async () => {
+          emitNative('canplay');
+          jest.advanceTimersByTime(0);
+        });
+        await expire(60_000);
+        expect(screen.queryByRole('button', { name: '继续尝试' })).toBeNull();
+        act(() => {
+          video.paused = false;
+          mockArtPlayerEventHandlers.get('video:play')?.();
+          emitNative('playing');
+          video.currentTime = 1;
+          emitNative('timeupdate');
+        });
+        expect(
+          qualityRecords().some(
+            (r) => r.rowKind === 'round' && r.outcome === 'frame-ready'
+          )
+        ).toBe(true);
+        await expire(60_000);
+        expect(screen.queryByRole('button', { name: '继续尝试' })).toBeNull();
+      });
+
+      it('limits consecutive source attempts to the initial 30 seconds and never loads a fourth source', async () => {
+        const sources = [
+          requested(),
+          alternate(),
+          alternate(),
+          alternate(),
+        ].map((source, index) => ({
+          ...source,
+          source: `candidate-${index}`,
+          id: String(index),
+          episodes: [`https://candidate-${index}.example/episode.m3u8`],
+        }));
+        sources[0] = requested();
+        requests(
+          Promise.resolve(response({ results: sources })),
+          Promise.resolve(response(requested()))
+        );
+        render(<PlayPage />);
+        await screen.findByTestId('episode-selector-sources');
+        await expire(10_000);
+        await expire(10_000);
+        await expire(10_000);
+        expect(screen.getByRole('button', { name: '继续尝试' })).toBeVisible();
+        expect(mockManifestParsedHandlers.length).toBeLessThanOrEqual(3);
+        const attempts = mockManifestParsedHandlers.length;
+        await expire(60_000);
+        expect(mockManifestParsedHandlers).toHaveLength(attempts);
+      });
+
+      it('records leave once and does not start any extra source', async () => {
+        const pending = deferred<Response>();
+        requests(pending.promise, pending.promise);
+        render(<PlayPage />);
+        await expire();
+        fireEvent.click(screen.getByRole('button', { name: '返回' }));
+        expect(mockRouterBack).toHaveBeenCalledTimes(1);
+        expect(
+          qualityRecords().some(
+            (r) =>
+              r.rowKind === 'round' &&
+              r.outcome === 'budget-exhausted' &&
+              r.promptChoice === 'leave'
+          )
+        ).toBe(true);
+        expect(media()).toBeUndefined();
+      });
+    });
+
     it('starts media while search is pending, but waits for history before choosing episode and resume', async () => {
       const search = deferred<Response>();
       const detail = deferred<Response>();
@@ -576,7 +1013,7 @@ describe('PlayPage source initialization', () => {
       expect(qualityRecords().length).toBeGreaterThan(0);
       expect(
         qualityRecords().every(
-          (record) => record.policyVersion === 'startup-direct-first-v1'
+          (record) => record.policyVersion === 'startup-budget-v1'
         )
       ).toBe(true);
       const attempts = mockManifestParsedHandlers.length;

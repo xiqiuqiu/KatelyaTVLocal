@@ -3,6 +3,8 @@ import type { PlayRecordSaveReason } from '@/lib/play-record-save-policy';
 import type { PlaybackBadPoint } from '@/lib/playback-stuck-escape';
 import type { SearchResult, SourceStatus, SourceVideoInfo } from '@/lib/types';
 
+import type { StartupBudgetEvent, StartupBudgetState } from './startup-budget';
+
 export type PlaybackIntent =
   | 'playing'
   | 'user-paused'
@@ -39,7 +41,8 @@ export interface PlaybackIntentGateResult {
     | 'seek-settled'
     | 'source-switch-settle'
     | 'recovery-in-flight'
-    | 'resume-pending';
+    | 'resume-pending'
+    | 'startup';
 }
 
 export interface VideoSnapshot {
@@ -89,6 +92,7 @@ export interface RecoveryRuntimeEvidence {
 }
 
 export interface PlaybackSessionState {
+  startup: StartupBudgetState | null;
   sources: SearchResult[];
   currentSourceKey: string | null;
   currentEpisodeIndex: number;
@@ -182,6 +186,7 @@ export interface PlaybackSessionState {
 }
 
 export type PlaybackSessionEvent =
+  | StartupBudgetEvent
   | { type: 'sources.discoveryStarted'; discoveryId: number }
   | {
       type: 'sources.discoveryFinished';
@@ -311,6 +316,12 @@ export type PlaybackSessionEvent =
     };
 
 export type PlaybackSessionEffect =
+  | {
+      type: 'startupBudgetExhausted';
+      sourceKey: string | null;
+      attemptId: number | null;
+    }
+  | { type: 'startupSourceTimeout'; sourceKey: string; attemptId: number }
   | {
       type: 'switchSource';
       sourceKey: string;

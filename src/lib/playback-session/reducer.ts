@@ -28,6 +28,11 @@ import {
   resetEscapeBudget,
   shouldEvaluateR3AfterLadder,
 } from './recovery';
+import {
+  isStartupWorkAllowed,
+  reduceStartupBudget,
+  STARTUP_SOURCE_TIMEOUT_MS,
+} from './startup-budget';
 import type {
   PlaybackSessionEffect,
   PlaybackSessionEvent,
@@ -46,6 +51,21 @@ const AD_SKIP_UNDO_DISMISS_MS = 5000;
 /** R3 disclosure bar — heavier / longer-lived than Ad Skip undo (ADR 0007). */
 const AUTO_SOURCE_SWITCH_UNDO_DISMISS_MS = 12_000;
 const MAX_UNVERIFIED_RECOVERY_ATTEMPTS = 2;
+const STARTUP_MEDIA_EVENTS = new Set<PlaybackSessionEvent['type']>([
+  'sourceChange.started',
+  'sourceChange.completed',
+  'timer.sourceChangeTimeout',
+  'video.error',
+  'video.waiting',
+  'video.stalled',
+  'video.timeupdate',
+  'video.ended',
+  'recovery.runtimeEvidence',
+  'recovery.switchSkipped',
+  'recovery.switchFailed',
+  'recovery.effectSettled',
+  'recovery.progressHealthy',
+]);
 
 export function createInitialPlaybackSessionState(
   input: Partial<PlaybackSessionState> = {}
@@ -53,6 +73,7 @@ export function createInitialPlaybackSessionState(
   const recoveryResumeTime =
     input.recoveryResumeTime ?? input.pendingResumeTime ?? null;
   return {
+    startup: null,
     sources: [],
     currentSourceKey: null,
     currentEpisodeIndex: 0,
@@ -172,7 +193,14 @@ function createRecoverySwitchEffect(
     statuses: state.sourceStatuses,
     measured: state.measuredVideoInfo,
     sourceSelectionScores: toSelectionScores(state.sources, state.sourceScores),
-    attemptedSourceKeys: state.recoveredSourceKeys,
+    attemptedSourceKeys:
+      state.startup?.status === 'active'
+        ? new Set(
+            Array.from(state.recoveredSourceKeys).concat(
+              Array.from(state.startup.failedSourceKeys)
+            )
+          )
+        : state.recoveredSourceKeys,
     allowUnverifiedFallback:
       state.unverifiedRecoveryAttempts < MAX_UNVERIFIED_RECOVERY_ATTEMPTS &&
       shouldAllowUnverifiedRecoveryFallback(reason, snapshot, evidence),
@@ -242,6 +270,8 @@ function tryEmitR3(
     return { state, effects: [] };
   }
 
+  state = recordStartupSourceFailure(state, state.currentSourceKey);
+
   const recovery = createRecoverySwitchEffect(
     state,
     snapshot,
@@ -258,6 +288,14 @@ function tryEmitR3(
     return {
       state: {
         ...state,
+        startup:
+          state.startup?.status === 'active'
+            ? {
+                ...state.startup,
+                status: 'cancelled',
+                sourceClockRunning: false,
+              }
+            : state.startup,
         deferredSourceRecovery: null,
         recoveryStage: 'exhausted',
         stallEpisodeActive: false,
@@ -309,6 +347,31 @@ function tryEmitR3(
           : null,
     },
     effects: [...cancelled.effects, recovery.effect, ...disclosureEffects],
+  };
+}
+
+function recordStartupSourceFailure(
+  state: PlaybackSessionState,
+  sourceKey: string | null
+): PlaybackSessionState {
+  if (
+    state.startup?.status !== 'active' ||
+    !sourceKey ||
+    state.startup.sourceKey !== sourceKey
+  )
+    return state;
+  return {
+    ...state,
+    recoveredSourceKeys: new Set(
+      Array.from(state.recoveredSourceKeys).concat(sourceKey)
+    ),
+    startup: {
+      ...state.startup,
+      sourceClockRunning: false,
+      failedSourceKeys: new Set(
+        Array.from(state.startup.failedSourceKeys).concat(sourceKey)
+      ),
+    },
   };
 }
 
@@ -563,6 +626,14 @@ function withIntentTransition(
   return {
     state: {
       ...nextState,
+      startup:
+        nextState.startup?.status === 'active'
+          ? {
+              ...nextState.startup,
+              paused:
+                cancelReason === 'user-paused' || cancelReason === 'seeking',
+            }
+          : nextState.startup,
       deferredSourceRecovery: null,
       ...pickRecoveryCancelFields(recoveryCancelled, nextState),
       ...(cancelReason === 'user-switch'
@@ -679,7 +750,112 @@ export function reducePlaybackSession(
   state: PlaybackSessionState,
   event: PlaybackSessionEvent
 ): PlaybackSessionResult {
+  const startupBlocked =
+    state.startup &&
+    state.startup.status !== 'succeeded' &&
+    (state.startup.status !== 'active' ||
+      state.startup.mode === 'sources-only');
+  if (startupBlocked && STARTUP_MEDIA_EVENTS.has(event.type)) {
+    return { state, effects: [] };
+  }
   switch (event.type) {
+    case 'startup.started':
+    case 'startup.activity':
+    case 'startup.tick':
+    case 'startup.frame':
+    case 'startup.retry':
+    case 'startup.chooseSource':
+    case 'startup.sourcesReady':
+    case 'startup.cancel':
+    case 'startup.sourceFailed': {
+      const result = reduceStartupBudget(state.startup, event);
+      const interrupted = state.startup?.interruptedSourceKey;
+      const releaseInterrupted =
+        event.type === 'startup.retry' &&
+        interrupted &&
+        !state.startup?.failedSourceKeys.has(interrupted);
+      const stopped =
+        result.effects.some(
+          (effect) => effect.type === 'startupBudgetExhausted'
+        ) ||
+        event.type === 'startup.cancel' ||
+        event.type === 'startup.chooseSource';
+      let next: PlaybackSessionState = {
+        ...state,
+        startup: result.startup,
+        ...(event.type === 'startup.started'
+          ? { currentSourceChangeAttemptId: 0 }
+          : {}),
+        ...(event.type === 'startup.retry'
+          ? {
+              recoveredSourceKeys: new Set(
+                Array.from(state.recoveredSourceKeys)
+                  .concat(Array.from(state.startup?.failedSourceKeys || []))
+                  .filter((key) => !releaseInterrupted || key !== interrupted)
+              ),
+            }
+          : {}),
+        ...(event.type === 'startup.started' ||
+        event.type === 'startup.retry' ||
+        stopped
+          ? {
+              ...pickRecoveryCancelFields(cancelRecoveryEpisode(state), state),
+              sourceChangeInFlight: false,
+              sourceChangeSourceKey: null,
+              sourceDiscoveryPending: false,
+              deferredSourceRecovery: null,
+              recoveryInFlight: null,
+              recoveryStage: 'idle',
+              recoverableAutoSourceSwitch: null,
+            }
+          : {}),
+        ...(event.type === 'startup.started' || event.type === 'startup.retry'
+          ? {
+              playbackIntent: 'playing',
+              resumeIntentAfterSeek: null,
+              seekSettledAtMs: null,
+              sourceSwitchSettledUntilMs: null,
+              unverifiedRecoveryAttempts: 0,
+            }
+          : {}),
+      };
+      if (
+        event.type === 'startup.sourceFailed' &&
+        result.startup?.failedSourceKeys.has(event.sourceKey)
+      ) {
+        next = recordStartupSourceFailure(next, event.sourceKey);
+      }
+      if (
+        event.type === 'startup.frame' &&
+        result.startup?.status === 'succeeded' &&
+        state.startup?.sourceKey &&
+        state.startup.failedSourceKeys.has(state.startup.sourceKey)
+      ) {
+        next.recoveredSourceKeys = new Set(
+          Array.from(next.recoveredSourceKeys).filter(
+            (key) => key !== state.startup?.sourceKey
+          )
+        );
+      }
+      if (
+        event.type === 'startup.tick' &&
+        event.snapshot &&
+        result.effects.some(
+          (effect) => effect.type === 'startupBudgetExhausted'
+        )
+      ) {
+        const resumeTime = Math.max(
+          Number.isFinite(state.recoveryResumeTime)
+            ? state.recoveryResumeTime || 0
+            : 0,
+          Number.isFinite(event.snapshot.currentTime)
+            ? event.snapshot.currentTime
+            : 0
+        );
+        if (resumeTime > 0) next = setRecoveryResumeTime(next, resumeTime);
+      }
+      return { state: next, effects: result.effects };
+    }
     case 'sources.discoveryStarted':
       if (
         state.sourceDiscoveryId !== null &&
@@ -795,6 +971,10 @@ export function reducePlaybackSession(
         state,
         {
           ...state,
+          startup:
+            state.startup?.status === 'active'
+              ? { ...state.startup, paused: false, autoplayBlocked: false }
+              : state.startup,
           playbackIntent: 'playing',
           resumeIntentAfterSeek: null,
           seekSettledAtMs: null,
@@ -907,6 +1087,10 @@ export function reducePlaybackSession(
         state: {
           ...state,
           playbackIntent: resumeIntent,
+          startup:
+            state.startup?.status === 'active'
+              ? { ...state.startup, paused: resumeIntent === 'user-paused' }
+              : state.startup,
           resumeIntentAfterSeek: null,
           lastUserSeekAtMs: event.nowMs,
           seekSettledAtMs: resumeIntent === 'seek-settled' ? event.nowMs : null,
@@ -1281,9 +1465,29 @@ export function reducePlaybackSession(
       };
 
     case 'sourceChange.started':
+      if (!isStartupWorkAllowed(state)) return { state, effects: [] };
+      if (
+        state.startup?.status === 'active' &&
+        (event.attemptId < state.currentSourceChangeAttemptId ||
+          (state.startup.sourceAttemptId === null &&
+            event.attemptId <= state.currentSourceChangeAttemptId))
+      ) {
+        return { state, effects: [] };
+      }
       return {
         state: {
           ...state,
+          startup:
+            state.startup?.status === 'active' &&
+            state.startup.sourceAttemptId !== event.attemptId
+              ? {
+                  ...state.startup,
+                  sourceAttemptId: event.attemptId,
+                  sourceKey: event.sourceKey,
+                  sourceWaitMs: 0,
+                  sourceClockRunning: true,
+                }
+              : state.startup,
           deferredSourceRecovery: null,
           sourceChangeInFlight: true,
           currentSourceChangeAttemptId: event.attemptId,
@@ -1312,6 +1516,10 @@ export function reducePlaybackSession(
       return {
         state: {
           ...state,
+          startup:
+            state.startup?.status === 'active'
+              ? { ...state.startup, sourceClockRunning: false }
+              : state.startup,
           deferredSourceRecovery: null,
           sourceChangeInFlight: false,
           sourceChangeSourceKey: null,
@@ -1614,6 +1822,14 @@ export function reducePlaybackSession(
 
     case 'timer.sourceChangeTimeout':
       if (
+        state.startup?.status === 'active' &&
+        (state.startup.sourceAttemptId !== event.attemptId ||
+          state.startup.sourceKey !== event.sourceKey ||
+          state.startup.sourceWaitMs < STARTUP_SOURCE_TIMEOUT_MS)
+      ) {
+        return { state, effects: [] };
+      }
+      if (
         shouldIgnoreSourceChangeTimeout({
           attemptId: event.attemptId,
           currentAttemptId: state.currentSourceChangeAttemptId,
@@ -1626,6 +1842,7 @@ export function reducePlaybackSession(
       }
 
       {
+        state = recordStartupSourceFailure(state, event.sourceKey);
         const timedOut = handleStallCandidate(
           {
             ...state,

@@ -1,3 +1,4 @@
+import { isStartupWorkAllowed } from './startup-budget';
 import type {
   AutomaticEffectKind,
   PlaybackIntentGateResult,
@@ -23,6 +24,10 @@ export function getAutomaticEffectGate(
 
   if (state.playbackIntent === 'seeking') {
     return { allowed: false, deniedBy: 'seeking' };
+  }
+
+  if (!isStartupWorkAllowed(state)) {
+    return { allowed: false, deniedBy: 'startup' };
   }
 
   if (
