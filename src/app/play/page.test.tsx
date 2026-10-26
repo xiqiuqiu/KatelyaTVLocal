@@ -32,6 +32,7 @@ type MockSourceChangeHandler = (
   }
 ) => Promise<boolean>;
 let mockSourceChangeHandler: MockSourceChangeHandler | undefined;
+let mockEpisodeChangeHandler: ((episode: number) => void) | undefined;
 let mockArtPlayerInstance:
   | {
       currentTime: number;
@@ -180,14 +181,26 @@ jest.mock('@/components/EpisodeSelector', () => ({
     availableSources,
     onSourceChange,
     activeTab,
+    onChange,
+    currentSource,
+    value,
   }: {
+    onChange: (episode: number) => void;
+    currentSource: string;
+    value: number;
     availableSources: SearchResult[];
     onSourceChange: MockSourceChangeHandler;
     activeTab?: 'episodes' | 'sources';
   }) => {
     mockSourceChangeHandler = onSourceChange;
+    mockEpisodeChangeHandler = onChange;
     return (
-      <div data-testid='episode-selector-sources' data-active-tab={activeTab}>
+      <div
+        data-testid='episode-selector-sources'
+        data-active-tab={activeTab}
+        data-source={currentSource}
+        data-episode={value}
+      >
         {availableSources.map((source) => source.source_name).join(',')}
       </div>
     );
@@ -442,6 +455,428 @@ describe('PlayPage source initialization', () => {
     });
     jest.useRealTimers();
     jest.clearAllMocks();
+  });
+
+  describe('direct source critical path', () => {
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((done) => {
+        resolve = done;
+      });
+      return { promise, resolve };
+    }
+    const response = (data: unknown, ok = true) =>
+      ({ ok, json: async () => data } as Response);
+    const requested = () =>
+      createSource({
+        episodes: [
+          'https://example.com/one.m3u8',
+          'https://example.com/two.m3u8',
+        ],
+      });
+    const alternate = () =>
+      createSource({
+        source: 'alternate',
+        id: '2',
+        source_name: '备用源',
+        episodes: [
+          'https://alternate.example/one.m3u8',
+          'https://alternate.example/two.m3u8',
+        ],
+      });
+    function requests(search: Promise<Response>, detail: Promise<Response>) {
+      const original = global.fetch;
+      global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (input.toString().startsWith('/api/search')) return search;
+        if (input.toString().startsWith('/api/detail')) return detail;
+        return original(input, init);
+      });
+    }
+    function media() {
+      return mockArtPlayerInstance?.video.hls as
+        | { loadSource: jest.Mock }
+        | undefined;
+    }
+    function qualityRecords() {
+      return jest
+        .mocked(global.fetch)
+        .mock.calls.flatMap(([url, init]) =>
+          url === '/api/playback-quality' && typeof init?.body === 'string'
+            ? playbackQualityPayloadSchema.parse(JSON.parse(init.body)).records
+            : []
+        );
+    }
+    beforeEach(() => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      window.localStorage.setItem('enableOptimization', 'false');
+      mockHlsSupported = true;
+      mockAutoFireManifestParsed = false;
+      mockDefaultPlayerDuration = 240;
+      mockArtPlayerInstance = undefined;
+      mockManifestParsedHandlers.length = 0;
+      mockArtPlayerEventHandlers.clear();
+      mockArtPlayerEventHandlerLists.clear();
+      window.history.replaceState(
+        {},
+        '',
+        '/play?' + mockSearchParams.toString()
+      );
+    });
+    afterEach(() => {
+      mockDefaultPlayerDuration = 120;
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    });
+
+    it('starts media while search is pending, but waits for history before choosing episode and resume', async () => {
+      const search = deferred<Response>();
+      const detail = deferred<Response>();
+      const history = deferred<Awaited<ReturnType<typeof getAllPlayRecords>>>();
+      mockedGetAllPlayRecords.mockReturnValue(history.promise);
+      requests(search.promise, detail.promise);
+      render(<PlayPage />);
+      expect(mockedGetAllPlayRecords).toHaveBeenCalled();
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/search'),
+        expect.anything()
+      );
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/detail'),
+        expect.anything()
+      );
+      await act(async () => {
+        detail.resolve(response(requested()));
+      });
+      expect(media()).toBeUndefined();
+      await act(async () => {
+        history.resolve({
+          'detail-source+detail-id': {
+            title: '详情影片',
+            year: '2026',
+            source_name: '详情源',
+            cover: '',
+            index: 2,
+            total_episodes: 2,
+            play_time: 96,
+            total_time: 240,
+            save_time: Date.now(),
+            search_title: '详情影片',
+          },
+        });
+      });
+      expect(media()?.loadSource).toHaveBeenCalledWith(
+        'https://example.com/two.m3u8'
+      );
+      act(() => {
+        mockManifestParsedHandlers.at(-1)?.();
+        mockArtPlayerEventHandlers.get('video:canplay')?.();
+      });
+      expect(mockArtPlayerInstance?.currentTime).toBe(94.5);
+      expect(qualityRecords().length).toBeGreaterThan(0);
+      expect(
+        qualityRecords().every(
+          (record) => record.policyVersion === 'startup-direct-first-v1'
+        )
+      ).toBe(true);
+      const attempts = mockManifestParsedHandlers.length;
+      if (mockArtPlayerInstance) mockArtPlayerInstance.currentTime = 110;
+      await act(async () => {
+        search.resolve(
+          response({ results: [requested(), requested(), alternate()] })
+        );
+      });
+      expect(screen.getByTestId('episode-selector-sources').textContent).toBe(
+        '详情源,备用源'
+      );
+      expect(mockManifestParsedHandlers).toHaveLength(attempts);
+      expect(mockArtPlayerInstance?.currentTime).toBe(110);
+    });
+
+    it.each(['missing-episode', 'remembered-unavailable'])(
+      'waits for same-episode history fallback for %s',
+      async (reason) => {
+        mockSearchParams.set('from', 'playrecord');
+        mockedGetAllPlayRecords.mockResolvedValue({
+          'detail-source+detail-id': {
+            title: '详情影片',
+            year: '2026',
+            source_name: '详情源',
+            cover: '',
+            index: 2,
+            total_episodes: 2,
+            play_time: 96,
+            total_time: 240,
+            save_time: Date.now(),
+            search_title: '详情影片',
+          },
+        });
+        const target =
+          reason === 'missing-episode'
+            ? createSource({ episodes: [requested().episodes[0]] })
+            : requested();
+        if (reason === 'remembered-unavailable') {
+          rememberSourcePlaybackQuality(
+            'detail-source-detail-id',
+            'example.com',
+            { mode: 'unavailable' }
+          );
+        }
+        const search = deferred<Response>();
+        requests(search.promise, Promise.resolve(response(target)));
+        render(<PlayPage />);
+        await act(async () => {
+          for (let i = 0; i < 12; i += 1) await Promise.resolve();
+        });
+        expect(media()).toBeUndefined();
+        await act(async () => {
+          search.resolve(response({ results: [alternate()] }));
+        });
+        expect(media()?.loadSource).toHaveBeenCalledWith(
+          alternate().episodes[1]
+        );
+        act(() => {
+          mockManifestParsedHandlers.at(-1)?.();
+          mockArtPlayerEventHandlers.get('video:canplay')?.();
+        });
+        expect(mockArtPlayerInstance?.currentTime).toBe(94.5);
+      }
+    );
+
+    it('ignores detail, history and search that resolve after leaving the page', async () => {
+      const search = deferred<Response>();
+      const detail = deferred<Response>();
+      const history = deferred<Awaited<ReturnType<typeof getAllPlayRecords>>>();
+      mockedGetAllPlayRecords.mockReturnValue(history.promise);
+      requests(search.promise, detail.promise);
+      const view = render(<PlayPage />);
+      view.unmount();
+      await act(async () => {
+        detail.resolve(response(requested()));
+        history.resolve({});
+        search.resolve(response({ results: [requested(), alternate()] }));
+      });
+      expect(mockManifestParsedHandlers).toHaveLength(0);
+      expect(media()).toBeUndefined();
+    });
+
+    it('uses a faster search match and ignores a late detail after the user changes source', async () => {
+      const detail = deferred<Response>();
+      requests(
+        Promise.resolve(response({ results: [requested(), alternate()] })),
+        detail.promise
+      );
+      render(<PlayPage />);
+      await screen.findByTestId('episode-selector-sources');
+      expect(media()?.loadSource).toHaveBeenCalledWith(requested().episodes[0]);
+      await act(async () => {
+        await mockSourceChangeHandler?.('alternate', '2', '详情影片');
+      });
+      const attempts = mockManifestParsedHandlers.length;
+      await act(async () => {
+        detail.resolve(response(requested()));
+      });
+      expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+        'data-source',
+        'alternate'
+      );
+      expect(mockManifestParsedHandlers).toHaveLength(attempts);
+      expect(new URL(window.location.href).searchParams.get('source')).toBe(
+        'alternate'
+      );
+    });
+
+    it.each(['search', 'detail'])(
+      'keeps waiting when %s fails before the other branch succeeds',
+      async (failed) => {
+        const pending = deferred<Response>();
+        requests(
+          failed === 'search'
+            ? Promise.resolve(response({}, false))
+            : pending.promise,
+          failed === 'detail'
+            ? Promise.resolve(response({}, false))
+            : pending.promise
+        );
+        render(<PlayPage />);
+        await act(async () => {
+          await Promise.resolve();
+        });
+        expect(media()).toBeUndefined();
+        await act(async () => {
+          pending.resolve(
+            response(
+              failed === 'search' ? requested() : { results: [requested()] }
+            )
+          );
+        });
+        expect(media()?.loadSource).toHaveBeenCalledWith(
+          requested().episodes[0]
+        );
+      }
+    );
+
+    it('retains the playing source when the background search fails', async () => {
+      const search = deferred<Response>();
+      requests(search.promise, Promise.resolve(response(requested())));
+      render(<PlayPage />);
+      await screen.findByTestId('episode-selector-sources');
+      const attempts = mockManifestParsedHandlers.length;
+      await act(async () => {
+        search.resolve(response({}, false));
+      });
+      expect(screen.getByTestId('episode-selector-sources')).toHaveTextContent(
+        '详情源'
+      );
+      expect(mockManifestParsedHandlers).toHaveLength(attempts);
+    });
+
+    it('keeps the selected episode when candidates arrive after an episode change', async () => {
+      const search = deferred<Response>();
+      requests(search.promise, Promise.resolve(response(requested())));
+      render(<PlayPage />);
+      await screen.findByTestId('episode-selector-sources');
+      await act(async () => {
+        mockEpisodeChangeHandler?.(2);
+      });
+      const attempts = mockManifestParsedHandlers.length;
+      await act(async () => {
+        search.resolve(response({ results: [requested(), alternate()] }));
+      });
+      expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+        'data-episode',
+        '2'
+      );
+      expect(media()?.loadSource).toHaveBeenLastCalledWith(
+        requested().episodes[1]
+      );
+      expect(mockManifestParsedHandlers).toHaveLength(attempts);
+    });
+
+    it('preserves pending search across an internal URL rewrite and aborts it on unmount', async () => {
+      const search = deferred<Response>();
+      requests(
+        search.promise,
+        Promise.resolve(response(createSource({ title: '详情影片新版' })))
+      );
+      const view = render(<PlayPage />);
+      await screen.findByTestId('episode-selector-sources');
+      const searchCall = jest
+        .mocked(global.fetch)
+        .mock.calls.find(([url]) => url.toString().startsWith('/api/search'));
+      const signal = searchCall?.[1]?.signal;
+      mockSearchParams = new URLSearchParams(window.location.search);
+      view.rerender(<PlayPage />);
+      expect(signal?.aborted).toBe(false);
+      await act(async () => {
+        search.resolve(response({ results: [alternate()] }));
+      });
+      expect(screen.getByTestId('episode-selector-sources')).toHaveTextContent(
+        '备用源'
+      );
+      view.unmount();
+      expect(signal?.aborted).toBe(true);
+    });
+
+    it('ignores old search results after navigating to another title', async () => {
+      const search = deferred<Response>();
+      requests(search.promise, Promise.resolve(response(requested())));
+      const view = render(<PlayPage />);
+      await screen.findByTestId('episode-selector-sources');
+      const oldSignal = jest
+        .mocked(global.fetch)
+        .mock.calls.find(([url]) =>
+          url.toString().startsWith('/api/search')
+        )?.[1]?.signal;
+      mockSearchParams = new URLSearchParams('source=new&id=3&title=新片');
+      requests(
+        Promise.resolve(response({ results: [] })),
+        Promise.resolve(
+          response(
+            createSource({
+              source: 'new',
+              id: '3',
+              title: '新片',
+              source_name: '新线路',
+            })
+          )
+        )
+      );
+      view.rerender(<PlayPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId('episode-selector-sources')
+        ).toHaveTextContent('新线路')
+      );
+      expect(oldSignal?.aborted).toBe(true);
+      await act(async () => {
+        search.resolve(response({ results: [alternate()] }));
+      });
+      expect(
+        screen.getByTestId('episode-selector-sources')
+      ).not.toHaveTextContent('备用源');
+    });
+
+    it('defers exhaustion after the first timeout until late candidates can recover', async () => {
+      const search = deferred<Response>();
+      requests(search.promise, Promise.resolve(response(requested())));
+      render(<PlayPage />);
+      await screen.findByTestId('episode-selector-sources');
+      await act(async () => {
+        jest.advanceTimersByTime(10_000);
+      });
+      expect(
+        screen.queryByRole('heading', { name: '当前线路无法继续恢复' })
+      ).toBeNull();
+      expect(
+        qualityRecords().some(
+          (r) => r.rowKind === 'round' && r.status === 'terminal'
+        )
+      ).toBe(false);
+      await act(async () => {
+        search.resolve(response({ results: [alternate()] }));
+      });
+      expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+        'data-source',
+        'alternate'
+      );
+      expect(media()?.loadSource).toHaveBeenCalledWith(alternate().episodes[0]);
+      expect(
+        qualityRecords().some(
+          (r) => r.rowKind === 'round' && r.outcome === 'failed'
+        )
+      ).toBe(false);
+    });
+
+    it('waits for full search for prefer=true and keeps its existing initial selection', async () => {
+      mockSearchParams.set('prefer', 'true');
+      const search = deferred<Response>();
+      requests(search.promise, Promise.resolve(response(requested())));
+      render(<PlayPage />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(media()).toBeUndefined();
+      expect(
+        jest
+          .mocked(global.fetch)
+          .mock.calls.some(([url]) => url.toString().startsWith('/api/detail'))
+      ).toBe(false);
+      await act(async () => {
+        search.resolve(response({ results: [requested(), alternate()] }));
+      });
+      expect(media()?.loadSource).toHaveBeenCalledWith(requested().episodes[0]);
+    });
+
+    it('does not silently choose another source for an invalid non-history direct entry', async () => {
+      requests(
+        Promise.resolve(response({ results: [alternate()] })),
+        Promise.resolve(response({}, false))
+      );
+      render(<PlayPage />);
+      await screen.findByRole('heading', { name: '未找到匹配结果' });
+      expect(media()).toBeUndefined();
+    });
   });
 
   it('syncs available sources from detail fallback after search misses the current source', async () => {

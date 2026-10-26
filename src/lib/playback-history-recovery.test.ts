@@ -50,6 +50,55 @@ describe('resolvePlaybackHistoryRecovery', () => {
     expect(result.resumeTime).toBe(94.5);
   });
 
+  it('merges detail-only requested sources with deduplicated search candidates for history fallback', () => {
+    const requested = createSource();
+    const alternate = createSource({ source: 'alternate', id: '2' });
+    const result = resolvePlaybackHistoryRecovery({
+      currentSource: requested.source,
+      currentId: requested.id,
+      searchResults: [alternate, alternate],
+      detailResults: [requested],
+      isFromPlayRecord: true,
+      historyRecord: createRecord(),
+      sourceStatuses: new Map([['source-a-1', { kind: 'unavailable' }]]),
+    });
+    expect(result.sources).toEqual([requested, alternate]);
+    expect(result.detail).toBe(alternate);
+    expect(result.resumeEpisodeIndex).toBe(1);
+    expect(result.resumeTime).toBe(94.5);
+  });
+
+  it('uses another history route that has the requested episode when the direct detail is incomplete', () => {
+    const requested = createSource({ episodes: ['one.m3u8'] });
+    const alternate = createSource({ source: 'alternate', id: '2' });
+    const result = resolvePlaybackHistoryRecovery({
+      currentSource: requested.source,
+      currentId: requested.id,
+      searchResults: [alternate],
+      detailResults: [requested],
+      isFromPlayRecord: true,
+      historyRecord: createRecord(),
+    });
+    expect(result.detail).toBe(alternate);
+    expect(result.resumeEpisodeIndex).toBe(1);
+    expect(result.resumeTime).toBe(94.5);
+  });
+
+  it('reports a missing history episode when no route provides it', () => {
+    const requested = createSource({ episodes: ['one.m3u8'] });
+    const result = resolvePlaybackHistoryRecovery({
+      currentSource: requested.source,
+      currentId: requested.id,
+      searchResults: [],
+      detailResults: [requested],
+      isFromPlayRecord: true,
+      historyRecord: createRecord(),
+    });
+    expect(result.detail).toBeNull();
+    expect(result.resumeEpisodeIndex).toBeNull();
+    expect(result.error).toContain('第 2 集');
+  });
+
   it('does not silently downgrade episode 16 when alternate sources only have 15 episodes', () => {
     const requested = createSource({
       episodes: Array(16).fill('episode.m3u8'),

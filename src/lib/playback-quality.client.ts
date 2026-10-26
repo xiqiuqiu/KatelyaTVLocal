@@ -182,7 +182,7 @@ export function createPlaybackQualityReporter(
         roundReason: reason,
         sourceReason: null,
         releaseId: process.env.NEXT_PUBLIC_PLAYBACK_RELEASE_ID || 'unknown',
-        policyVersion: 'startup-baseline-v1',
+        policyVersion: 'startup-direct-first-v1',
         elapsedMs: 0,
         activeWaitMs: 0,
         clickToFrameMs: null,

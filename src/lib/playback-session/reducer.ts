@@ -61,6 +61,9 @@ export function createInitialPlaybackSessionState(
     sourceScores: new Map(),
     measuredVideoInfo: new Map(),
     recoveredSourceKeys: new Set(),
+    sourceDiscoveryPending: false,
+    sourceDiscoveryId: null,
+    deferredSourceRecovery: null,
     unverifiedRecoveryAttempts: 0,
     badPoints: [],
     badPointsByScope: new Map(),
@@ -246,9 +249,16 @@ function tryEmitR3(
     evidence
   );
   if (!recovery) {
+    if (state.sourceDiscoveryPending) {
+      return {
+        state: deferSourceRecovery(state, snapshot, reason, evidence),
+        effects: [],
+      };
+    }
     return {
       state: {
         ...state,
+        deferredSourceRecovery: null,
         recoveryStage: 'exhausted',
         stallEpisodeActive: false,
         recoveryInFlight: null,
@@ -287,6 +297,7 @@ function tryEmitR3(
   return {
     state: {
       ...recovery.state,
+      deferredSourceRecovery: null,
       adSkipInFlightWindowKey: cancelled.state.adSkipInFlightWindowKey,
       recoverableAutoSourceSwitch:
         previousSourceKey && previousSourceKey !== recovery.effect.sourceKey
@@ -298,6 +309,30 @@ function tryEmitR3(
           : null,
     },
     effects: [...cancelled.effects, recovery.effect, ...disclosureEffects],
+  };
+}
+
+function deferSourceRecovery(
+  state: PlaybackSessionState,
+  snapshot: VideoSnapshot,
+  reason: 'auto-recovery' | 'source-timeout',
+  evidence?: RecoveryRuntimeEvidence | null
+): PlaybackSessionState {
+  return {
+    ...state,
+    recoveryStage: 'R3',
+    stallEpisodeActive: false,
+    recoveryInFlight: null,
+    recoverableAutoSourceSwitch: null,
+    deferredSourceRecovery: {
+      reason,
+      evidence: evidence || null,
+      sourceKey: state.currentSourceKey,
+      attemptId: state.currentSourceChangeAttemptId,
+      episodeIndex: state.currentEpisodeIndex,
+      contentKey: state.contentKey,
+      snapshot,
+    },
   };
 }
 
@@ -343,7 +378,8 @@ function handleStallCandidate(
     if (
       (state.playbackIntent === 'user-paused' ||
         state.resumeIntentAfterSeek === 'user-paused') &&
-      options.hardFailure
+      options.hardFailure &&
+      !state.sourceDiscoveryPending
     ) {
       disclosureEffects.push({
         type: 'showInPlayerFailure',
@@ -527,6 +563,7 @@ function withIntentTransition(
   return {
     state: {
       ...nextState,
+      deferredSourceRecovery: null,
       ...pickRecoveryCancelFields(recoveryCancelled, nextState),
       ...(cancelReason === 'user-switch'
         ? { recoveryResumeTime: null, pendingResumeTime: null }
@@ -608,6 +645,7 @@ function switchEpisodeScope(
   );
   return {
     ...clearAdSkipWindows(clearStallEpisode(state)),
+    deferredSourceRecovery: null,
     currentEpisodeIndex: episodeIndex,
     badPointsByScope: persisted,
     badPoints: nextBadPoints,
@@ -625,6 +663,7 @@ function switchTitleScope(
 ): PlaybackSessionState {
   return {
     ...clearAdSkipWindows(clearStallEpisode(state)),
+    deferredSourceRecovery: null,
     contentKey,
     currentEpisodeIndex: episodeIndex,
     badPoints: [],
@@ -641,6 +680,59 @@ export function reducePlaybackSession(
   event: PlaybackSessionEvent
 ): PlaybackSessionResult {
   switch (event.type) {
+    case 'sources.discoveryStarted':
+      if (
+        state.sourceDiscoveryId !== null &&
+        event.discoveryId <= state.sourceDiscoveryId
+      ) {
+        return { state, effects: [] };
+      }
+      return {
+        state: {
+          ...state,
+          sourceDiscoveryPending: true,
+          sourceDiscoveryId: event.discoveryId,
+          deferredSourceRecovery: null,
+        },
+        effects: [],
+      };
+
+    case 'sources.discoveryFinished': {
+      if (
+        !state.sourceDiscoveryPending ||
+        event.discoveryId !== state.sourceDiscoveryId
+      ) {
+        return { state, effects: [] };
+      }
+      const deferred = state.deferredSourceRecovery;
+      const finished = {
+        ...state,
+        sourceDiscoveryPending: false,
+        deferredSourceRecovery: null,
+      };
+      if (
+        !deferred ||
+        deferred.sourceKey !== state.currentSourceKey ||
+        deferred.attemptId !== state.currentSourceChangeAttemptId ||
+        deferred.episodeIndex !== state.currentEpisodeIndex ||
+        deferred.contentKey !== state.contentKey
+      )
+        return { state: finished, effects: [] };
+      return tryEmitR3(
+        finished,
+        {
+          ...event.snapshot,
+          currentTime: Math.max(
+            event.snapshot.currentTime,
+            deferred.snapshot.currentTime
+          ),
+        },
+        event.nowMs,
+        deferred.reason,
+        deferred.evidence
+      );
+    }
+
     case 'sources.loaded': {
       const contentKey =
         event.contentKey !== undefined ? event.contentKey : state.contentKey;
@@ -681,6 +773,9 @@ export function reducePlaybackSession(
       return {
         state: {
           ...rebased,
+          deferredSourceRecovery: sourceChanged
+            ? null
+            : rebased.deferredSourceRecovery,
           sources: event.sources,
           currentSourceKey: event.currentSourceKey,
           currentEpisodeIndex: event.currentEpisodeIndex,
@@ -1189,6 +1284,7 @@ export function reducePlaybackSession(
       return {
         state: {
           ...state,
+          deferredSourceRecovery: null,
           sourceChangeInFlight: true,
           currentSourceChangeAttemptId: event.attemptId,
           sourceChangeSourceKey: event.sourceKey,
@@ -1203,7 +1299,12 @@ export function reducePlaybackSession(
     case 'sourceChange.completed':
       if (
         event.attemptId !== state.currentSourceChangeAttemptId ||
-        event.sourceKey !== state.sourceChangeSourceKey
+        (event.sourceKey !== state.sourceChangeSourceKey &&
+          !(
+            state.deferredSourceRecovery?.attemptId === event.attemptId &&
+            state.deferredSourceRecovery.sourceKey === event.sourceKey &&
+            state.currentSourceKey === event.sourceKey
+          ))
       ) {
         return { state, effects: [] };
       }
@@ -1211,6 +1312,7 @@ export function reducePlaybackSession(
       return {
         state: {
           ...state,
+          deferredSourceRecovery: null,
           sourceChangeInFlight: false,
           sourceChangeSourceKey: null,
           recoveryInFlight:
@@ -1271,6 +1373,7 @@ export function reducePlaybackSession(
       return {
         state: {
           ...cancelled.state,
+          deferredSourceRecovery: null,
           // Explicit: bad points survive cancel.
           badPoints: state.badPoints,
           badPointsByScope: state.badPointsByScope,
@@ -1280,6 +1383,8 @@ export function reducePlaybackSession(
     }
 
     case 'recovery.progressHealthy': {
+      if (state.deferredSourceRecovery)
+        state = { ...state, deferredSourceRecovery: null };
       // Keep folding healthy ticks while a Stall Episode is active OR while an
       // escape budget is still charged — the latter lets a genuinely long
       // healthy run clear the carried budget after the episode already ended.
@@ -1540,6 +1645,24 @@ export function reducePlaybackSession(
         // so they can retry or pick a line themselves.
         if (timedOut.effects.some((effect) => effect.type === 'switchSource')) {
           return timedOut;
+        }
+        if (timedOut.state.sourceDiscoveryPending) {
+          return {
+            state: timedOut.state.deferredSourceRecovery
+              ? timedOut.state
+              : deferSourceRecovery(
+                  timedOut.state,
+                  event.snapshot,
+                  'source-timeout',
+                  {
+                    platform: 'hlsjs',
+                    hardFailure: true,
+                  }
+                ),
+            effects: timedOut.effects.filter(
+              (effect) => effect.type !== 'showInPlayerFailure'
+            ),
+          };
         }
         const disclosed = timedOut.effects.some(
           (effect) => effect.type === 'showInPlayerFailure'

@@ -156,26 +156,43 @@ export function resolvePlaybackHistoryRecovery({
 
   let fellBackFromHistory: boolean =
     !searchMatch && !detailMatch && !!fallbackDetail;
-  const sources = detailMatch
-    ? detailResults
-    : searchResults.length > 0
-    ? searchResults
-    : [detail];
+  const sources = Array.from(
+    new Map(
+      [...detailResults, ...searchResults].map((source) => [
+        JSON.stringify([source.source, source.id]),
+        source,
+      ])
+    ).values()
+  );
+  const requestedEpisodeIndex =
+    urlEpisodeIndex ?? (historyRecord ? historyRecord.index - 1 : 0);
+  const missingRequestedEpisode = !detail.episodes[requestedEpisodeIndex];
   if (
     isFromPlayRecord &&
-    sourceStatuses?.get(`${detail.source}-${detail.id}`)?.kind === 'unavailable'
+    (missingRequestedEpisode ||
+      sourceStatuses?.get(`${detail.source}-${detail.id}`)?.kind ===
+        'unavailable')
   ) {
     const alternate = selectRecoveryCandidate({
       sources,
       currentSourceKey: `${detail.source}-${detail.id}`,
-      currentEpisodeIndex:
-        resolveResumeEpisodeIndex(detail, historyRecord, urlEpisodeIndex) ?? 0,
+      currentEpisodeIndex: requestedEpisodeIndex,
       statuses: sourceStatuses,
       allowUnverifiedFallback: true,
     });
     if (alternate) {
       detail = alternate.source;
       fellBackFromHistory = true;
+    } else if (missingRequestedEpisode && (searchMatch || detailMatch)) {
+      return {
+        detail: null,
+        sources,
+        fellBackFromHistory: false,
+        contentKey: contentKeyInput ?? null,
+        resumeEpisodeIndex: null,
+        resumeTime: null,
+        error: `当前线路及候选暂未提供第 ${requestedEpisodeIndex + 1} 集`,
+      };
     }
   }
   const contentKey =

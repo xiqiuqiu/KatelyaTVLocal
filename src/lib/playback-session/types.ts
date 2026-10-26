@@ -97,6 +97,17 @@ export interface PlaybackSessionState {
   sourceScores: Map<string, PlaybackSessionSourceScore>;
   measuredVideoInfo: Map<string, SourceVideoInfo>;
   recoveredSourceKeys: Set<string>;
+  sourceDiscoveryPending: boolean;
+  sourceDiscoveryId: number | null;
+  deferredSourceRecovery: {
+    reason: 'auto-recovery' | 'source-timeout';
+    evidence: RecoveryRuntimeEvidence | null;
+    sourceKey: string | null;
+    attemptId: number;
+    episodeIndex: number;
+    contentKey: string | null;
+    snapshot: VideoSnapshot;
+  } | null;
   /**
    * Blind (unverified) recovery switches spent in this episode scope. Capped
    * so a cold title cannot chain through every untested line.
@@ -171,6 +182,13 @@ export interface PlaybackSessionState {
 }
 
 export type PlaybackSessionEvent =
+  | { type: 'sources.discoveryStarted'; discoveryId: number }
+  | {
+      type: 'sources.discoveryFinished';
+      discoveryId: number;
+      snapshot: VideoSnapshot;
+      nowMs: number;
+    }
   | {
       type: 'sources.loaded';
       sources: SearchResult[];
