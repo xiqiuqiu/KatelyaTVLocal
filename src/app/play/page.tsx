@@ -7164,10 +7164,18 @@ function usePlayPageSession() {
                   : undefined,
             });
           }
-          progressMediaEpochRef.current = {
-            episodeIndex: currentEpisodeIndexRef.current,
-            ready: true,
-          };
+          // Repeated canplay/playing notifications do not start a new media
+          // epoch. Keep its identity stable for saves already in flight.
+          const progressEpoch = progressMediaEpochRef.current;
+          if (
+            !progressEpoch.ready ||
+            progressEpoch.episodeIndex !== currentEpisodeIndexRef.current
+          ) {
+            progressMediaEpochRef.current = {
+              episodeIndex: currentEpisodeIndexRef.current,
+              ready: true,
+            };
+          }
           return true;
         };
 

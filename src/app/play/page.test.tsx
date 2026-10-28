@@ -3656,6 +3656,49 @@ describe('PlayPage playback regression coverage', () => {
       expect(saves.mock.calls.at(-1)?.[2]?.userRewound).toBe(false);
     });
 
+    it.each([null, 'video:canplay', 'video:playing'])(
+      'accepts a pending save across same-media readiness (%s)',
+      async (event) => {
+        await start();
+        await pauseAt(300);
+        if (event) act(() => mockArtPlayerEventHandlers.get(event)?.());
+        await finish([0]);
+        await pauseAt(300);
+        expect(saves).toHaveBeenCalledTimes(1);
+      }
+    );
+
+    it.each([null, 'video:canplay', 'video:playing'])(
+      'consumes a saved rewind across same-media readiness (%s)',
+      async (event) => {
+        const player = await start();
+        await pauseAt(322);
+        act(() =>
+          mockArtPlayerEventHandlerLists
+            .get('video:timeupdate')
+            ?.forEach((handler) => handler())
+        );
+        await finish(
+          Array.from({ length: pending.length }, (_, index) => index)
+        );
+        act(() => {
+          player.currentTime = 5;
+          player.video.currentTime = 5;
+          player.video.seeking = true;
+          nativeVideoEvent('seeking');
+          player.video.seeking = false;
+          nativeVideoEvent('seeked');
+        });
+        await pauseAt(11);
+        expect(saves.mock.calls.at(-1)?.[2]?.userRewound).toBe(true);
+        const rewindSave = pending.length - 1;
+        if (event) act(() => mockArtPlayerEventHandlers.get(event)?.());
+        await finish([rewindSave]);
+        await pauseAt(40);
+        expect(saves.mock.calls.at(-1)?.[2]?.userRewound).toBe(false);
+      }
+    );
+
     it('retains an older successful save when the newer request fails', async () => {
       await start();
       await pauseAt(300);
