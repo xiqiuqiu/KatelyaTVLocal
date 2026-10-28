@@ -74,6 +74,7 @@ let mockAutoFireManifestParsed = true;
 let mockHlsSupported = false;
 let mockDefaultPlayerDuration = 120;
 let mockUseRealArtPlayer = false;
+let mockUseRealMediaAdapter = false;
 const mockManifestParsedHandlers: Array<() => void> = [];
 const mockHlsErrorHandlers: Array<
   (event?: unknown, data?: Record<string, unknown>) => void
@@ -94,6 +95,7 @@ jest.mock('@/lib/db.client', () => ({
   deletePlayRecordByKey: jest.fn(),
   generateStorageKey: (source: string, id: string) => `${source}+${id}`,
   getAllPlayRecords: jest.fn(),
+  requestPlayRecordsFromApi: jest.fn().mockResolvedValue({}),
   isFavorited: jest.fn().mockResolvedValue(false),
   saveFavorite: jest.fn(),
   savePlayRecord: jest.fn(),
@@ -226,7 +228,9 @@ jest.mock('artplayer', () => ({
       const player = new Artplayer({
         ...options,
         autoplay: false,
-        customType: { m3u8: () => undefined },
+        customType: mockUseRealMediaAdapter
+          ? options.customType
+          : { m3u8: () => undefined },
       });
       Object.defineProperties(player.video, {
         playing: { value: true },
@@ -311,6 +315,9 @@ jest.mock('artplayer', () => ({
     Object.defineProperty(player, 'switch', {
       set(value: string) {
         options.customType?.m3u8?.(video as unknown as HTMLVideoElement, value);
+        player.currentTime = 0;
+        video.currentTime = 0;
+        mockArtPlayerEventHandlers.get('video:loadedmetadata')?.();
       },
     });
     Object.defineProperty(player, 'url', {
@@ -2705,6 +2712,44 @@ describe('PlayPage automatic source-switch resume', () => {
     });
   }
 
+  it('keeps the chosen same-episode source resume instead of adopting older server progress', async () => {
+    await settleWithSources();
+    const history =
+      jest.requireMock('@/lib/db.client').requestPlayRecordsFromApi;
+    history.mockResolvedValue({
+      'wp:测试::2026#0': {
+        index: 1,
+        play_time: 115,
+        total_time: 120,
+        search_title: '测试',
+      },
+    });
+    try {
+      const initial = mockArtPlayerInstance;
+      if (!initial) throw new Error('missing player');
+      initial.currentTime = 20;
+      initial.video.currentTime = 20;
+      await act(async () => {
+        await mockSourceChangeHandler?.('new', '2', '测试');
+        await Promise.resolve();
+      });
+      act(() => mockArtPlayerEventHandlers.get('video:canplay')?.());
+      const player = mockArtPlayerInstance;
+      if (!player) throw new Error('missing switched player');
+      const resume = player.currentTime;
+      expect(resume).toBeGreaterThan(0);
+      expect(resume).toBeLessThanOrEqual(20);
+      player.video.currentTime = resume;
+      await act(async () => {
+        mockArtPlayerEventHandlers.get('video:play')?.();
+        await Promise.resolve();
+      });
+      expect(player.video.currentTime).toBe(resume);
+    } finally {
+      history.mockReset().mockResolvedValue({});
+    }
+  });
+
   it('shows the current connection attempt throughout a long automatic switch', async () => {
     await settleWithSources();
     mockAutoFireManifestParsed = false;
@@ -3523,6 +3568,281 @@ describe('PlayPage playback regression coverage', () => {
     if (!callback) throw new Error(`missing ${name} listener`);
     callback();
   }
+  describe('episode media ownership', () => {
+    afterEach(() => {
+      mockUseRealArtPlayer = false;
+      mockUseRealMediaAdapter = false;
+      jest
+        .requireMock('@/lib/db.client')
+        .requestPlayRecordsFromApi.mockReset()
+        .mockResolvedValue({});
+    });
+    it.each(
+      [0, 12, 1250].flatMap((h) =>
+        [false, true].flatMap((e) =>
+          [false, true].map((d) => [h, e, d] as const)
+        )
+      )
+    )(
+      'real ArtPlayer history %s readinessBeforeMetadata %s delayedSave %s',
+      async (targetHistory, readinessBeforeMetadata, delayedSave) => {
+        mockUseRealArtPlayer = true;
+        mockUseRealMediaAdapter = true;
+        jest
+          .requireMock('@/lib/db.client')
+          .requestPlayRecordsFromApi.mockImplementation(
+            jest.requireActual('@/lib/db.client').requestPlayRecordsFromApi
+          );
+        mockHlsSupported = true;
+        mockDefaultPlayerDuration = 3000;
+        mockSearchParams = new URLSearchParams(
+          'source=zy360&id=26134&title=斗破苍穹年番&year=2022&stitle=斗破苍穹&stype=tv&from=playrecord'
+        );
+        const source = createSource({
+          source: 'zy360',
+          id: '26134',
+          title: '斗破苍穹年番',
+          year: '2022',
+          episodes: Array.from(
+            { length: 202 },
+            (_, i) => `https://example.com/ep-${i + 1}.m3u8`
+          ),
+        });
+        const previous = {
+          title: '斗破苍穹年番',
+          source_name: '详情源',
+          year: '2022',
+          cover: '',
+          index: 202,
+          total_episodes: 202,
+          play_time: 1226,
+          total_time: 3000,
+          save_time: 100,
+          search_title: '斗破苍穹',
+          route_source: 'zy360',
+          route_id: '26134',
+        };
+        const records: Record<string, typeof previous> = {
+          'zy360+26134': previous,
+          'wp:斗破苍穹::2022#201': previous,
+        };
+        if (targetHistory) {
+          records['wp:斗破苍穹::2022#196'] = {
+            ...previous,
+            index: 197,
+            play_time: targetHistory,
+            save_time: 99,
+          };
+          records['wp:斗破苍穹年番::2022#196'] =
+            records['wp:斗破苍穹::2022#196'];
+        }
+        jest.mocked(getAllPlayRecords).mockResolvedValue(records);
+        const saves = jest.requireMock('@/lib/db.client').savePlayRecordKeys;
+        saves.mockReset();
+        saves.mockResolvedValue(undefined);
+        global.fetch = jest.fn(
+          async (input: RequestInfo | URL) =>
+            ({
+              ok: true,
+              json: async () =>
+                input.toString().startsWith('/api/detail')
+                  ? source
+                  : input.toString().startsWith('/api/search')
+                  ? { results: [] }
+                  : input.toString().startsWith('/api/playrecords')
+                  ? records
+                  : {},
+            } as Response)
+        );
+        const view = render(<PlayPage />);
+        await act(async () => {
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        await screen.findByTestId('episode-selector-sources');
+        const player = mockArtPlayerInstance;
+        if (!player?.emit) throw new Error('real ArtPlayer not created');
+        let time = player.video.currentTime;
+        const seeks: number[] = [];
+        Object.defineProperties(player.video, {
+          currentTime: {
+            configurable: true,
+            get: () => time,
+            set: (v: number) => {
+              seeks.push(v);
+              time = v;
+            },
+          },
+          readyState: { configurable: true, value: 4 },
+          paused: { configurable: true, value: false },
+          seeking: { configurable: true, value: false },
+          ended: { configurable: true, value: false },
+          networkState: { configurable: true, value: 2 },
+          buffered: {
+            configurable: true,
+            value: { length: 1, start: () => 0, end: () => 3000 },
+          },
+        });
+        await act(async () => {
+          player.emit?.('video:loadedmetadata');
+          player.emit?.('video:canplay');
+          player.emit?.('video:playing');
+          await Promise.resolve();
+        });
+        expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+          'data-episode',
+          '202'
+        );
+        expect(player.currentTime).toBe(1224.5);
+        act(() => {
+          player.currentTime = 1226;
+          player.emit?.('video:timeupdate');
+        });
+        await act(async () => {
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        seeks.length = 0;
+        if (delayedSave)
+          saves.mockImplementation(() => new Promise(() => undefined));
+        await act(async () => {
+          mockEpisodeChangeHandler?.(197);
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        await act(async () => {
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        await screen.findByTestId('episode-selector-sources');
+        if (readinessBeforeMetadata)
+          await act(async () => {
+            player.emit?.('video:canplay');
+            player.emit?.('video:playing');
+            player.emit?.('video:timeupdate');
+            await Promise.resolve();
+          });
+        await act(async () => {
+          player.emit?.('video:loadedmetadata');
+          player.emit?.('video:canplay');
+          player.emit?.('video:playing');
+          await Promise.resolve();
+        });
+        await act(async () => {
+          player.emit?.('video:play');
+          await Promise.resolve();
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        const afterPlay = player.currentTime;
+        await act(async () => {
+          player.emit?.('video:timeupdate');
+          player.emit?.('pause');
+          await Promise.resolve();
+        });
+        expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+          'data-episode',
+          '197'
+        );
+        expect(
+          (player.video.hls as { loadSource: jest.Mock }).loadSource
+        ).toHaveBeenLastCalledWith('https://example.com/ep-197.m3u8');
+        if (!targetHistory)
+          expect(
+            saves.mock.calls.filter(
+              ([, r]: [unknown, typeof previous]) =>
+                r.index === 197 && r.play_time >= 1226
+            )
+          ).toEqual([]);
+        expect(seeks[0]).toBe(0);
+        expect(
+          seeks.every((time) => time === 0 || time === targetHistory)
+        ).toBe(true);
+        expect(afterPlay).toBe(targetHistory);
+        // Returning to 202 may use its matching legacy record; 197 must never
+        // use that same record. The title alias differs from the detail title.
+        await act(async () => {
+          mockEpisodeChangeHandler?.(202);
+          await Promise.resolve();
+          await Promise.resolve();
+        });
+        await waitFor(() =>
+          expect(
+            (player.video.hls as { loadSource: jest.Mock }).loadSource
+          ).toHaveBeenLastCalledWith('https://example.com/ep-202.m3u8')
+        );
+        await act(async () => {
+          player.emit?.('video:loadedmetadata');
+          player.emit?.('video:canplay');
+          player.emit?.('video:playing');
+          await Promise.resolve();
+        });
+        expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+          'data-episode',
+          '202'
+        );
+        expect(
+          (player.video.hls as { loadSource: jest.Mock }).loadSource
+        ).toHaveBeenLastCalledWith('https://example.com/ep-202.m3u8');
+        expect(player.currentTime).toBe(1226);
+        view.unmount();
+      }
+    );
+  });
+  describe('history response ownership', () => {
+    const history = jest.mocked(
+      jest.requireMock<typeof import('@/lib/db.client')>('@/lib/db.client')
+        .requestPlayRecordsFromApi
+    );
+    afterEach(() => history.mockReset().mockResolvedValue({}));
+    it.each(['pause', 'rewind'])(
+      'ignores a history read that finishes after user %s',
+      async (action) => {
+        const player = await start();
+        player.currentTime = 100;
+        player.video.currentTime = 100;
+        act(() => mockArtPlayerEventHandlers.get('video:timeupdate')?.());
+        let resolve!: (records: Record<string, unknown>) => void;
+        history.mockImplementationOnce(
+          () =>
+            new Promise((done) => {
+              resolve = done as typeof resolve;
+            })
+        );
+        act(() => mockArtPlayerEventHandlers.get('video:play')?.());
+        expect(history).toHaveBeenCalledTimes(1);
+        act(() => {
+          if (action === 'pause')
+            mockArtPlayerEventHandlers.get('video:pause')?.();
+          else {
+            player.currentTime = 0;
+            player.video.currentTime = 0;
+            player.video.seeking = true;
+            nativeVideoEvent('seeking');
+            player.video.seeking = false;
+            nativeVideoEvent('seeked');
+          }
+        });
+        const position = player.video.currentTime;
+        await act(async () => {
+          resolve({
+            'wp:详情影片::2026#0': {
+              index: 1,
+              play_time: 500,
+              total_time: 1000,
+              title: '详情影片',
+              search_title: '详情影片',
+              year: '2026',
+              save_time: 10,
+            },
+          });
+          await Promise.resolve();
+        });
+        expect(player.video.currentTime).toBe(position);
+      }
+    );
+  });
+
   describe('save completion ordering', () => {
     const saves = jest.mocked(
       jest.requireMock<typeof import('@/lib/db.client')>('@/lib/db.client')
