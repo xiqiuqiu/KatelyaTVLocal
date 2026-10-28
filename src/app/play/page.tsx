@@ -182,11 +182,11 @@ import {
 import {
   adaptWatchProgressPlayhead,
   buildWatchProgressContentKey,
-  buildWatchProgressStorageKey,
   getWatchProgressAuthorityMode,
   isWatchProgressDualWriteEnabled,
   planEpisodeChangeSave,
   planLatestWatchProgressForContent,
+  planWatchProgressRead,
   planWatchProgressWrite,
 } from '@/lib/watch-progress';
 
@@ -1199,6 +1199,12 @@ function usePlayPageSession() {
     episodeIndex: number;
     ready: boolean;
   }>({ episodeIndex: 0, ready: true });
+  const episodeMetadataPendingRef = useRef(false);
+  const episodePreviousHlsRef = useRef<Hls | null>(null);
+  const episodeHistoryPendingRef = useRef(false);
+  const skipNextPlayHistoryRef = useRef(false);
+  const historyIntentVersionRef = useRef(0);
+  const historyReadSequenceRef = useRef(0);
   const sourceDurationBeforeSwitchRef = useRef<number | null>(null);
   const sourceSwitchAutoPlayPendingRef = useRef(false);
   const playbackPolicyLogKeysRef = useLazyRef(() => new Set<string>());
@@ -1580,6 +1586,9 @@ function usePlayPageSession() {
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastSaveTimeRef = useRef<number>(0);
   const lastSavedSnapshotRef = useRef<PlayRecordSaveSnapshot | null>(null);
+
+  const progressSaveRequestIdRef = useRef(0);
+  const appliedProgressSaveRequestIdRef = useRef(0);
 
   // 播放器时间：高频进度走 ref；调试 UI 由 PlaybackDebugPlayhead 秒级采样
   const currentPlayTimeRef = useRef(0);
@@ -2296,17 +2305,20 @@ function usePlayPageSession() {
   };
 
   const getRememberedPlayheadSeconds = () =>
-    Math.max(
-      currentPlayTimeRef.current || 0,
-      hlsRecoveryStateRef.current.lastPlaybackTime || 0
-    );
+    episodeMetadataPendingRef.current
+      ? 0
+      : Math.max(
+          currentPlayTimeRef.current || 0,
+          hlsRecoveryStateRef.current.lastPlaybackTime || 0
+        );
 
   const getCurrentVideoSnapshot = (): VideoSnapshot => {
     const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
-    const liveTime =
-      typeof video?.currentTime === 'number'
-        ? video.currentTime
-        : artPlayerRef.current?.currentTime || 0;
+    const liveTime = episodeMetadataPendingRef.current
+      ? 0
+      : typeof video?.currentTime === 'number'
+      ? video.currentTime
+      : artPlayerRef.current?.currentTime || 0;
     // Same-source reload/remount can briefly report 0; keep the last known
     // mid-playback playhead so R3 auto-switch / restart-load do not seed from 0.
     const currentTime = resolveRememberedPlayhead({
@@ -2645,6 +2657,15 @@ function usePlayPageSession() {
         nowMs: performance.now(),
         snapshot: getCurrentVideoSnapshot(),
       });
+    }
+    if (
+      event.type === 'user.pause' ||
+      event.type === 'user.switchEpisode' ||
+      event.type === 'user.switchSource' ||
+      (event.type === 'user.seekStarted' && event.confirmedUserGesture === true)
+    ) {
+      historyIntentVersionRef.current += 1;
+      episodeHistoryPendingRef.current = false;
     }
     const previousStartup = playbackSessionStateRef.current.startup;
     const previousBadPoints = playbackSessionStateRef.current.badPoints;
@@ -3424,11 +3445,17 @@ function usePlayPageSession() {
     clearWaitingRecoveryTimer();
     state.userPausedAt = 0;
     state.manualInteractionUntil = now + HLS_MANUAL_INTERACTION_GRACE_MS;
+    // A source switch already chose its same-episode resume position.
+    if (skipNextPlayHistoryRef.current) {
+      if (sourceChangeMediaAttemptRef.current) return;
+      skipNextPlayHistoryRef.current = false;
+      return;
+    }
     void adoptFurtherServerPlayhead();
   };
 
   const adoptFurtherServerPlayhead = async () => {
-    if (userRewoundRef.current) {
+    if (userRewoundRef.current || !progressMediaEpochRef.current.ready) {
       return;
     }
     const player = artPlayerRef.current;
@@ -3439,10 +3466,23 @@ function usePlayPageSession() {
     }
     const episodeIndex = currentEpisodeIndexRef.current;
     const livePlayTime = player.currentTime || 0;
+    const mediaEpoch = progressMediaEpochRef.current;
+    const sessionId = hlsRecoveryStateRef.current.playbackSessionId;
+    const intentVersion = historyIntentVersionRef.current;
+    const requestId = ++historyReadSequenceRef.current;
+    const contentKey = getPlaybackContentKey();
+    const episodeResume = episodeHistoryPendingRef.current;
     try {
       const records = await requestPlayRecordsFromApi();
       if (
         userRewoundRef.current ||
+        artPlayerRef.current !== player ||
+        progressMediaEpochRef.current !== mediaEpoch ||
+        !progressMediaEpochRef.current.ready ||
+        hlsRecoveryStateRef.current.playbackSessionId !== sessionId ||
+        historyIntentVersionRef.current !== intentVersion ||
+        historyReadSequenceRef.current !== requestId ||
+        getPlaybackContentKey() !== contentKey ||
         currentEpisodeIndexRef.current !== episodeIndex ||
         currentSourceRef.current !== source ||
         currentIdRef.current !== id
@@ -3455,23 +3495,26 @@ function usePlayPageSession() {
           { ...record, search_title: record.search_title || '' },
         ])
       );
-      const episodeKey = buildWatchProgressStorageKey(
-        getPlaybackContentKey(),
-        episodeIndex
-      );
-      const record =
-        getWatchProgressAuthorityMode() === 'legacy'
-          ? planLatestWatchProgressForContent({
-              contentKey: getPlaybackContentKey(),
-              records: normalized,
-              legacyRoute: { source, id },
-              authorityMode: 'legacy',
-            }).record
-          : normalized[episodeKey];
-      if (!record || record.index !== episodeIndex + 1) {
+      const record = planWatchProgressRead({
+        contentKey,
+        episodeIndex,
+        records: normalized,
+        legacyRoute: { source, id },
+        authorityMode: getWatchProgressAuthorityMode(),
+      }).record;
+      episodeHistoryPendingRef.current = false;
+      if (
+        !record ||
+        record.index !== episodeIndex + 1 ||
+        !Number.isFinite(record.play_time) ||
+        record.play_time <= 0 ||
+        !Number.isFinite(record.total_time) ||
+        record.total_time <= 0 ||
+        record.play_time > record.total_time
+      ) {
         return;
       }
-      if (record.play_time < livePlayTime + 30) {
+      if (!episodeResume && record.play_time < livePlayTime + 30) {
         return;
       }
       const video = player.video as HTMLVideoElement | undefined;
@@ -3479,7 +3522,10 @@ function usePlayPageSession() {
         return;
       }
       systemSeekInFlightRef.current = true;
-      video.currentTime = record.play_time;
+      video.currentTime = clampSourceSwitchResumeTime({
+        resumeTime: record.play_time,
+        duration: player.duration,
+      });
     } catch (err) {
       console.warn('对齐服务端播放进度失败:', err);
     }
@@ -4782,7 +4828,9 @@ function usePlayPageSession() {
 
     const nextUrl = playbackPolicy.url;
 
-    if (nextUrl !== videoUrlRef.current) {
+    const reloadEpisodeAtSameUrl =
+      nextUrl === videoUrlRef.current && episodeMetadataPendingRef.current;
+    if (nextUrl !== videoUrlRef.current || reloadEpisodeAtSameUrl) {
       startupFeedbackSentRef.current = false;
       playbackStartupStartedAtRef.current = Date.now();
       startHlsPlaybackSession();
@@ -4804,6 +4852,11 @@ function usePlayPageSession() {
         playbackMode: playbackPolicy.mode,
         stage: 'initing',
       });
+      // Different episode slots may share a URL. ArtPlayer.switch ignores it,
+      // so reload the loader explicitly and retain the metadata boundary.
+      if (reloadEpisodeAtSameUrl && artPlayerRef.current) {
+        artPlayerRef.current.url = nextUrl;
+      }
     } else {
       applyPlaybackMode(playbackPolicy.mode);
     }
@@ -5085,6 +5138,7 @@ function usePlayPageSession() {
     video: HTMLVideoElement,
     platform: 'apple-hlsjs' | 'hlsjs'
   ) => {
+    if (!progressMediaEpochRef.current.ready) return false;
     const sessionResult = dispatchPlaybackSessionEvent({
       type: 'video.timeupdate',
       nowMs: Date.now(),
@@ -6039,6 +6093,7 @@ function usePlayPageSession() {
         options.autoPlayAfterReady
       );
       sourceSwitchAutomaticRef.current = Boolean(options.autoRecovery);
+      skipNextPlayHistoryRef.current = true;
       scheduleSourceChangeTimeout({
         source: newDetail,
         targetIndex,
@@ -6155,6 +6210,7 @@ function usePlayPageSession() {
     clearEndedAutoAdvanceTimer();
     resumeTimeRef.current = resumeTime;
     resumeEpisodeIndexRef.current = currentEpisodeIndexRef.current;
+    skipNextPlayHistoryRef.current = true;
     hlsRecoveryStateRef.current.lastPlaybackTime = resumeTime;
     sourceSwitchSavePendingRef.current = resumeTime > 0;
     sourceSwitchAutoPlayPendingRef.current = true;
@@ -6321,7 +6377,10 @@ function usePlayPageSession() {
     }
   };
 
-  const beginEpisodeProgressEpoch = (episodeIndex: number) => {
+  const beginEpisodeProgressEpoch = (
+    episodeIndex: number,
+    resumeHistory = false
+  ) => {
     qualityFrameCleanupRef.current?.();
     playbackQualityRef.current.startRound('episode', episodeIndex, true);
     dispatchPlaybackSessionEvent({
@@ -6331,6 +6390,12 @@ function usePlayPageSession() {
     });
     setInPlayerFailure(null);
     progressMediaEpochRef.current = { episodeIndex, ready: false };
+    episodeMetadataPendingRef.current = true;
+    episodePreviousHlsRef.current =
+      (artPlayerRef.current?.video as HTMLVideoElement | undefined)?.hls ??
+      null;
+    episodeHistoryPendingRef.current = resumeHistory;
+    skipNextPlayHistoryRef.current = false;
     // A rewind, playhead, last save, or queued resume from the episode being
     // left must not travel with the page onto the next episode.
     userRewoundRef.current = false;
@@ -6368,7 +6433,7 @@ function usePlayPageSession() {
       episodeIndex,
       nowMs: Date.now(),
     });
-    beginEpisodeProgressEpoch(episodeIndex);
+    beginEpisodeProgressEpoch(episodeIndex, true);
     if (!skipLeavingSave) {
       void executeSaveProgressEffects(result.effects, {
         playTime: leaving.playTime,
@@ -6666,6 +6731,11 @@ function usePlayPageSession() {
       route_id: currentIdRef.current,
     };
 
+    const requestId = ++progressSaveRequestIdRef.current;
+    const playbackSessionId = hlsRecoveryStateRef.current.playbackSessionId;
+    const source = currentSourceRef.current;
+    const id = currentIdRef.current;
+    const playbackUrl = videoUrlRef.current;
     const rewindGeneration = userRewoundRef.current
       ? userRewoundGenerationRef.current
       : 0;
@@ -6679,6 +6749,24 @@ function usePlayPageSession() {
         }
       );
 
+      // Leaving-episode records still persist, but their completion must not
+      // publish into another media epoch/session. Request order, not progress
+      // or completion time, selects the newest successfully applied snapshot.
+      if (
+        artPlayerRef.current !== player ||
+        progressMediaEpochRef.current !== mediaEpoch ||
+        !mediaMatchesEpisode ||
+        currentEpisodeIndexRef.current !== episodeIndex ||
+        hlsRecoveryStateRef.current.playbackSessionId !== playbackSessionId ||
+        currentSourceRef.current !== source ||
+        currentIdRef.current !== id ||
+        videoUrlRef.current !== playbackUrl ||
+        getPlaybackContentKey() !== contentKey ||
+        requestId < appliedProgressSaveRequestIdRef.current
+      ) {
+        return;
+      }
+      appliedProgressSaveRequestIdRef.current = requestId;
       lastSaveTimeRef.current = saveTime;
       lastSavedSnapshotRef.current = snapshot;
       // A rewind only authorizes the save that records it. A save that started
@@ -6840,7 +6928,8 @@ function usePlayPageSession() {
         const finalizeSourceChangeMediaReady = (
           trigger: 'canplay' | 'playing' | 'manifest'
         ): boolean => {
-          if (!canApplyStartupResult()) return false;
+          if (episodeMetadataPendingRef.current || !canApplyStartupResult())
+            return false;
           const player = artPlayerRef.current;
           if (!player) {
             return false;
@@ -7138,10 +7227,20 @@ function usePlayPageSession() {
                   : undefined,
             });
           }
-          progressMediaEpochRef.current = {
-            episodeIndex: currentEpisodeIndexRef.current,
-            ready: true,
-          };
+          // Repeated canplay/playing notifications do not start a new media
+          // epoch. Keep its identity stable for saves already in flight.
+          const progressEpoch = progressMediaEpochRef.current;
+          if (
+            !progressEpoch.ready ||
+            progressEpoch.episodeIndex !== currentEpisodeIndexRef.current
+          ) {
+            progressMediaEpochRef.current = {
+              episodeIndex: currentEpisodeIndexRef.current,
+              ready: true,
+            };
+          }
+          if (episodeHistoryPendingRef.current)
+            void adoptFurtherServerPlayhead();
           return true;
         };
 
@@ -7736,6 +7835,9 @@ function usePlayPageSession() {
               };
 
               const handleVideoSeeking = () => {
+                // Even a browser/system seek makes an older history read stale.
+                // This does not relabel that seek as a user gesture.
+                historyReadSequenceRef.current += 1;
                 resetProgressiveSourceProbeStability();
                 if (systemSeekInFlightRef.current) {
                   return;
@@ -8011,6 +8113,25 @@ function usePlayPageSession() {
 
         // 监听视频可播放事件；与 MANIFEST_PARSED 共用 finalize，避免早到的
         // canplay 被 stale 门控丢掉后不再恢复进度。
+        const metadataPlayer = artPlayerRef.current;
+        artPlayerRef.current.on('video:loadedmetadata', () => {
+          if (artPlayerRef.current !== metadataPlayer) return;
+          if (
+            episodeMetadataPendingRef.current &&
+            episodePreviousHlsRef.current &&
+            metadataPlayer.video.hls === episodePreviousHlsRef.current
+          )
+            return;
+
+          // ArtPlayer resets switchUrl to zero in this same metadata event.
+          // Earlier canplay/playing from the old resource cannot publish progress.
+          if (episodeMetadataPendingRef.current) {
+            metadataPlayer.currentTime = 0;
+            currentPlayTimeRef.current = 0;
+            hlsRecoveryStateRef.current.lastPlaybackTime = 0;
+          }
+          episodeMetadataPendingRef.current = false;
+        });
         artPlayerRef.current.on('video:canplay', () => {
           if (finalizeSourceChangeMediaReady('canplay')) {
             playbackPreparation.markFrameReady();
