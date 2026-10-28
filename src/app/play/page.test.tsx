@@ -3523,6 +3523,174 @@ describe('PlayPage playback regression coverage', () => {
     if (!callback) throw new Error(`missing ${name} listener`);
     callback();
   }
+  describe('save completion ordering', () => {
+    const saves = jest.mocked(
+      jest.requireMock<typeof import('@/lib/db.client')>('@/lib/db.client')
+        .savePlayRecordKeys
+    );
+    let pending: Array<() => void>;
+
+    beforeEach(() => {
+      pending = [];
+      saves.mockReset();
+      saves.mockImplementation(
+        () => new Promise<void>((resolve) => pending.push(resolve))
+      );
+      const originalFetch = global.fetch;
+      global.fetch = jest.fn(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (input.toString().startsWith('/api/detail')) {
+            return {
+              ok: true,
+              json: async () =>
+                createSource({
+                  episodes: [
+                    'https://example.com/one.m3u8',
+                    'https://example.com/two.m3u8',
+                  ],
+                }),
+            } as Response;
+          }
+          return originalFetch(input, init);
+        }
+      );
+    });
+
+    afterEach(() => saves.mockReset());
+
+    async function pauseAt(time: number) {
+      const player = mockArtPlayerInstance;
+      if (!player) throw new Error('missing player');
+      player.currentTime = time;
+      player.video.currentTime = time;
+      await act(async () => {
+        mockArtPlayerEventHandlers.get('pause')?.();
+        await Promise.resolve();
+      });
+    }
+
+    async function finish(indices: number[]) {
+      await act(async () => {
+        indices.forEach((index) => pending[index]());
+        await Promise.resolve();
+      });
+    }
+
+    it('does not republish a completed new-episode save after leaving saves finish late', async () => {
+      await start();
+      await pauseAt(300);
+      expect(saves).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        mockEpisodeChangeHandler?.(2);
+        await Promise.resolve();
+      });
+      await settlePlayPage();
+      act(() => mockArtPlayerEventHandlers.get('video:canplay')?.());
+      expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+        'data-episode',
+        '2'
+      );
+      const leavingCount = saves.mock.calls.length;
+      expect(leavingCount).toBeGreaterThanOrEqual(2);
+      expect(
+        saves.mock.calls
+          .slice(0, leavingCount)
+          .every(([, record]) => record.index === 1 && record.play_time === 300)
+      ).toBe(true);
+      await pauseAt(40);
+      expect(saves.mock.calls.at(-1)?.[1]).toEqual(
+        expect.objectContaining({ index: 2, play_time: 40 })
+      );
+      const newSave = pending.length - 1;
+      await finish([newSave]);
+      await finish(Array.from({ length: newSave }, (_, index) => index));
+      const count = saves.mock.calls.length;
+      await pauseAt(40);
+      // Real page save policy must still dedupe the new episode's saved position.
+      expect(saves).toHaveBeenCalledTimes(count);
+    });
+
+    it('rejects an old session completion after returning to the same episode', async () => {
+      await start();
+      await pauseAt(300);
+      for (const episode of [2, 1]) {
+        await act(async () => {
+          mockEpisodeChangeHandler?.(episode);
+          await Promise.resolve();
+        });
+        await settlePlayPage();
+        act(() => mockArtPlayerEventHandlers.get('video:canplay')?.());
+      }
+      // Same source, episode and URL again; only the captured epoch/session
+      // distinguishes this old completion. No newer save has completed yet.
+      await finish([0]);
+      await pauseAt(20);
+      expect(saves.mock.calls.at(-1)?.[1]).toEqual(
+        expect.objectContaining({ index: 1, play_time: 20 })
+      );
+    });
+
+    it('keeps a later rewind intent when a pre-rewind save completes', async () => {
+      const player = await start();
+      await pauseAt(322);
+      act(() =>
+        mockArtPlayerEventHandlerLists
+          .get('video:timeupdate')
+          ?.forEach((handler) => handler())
+      );
+      const preRewindSaves = pending.length;
+      act(() => {
+        player.currentTime = 5;
+        player.video.currentTime = 5;
+        player.video.seeking = true;
+        nativeVideoEvent('seeking');
+        player.video.seeking = false;
+        nativeVideoEvent('seeked');
+      });
+      await finish(Array.from({ length: preRewindSaves }, (_, index) => index));
+      await pauseAt(11);
+      expect(saves.mock.calls.at(-1)?.[1].play_time).toBe(11);
+      expect(saves.mock.calls.at(-1)?.[2]?.userRewound).toBe(true);
+      await finish([pending.length - 1]);
+      await pauseAt(40);
+      expect(saves.mock.calls.at(-1)?.[2]?.userRewound).toBe(false);
+    });
+
+    it('retains an older successful save when the newer request fails', async () => {
+      await start();
+      await pauseAt(300);
+      const error = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      saves.mockRejectedValueOnce(new Error('controlled persistence failure'));
+      try {
+        await pauseAt(400);
+        await finish([0]);
+        await pauseAt(300);
+        expect(saves).toHaveBeenCalledTimes(2);
+        expect(error).toHaveBeenCalledWith(
+          '保存播放进度失败:',
+          expect.any(Error)
+        );
+      } finally {
+        error.mockRestore();
+      }
+    });
+
+    it.each([false, true])(
+      'keeps the newest same-episode snapshot (reverse completion: %s)',
+      async (reverse) => {
+        await start();
+        await pauseAt(300);
+        await pauseAt(400);
+        expect(saves).toHaveBeenCalledTimes(2);
+        await finish(reverse ? [1, 0] : [0, 1]);
+        await pauseAt(400);
+        expect(saves).toHaveBeenCalledTimes(2);
+      }
+    );
+  });
+
   it.each(['pause', 'beforeunload'])(
     'rewind 322 to 5 then save at 11 via %s should retain 11',
     async (reason) => {

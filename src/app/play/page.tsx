@@ -1581,6 +1581,9 @@ function usePlayPageSession() {
   const lastSaveTimeRef = useRef<number>(0);
   const lastSavedSnapshotRef = useRef<PlayRecordSaveSnapshot | null>(null);
 
+  const progressSaveRequestIdRef = useRef(0);
+  const appliedProgressSaveRequestIdRef = useRef(0);
+
   // 播放器时间：高频进度走 ref；调试 UI 由 PlaybackDebugPlayhead 秒级采样
   const currentPlayTimeRef = useRef(0);
   const [videoDuration, setVideoDuration] = useState<number>(0);
@@ -6666,6 +6669,11 @@ function usePlayPageSession() {
       route_id: currentIdRef.current,
     };
 
+    const requestId = ++progressSaveRequestIdRef.current;
+    const playbackSessionId = hlsRecoveryStateRef.current.playbackSessionId;
+    const source = currentSourceRef.current;
+    const id = currentIdRef.current;
+    const playbackUrl = videoUrlRef.current;
     const rewindGeneration = userRewoundRef.current
       ? userRewoundGenerationRef.current
       : 0;
@@ -6679,6 +6687,24 @@ function usePlayPageSession() {
         }
       );
 
+      // Leaving-episode records still persist, but their completion must not
+      // publish into another media epoch/session. Request order, not progress
+      // or completion time, selects the newest successfully applied snapshot.
+      if (
+        artPlayerRef.current !== player ||
+        progressMediaEpochRef.current !== mediaEpoch ||
+        !mediaMatchesEpisode ||
+        currentEpisodeIndexRef.current !== episodeIndex ||
+        hlsRecoveryStateRef.current.playbackSessionId !== playbackSessionId ||
+        currentSourceRef.current !== source ||
+        currentIdRef.current !== id ||
+        videoUrlRef.current !== playbackUrl ||
+        getPlaybackContentKey() !== contentKey ||
+        requestId < appliedProgressSaveRequestIdRef.current
+      ) {
+        return;
+      }
+      appliedProgressSaveRequestIdRef.current = requestId;
       lastSaveTimeRef.current = saveTime;
       lastSavedSnapshotRef.current = snapshot;
       // A rewind only authorizes the save that records it. A save that started
