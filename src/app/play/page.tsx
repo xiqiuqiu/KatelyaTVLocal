@@ -1200,6 +1200,7 @@ function usePlayPageSession() {
     ready: boolean;
   }>({ episodeIndex: 0, ready: true });
   const episodeMetadataPendingRef = useRef(false);
+  const episodePreviousHlsRef = useRef<Hls | null>(null);
   const episodeHistoryPendingRef = useRef(false);
   const skipNextPlayHistoryRef = useRef(false);
   const historyIntentVersionRef = useRef(0);
@@ -4827,7 +4828,9 @@ function usePlayPageSession() {
 
     const nextUrl = playbackPolicy.url;
 
-    if (nextUrl !== videoUrlRef.current) {
+    const reloadEpisodeAtSameUrl =
+      nextUrl === videoUrlRef.current && episodeMetadataPendingRef.current;
+    if (nextUrl !== videoUrlRef.current || reloadEpisodeAtSameUrl) {
       startupFeedbackSentRef.current = false;
       playbackStartupStartedAtRef.current = Date.now();
       startHlsPlaybackSession();
@@ -4849,6 +4852,11 @@ function usePlayPageSession() {
         playbackMode: playbackPolicy.mode,
         stage: 'initing',
       });
+      // Different episode slots may share a URL. ArtPlayer.switch ignores it,
+      // so reload the loader explicitly and retain the metadata boundary.
+      if (reloadEpisodeAtSameUrl && artPlayerRef.current) {
+        artPlayerRef.current.url = nextUrl;
+      }
     } else {
       applyPlaybackMode(playbackPolicy.mode);
     }
@@ -6383,6 +6391,9 @@ function usePlayPageSession() {
     setInPlayerFailure(null);
     progressMediaEpochRef.current = { episodeIndex, ready: false };
     episodeMetadataPendingRef.current = true;
+    episodePreviousHlsRef.current =
+      (artPlayerRef.current?.video as HTMLVideoElement | undefined)?.hls ??
+      null;
     episodeHistoryPendingRef.current = resumeHistory;
     skipNextPlayHistoryRef.current = false;
     // A rewind, playhead, last save, or queued resume from the episode being
@@ -8105,9 +8116,17 @@ function usePlayPageSession() {
         const metadataPlayer = artPlayerRef.current;
         artPlayerRef.current.on('video:loadedmetadata', () => {
           if (artPlayerRef.current !== metadataPlayer) return;
+          if (
+            episodeMetadataPendingRef.current &&
+            episodePreviousHlsRef.current &&
+            metadataPlayer.video.hls === episodePreviousHlsRef.current
+          )
+            return;
+
           // ArtPlayer resets switchUrl to zero in this same metadata event.
           // Earlier canplay/playing from the old resource cannot publish progress.
           if (episodeMetadataPendingRef.current) {
+            metadataPlayer.currentTime = 0;
             currentPlayTimeRef.current = 0;
             hlsRecoveryStateRef.current.lastPlaybackTime = 0;
           }

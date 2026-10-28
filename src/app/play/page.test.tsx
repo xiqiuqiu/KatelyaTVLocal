@@ -3580,12 +3580,14 @@ describe('PlayPage playback regression coverage', () => {
     it.each(
       [0, 12, 1250].flatMap((h) =>
         [false, true].flatMap((e) =>
-          [false, true].map((d) => [h, e, d] as const)
+          [false, true].flatMap((d) =>
+            [false, true].map((sameUrl) => [h, e, d, sameUrl] as const)
+          )
         )
       )
     )(
-      'real ArtPlayer history %s readinessBeforeMetadata %s delayedSave %s',
-      async (targetHistory, readinessBeforeMetadata, delayedSave) => {
+      'real ArtPlayer history %s readinessBeforeMetadata %s delayedSave %s sameUrl %s',
+      async (targetHistory, readinessBeforeMetadata, delayedSave, sameUrl) => {
         mockUseRealArtPlayer = true;
         mockUseRealMediaAdapter = true;
         jest
@@ -3605,7 +3607,7 @@ describe('PlayPage playback regression coverage', () => {
           year: '2022',
           episodes: Array.from(
             { length: 202 },
-            (_, i) => `https://example.com/ep-${i + 1}.m3u8`
+            (_, i) => `https://example.com/ep-${sameUrl ? 202 : i + 1}.m3u8`
           ),
         });
         const previous = {
@@ -3702,11 +3704,26 @@ describe('PlayPage playback regression coverage', () => {
           await Promise.resolve();
           await Promise.resolve();
         });
+        const leavingHls = player.video.hls;
+        const historyReadsBeforeSwitch =
+          jest.requireMock('@/lib/db.client').requestPlayRecordsFromApi.mock
+            .calls.length;
         seeks.length = 0;
         if (delayedSave)
           saves.mockImplementation(() => new Promise(() => undefined));
         await act(async () => {
           mockEpisodeChangeHandler?.(197);
+          if (readinessBeforeMetadata) {
+            // The previous resource can finish metadata before React starts
+            // the new loader. This is still the old HLS instance.
+            player.emit?.('video:loadedmetadata');
+            player.emit?.('video:canplay');
+            player.emit?.('video:playing');
+            expect(player.currentTime).toBe(1226);
+            expect(
+              jest.requireMock('@/lib/db.client').requestPlayRecordsFromApi
+            ).toHaveBeenCalledTimes(historyReadsBeforeSwitch);
+          }
           await Promise.resolve();
           await Promise.resolve();
         });
@@ -3715,6 +3732,7 @@ describe('PlayPage playback regression coverage', () => {
           await Promise.resolve();
         });
         await screen.findByTestId('episode-selector-sources');
+        await waitFor(() => expect(player.video.hls).not.toBe(leavingHls));
         if (readinessBeforeMetadata)
           await act(async () => {
             player.emit?.('video:canplay');
@@ -3746,7 +3764,9 @@ describe('PlayPage playback regression coverage', () => {
         );
         expect(
           (player.video.hls as { loadSource: jest.Mock }).loadSource
-        ).toHaveBeenLastCalledWith('https://example.com/ep-197.m3u8');
+        ).toHaveBeenLastCalledWith(
+          `https://example.com/ep-${sameUrl ? 202 : 197}.m3u8`
+        );
         if (!targetHistory)
           expect(
             saves.mock.calls.filter(
