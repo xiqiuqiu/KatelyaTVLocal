@@ -293,6 +293,7 @@ jest.mock('artplayer', () => ({
       hls: undefined as unknown,
     };
     const player = {
+      option: options,
       currentTime: 0,
       duration: mockDefaultPlayerDuration,
       fullscreen: false,
@@ -314,7 +315,11 @@ jest.mock('artplayer', () => ({
     };
     Object.defineProperty(player, 'switch', {
       set(value: string) {
-        options.customType?.m3u8?.(video as unknown as HTMLVideoElement, value);
+        options.customType?.m3u8?.(
+          video as unknown as HTMLVideoElement,
+          value,
+          player
+        );
         player.currentTime = 0;
         video.currentTime = 0;
         mockArtPlayerEventHandlers.get('video:loadedmetadata')?.();
@@ -322,7 +327,11 @@ jest.mock('artplayer', () => ({
     });
     Object.defineProperty(player, 'url', {
       set(value: string) {
-        options.customType?.m3u8?.(video as unknown as HTMLVideoElement, value);
+        options.customType?.m3u8?.(
+          video as unknown as HTMLVideoElement,
+          value,
+          player
+        );
       },
     });
     mockArtPlayerInstance = player;
@@ -334,7 +343,8 @@ jest.mock('artplayer', () => ({
     ) {
       options.customType.m3u8(
         video as unknown as HTMLVideoElement,
-        options.url
+        options.url,
+        player
       );
     }
     return player;
@@ -347,7 +357,16 @@ jest.mock('hls.js', () => {
     static Events = { ERROR: 'error', MANIFEST_PARSED: 'manifestParsed' };
     static isSupported = () => mockHlsSupported;
 
-    attachMedia = jest.fn();
+    attachMedia = jest.fn((media: HTMLVideoElement) => {
+      if (mockUseRealMediaAdapter && 'ManagedMediaSource' in window) {
+        // Mirror hls.js MMS attachment: video.src stays empty across switches.
+        media.removeAttribute('src');
+        media.querySelectorAll('source').forEach((source) => source.remove());
+        const source = document.createElement('source');
+        source.src = 'blob:mock-mms';
+        media.appendChild(source);
+      }
+    });
     destroy = jest.fn();
     loadSource = jest.fn();
     startLoad = jest.fn();
@@ -448,6 +467,7 @@ describe('PlayPage source initialization', () => {
 
   afterEach(() => {
     mockUseRealArtPlayer = false;
+    mockUseRealMediaAdapter = false;
     mockAutoFireManifestParsed = true;
     mockHlsSupported = false;
     Object.defineProperty(navigator, 'userAgent', {
@@ -2153,6 +2173,209 @@ describe('PlayPage source initialization', () => {
     view.unmount();
     expect(element.isConnected).toBe(false);
   });
+
+  it.each(
+    [
+      'episode',
+      'rapid-episodes',
+      'manual-source',
+      'automatic-source',
+      'source-then-episode',
+      'episode-then-source',
+    ].flatMap((operation) =>
+      ['hidden-error', 'visible-error', 'no-error'].map((scenario) => [
+        operation,
+        scenario,
+      ])
+    )
+  )(
+    'keeps media and selected episode aligned after %s and Apple background (%s)',
+    async (operation, scenario) => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      mockUseRealArtPlayer = true;
+      mockUseRealMediaAdapter = true;
+      mockHlsSupported = true;
+      mockAutoFireManifestParsed = false;
+      mockManifestParsedHandlers.length = 0;
+      Object.defineProperty(navigator, 'userAgent', {
+        configurable: true,
+        value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
+      });
+      Object.defineProperty(window, 'ManagedMediaSource', {
+        configurable: true,
+        value: class MockManagedMediaSource {},
+      });
+      const sources = [
+        createSource({
+          episodes: [1, 2, 3].map(
+            (episode) => `https://example.com/${episode}.m3u8`
+          ),
+        }),
+        createSource({
+          source: 'alternate',
+          id: '2',
+          source_name: '备用源',
+          episodes: [1, 2, 3].map(
+            (episode) => `https://alternate.example/${episode}.m3u8`
+          ),
+        }),
+      ];
+      const originalFetch = global.fetch;
+      global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        if (url.startsWith('/api/detail') || url.startsWith('/api/search'))
+          return Promise.resolve({
+            ok: true,
+            json: async () =>
+              url.startsWith('/api/detail') ? sources[0] : { results: sources },
+          } as Response);
+        if (url.startsWith('/api/source-preference'))
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              orderedSourceKeys: [],
+              results: [],
+              generatedAt: Date.now(),
+            }),
+          } as Response);
+        return originalFetch(input, init);
+      });
+      const view = render(<PlayPage />);
+      await settlePlayPage();
+      await act(async () => {
+        jest.advanceTimersByTime(0);
+      });
+      const player = mockArtPlayerInstance;
+      if (!player?.emit) throw new Error('real player was not created');
+      const emit = player.emit.bind(player);
+      const video = player.video as unknown as HTMLVideoElement;
+      Object.defineProperties(video, {
+        readyState: { configurable: true, value: 4 },
+        paused: { configurable: true, value: false },
+      });
+      const assertIdentity = (episode: number) => {
+        const selector = screen.getByTestId('episode-selector-sources');
+        expect(selector).toHaveAttribute('data-episode', String(episode));
+        expect(
+          jest.mocked(reducePlaybackSession).mock.results.at(-1)?.value.state
+            .currentEpisodeIndex
+        ).toBe(episode - 1);
+        const source = sources.find(
+          (item) => item.source === selector.getAttribute('data-source')
+        );
+        expect(source).toBeDefined();
+        const hls = player.video.hls as { loadSource: jest.Mock };
+        expect(hls.loadSource).toHaveBeenLastCalledWith(
+          source?.episodes[episode - 1]
+        );
+      };
+      const ready = async (episode: number) => {
+        await waitFor(() => assertIdentity(episode));
+        await act(async () => {
+          emit('video:loadedmetadata');
+          mockManifestParsedHandlers.at(-1)?.();
+          emit('video:canplay');
+          emit('video:play');
+          video.dispatchEvent(new Event('playing'));
+          video.currentTime = 1;
+          video.dispatchEvent(new Event('timeupdate'));
+        });
+      };
+      await ready(1);
+      const oldManifest = mockManifestParsedHandlers.at(-1);
+      const oldError = mockHlsErrorHandlers.at(-1);
+      await act(async () => {
+        mockEpisodeChangeHandler?.(2);
+        if (operation === 'rapid-episodes') mockEpisodeChangeHandler?.(3);
+      });
+      await ready(operation === 'rapid-episodes' ? 3 : 2);
+      if (operation.includes('source')) {
+        await act(async () => {
+          expect(
+            await mockSourceChangeHandler?.('alternate', '2', '详情影片', {
+              autoRecovery: operation === 'automatic-source',
+            })
+          ).toBe(true);
+          if (operation === 'source-then-episode')
+            mockEpisodeChangeHandler?.(3);
+        });
+        await ready(operation === 'source-then-episode' ? 3 : 2);
+        expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+          'data-source',
+          'alternate'
+        );
+      }
+      if (operation === 'episode-then-source') {
+        const staleSourceChange = mockSourceChangeHandler;
+        await act(async () => {
+          mockEpisodeChangeHandler?.(3);
+          expect(
+            await staleSourceChange?.('detail-source', 'detail-id', '详情影片')
+          ).toBe(false);
+        });
+        await ready(3);
+        await act(async () => {
+          expect(
+            await mockSourceChangeHandler?.(
+              'detail-source',
+              'detail-id',
+              '详情影片'
+            )
+          ).toBe(true);
+        });
+        await ready(3);
+      }
+      const episode = [
+        'rapid-episodes',
+        'source-then-episode',
+        'episode-then-source',
+      ].includes(operation)
+        ? 3
+        : 2;
+      const activeHls = player.video.hls;
+      expect(mockArtPlayerInstance).toBe(player);
+      await act(async () => {
+        oldManifest?.();
+        oldError?.('error', {
+          fatal: true,
+          type: 'networkError',
+          details: 'manifestLoadError',
+        });
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          value: 'hidden',
+        });
+        document.dispatchEvent(new Event('visibilitychange'));
+        emit('video:pause');
+        if (scenario === 'hidden-error') emit('video:error');
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          value: 'visible',
+        });
+        document.dispatchEvent(new Event('visibilitychange'));
+        if (scenario === 'visible-error') emit('video:error');
+        jest.advanceTimersByTime(1000);
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(0);
+      });
+      if (scenario === 'no-error') expect(player.video.hls).toBe(activeHls);
+      else await waitFor(() => expect(player.video.hls).not.toBe(activeHls));
+      await waitFor(() => assertIdentity(episode));
+      const reconnectedHls = player.video.hls;
+      // An older queued URL setter must not replace the current episode's HLS.
+      await act(async () => {
+        Object.assign(player, { url: sources[0].episodes[0] });
+        jest.advanceTimersByTime(0);
+      });
+      expect(player.video.hls).toBe(reconnectedHls);
+      assertIdentity(episode);
+      view.unmount();
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    }
+  );
 
   it('revives Apple MMS playback after the page returns from the background', async () => {
     mockHlsSupported = true;

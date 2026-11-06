@@ -7283,8 +7283,15 @@ function usePlayPageSession() {
           },
           // HLS 支持配置
           customType: {
-            m3u8: function (video: HTMLVideoElement, url: string) {
-              if (!canApplyStartupResult()) return;
+            m3u8: function (
+              video: HTMLVideoElement,
+              url: string,
+              art: { option: { url: string } }
+            ) {
+              if (!canApplyStartupResult() || url !== videoUrlRef.current)
+                return;
+              // MMS uses <source>, so ArtPlayer's video.src comparison misses URL changes.
+              art.option.url = url;
               if (video.hls) {
                 video.hls.destroy();
               }

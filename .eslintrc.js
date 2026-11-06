@@ -81,4 +81,38 @@ module.exports = {
     React: true,
     JSX: true,
   },
+  overrides: [
+    {
+      files: ['src/app/play/page.tsx'],
+      rules: {
+        // Keep the media identity check and MMS reconnect binding before any loader side effects.
+        'no-restricted-syntax': [
+          'error',
+          {
+            selector: [
+              "Property:matches([key.name='m3u8'], [key.value='m3u8'])",
+              ':not(:has(> :function',
+              "[params.1.name='url'][params.2.name='art']",
+              "[body.body.0.type='IfStatement']",
+              "[body.body.0.test.operator='||']",
+              "[body.body.0.test.right.operator='!==']",
+              "[body.body.0.test.right.left.name='url']",
+              "[body.body.0.test.right.right.object.name='videoUrlRef']",
+              "[body.body.0.test.right.right.property.name='current']",
+              "[body.body.0.consequent.type='ReturnStatement']",
+              '[body.body.0.consequent.argument=null]',
+              "[body.body.1.expression.operator='=']",
+              "[body.body.1.expression.left.object.object.name='art']",
+              "[body.body.1.expression.left.object.property.name='option']",
+              "[body.body.1.expression.left.property.name='url']",
+              "[body.body.1.expression.right.name='url']",
+              '))',
+            ].join(''),
+            message:
+              '播放身份保护：m3u8 加载入口必须先拒绝 url !== videoUrlRef.current，再同步 art.option.url = url，之后才能创建或销毁 HLS。',
+          },
+        ],
+      },
+    },
+  ],
 };
