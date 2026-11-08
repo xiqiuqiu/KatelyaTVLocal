@@ -1950,7 +1950,6 @@ function usePlayPageSession() {
           return;
         }
 
-        if (!art.controls.show) return;
         if (!isTvDirectionalKey(event.key)) return;
 
         const focusedElement = document.activeElement as HTMLElement | null;
@@ -1966,6 +1965,33 @@ function usePlayPageSession() {
         );
         if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
           if (!progress && !current) return;
+          if (!art.fullscreen && !art.fullscreenWeb) {
+            const boundaryTarget =
+              event.key === 'ArrowUp' &&
+              (progress || (!art.controls.show && current))
+                ? document.querySelector<HTMLElement>(
+                    '.ui-tv-nav [data-tv-focus-key]'
+                  )
+                : event.key === 'ArrowDown' &&
+                  (current || (!art.controls.show && progress))
+                ? Array.from(
+                    document.querySelectorAll<HTMLElement>(
+                      '.ui-player-selector [role="tab"][aria-selected="true"], .ui-player-sidebar button[title="显示选集面板"]'
+                    )
+                  ).find(
+                    (candidate) =>
+                      !candidate.closest('.hidden') &&
+                      !candidate.hasAttribute('disabled')
+                  )
+                : null;
+            if (boundaryTarget) {
+              event.preventDefault();
+              event.stopPropagation();
+              boundaryTarget.focus();
+              return;
+            }
+          }
+          if (!art.controls.show) return;
           if (
             current &&
             event.key === 'ArrowDown' &&
@@ -1990,6 +2016,7 @@ function usePlayPageSession() {
           target?.focus();
           return;
         }
+        if (!art.controls.show) return;
         if (progress) {
           event.preventDefault();
           event.stopPropagation();

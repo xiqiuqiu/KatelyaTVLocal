@@ -121,8 +121,23 @@ jest.mock('@/lib/playback-session', () => {
 
 jest.mock('@/components/PageLayout', () => ({
   __esModule: true,
-  default: ({ children }: { children: ReactNode }) => (
-    <div data-testid='page-layout'>{children}</div>
+  default: ({
+    children,
+    tvMode,
+  }: {
+    children: ReactNode;
+    tvMode?: boolean;
+  }) => (
+    <div data-testid='page-layout' data-tv-mode={tvMode}>
+      {tvMode && (
+        <nav aria-label='电视导航' className='ui-tv-nav'>
+          <a href='/?tv=1' data-tv-focus-key='nav-home'>
+            首页
+          </a>
+        </nav>
+      )}
+      {children}
+    </div>
   ),
 }));
 
@@ -167,8 +182,19 @@ jest.mock('@/components/player/PlayerLoadingOverlay', () => ({
 
 jest.mock('@/components/player/PlayerSidebar', () => ({
   __esModule: true,
-  default: ({ children }: { children: ReactNode }) => (
-    <aside data-testid='player-sidebar'>{children}</aside>
+  default: ({
+    children,
+    className = '',
+  }: {
+    children: ReactNode;
+    className?: string;
+  }) => (
+    <aside
+      data-testid='player-sidebar'
+      className={`ui-player-sidebar ${className}`}
+    >
+      {children}
+    </aside>
   ),
 }));
 
@@ -186,6 +212,7 @@ jest.mock('@/components/EpisodeSelector', () => ({
     onChange,
     currentSource,
     value,
+    tvMode,
   }: {
     onChange: (episode: number) => void;
     currentSource: string;
@@ -193,16 +220,23 @@ jest.mock('@/components/EpisodeSelector', () => ({
     availableSources: SearchResult[];
     onSourceChange: MockSourceChangeHandler;
     activeTab?: 'episodes' | 'sources';
+    tvMode?: boolean;
   }) => {
     mockSourceChangeHandler = onSourceChange;
     mockEpisodeChangeHandler = onChange;
     return (
       <div
         data-testid='episode-selector-sources'
+        className='ui-player-selector'
         data-active-tab={activeTab}
         data-source={currentSource}
         data-episode={value}
       >
+        {tvMode && (
+          <button type='button' role='tab' aria-selected='true'>
+            选集
+          </button>
+        )}
         {availableSources.map((source) => source.source_name).join(',')}
       </div>
     );
@@ -2005,6 +2039,115 @@ describe('PlayPage source initialization', () => {
       );
     });
     expect(onMute).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets TV focus leave the non-fullscreen player vertically', async () => {
+    mockSearchParams.set('tv', '1');
+    render(<PlayPage />);
+    await settlePlayPage();
+
+    const player = mockArtPlayerInstance;
+    if (!player) throw new Error('player was not created');
+    const element = player.template.$player;
+    const play = element.querySelector<HTMLElement>(
+      '.art-control-playAndPause'
+    );
+    const progress = element.querySelector<HTMLElement>(
+      '.art-control-progress'
+    );
+    if (!play || !progress) throw new Error('controls were not created');
+    play.scrollIntoView = jest.fn();
+    progress.scrollIntoView = jest.fn();
+    const home = screen.getByRole('link', { name: '首页' });
+    const episodes = screen.getByRole('tab', { name: '选集' });
+    home.scrollIntoView = jest.fn();
+    episodes.scrollIntoView = jest.fn();
+
+    act(() => {
+      mockArtPlayerEventHandlers.get('ready')?.();
+      play.focus();
+      play.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })
+      );
+    });
+    expect(progress).toHaveFocus();
+
+    act(() => {
+      progress.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })
+      );
+    });
+    expect(home).toHaveFocus();
+
+    act(() => {
+      play.focus();
+      play.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+      );
+    });
+    expect(episodes).toHaveFocus();
+  });
+
+  it('moves TV focus below the player when the episode selector is collapsed', async () => {
+    mockSearchParams.set('tv', '1');
+    render(<PlayPage />);
+    await settlePlayPage();
+
+    fireEvent.click(screen.getByTitle('隐藏选集面板'));
+    const showEpisodes = screen.getByTitle('显示选集面板');
+    showEpisodes.scrollIntoView = jest.fn();
+
+    const player = mockArtPlayerInstance;
+    const play = player?.template.$player.querySelector<HTMLElement>(
+      '.art-control-playAndPause'
+    );
+    if (!play) throw new Error('play control was not created');
+    play.scrollIntoView = jest.fn();
+
+    act(() => {
+      mockArtPlayerEventHandlers.get('ready')?.();
+      play.focus();
+      play.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+      );
+    });
+
+    expect(showEpisodes).toHaveFocus();
+  });
+
+  it('lets TV focus leave hidden non-fullscreen player controls', async () => {
+    mockSearchParams.set('tv', '1');
+    render(<PlayPage />);
+    await settlePlayPage();
+
+    const player = mockArtPlayerInstance;
+    const play = player?.template.$player.querySelector<HTMLElement>(
+      '.art-control-playAndPause'
+    );
+    if (!player || !play) throw new Error('play control was not created');
+    play.scrollIntoView = jest.fn();
+    const home = screen.getByRole('link', { name: '首页' });
+    const episodes = screen.getByRole('tab', { name: '选集' });
+    home.scrollIntoView = jest.fn();
+    episodes.scrollIntoView = jest.fn();
+
+    act(() => {
+      mockArtPlayerEventHandlers.get('ready')?.();
+      play.focus();
+      player.controls.show = false;
+      play.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })
+      );
+    });
+    expect(home).toHaveFocus();
+
+    act(() => {
+      play.focus();
+      play.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })
+      );
+    });
+    expect(episodes).toHaveFocus();
   });
 
   it.each([true, false])(
