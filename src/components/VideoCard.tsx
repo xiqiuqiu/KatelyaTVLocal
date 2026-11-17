@@ -287,9 +287,7 @@ function buildVideoCardFacts({
   const defaultImageSize = isSmall
     ? { width: 240, height: 360, quality: 76 }
     : { width: 360, height: 540, quality: 78 };
-  const resolvedImageSize =
-    imageSize ||
-    (isLandscape ? { width: 640, height: 360, quality: 78 } : defaultImageSize);
+  const resolvedImageSize = imageSize || defaultImageSize;
   const cappedProgress = Math.min(Math.max(progress, 0), 100);
 
   return {
@@ -308,7 +306,8 @@ function buildVideoCardFacts({
     } ${isResult ? 'ui-search-card' : ''} ${
       !isResult && !isLandscape ? 'ui-video-card-poster' : ''
     }`,
-    aspectRatio: isLandscape ? 'aspect-video' : 'aspect-[2/3]',
+    // 来源只提供竖版海报，横卡也按 2:3 显示，避免裁掉半截
+    aspectRatio: 'aspect-[2/3]',
     badgeSizeClass: isSmall ? 'text-[10px] px-2 py-1' : 'text-xs px-2.5 py-1',
     continueLabel: showOpeningState ? '正在打开' : '继续播放',
     description,
@@ -326,9 +325,7 @@ function buildVideoCardFacts({
     iconButtonClass: videoCardIconButtonClass,
     imageLoading: imagePriority ? undefined : ('lazy' as const),
     imagePriority,
-    imageSizes: isLandscape
-      ? '(max-width: 640px) 78vw, 320px'
-      : isSmall
+    imageSizes: isSmall
       ? '(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 180px'
       : '(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 240px',
     imageSrc: processImageUrl(actualPoster, resolvedImageSize),

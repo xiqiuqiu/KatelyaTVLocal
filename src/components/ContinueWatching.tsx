@@ -38,9 +38,10 @@ export default function ContinueWatching({
     (PlayRecord & { key: string; groupedKeys: string[] })[]
   >([]);
   const [loading, setLoading] = useState(true);
+  // 竖版海报卡：宽度收窄，让整行高度与原来的横卡接近
   const cardWidthClass = tvMode
     ? 'w-full'
-    : 'w-[78vw] max-w-80 shrink-0 sm:w-72 xl:w-80';
+    : 'w-[46vw] max-w-40 shrink-0 sm:w-36 xl:w-40';
   const Row = tvMode ? PosterGrid : ScrollableRow;
 
   // 处理播放记录数据更新的函数
@@ -115,19 +116,13 @@ export default function ContinueWatching({
         className='mb-4'
         title='继续观看'
       />
-      <Row
-        className={
-          tvMode
-            ? 'grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3'
-            : '[&>div:first-child]:pb-2'
-        }
-      >
+      <Row className={tvMode ? undefined : '[&>div:first-child]:pb-2'}>
         {loading
           ? // 加载状态显示灰色占位数据
             Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className={cardWidthClass}>
                 <SkeletonPosterCard
-                  aspectRatio='aspect-video'
+                  aspectRatio='aspect-[2/3]'
                   delayIndex={index}
                   widths={['84%', '62%']}
                 />
