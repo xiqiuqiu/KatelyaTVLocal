@@ -4233,3 +4233,54 @@
   border-radius: var(--ui-radius-sm);
   font-size: 26px;
 }
+
+/* AI 找片：最近记录与空态 */
+.ui-saved-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px;
+  border: 1px dashed rgb(var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-text-muted));
+}
+
+.ui-saved-empty-title {
+  color: rgb(var(--ui-text));
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ui-saved-empty-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+[data-tv-browse='true'] .ui-saved-empty {
+  gap: 16px;
+  padding: 24px;
+}
+
+[data-tv-browse='true'] .ui-saved-empty-title {
+  font-size: 26px;
+}
+
+[data-tv-browse='true'] .ui-saved-empty-desc,
+[data-tv-browse='true'] .ui-saved-desc {
+  font-size: 22px;
+  line-height: 1.5;
+}
+
+[data-tv-browse='true'] .ui-saved-heading {
+  font-size: 36px;
+}
+
+[data-tv-browse='true'] .ui-saved-query {
+  min-height: 88px;
+  padding: 16px 20px;
+}
+
+[data-tv-browse='true'] .ui-saved-query span {
+  font-size: 24px;
+}
