@@ -380,7 +380,8 @@ function buildVideoCardFacts({
     showAggregateCount: isResult && isAggregate,
     showAggregateToggle: isResult && isAggregate,
     showCheckCircle: config.showCheckCircle,
-    showContinue: isLandscape,
+    footerIsAction: isLandscape && !tvMode,
+    showContinue: isLandscape && tvMode,
     showDoubanLink: !tvMode && config.showDoubanLink && !!actualDoubanId,
     showEpisodeBadge: !!actualEpisodes && actualEpisodes > 1,
     showFavoriteBar:
@@ -998,29 +999,45 @@ function buildLandscapeStatusText({
 }
 
 function VideoCardMeta({ model }: { model: VideoCardModel }) {
+  const footerContent = (
+    <>
+      <div className='ui-video-footer-head'>
+        <VideoCardTitle model={model} />
+        {model.showRating ? (
+          <span className='ui-video-score'>{model.rate}</span>
+        ) : null}
+      </div>
+      {model.isLandscape ? (
+        <p className='ui-video-footer-meta'>{model.landscapeStatusText}</p>
+      ) : model.footerMetaParts.length ? (
+        <p className='ui-video-footer-meta'>
+          {model.footerMetaParts.map((part, index) => (
+            <Fragment key={`${part}-${index}`}>
+              {index > 0 ? ' · ' : null}
+              <span>{part}</span>
+            </Fragment>
+          ))}
+        </p>
+      ) : null}
+    </>
+  );
+
   if (!model.isResult) {
     return (
       <div className={model.metaClass}>
-        <div className='ui-video-footer-text'>
-          <div className='ui-video-footer-head'>
-            <VideoCardTitle model={model} />
-            {model.showRating ? (
-              <span className='ui-video-score'>{model.rate}</span>
-            ) : null}
-          </div>
-          {model.isLandscape ? (
-            <p className='ui-video-footer-meta'>{model.landscapeStatusText}</p>
-          ) : model.footerMetaParts.length ? (
-            <p className='ui-video-footer-meta'>
-              {model.footerMetaParts.map((part, index) => (
-                <Fragment key={`${part}-${index}`}>
-                  {index > 0 ? ' · ' : null}
-                  <span>{part}</span>
-                </Fragment>
-              ))}
-            </p>
-          ) : null}
-        </div>
+        {model.footerIsAction ? (
+          // 网页与手机没有脚部按钮，整块文案就是点按区域
+          <button
+            aria-label={`继续播放 ${model.actualTitle}`}
+            className='ui-video-footer-text ui-video-footer-action'
+            onClick={model.handleClick}
+            type='button'
+          >
+            {footerContent}
+          </button>
+        ) : (
+          <div className='ui-video-footer-text'>{footerContent}</div>
+        )}
         <VideoCardContinue model={model} />
       </div>
     );

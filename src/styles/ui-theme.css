@@ -4154,30 +4154,27 @@
   white-space: normal;
 }
 
-/* 播放按钮：仅在触屏（无悬停能力）保留，桌面靠封面悬停浮层与整卡点击 */
-.ui-resume-card .ui-video-continue {
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  min-height: 36px;
-  margin-top: 0;
-  flex-shrink: 0;
+/* 文案区即点按区域（网页与手机），TV 则由整行按钮接管 */
+.ui-resume-card .ui-video-footer-action {
+  display: block;
+  width: 100%;
   padding: 0;
-  border-radius: 9999px;
-  font-size: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-@media (min-width: 768px) {
-  /* 桌面/平板有悬停浮层与整卡点击，脚部圆形按钮重复且进不了焦点顺序 */
-  .ui-resume-card .ui-video-continue {
-    display: none;
-  }
+.ui-resume-card .ui-video-footer-action:hover .ui-video-title {
+  color: rgb(var(--ui-accent));
 }
 
-.ui-resume-card .ui-video-continue svg {
-  height: 15px;
-  width: 15px;
-  margin-left: 1px;
+.ui-resume-card .ui-video-footer-action:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 3px;
+  border-radius: var(--ui-radius-sm);
 }
 
 /* 进度条贴封面底部内侧 */
