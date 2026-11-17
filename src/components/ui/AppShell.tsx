@@ -184,7 +184,8 @@ export default function AppShell({
                 )}
               </nav>
             )}
-            {activePath.startsWith('/douban') && (
+            {/* 电视模式保留顶部分类导航：10-foot 界面焦点路径依赖它 */}
+            {tvMode && activePath.startsWith('/douban') && (
               <nav aria-label='影片分类' className='mb-6 flex flex-wrap gap-2'>
                 {catalogNavigationItems.map((item) => (
                   <Link

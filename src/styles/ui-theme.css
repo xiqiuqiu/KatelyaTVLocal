@@ -2669,3 +2669,138 @@
   border-radius: var(--ui-radius-md);
   background: rgb(var(--ui-surface));
 }
+
+/* ---------- 播放卡片：设计稿式整卡描边 + 内嵌控件 ---------- */
+
+/* 整张卡片作为一个描边容器，图片满出血、信息区带内边距 */
+.ui-video-card-poster {
+  overflow: hidden;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  transition: border-color 150ms var(--ease-out);
+}
+
+.ui-video-card-poster:hover,
+.ui-video-card-poster:focus-within {
+  border-color: rgb(var(--ui-accent) / 0.5);
+}
+
+.ui-video-card-poster .ui-video-poster {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.ui-video-footer {
+  padding: 12px 14px 14px;
+}
+
+.ui-video-card-poster .ui-video-title {
+  font-size: 14px;
+  line-height: 1.4;
+  min-height: 0;
+  -webkit-line-clamp: 2;
+}
+
+.ui-video-card-poster .ui-video-facts,
+.ui-video-card-poster .ui-video-meta > p {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+/* 悬停播放按钮：琥珀圆形，替代大号半透明图标 */
+.ui-video-play-button {
+  display: inline-flex;
+  height: 44px;
+  width: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: rgb(var(--ui-accent));
+  color: rgb(var(--ui-on-accent));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  transition: transform 150ms var(--ease-out);
+}
+
+.ui-video-play-button svg {
+  margin-left: 1px;
+}
+
+.group:hover .ui-video-play-button {
+  transform: scale(1.04);
+}
+
+/* 进度条贴在封面底部内侧 */
+.ui-video-progress-inline {
+  border-radius: 0;
+  background: rgb(255 255 255 / 0.22);
+}
+
+.ui-video-progress-inline > div {
+  border-radius: 0;
+  background: rgb(var(--ui-accent));
+}
+
+/* 继续观看横卡：封面满出血 + 信息区内边距 */
+.ui-resume-card {
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.ui-resume-card .ui-video-poster {
+  border: none;
+  border-radius: 0;
+}
+
+.ui-resume-card .ui-video-meta,
+.ui-resume-card .ui-video-progress {
+  margin-inline: 0;
+}
+
+.ui-resume-card .ui-video-meta {
+  padding: 12px 14px 14px;
+}
+
+.ui-resume-card .ui-video-progress {
+  width: 100%;
+  margin-top: 0;
+}
+
+/* ---------- 片库类型切换：标题右侧胶囊组 ---------- */
+.ui-kind-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-surface));
+}
+
+.ui-kind-switch .ui-nav-item {
+  min-height: 34px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgb(var(--ui-text-muted));
+}
+
+.ui-kind-switch .ui-nav-item:hover {
+  background: rgb(var(--ui-text) / 0.06);
+  color: rgb(var(--ui-text));
+}
+
+.ui-kind-switch .ui-nav-item[data-active='true'] {
+  background: rgb(var(--ui-cta));
+  color: rgb(var(--ui-on-cta));
+  font-weight: 600;
+}
+
+[data-tv-browse='true'] .ui-kind-switch .ui-nav-item {
+  min-height: 64px;
+  padding: 8px 22px;
+  font-size: 26px;
+  border-radius: 8px;
+}

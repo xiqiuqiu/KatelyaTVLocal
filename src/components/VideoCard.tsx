@@ -1,12 +1,4 @@
-import {
-  CheckCircle,
-  Film,
-  Heart,
-  Link,
-  Loader2,
-  Play,
-  PlayCircleIcon,
-} from 'lucide-react';
+import { CheckCircle, Film, Heart, Link, Loader2, Play } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, {
@@ -312,7 +304,9 @@ function buildVideoCardFacts({
     aggregateCountText: `${items?.length ?? 0} 个来源`,
     articleClass: `ui-video-card group relative w-full ${
       isLandscape ? 'ui-resume-card' : ''
-    } ${isResult ? 'ui-search-card' : ''}`,
+    } ${isResult ? 'ui-search-card' : ''} ${
+      !isResult && !isLandscape ? 'ui-video-card-poster' : ''
+    }`,
     aspectRatio: isLandscape ? 'aspect-video' : 'aspect-[2/3]',
     badgeSizeClass: isSmall ? 'text-[10px] px-2 py-1' : 'text-xs px-2.5 py-1',
     continueLabel: showOpeningState ? '正在打开' : '继续播放',
@@ -346,8 +340,9 @@ function buildVideoCardFacts({
     }`,
     linkIconSize: isSmall ? 14 : 16,
     metaClass: `ui-video-meta text-left ${
-      isResult ? 'ui-search-meta' : isSmall ? 'mt-2' : 'mt-3'
+      isResult ? 'ui-search-meta' : 'ui-video-footer'
     }`,
+    showInlineProgress: config.showProgress && !isResult,
     playIconSize: isSmall ? 34 : 52,
     playOverlayClass: `pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-150 ease ${
       showOpeningState
@@ -723,11 +718,13 @@ function VideoCardPlayOverlay({ model }: { model: VideoCardModel }) {
           正在打开
         </span>
       ) : (
-        <PlayCircleIcon
-          className='fill-black/50 text-white drop-shadow-md'
-          size={model.playIconSize}
-          strokeWidth={0.9}
-        />
+        <span className='ui-video-play-button'>
+          <Play
+            aria-hidden
+            className='h-4 w-4 fill-current'
+            strokeWidth={1.5}
+          />
+        </span>
       )}
     </div>
   );
@@ -809,7 +806,7 @@ function VideoCardPoster({ model }: { model: VideoCardModel }) {
   return (
     <Surface className={model.surfaceClass} variant='raised'>
       <div
-        className={`relative ${model.aspectRatio} overflow-hidden rounded-[inherit]`}
+        className={`ui-video-frame relative ${model.aspectRatio} overflow-hidden rounded-[inherit]`}
         ref={model.posterRef}
       >
         <VideoCardImage model={model} />
@@ -818,15 +815,30 @@ function VideoCardPoster({ model }: { model: VideoCardModel }) {
         <VideoCardDoubanLink model={model} />
         <VideoCardBadges model={model} />
         <VideoCardFavoriteActions model={model} />
+        {model.showInlineProgress ? (
+          <VideoCardProgress inline model={model} />
+        ) : null}
       </div>
     </Surface>
   );
 }
 
-function VideoCardProgress({ model }: { model: VideoCardModel }) {
+function VideoCardProgress({
+  inline = false,
+  model,
+}: {
+  inline?: boolean;
+  model: VideoCardModel;
+}) {
   if (!model.showProgress) return null;
   return (
-    <div className='ui-video-progress mt-3 h-1 w-full overflow-hidden rounded-full bg-[rgb(var(--ui-surface-strong))]'>
+    <div
+      className={
+        inline
+          ? 'ui-video-progress ui-video-progress-inline absolute inset-x-0 bottom-0 z-20 h-1 w-full overflow-hidden bg-white/25'
+          : 'ui-video-progress mt-3 h-1 w-full overflow-hidden rounded-full bg-[rgb(var(--ui-surface-strong))]'
+      }
+    >
       <div
         className='h-full w-full origin-left rounded-full bg-[rgb(var(--ui-accent))] transition-transform duration-200 ease-out'
         style={{ transform: `scaleX(${model.progressScale})` }}
@@ -1007,7 +1019,7 @@ export default function VideoCard(props: VideoCardProps) {
       data-playback-preparation-card={model.playbackCardKey}
     >
       <VideoCardPoster model={model} />
-      <VideoCardProgress model={model} />
+      {!model.showInlineProgress ? <VideoCardProgress model={model} /> : null}
       <VideoCardMeta model={model} />
       <VideoCardSourceList model={model} />
     </article>
