@@ -3557,3 +3557,123 @@
   background: rgb(var(--ui-accent) / 0.14);
   color: rgb(var(--ui-accent));
 }
+
+/* 管理面板：紧凑按钮、排序控件与表格密度 */
+.ui-admin-compact {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--ui-radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ui-admin-compact.ui-primary-button {
+  background: rgb(var(--ui-cta));
+  color: rgb(var(--ui-on-cta));
+}
+
+.ui-admin-compact.ui-secondary-button {
+  background: rgb(var(--ui-surface));
+  border: 1px solid rgb(var(--ui-border));
+  color: rgb(var(--ui-text));
+}
+
+.ui-admin-compact.ui-secondary-button:hover {
+  background: rgb(var(--ui-surface-strong));
+  border-color: rgb(var(--ui-text-muted) / 0.45);
+}
+
+.ui-admin-danger-button {
+  border: 1px solid rgb(var(--ui-critical) / 0.45);
+  background: transparent;
+  color: rgb(var(--ui-critical));
+}
+
+.ui-admin-danger-button:hover:not(:disabled) {
+  background: rgb(var(--ui-critical) / 0.1);
+  border-color: rgb(var(--ui-critical) / 0.7);
+}
+
+.ui-admin-danger-button:disabled {
+  border-color: rgb(var(--ui-border));
+  color: rgb(var(--ui-text-muted));
+  background: transparent;
+}
+
+/* 排序/拖动按钮压缩到 30px，让表格留给内容 */
+.ui-admin-table-region .ui-admin-sort-actions button {
+  height: 30px;
+  width: 30px;
+  min-width: 30px;
+  padding: 0;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: 6px;
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-text-muted));
+}
+
+.ui-admin-table-region .ui-admin-sort-actions button:hover {
+  background: rgb(var(--ui-surface-strong));
+  color: rgb(var(--ui-text));
+}
+
+/* 表格更紧凑，尽量在 720px 内容区里放下 */
+.ui-admin-table-region table {
+  min-width: 560px;
+  font-size: 12px;
+}
+
+.ui-admin-table-region :is(th, td) {
+  padding: 9px 12px;
+}
+
+.ui-admin-table-region td {
+  font-size: 12px;
+}
+
+/* 表格内的操作胶囊：统一成小圆角按钮，保留语义色 */
+.ui-admin-table-region td button {
+  min-height: 26px;
+  padding: 3px 10px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 复选框：深色下自定义外观，替换浏览器原生白块 */
+.ui-admin-page input[type='checkbox'] {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgb(var(--ui-text-muted) / 0.65);
+  border-radius: 4px;
+  background: rgb(var(--ui-bg));
+  color: rgb(var(--ui-on-accent));
+}
+
+.ui-admin-page input[type='checkbox']:checked {
+  border-color: rgb(var(--ui-accent));
+  background-color: rgb(var(--ui-accent));
+}
+
+.ui-admin-page input[type='checkbox']:checked::after {
+  content: '';
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid rgb(var(--ui-on-accent));
+  border-bottom: 2px solid rgb(var(--ui-on-accent));
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+.ui-admin-page input[type='checkbox']:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
