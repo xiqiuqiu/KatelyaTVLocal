@@ -347,6 +347,54 @@
 
 ---
 
+## 8.13 设置面板升级与线上设置项对照（P4e，已完成）
+
+### 线上部署（movie.sigclr.com）实际设置清单
+
+登录后实测（1440 宽）：
+
+| 分组 | 内容 |
+| --- | --- |
+| 个人设置 · 外观与设备 | 外观（旧版图标按钮）、进入电视模式 |
+| 个人设置 · 观看与收藏 | 我的收藏、播放历史 |
+| 个人设置 · 账号与安全 | admin / 站长 / 数据存储：d1 / 退出登录 |
+| 站点管理 · 内容与站点 | 站点配置（站点信息、搜索与缓存、图片与豆瓣服务、诊断记录：播放调试模式）、视频源配置、重置配置、保存 |
+| 站点管理 · 用户与访问 | 用户配置（注册开关、注册邀请码、总用户数）、用户列表（添加/修改密码/取消管理/封禁/删除） |
+| 站点管理 · 运行与诊断 | AI 找片用量（今日识别/加载、每日趋势、用户与 IP 排行）、播放调试日志 |
+
+### 本地为何“少了一些设置”
+
+不是样式或代码缺失，而是**角色门控**：
+
+- `showAdminPanel = role === 'owner' \|\| role === 'admin'`（`UserMenu.tsx`）
+- 本地 `NEXT_PUBLIC_STORAGE_TYPE=localstorage` 时，`/api/login` 密码正确就直接发 `role: 'user'`，因此永远不渲染「站点管理」
+- 线上是 D1 + 用户名登录，所以能看到三组管理分类
+
+如果本地也想验证管理面板视觉：把 `NEXT_PUBLIC_STORAGE_TYPE` 改成非 localstorage，并配置 `USERNAME` / `PASSWORD`，用用户名密码登录即可拿到 owner。
+
+### 本轮改造
+
+| 区域 | 改法 |
+| --- | --- |
+| 共用控件 | 新增 `Switch`（44×24，`role=switch`）、`SettingsRow`（图标 + 标题/说明 + 控件/箭头，支持链接/按钮/信息行）、`ThemeSwitch`（next-themes + 可选 View Transition） |
+| 外观与设备 | 深色外观改为 Switch；电视大屏模式改为整行开关（`aria-label` 保留“进入/退出电视模式”，兼容现有测试） |
+| 观看与收藏 | 新增 `lib/ui/preferences.ts` 偏好定义（`defaultAggregateSearch` / `enableOptimization`）；收藏/历史改为统一链接行；搜索页与播放页改读同一源 |
+| 账号与安全 | 首字母头像 + 用户名 + 角色胶囊 + 存储说明的账号卡片；退出登录改为危险态描边按钮 + 说明 |
+
+### 回归测试
+
+- `tsc`、ESLint 通过
+- **Jest 144 套件 / 1264 用例全绿**（新增 `preferences.test.ts`、`settings-controls.test.tsx`）
+- 浏览器实测：深色开关 dark→light ✓；聚合开关写入 `defaultAggregateSearch=false` ✓；优选开关写入 `enableOptimization=false` ✓；电视模式链接 `/?tv=1` ✓
+- 截图：`.scratch/ui-refresh/after-p4e/`（外观/观看与收藏/账号、暗亮、移动）；线上对照图 `.scratch/ui-refresh/live-settings-*.png`
+
+### 一个真实修掉的 bug
+
+`ThemeSwitch` 最初无条件调用 `startViewTransition`，在后台/不可见窗口里回调可能不执行，导致开关点了不变。
+修复：仅在页面可见、未开启减少动效且 API 存在时使用 View Transition，其余情况直接 `setTheme`，并加 try/catch 回退。
+
+---
+
 ## 8.12 登录页与设置面板（P4d，已完成）
 
 ### 登录页
