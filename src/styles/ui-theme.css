@@ -3455,3 +3455,105 @@
   font-size: 18px;
   min-height: 30px;
 }
+
+/* ============================================================
+   管理面板控件对齐 ReelFind
+   ============================================================ */
+
+/* 开关：统一 44×24 轨道 + 白色滑块，与个人设置里的 Switch 一致 */
+.ui-admin-page [role='switch'] {
+  height: 24px;
+  width: 44px;
+  min-width: 44px;
+  padding: 3px;
+  border-radius: 9999px;
+  background: rgb(var(--ui-text-muted) / 0.35);
+  transition: background-color 150ms var(--ease-out);
+}
+
+.ui-admin-page [role='switch'][aria-checked='true'] {
+  background: rgb(var(--ui-accent));
+}
+
+.ui-admin-page [role='switch'] > span {
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transform: translateX(0);
+  transition: transform 150ms var(--ease-out);
+}
+
+.ui-admin-page [role='switch'][aria-checked='true'] > span {
+  transform: translateX(20px);
+}
+
+/* 复选框：恢复常规尺寸，避免 44px 方块 */
+.ui-admin-page input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  accent-color: rgb(var(--ui-accent));
+}
+
+/* 重置配置：危险态描边按钮 */
+.ui-admin-heading .ui-admin-sort-button {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid rgb(var(--ui-critical) / 0.45);
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  color: rgb(var(--ui-critical));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ui-admin-heading .ui-admin-sort-button:hover {
+  background: rgb(var(--ui-critical) / 0.1);
+  border-color: rgb(var(--ui-critical) / 0.7);
+  filter: none;
+}
+
+/* 表单分组与表格 */
+.ui-admin-page fieldset {
+  border-color: rgb(var(--ui-border));
+}
+
+.ui-admin-page legend {
+  padding-inline: 6px;
+  color: rgb(var(--ui-text));
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ui-admin-table-region {
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  overflow: auto;
+}
+
+.ui-admin-table-region th {
+  background: rgb(var(--ui-surface-strong));
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+}
+
+.ui-admin-table-region td {
+  border-top: 1px solid rgb(var(--ui-border) / 0.7);
+  font-size: 13px;
+}
+
+/* 子标签 */
+.ui-admin-tabs button {
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: var(--ui-radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ui-admin-tabs button[data-active='true'] {
+  background: rgb(var(--ui-accent) / 0.14);
+  color: rgb(var(--ui-accent));
+}
