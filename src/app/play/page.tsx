@@ -151,10 +151,6 @@ import {
   SourceSelectionScore,
 } from '@/lib/source-selection';
 import {
-  playbackPreferences,
-  readBooleanPreference,
-} from '@/lib/ui/preferences';
-import {
   buildTvModeHref,
   getTvSeekTime,
   isTvDirectionalKey,
@@ -172,6 +168,10 @@ import {
   SourceStatus,
   SourceVideoInfo,
 } from '@/lib/types';
+import {
+  playbackPreferences,
+  readBooleanPreference,
+} from '@/lib/ui/preferences';
 import {
   buildHlsProxyUrl,
   createPlayableSourceStatus,
