@@ -337,11 +337,12 @@ function buildVideoCardFacts({
     isResult,
     isSmall,
     items,
-    landscapeStatusText: `${
-      currentEpisode ? `第 ${currentEpisode} 集 · ` : ''
-    }已看 ${Math.round(cappedProgress)}%${
-      source_name ? ` · ${source_name}` : ''
-    }`,
+    landscapeStatusText: buildLandscapeStatusText({
+      currentEpisode,
+      sourceName: source_name,
+      totalEpisodes: actualEpisodes,
+      progressPercent: cappedProgress,
+    }),
     linkIconSize: isSmall ? 14 : 16,
     metaClass: `ui-video-meta text-left ${
       isResult ? 'ui-search-meta' : 'ui-video-footer'
@@ -968,6 +969,32 @@ function VideoCardContinue({ model }: { model: VideoCardModel }) {
       {model.continueLabel}
     </button>
   );
+}
+
+/** 横卡（继续观看）的进度说明：集数显示「第 N 集 / 共 M 集」，保留观看百分比。 */
+function buildLandscapeStatusText({
+  currentEpisode,
+  progressPercent,
+  sourceName,
+  totalEpisodes,
+}: {
+  currentEpisode?: number;
+  progressPercent: number;
+  sourceName?: string;
+  totalEpisodes?: number;
+}): string {
+  const episodeLabel = currentEpisode
+    ? totalEpisodes && totalEpisodes > 1
+      ? `第 ${currentEpisode} 集 / 共 ${totalEpisodes} 集`
+      : `第 ${currentEpisode} 集`
+    : '';
+  return [
+    episodeLabel,
+    `已看 ${Math.round(progressPercent)}%`,
+    sourceName || '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function VideoCardMeta({ model }: { model: VideoCardModel }) {

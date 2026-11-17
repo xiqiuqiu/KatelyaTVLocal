@@ -4144,8 +4144,14 @@
 }
 
 .ui-resume-card .ui-video-footer-meta {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   margin-top: 3px;
   font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
 }
 
 /* 播放按钮：桌面收成圆形图标，鼠标用户靠封面悬停/整卡点击 */
