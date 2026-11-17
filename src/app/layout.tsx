@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { cookies } from 'next/headers';
 
 import './globals.css';
+import '@/styles/fonts.css';
 import '@/styles/globals.css';
 import '@/styles/ui-theme.css';
 import 'sweetalert2/dist/sweetalert2.min.css';
@@ -44,7 +45,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: 'rgb(16 18 22)',
+  themeColor: 'rgb(10 11 14)',
 };
 
 async function loadRootLayoutModel() {

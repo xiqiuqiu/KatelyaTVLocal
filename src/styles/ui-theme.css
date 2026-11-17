@@ -1,29 +1,34 @@
+/* ReelFind 视觉体系：暖琥珀 + 墨黑 / 暖白纸感。
+   所有颜色保持 RGB 三元组，便于 rgb(var(--token) / alpha) 使用。 */
 :root {
-  --ui-bg: 16 18 22;
-  --ui-bg-elevated: 25 29 36;
-  --ui-surface: 25 29 36;
-  --ui-surface-strong: 36 43 53;
-  --ui-loading-surface: 25 29 36;
-  --ui-loading-base: 36 43 53;
-  --ui-loading-highlight: 66 77 94;
-  --ui-loading-border: 43 49 59;
-  --ui-border: 43 49 59;
+  --ui-bg: 10 11 14;
+  --ui-bg-elevated: 19 21 27;
+  --ui-surface: 19 21 27;
+  --ui-surface-strong: 26 29 38;
+  --ui-loading-surface: 19 21 27;
+  --ui-loading-base: 26 29 38;
+  --ui-loading-highlight: 43 47 58;
+  --ui-loading-border: 35 39 48;
+  --ui-border: 35 39 48;
   --ui-border-alpha: 1;
-  --ui-text: 241 243 245;
-  --ui-text-muted: 168 177 192;
-  --ui-accent: 120 170 255;
-  --ui-accent-warm: 243 199 121;
+  --ui-text: 244 242 237;
+  --ui-text-muted: 143 150 163;
+  --ui-accent: 229 169 60;
+  --ui-accent-warm: 238 184 84;
+  /* 主行动点：暗色为琥珀底墨黑字，亮色为墨黑底白字 */
+  --ui-cta: 229 169 60;
+  --ui-on-cta: 10 11 14;
   --ui-success: 95 214 160;
   --ui-critical: 255 139 145;
-  --ui-on-accent: 12 23 42;
-  --ui-focus: 241 243 245;
-  --ui-browser-bg: rgb(16 18 22);
+  --ui-on-accent: 10 11 14;
+  --ui-focus: 229 169 60;
+  --ui-browser-bg: rgb(10 11 14);
   --ui-radius-xs: 6px;
   --ui-radius-sm: 8px;
   --ui-radius-md: 12px;
   --ui-radius-lg: 16px;
-  --ui-shadow-soft: 0 4px 16px rgb(0 0 0 / 12%);
-  --ui-shadow-strong: 0 16px 40px rgb(0 0 0 / 28%);
+  --ui-shadow-soft: 0 1px 2px rgb(0 0 0 / 24%);
+  --ui-shadow-strong: 0 12px 32px rgb(0 0 0 / 32%);
   --ui-shadow-glass: var(--ui-shadow-strong);
   --ui-motion-fast: 120ms;
   --ui-motion-base: 180ms;
@@ -31,29 +36,36 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --font-primary: -apple-system, BlinkMacSystemFont, 'PingFang SC',
-    'Microsoft YaHei', sans-serif;
+  --font-primary: 'Plus Jakarta Sans', 'Noto Sans SC', -apple-system,
+    BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Cormorant Garamond', 'Times New Roman', 'Noto Serif SC',
+    Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 :root.light {
-  --ui-bg: 245 246 248;
+  --ui-bg: 247 246 242;
   --ui-bg-elevated: 255 255 255;
   --ui-surface: 255 255 255;
-  --ui-surface-strong: 233 237 243;
-  --ui-loading-surface: 233 237 243;
-  --ui-loading-base: 222 228 237;
-  --ui-loading-highlight: 250 251 253;
-  --ui-loading-border: 216 222 232;
-  --ui-border: 216 222 232;
-  --ui-text: 23 32 44;
-  --ui-text-muted: 83 97 116;
-  --ui-accent: 36 88 184;
-  --ui-accent-warm: 129 87 0;
+  --ui-surface-strong: 242 240 235;
+  --ui-loading-surface: 242 240 235;
+  --ui-loading-base: 233 230 223;
+  --ui-loading-highlight: 252 251 249;
+  --ui-loading-border: 224 219 210;
+  --ui-border: 224 219 210;
+  --ui-text: 20 22 26;
+  --ui-text-muted: 93 100 112;
+  --ui-accent: 180 83 9;
+  --ui-accent-warm: 217 119 6;
+  --ui-cta: 20 22 26;
+  --ui-on-cta: 255 255 255;
   --ui-success: 23 108 69;
   --ui-critical: 164 35 55;
   --ui-on-accent: 255 255 255;
-  --ui-focus: 23 32 44;
-  --ui-browser-bg: rgb(245 246 248);
+  --ui-focus: 20 22 26;
+  --ui-shadow-soft: 0 1px 2px rgb(20 22 26 / 6%);
+  --ui-shadow-strong: 0 12px 32px rgb(20 22 26 / 12%);
+  --ui-browser-bg: rgb(247 246 242);
 }
 
 .ui-app-bg {
@@ -724,18 +736,20 @@
   transition: background-color 150ms, filter 150ms;
 }
 .ui-primary-button {
-  background: rgb(var(--ui-accent));
-  color: rgb(var(--ui-on-accent));
+  background: rgb(var(--ui-cta));
+  color: rgb(var(--ui-on-cta));
 }
 .ui-primary-button:hover {
   filter: brightness(1.08);
 }
 .ui-secondary-button {
-  background: rgb(var(--ui-surface-strong));
+  background: rgb(var(--ui-surface));
+  border: 1px solid rgb(var(--ui-border));
   color: rgb(var(--ui-text));
 }
 .ui-secondary-button:hover {
-  background: rgb(var(--ui-border));
+  background: rgb(var(--ui-surface-strong));
+  border-color: rgb(var(--ui-text-muted) / 0.45);
 }
 :is(.ui-primary-button, .ui-secondary-button):disabled {
   cursor: not-allowed;
