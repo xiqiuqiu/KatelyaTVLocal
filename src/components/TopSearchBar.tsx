@@ -1,11 +1,12 @@
 'use client';
 
-import { Menu, Search, Tv, User } from 'lucide-react';
+import { Menu, Search, Sparkles, Tv, User } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import { getRuntimeCurrentUser } from '@/lib/auth';
 import { buildTvModeHref } from '@/lib/tv-interaction';
 
 import { useSite } from './SiteProvider';
@@ -31,12 +32,17 @@ const TopSearchBar = ({
   const searchParams = useSearchParams();
   const { siteName } = useSite();
   const [query, setQuery] = useState('');
+  const [username, setUsername] = useState<string | null>(null);
   const currentHref = modeHref || `${pathname}?${searchParams.toString()}`;
   const canEnterTvMode = ['/', '/search', '/history'].includes(pathname);
 
   useEffect(() => {
     setQuery(searchParams.get('q') ?? '');
   }, [searchParams]);
+
+  useEffect(() => {
+    setUsername(getRuntimeCurrentUser()?.username ?? null);
+  }, []);
 
   const handleSearch = (event: React.FormEvent) => {
     event.preventDefault();
@@ -62,14 +68,16 @@ const TopSearchBar = ({
             <Menu aria-hidden size={20} />
           </button>
           <Link href='/' className='ui-brand'>
-            <Image
-              src='/logo.png'
-              alt=''
-              width={28}
-              height={28}
-              aria-hidden
-              className='h-7 w-7 shrink-0 rounded-md'
-            />
+            <span className='ui-brand-mark'>
+              <Image
+                src='/logo.png'
+                alt=''
+                width={32}
+                height={32}
+                aria-hidden
+                className='h-8 w-8 shrink-0 object-cover'
+              />
+            </span>
             <span className='truncate'>{siteName}</span>
           </Link>
         </div>
@@ -85,26 +93,38 @@ const TopSearchBar = ({
             placeholder='搜索影片、电视剧、综艺'
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className='h-11 min-w-0 flex-1 rounded-ui-sm border-0 bg-transparent px-3 text-base text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))] focus:outline-none focus:ring-0'
+            className='h-9 min-w-0 flex-1 rounded-ui-sm border-0 bg-transparent px-3 text-sm text-[rgb(var(--ui-text))] placeholder:text-[rgb(var(--ui-text-muted))] focus:outline-none focus:ring-0 sm:h-10'
           />
+          <Link
+            href={`/search?mode=ai${
+              query.trim() ? `&q=${encodeURIComponent(query.trim())}` : ''
+            }`}
+            aria-label='AI 找片'
+            title='AI 找片'
+            className='ui-topbar-ai'
+          >
+            <Sparkles aria-hidden className='h-4 w-4' />
+            <span className='hidden md:inline'>AI 找片</span>
+          </Link>
           <button
             type='submit'
             aria-label='提交搜索'
-            className='ui-icon-button bg-[rgb(var(--ui-accent))] !text-[rgb(var(--ui-on-accent))] hover:!bg-[rgb(var(--ui-accent))]'
+            className='ui-topbar-submit'
           >
-            <Search aria-hidden size={20} />
+            <Search aria-hidden size={16} />
+            <span className='hidden sm:inline'>搜索</span>
           </button>
         </form>
         <div className='flex shrink-0 items-center gap-1'>
           {canEnterTvMode && (
             <Link
               href={buildTvModeHref(currentHref, true)}
-              className='ui-icon-button md:w-auto md:gap-2 md:px-3'
+              className='ui-topbar-pill'
               aria-label='进入电视模式'
               title='进入电视模式'
             >
-              <Tv aria-hidden className='h-5 w-5 shrink-0' />
-              <span className='hidden text-sm lg:inline'>电视模式</span>
+              <Tv aria-hidden className='h-4 w-4 shrink-0' />
+              <span className='hidden lg:inline'>电视模式</span>
             </Link>
           )}
           <ThemeToggle />
@@ -114,9 +134,12 @@ const TopSearchBar = ({
             aria-label='账号菜单'
             aria-haspopup='dialog'
             aria-expanded={menuOpen}
-            className='ui-icon-button hidden md:inline-flex'
+            className='ui-topbar-account hidden md:inline-flex'
           >
-            <User aria-hidden className='h-5 w-5' />
+            <User aria-hidden className='h-4 w-4' />
+            <span className='hidden max-w-[9rem] truncate lg:inline'>
+              {username || '未登录'}
+            </span>
           </button>
         </div>
       </div>

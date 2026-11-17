@@ -131,8 +131,8 @@ export default function AppShell({
         )}
         <main
           id='main-content'
-          className={`min-w-0 ${
-            tvMode ? '' : isSidebarCollapsed ? 'md:pl-20' : 'md:pl-44'
+          className={`min-w-0 transition-[padding-left] duration-200 ease-out ${
+            tvMode ? '' : isSidebarCollapsed ? 'md:pl-[72px]' : 'md:pl-56'
           }`}
         >
           <div className='ui-shell-content'>
@@ -184,7 +184,8 @@ export default function AppShell({
                 )}
               </nav>
             )}
-            {activePath.startsWith('/douban') && (
+            {/* 电视模式保留顶部分类导航：10-foot 界面焦点路径依赖它 */}
+            {tvMode && activePath.startsWith('/douban') && (
               <nav aria-label='影片分类' className='mb-6 flex flex-wrap gap-2'>
                 {catalogNavigationItems.map((item) => (
                   <Link

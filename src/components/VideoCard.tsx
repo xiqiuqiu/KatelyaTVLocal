@@ -1,15 +1,8 @@
-import {
-  CheckCircle,
-  Film,
-  Heart,
-  Link,
-  Loader2,
-  Play,
-  PlayCircleIcon,
-} from 'lucide-react';
+import { CheckCircle, Film, Heart, Link, Loader2, Play } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, {
+  Fragment,
   useCallback,
   useMemo,
   useRef,
@@ -144,9 +137,9 @@ function FavoriteHeartButton({
 }
 
 const videoCardIconButtonClass =
-  'inline-flex h-11 w-11 items-center justify-center rounded-ui-sm bg-black/80 text-white transition-colors duration-150 hover:bg-black focus-visible:outline-white';
+  'ui-video-icon-button inline-flex h-11 w-11 items-center justify-center rounded-ui-sm bg-black/80 text-white transition-colors duration-150 hover:bg-black focus-visible:outline-white';
 const videoCardDoubanLinkClass =
-  'absolute left-2 top-2 z-20 inline-flex h-11 w-11 items-center justify-center rounded-ui-sm bg-black/80 text-white transition-colors duration-150 hover:bg-black';
+  'ui-video-icon-button absolute left-2 top-2 z-20 inline-flex h-11 w-11 items-center justify-center rounded-ui-sm bg-black/80 text-white transition-colors duration-150 hover:bg-black';
 
 function buildVideoCardFacts({
   id,
@@ -294,9 +287,7 @@ function buildVideoCardFacts({
   const defaultImageSize = isSmall
     ? { width: 240, height: 360, quality: 76 }
     : { width: 360, height: 540, quality: 78 };
-  const resolvedImageSize =
-    imageSize ||
-    (isLandscape ? { width: 640, height: 360, quality: 78 } : defaultImageSize);
+  const resolvedImageSize = imageSize || defaultImageSize;
   const cappedProgress = Math.min(Math.max(progress, 0), 100);
 
   return {
@@ -310,10 +301,13 @@ function buildVideoCardFacts({
     actualTitle,
     actualYear,
     aggregateCountText: `${items?.length ?? 0} 个来源`,
-    articleClass: `group relative w-full ${
+    articleClass: `ui-video-card group relative w-full ${
       isLandscape ? 'ui-resume-card' : ''
-    } ${isResult ? 'ui-search-card' : ''}`,
-    aspectRatio: isLandscape ? 'aspect-video' : 'aspect-[2/3]',
+    } ${isResult ? 'ui-search-card' : ''} ${
+      !isResult && !isLandscape ? 'ui-video-card-poster' : ''
+    }`,
+    // 来源只提供竖版海报，横卡也按 2:3 显示，避免裁掉半截
+    aspectRatio: 'aspect-[2/3]',
     badgeSizeClass: isSmall ? 'text-[10px] px-2 py-1' : 'text-xs px-2.5 py-1',
     continueLabel: showOpeningState ? '正在打开' : '继续播放',
     description,
@@ -322,32 +316,44 @@ function buildVideoCardFacts({
     episodeBadgeText: currentEpisode
       ? `${currentEpisode}/${actualEpisodes}`
       : `${actualEpisodes ?? ''}`,
-    favoriteBarClass: tvMode ? '!opacity-100' : '',
+    favoriteBarClass: `ui-video-card-actions ${
+      isLandscape ? 'ui-video-card-actions-top' : ''
+    } ${tvMode ? '!opacity-100' : ''}`.trim(),
     favoriteStorageKey,
     hasImageError,
     hasImageLoaded,
     iconButtonClass: videoCardIconButtonClass,
     imageLoading: imagePriority ? undefined : ('lazy' as const),
     imagePriority,
-    imageSizes: isLandscape
-      ? '(max-width: 640px) 78vw, 320px'
-      : isSmall
+    imageSizes: isSmall
       ? '(max-width: 640px) 33vw, (max-width: 1024px) 25vw, 180px'
       : '(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 240px',
     imageSrc: processImageUrl(actualPoster, resolvedImageSize),
     isAggregate,
+    isLandscape,
     isResult,
     isSmall,
     items,
-    landscapeStatusText: `${
-      currentEpisode ? `第 ${currentEpisode} 集 · ` : ''
-    }已看 ${Math.round(cappedProgress)}%${
-      source_name ? ` · ${source_name}` : ''
-    }`,
+    landscapeStatusText: buildLandscapeStatusText({
+      currentEpisode,
+      sourceName: source_name,
+      totalEpisodes: actualEpisodes,
+      progressPercent: cappedProgress,
+    }),
     linkIconSize: isSmall ? 14 : 16,
     metaClass: `ui-video-meta text-left ${
-      isResult ? 'ui-search-meta' : isSmall ? 'mt-2' : 'mt-3'
+      isResult ? 'ui-search-meta' : 'ui-video-footer'
     }`,
+    footerMetaParts: isLandscape
+      ? []
+      : [
+          typeName || '',
+          displayYear || '',
+          statusText ||
+            ((actualEpisodes ?? 0) > 1 ? `共 ${actualEpisodes} 集` : ''),
+          source_name || '',
+        ].filter(Boolean),
+    showInlineProgress: config.showProgress && !isResult,
     playIconSize: isSmall ? 34 : 52,
     playOverlayClass: `pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-150 ease ${
       showOpeningState
@@ -371,7 +377,8 @@ function buildVideoCardFacts({
     showAggregateCount: isResult && isAggregate,
     showAggregateToggle: isResult && isAggregate,
     showCheckCircle: config.showCheckCircle,
-    showContinue: isLandscape,
+    footerIsAction: isLandscape && !tvMode,
+    showContinue: isLandscape && tvMode,
     showDoubanLink: !tvMode && config.showDoubanLink && !!actualDoubanId,
     showEpisodeBadge: !!actualEpisodes && actualEpisodes > 1,
     showFavoriteBar:
@@ -387,7 +394,7 @@ function buildVideoCardFacts({
     showOpeningState,
     showPlayOverlay: config.showPlayButton || showOpeningState,
     showProgress: config.showProgress,
-    showRating: !!(config.showRating && rate),
+    showRating: !!rate && (config.showRating || !!isResult),
     showResultDescription: !!(description || aggregateData?.first.desc),
     showSearchMeta:
       from === 'search' && !!(typeName || displayYear || statusText),
@@ -401,7 +408,7 @@ function buildVideoCardFacts({
     sourcesOpen,
     sourcesToggleLabel: sourcesOpen ? '收起来源' : '展开来源',
     statusText,
-    surfaceClass: `relative overflow-hidden ${
+    surfaceClass: `ui-video-poster relative overflow-hidden ${
       isResult ? 'ui-search-poster' : ''
     }`,
     titleActionLabel: `打开 ${actualTitle}`,
@@ -723,11 +730,13 @@ function VideoCardPlayOverlay({ model }: { model: VideoCardModel }) {
           正在打开
         </span>
       ) : (
-        <PlayCircleIcon
-          className='fill-black/50 text-white drop-shadow-md'
-          size={model.playIconSize}
-          strokeWidth={0.9}
-        />
+        <span className='ui-video-play-button'>
+          <Play
+            aria-hidden
+            className='h-4 w-4 fill-current'
+            strokeWidth={1.5}
+          />
+        </span>
       )}
     </div>
   );
@@ -752,16 +761,9 @@ function VideoCardDoubanLink({ model }: { model: VideoCardModel }) {
 function VideoCardBadges({ model }: { model: VideoCardModel }) {
   return (
     <div className='absolute right-3 top-3 z-20 flex flex-col items-end gap-2'>
-      {model.showRating ? (
-        <span
-          className={`ui-video-rating inline-flex items-center justify-center rounded-md bg-black/80 font-semibold text-amber-200 ${model.badgeSizeClass}`}
-        >
-          {model.rate}
-        </span>
-      ) : null}
       {model.showEpisodeBadge ? (
         <span
-          className={`inline-flex items-center justify-center rounded-md bg-black/80 font-semibold text-white ${model.badgeSizeClass}`}
+          className={`ui-video-episode-badge inline-flex items-center justify-center rounded-md bg-black/80 font-semibold text-white ${model.badgeSizeClass}`}
         >
           {model.episodeBadgeText}
         </span>
@@ -809,7 +811,7 @@ function VideoCardPoster({ model }: { model: VideoCardModel }) {
   return (
     <Surface className={model.surfaceClass} variant='raised'>
       <div
-        className={`relative ${model.aspectRatio} overflow-hidden rounded-[inherit]`}
+        className={`ui-video-frame relative ${model.aspectRatio} overflow-hidden rounded-[inherit]`}
         ref={model.posterRef}
       >
         <VideoCardImage model={model} />
@@ -818,15 +820,30 @@ function VideoCardPoster({ model }: { model: VideoCardModel }) {
         <VideoCardDoubanLink model={model} />
         <VideoCardBadges model={model} />
         <VideoCardFavoriteActions model={model} />
+        {model.showInlineProgress ? (
+          <VideoCardProgress inline model={model} />
+        ) : null}
       </div>
     </Surface>
   );
 }
 
-function VideoCardProgress({ model }: { model: VideoCardModel }) {
+function VideoCardProgress({
+  inline = false,
+  model,
+}: {
+  inline?: boolean;
+  model: VideoCardModel;
+}) {
   if (!model.showProgress) return null;
   return (
-    <div className='ui-video-progress mt-3 h-1 w-full overflow-hidden rounded-full bg-[rgb(var(--ui-surface-strong))]'>
+    <div
+      className={
+        inline
+          ? 'ui-video-progress ui-video-progress-inline absolute inset-x-0 bottom-0 z-20 h-1 w-full overflow-hidden bg-white/25'
+          : 'ui-video-progress mt-3 h-1 w-full overflow-hidden rounded-full bg-[rgb(var(--ui-surface-strong))]'
+      }
+    >
       <div
         className='h-full w-full origin-left rounded-full bg-[rgb(var(--ui-accent))] transition-transform duration-200 ease-out'
         style={{ transform: `scaleX(${model.progressScale})` }}
@@ -868,15 +885,6 @@ function VideoCardSearchMeta({ model }: { model: VideoCardModel }) {
       {model.displayYear ? <span>{model.displayYear}</span> : null}
       {model.statusText ? <span>{model.statusText}</span> : null}
     </div>
-  );
-}
-
-function VideoCardLandscapeStatus({ model }: { model: VideoCardModel }) {
-  if (!model.showLandscapeStatus) return null;
-  return (
-    <p className='mt-1 text-sm text-[rgb(var(--ui-text-muted))]'>
-      {model.landscapeStatusText}
-    </p>
   );
 }
 
@@ -949,7 +957,7 @@ function VideoCardContinue({ model }: { model: VideoCardModel }) {
       data-tv-focus-key={`play:${model.playbackCardKey}`}
       data-tv-card-primary={model.tvCardPrimary}
       data-tv-primary={model.tvCardPrimary}
-      className='mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-2 text-sm font-semibold text-[rgb(var(--ui-on-accent))] transition-[filter] duration-150 hover:brightness-110 disabled:opacity-60'
+      className='ui-video-continue mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-2 text-sm font-semibold text-[rgb(var(--ui-on-accent))] transition-[filter] duration-150 hover:brightness-110 disabled:opacity-60'
     >
       {model.showOpeningState ? (
         <Loader2 aria-hidden className='h-4 w-4 animate-spin' />
@@ -961,15 +969,88 @@ function VideoCardContinue({ model }: { model: VideoCardModel }) {
   );
 }
 
+/** 横卡（继续观看）的进度说明：集数显示「第 N 集 / 共 M 集」，保留观看百分比。 */
+function buildLandscapeStatusText({
+  currentEpisode,
+  progressPercent,
+  sourceName,
+  totalEpisodes,
+}: {
+  currentEpisode?: number;
+  progressPercent: number;
+  sourceName?: string;
+  totalEpisodes?: number;
+}): string {
+  const episodeLabel = currentEpisode
+    ? totalEpisodes && totalEpisodes > 1
+      ? `第 ${currentEpisode} 集 / 共 ${totalEpisodes} 集`
+      : `第 ${currentEpisode} 集`
+    : '';
+  return [
+    episodeLabel,
+    `已看 ${Math.round(progressPercent)}%`,
+    sourceName || '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function VideoCardMeta({ model }: { model: VideoCardModel }) {
+  const footerContent = (
+    <>
+      <div className='ui-video-footer-head'>
+        <VideoCardTitle model={model} />
+        {model.showRating ? (
+          <span className='ui-video-score'>{model.rate}</span>
+        ) : null}
+      </div>
+      {model.isLandscape ? (
+        <p className='ui-video-footer-meta'>{model.landscapeStatusText}</p>
+      ) : model.footerMetaParts.length ? (
+        <p className='ui-video-footer-meta'>
+          {model.footerMetaParts.map((part, index) => (
+            <Fragment key={`${part}-${index}`}>
+              {index > 0 ? ' · ' : null}
+              <span>{part}</span>
+            </Fragment>
+          ))}
+        </p>
+      ) : null}
+    </>
+  );
+
+  if (!model.isResult) {
+    return (
+      <div className={model.metaClass}>
+        {model.footerIsAction ? (
+          // 网页与手机没有脚部按钮，整块文案就是点按区域
+          <button
+            aria-label={`继续播放 ${model.actualTitle}`}
+            className='ui-video-footer-text ui-video-footer-action'
+            onClick={model.handleClick}
+            type='button'
+          >
+            {footerContent}
+          </button>
+        ) : (
+          <div className='ui-video-footer-text'>{footerContent}</div>
+        )}
+        <VideoCardContinue model={model} />
+      </div>
+    );
+  }
+
   return (
     <div className={model.metaClass}>
-      <VideoCardTitle model={model} />
+      <div className='ui-video-result-head'>
+        <VideoCardTitle model={model} />
+        {model.showRating ? (
+          <span className='ui-video-search-score'>豆瓣 {model.rate}</span>
+        ) : null}
+      </div>
       <VideoCardSearchMeta model={model} />
-      <VideoCardLandscapeStatus model={model} />
       <VideoCardSourceChip model={model} />
       <VideoCardResultPanel model={model} />
-      <VideoCardContinue model={model} />
     </div>
   );
 }
@@ -1007,7 +1088,7 @@ export default function VideoCard(props: VideoCardProps) {
       data-playback-preparation-card={model.playbackCardKey}
     >
       <VideoCardPoster model={model} />
-      <VideoCardProgress model={model} />
+      {!model.showInlineProgress ? <VideoCardProgress model={model} /> : null}
       <VideoCardMeta model={model} />
       <VideoCardSourceList model={model} />
     </article>

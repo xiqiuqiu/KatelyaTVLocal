@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { cookies } from 'next/headers';
 
 import './globals.css';
+import '@/styles/fonts.css';
 import '@/styles/globals.css';
 import '@/styles/ui-theme.css';
 import 'sweetalert2/dist/sweetalert2.min.css';
@@ -20,7 +21,7 @@ const defaultSourceProbe = '/api/source-probe?url=';
 const defaultHlsProxy = '/api/hls-proxy?url=';
 
 export async function generateMetadata(): Promise<Metadata> {
-  let siteName = process.env.SITE_NAME || 'KatelyaTV';
+  let siteName = process.env.SITE_NAME || 'ReelFind';
   if (
     process.env.NEXT_PUBLIC_STORAGE_TYPE !== 'd1' &&
     process.env.NEXT_PUBLIC_STORAGE_TYPE !== 'upstash'
@@ -44,11 +45,11 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: 'rgb(16 18 22)',
+  themeColor: 'rgb(10 11 14)',
 };
 
 async function loadRootLayoutModel() {
-  let siteName = process.env.SITE_NAME || 'KatelyaTV';
+  let siteName = process.env.SITE_NAME || 'ReelFind';
   let announcement =
     process.env.ANNOUNCEMENT ||
     '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。';

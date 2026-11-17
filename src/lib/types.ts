@@ -74,6 +74,8 @@ export interface AiFindSavedRecordSummary {
   answer: string;
   candidateCount: number;
   foundGroupCount: number;
+  /** 结果里前几张可用海报，用于历史卡片的叠层封面 */
+  posters?: string[];
   status: AiFindSavedRecordStatus;
   createdAt: number;
   updatedAt: number;
@@ -177,6 +179,8 @@ export interface SearchResult {
   desc?: string;
   type_name?: string;
   douban_id?: number;
+  /** 豆瓣评分，形如 "8.6"；下游源未提供时为空 */
+  rate?: string;
 }
 
 export type SourcePlaybackMode = 'direct' | 'proxy';

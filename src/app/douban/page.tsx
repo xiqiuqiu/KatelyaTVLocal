@@ -2,13 +2,18 @@
 
 'use client';
 
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getDoubanCategories } from '@/lib/douban.client';
-import { isTvMode } from '@/lib/tv-interaction';
+import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 import { DoubanItem } from '@/lib/types';
+import {
+  catalogNavigationItems,
+  isNavigationItemActive,
+} from '@/lib/ui/navigation';
 import { getDoubanPageMeta, pageSectionLabels } from '@/lib/ui/page-meta';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
@@ -267,10 +272,11 @@ function DoubanPageClient() {
   };
 
   const pageHeaderMeta = getDoubanPageMeta(type);
+  const activePath = getActivePath();
 
   return (
     <PageLayout
-      activePath={getActivePath()}
+      activePath={activePath}
       tvMode={tvMode}
       modeHref={`/douban?${searchParams.toString()}`}
     >
@@ -279,6 +285,27 @@ function DoubanPageClient() {
           className='ui-library-header'
           subtitle={pageHeaderMeta.subtitle}
           title={pageHeaderMeta.title}
+          action={
+            tvMode ? undefined : (
+              <nav aria-label='影片分类' className='ui-kind-switch'>
+                {catalogNavigationItems.map((item) => (
+                  <Link
+                    key={item.key}
+                    href={buildTvModeHref(item.href, tvMode)}
+                    data-active={isNavigationItemActive(activePath, item.href)}
+                    aria-current={
+                      isNavigationItemActive(activePath, item.href)
+                        ? 'page'
+                        : undefined
+                    }
+                    className='ui-nav-item'
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
+            )
+          }
         />
 
         <section className='space-y-4'>
@@ -317,6 +344,13 @@ function DoubanPageClient() {
                       douban_id={item.id}
                       rate={item.rate}
                       year={item.year}
+                      typeName={
+                        type === 'movie'
+                          ? '电影'
+                          : type === 'tv'
+                          ? '剧集'
+                          : '综艺'
+                      }
                       type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
                     />
                   </div>

@@ -8,6 +8,12 @@ import {
   resolveTvRemoteClickTarget,
 } from '@/lib/tv-interaction';
 
+/** jsdom / 部分电视 WebView 没有 scrollIntoView，调用前先确认。 */
+function scrollIntoViewSafely(element: HTMLElement | null | undefined) {
+  if (!element || typeof element.scrollIntoView !== 'function') return;
+  element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
 const ACTIONS =
   'button:not(:disabled):not([tabindex="-1"]), a[href]:not([tabindex="-1"]), input[data-tv-input]:not(:disabled), textarea[data-tv-input]:not(:disabled), select[data-tv-input]:not(:disabled)';
 
@@ -167,8 +173,14 @@ export default function useTvBrowseNavigation(
         saved ||
         controls.find((control) => control.hasAttribute('data-tv-primary')) ||
         controls[0];
-      target?.focus();
-      target?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      if (target) {
+        target.focus();
+        scrollIntoViewSafely(target);
+        return;
+      }
+      // 内容还没渲染出可聚焦控件时，先让容器持有焦点。
+      if (root.tabIndex < 0) root.tabIndex = -1;
+      root.focus({ preventScroll: true });
     };
     const recoverFocus = () => {
       frame = 0;
@@ -203,7 +215,7 @@ export default function useTvBrowseNavigation(
       }
       if (!root.contains(event.target) && !modal?.contains(event.target))
         return;
-      event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      scrollIntoViewSafely(event.target);
       if (root.contains(event.target)) {
         lastRootFocus = event.target;
         if (interacted) rememberFocus(event.target);
@@ -275,10 +287,7 @@ export default function useTvBrowseNavigation(
           : controls[0];
         target?.focus();
         // Refocusing the same control does not emit focusin after scroll restoration.
-        (target || current)?.scrollIntoView({
-          block: 'nearest',
-          inline: 'nearest',
-        });
+        scrollIntoViewSafely(target || current);
         log('browse-direction', { key: event.key });
       } else if (event.key === 'Enter' && current) {
         interacted = true;
@@ -375,7 +384,31 @@ export default function useTvBrowseNavigation(
         controls: actions(root).length,
       });
     scheduleRecovery();
+    // 进入电视模式多半是一次软导航：首帧抢焦点可能还没等到内容提交。
+    // 电视浏览器在页面内没有任何焦点时会把按键留在自己的空间导航层，
+    // 所以这里在“仍然没人聚焦”时重试几次，让遥控器立刻回到页面。
+    const claimInitialFocus = () => {
+      if (interacted) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && root.contains(active)) return;
+      focusInitial();
+    };
+    claimInitialFocus();
+    const claimTimers = [120, 320, 700].map((delay) =>
+      window.setTimeout(claimInitialFocus, delay)
+    );
+    const claimOnShow = () => {
+      if (document.visibilityState === 'visible') claimInitialFocus();
+    };
+    document.addEventListener('visibilitychange', claimOnShow);
+    window.addEventListener('pageshow', claimOnShow);
+    window.addEventListener('focus', claimOnShow);
+
     return () => {
+      claimTimers.forEach((timer) => window.clearTimeout(timer));
+      document.removeEventListener('visibilitychange', claimOnShow);
+      window.removeEventListener('pageshow', claimOnShow);
+      window.removeEventListener('focus', claimOnShow);
       finishEditing();
       managedFields.forEach((readOnly, field) => {
         field.removeAttribute('data-tv-input');

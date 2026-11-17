@@ -283,6 +283,7 @@ function HistoryEntries({
                 <div
                   key={item.key}
                   data-selected={selected}
+                  data-managing={managing || undefined}
                   className='ui-history-row flex flex-wrap items-center gap-3 rounded-ui-md bg-[rgb(var(--ui-surface))] p-3 sm:gap-4 sm:p-4'
                 >
                   {managing ? (
@@ -304,7 +305,7 @@ function HistoryEntries({
                   <button
                     aria-label={`继续播放 ${item.title}`}
                     tabIndex={tvMode ? -1 : undefined}
-                    className='ui-history-image relative aspect-video w-28 shrink-0 overflow-hidden rounded-ui-sm bg-[rgb(var(--ui-surface-strong))] text-left sm:w-48'
+                    className='ui-history-image relative aspect-[2/3] w-[72px] shrink-0 overflow-hidden rounded-ui-sm bg-[rgb(var(--ui-surface-strong))] text-left sm:w-24'
                     onClick={() => onOpen(item)}
                     type='button'
                   >

@@ -32,7 +32,7 @@ export default function MobileBottomNav({
     isNavigationItemActive(currentActive, '/?tab=favorites') ||
     ['/history', '/admin'].includes(pathname);
   const itemClass =
-    'flex min-h-16 w-full flex-col items-center justify-center gap-1 rounded-ui-sm text-xs font-medium text-[rgb(var(--ui-text-muted))] transition-colors data-[active=true]:text-[rgb(var(--ui-accent))]';
+    'flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-ui-sm text-[11px] font-medium transition-colors';
 
   return (
     <nav aria-label='手机导航' className='ui-mobile-nav md:hidden'>

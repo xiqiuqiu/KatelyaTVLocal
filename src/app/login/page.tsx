@@ -20,6 +20,7 @@ import { getSafeRedirectPath } from '@/lib/safe-redirect';
 import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 
 import IOSCompatibility from '@/components/IOSCompatibility';
+import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import useTvBrowseNavigation from '@/components/useTvBrowseNavigation';
 
@@ -45,6 +46,7 @@ declare global {
 }
 
 function LoginPageClient() {
+  const { siteName } = useSite();
   const searchParams = useSearchParams();
   const tvMode = isTvMode(searchParams);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -271,14 +273,25 @@ function LoginPageClient() {
         className='ui-auth-page min-h-dvh bg-[rgb(var(--ui-bg))] px-4 pb-8 pt-4 text-[rgb(var(--ui-text))] sm:px-8'
       >
         <header className='ui-auth-toolbar mx-auto flex w-full max-w-[1080px] items-center justify-between gap-4'>
-          <span className='text-lg font-semibold'>KatelyaTV</span>
+          <span className='ui-brand'>
+            <span className='ui-brand-mark'>
+              <Image
+                src='/logo.png'
+                alt=''
+                width={32}
+                height={32}
+                className='h-8 w-8 object-cover'
+              />
+            </span>
+            <span>{siteName}</span>
+          </span>
           <div className='flex items-center gap-2'>
             <a
               href={modeHref}
-              className='ui-secondary-button'
+              className='ui-topbar-pill'
               data-tv-focus-key='auth-mode-switch'
             >
-              <Tv aria-hidden className='h-5 w-5 shrink-0' />
+              <Tv aria-hidden className='h-4 w-4 shrink-0' />
               {tvMode ? '退出电视模式' : '电视模式'}
             </a>
             <ThemeToggle />
@@ -286,30 +299,30 @@ function LoginPageClient() {
         </header>
 
         <main className='ui-auth-layout mx-auto mt-8 grid w-full max-w-[1080px] overflow-hidden rounded-ui-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] lg:mt-12 lg:grid-cols-[0.9fr_1.1fr]'>
-          <section className='ui-auth-story relative hidden min-w-0 flex-col justify-between border-r border-[rgb(var(--ui-border))] p-10 lg:flex'>
-            <div>
-              <Image
-                src='/logo.png'
-                alt=''
-                width={56}
-                height={56}
-                className='h-14 w-14 rounded-ui-md object-cover'
-              />
-              <h2 className='ui-auth-story-title mt-8 font-semibold'>
-                你的私人放映厅
-              </h2>
-              <p className='mt-4 text-base leading-7 text-[rgb(var(--ui-text-muted))]'>
-                找一部想看的，接着上次的进度。
-              </p>
-            </div>
-            <div className='relative mt-10 aspect-[4/3] overflow-hidden rounded-ui-md'>
+          <section className='ui-auth-story relative hidden min-w-0 flex-col justify-between lg:flex'>
+            <div className='ui-auth-story-media' aria-hidden>
               <Image
                 src='/login-cinema-bg.png'
                 alt=''
                 fill
-                sizes='(min-width: 1024px) 400px, 0px'
+                priority
+                sizes='(min-width: 1024px) 520px, 0px'
                 className='object-cover object-left'
               />
+            </div>
+            <div className='ui-auth-story-copy'>
+              <p className='ui-auth-kicker'>{siteName} · Private Screening</p>
+              <h2 className='ui-auth-story-title mt-3 font-semibold'>
+                你的私人放映厅
+              </h2>
+              <p className='ui-auth-story-desc mt-3'>
+                找一部想看的，接着上次的进度。支持多线路聚合搜索、AI
+                线索找片与客厅电视模式。
+              </p>
+            </div>
+            <div className='ui-auth-story-meta'>
+              <span>4K HDR 多线路聚合</span>
+              <span>跨设备同步进度</span>
             </div>
           </section>
 
@@ -341,11 +354,7 @@ function LoginPageClient() {
                         setError(null);
                         setAuthMode(mode as AuthMode);
                       }}
-                      className={`ui-auth-tab ${
-                        authMode === mode
-                          ? 'ui-primary-button'
-                          : 'ui-secondary-button'
-                      }`}
+                      className='ui-auth-tab'
                     >
                       {label}
                     </button>
@@ -573,9 +582,9 @@ function LoginPageClient() {
                       {authMode === 'register' ? '注册中...' : '登录中...'}
                     </>
                   ) : authMode === 'register' ? (
-                    '创建 KatelyaTV 账号'
+                    `创建 ${siteName} 账号`
                   ) : (
-                    '进入 KatelyaTV'
+                    `进入 ${siteName}`
                   )}
                 </button>
               </form>

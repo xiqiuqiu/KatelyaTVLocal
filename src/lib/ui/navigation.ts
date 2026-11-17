@@ -27,11 +27,19 @@ export const catalogNavigationItems: readonly NavigationItem[] = [
   { key: 'show', label: '综艺', href: '/douban?type=show', icon: 'clover' },
 ] as const;
 
-export const sidebarNavigationItems: readonly NavigationItem[] = [
-  primaryNavigationItems[0],
-  primaryNavigationItems[1],
+/**
+ * 侧栏直接平铺「电影 / 剧集 / 综艺」，不再用「发现」再点一层。
+ * 移动端底栏仍保留「发现」入口（见 primaryNavigationItems）。
+ */
+export const personalNavigationItems: readonly NavigationItem[] = [
   { key: 'favorites', label: '收藏夹', href: '/?tab=favorites', icon: 'heart' },
   { key: 'history', label: '播放历史', href: '/history', icon: 'history' },
+] as const;
+
+export const sidebarNavigationItems: readonly NavigationItem[] = [
+  primaryNavigationItems[0],
+  ...catalogNavigationItems,
+  ...personalNavigationItems,
 ] as const;
 
 export function isNavigationItemActive(activePath: string, href: string) {
@@ -43,6 +51,13 @@ export function isNavigationItemActive(activePath: string, href: string) {
     current.searchParams.get('tab') !== target.searchParams.get('tab')
   )
     return false;
+  // 豆瓣片库默认展示电影：访问 /douban（无 type）时「电影」应高亮
+  if (
+    target.pathname === '/douban' &&
+    target.searchParams.get('type') === 'movie' &&
+    !current.searchParams.get('type')
+  )
+    return true;
   return Array.from(target.searchParams).every(
     ([key, value]) => key === 'tv' || current.searchParams.get(key) === value
   );

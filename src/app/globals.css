@@ -39,25 +39,21 @@
   animation: fadeInUp 220ms var(--ease-out) forwards;
 }
 
-/* KatelyaTV Logo — static accent gradient (no ambient loops) */
+/* ReelFind 品牌字标：衬线、纯色，不再使用渐变字效 */
 .katelya-logo,
 .main-katelya-logo,
 .bottom-logo {
-  background: linear-gradient(
-    90deg,
-    rgb(var(--ui-accent)),
-    rgb(var(--ui-accent-warm))
-  );
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  background: none;
+  color: rgb(var(--ui-text));
+  -webkit-text-fill-color: currentColor;
   animation: none;
 }
 
 .katelya-logo {
   position: relative;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 /* 主内容区大型 KatelyaTV Logo 容器 */
@@ -72,36 +68,20 @@
   margin-bottom: 2rem;
 }
 
-/* 背景光效 - 简化版本 */
+/* 背景光效 — 已移除，保留占位避免内联引用失效 */
 .logo-background-glow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 600px;
-  height: 400px;
-  background: radial-gradient(
-    ellipse,
-    rgba(var(--ui-accent), 0.16) 0%,
-    rgba(var(--ui-accent-warm), 0.1) 36%,
-    rgba(var(--ui-success), 0.08) 64%,
-    transparent 100%
-  );
-  animation: none;
-  opacity: 0.5;
-  transform: translate(-50%, -50%) scale(1);
-  border-radius: 50%;
-  z-index: 0;
+  display: none;
 }
 
 /* 主内容区大型 Logo - 简化版本 */
 .main-katelya-logo {
+  font-family: var(--font-display);
   font-size: 4rem;
-  font-weight: 900;
+  font-weight: 600;
   position: relative;
   z-index: 2;
-  letter-spacing: 0.02em;
-  text-shadow: 0 10px 30px rgba(var(--ui-accent), 0.28);
+  letter-spacing: 0.01em;
+  text-shadow: none;
   cursor: default;
   user-select: none;
 }
@@ -130,7 +110,8 @@
 .particle {
   position: absolute;
   border-radius: 50%;
-  opacity: 0.5;
+  opacity: 0.15;
+  background: rgb(var(--ui-text-muted));
   animation: none;
 }
 
@@ -139,12 +120,6 @@
   right: 20%;
   width: 8px;
   height: 8px;
-  background: linear-gradient(
-    45deg,
-    rgb(var(--ui-accent)),
-    rgb(var(--ui-success))
-  );
-  animation-delay: -2s;
 }
 
 .particle-2 {
@@ -152,12 +127,6 @@
   left: 20%;
   width: 6px;
   height: 6px;
-  background: linear-gradient(
-    45deg,
-    rgb(var(--ui-accent)),
-    rgb(var(--ui-success))
-  );
-  animation-delay: -3s;
 }
 
 .particle-3 {
@@ -165,12 +134,6 @@
   left: 25%;
   width: 10px;
   height: 10px;
-  background: linear-gradient(
-    45deg,
-    rgb(var(--ui-success)),
-    rgb(var(--ui-accent-warm))
-  );
-  animation-delay: -4s;
 }
 
 .particle-4 {
@@ -178,12 +141,6 @@
   right: 30%;
   width: 5px;
   height: 5px;
-  background: linear-gradient(
-    45deg,
-    rgb(var(--ui-accent)),
-    rgb(var(--ui-text-muted))
-  );
-  animation-delay: -1s;
 }
 
 .particle-5 {
@@ -191,12 +148,6 @@
   left: 10%;
   width: 7px;
   height: 7px;
-  background: linear-gradient(
-    45deg,
-    rgb(var(--ui-accent-warm)),
-    rgb(var(--ui-accent))
-  );
-  animation-delay: -3s;
 }
 
 .particle-6 {
@@ -204,12 +155,6 @@
   right: 15%;
   width: 9px;
   height: 9px;
-  background: linear-gradient(
-    45deg,
-    rgb(var(--ui-text-muted)),
-    rgb(var(--ui-accent-warm))
-  );
-  animation-delay: -5s;
 }
 
 /* 移动端主内容区 Logo 适配 */
@@ -275,7 +220,8 @@
 .shape {
   position: absolute;
   border-radius: 50%;
-  opacity: 0.1;
+  opacity: 0.08;
+  background: rgb(var(--ui-text-muted));
   animation: none;
 }
 
@@ -284,12 +230,6 @@
   left: 10%;
   width: 20px;
   height: 20px;
-  background: linear-gradient(
-    45deg,
-    rgb(var(--ui-accent)),
-    rgb(var(--ui-success))
-  );
-  animation-delay: -1s;
 }
 
 .shape:nth-child(2) {
@@ -297,12 +237,6 @@
   right: 15%;
   width: 15px;
   height: 15px;
-  background: linear-gradient(
-    45deg,
-    rgb(var(--ui-accent)),
-    rgb(var(--ui-success))
-  );
-  animation-delay: -3s;
 }
 
 .shape:nth-child(3) {
@@ -310,12 +244,6 @@
   left: 20%;
   width: 25px;
   height: 25px;
-  background: linear-gradient(
-    45deg,
-    rgb(var(--ui-accent-warm)),
-    rgb(var(--ui-accent))
-  );
-  animation-delay: -2s;
 }
 
 .shape:nth-child(4) {
@@ -323,12 +251,6 @@
   right: 25%;
   width: 18px;
   height: 18px;
-  background: linear-gradient(
-    45deg,
-    rgb(var(--ui-accent)),
-    rgb(var(--ui-text-muted))
-  );
-  animation-delay: -4s;
 }
 
 /* 底部 Logo */
@@ -355,21 +277,21 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.5);
+  background: rgb(var(--ui-text-muted) / 0.35);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.7);
+  background: rgb(var(--ui-text-muted) / 0.55);
 }
 
 /* 暗色主题滚动条 */
 .dark ::-webkit-scrollbar-thumb {
-  background: rgba(75, 85, 99, 0.5);
+  background: rgb(var(--ui-text-muted) / 0.32);
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(75, 85, 99, 0.7);
+  background: rgb(var(--ui-text-muted) / 0.5);
 }
 
 /* 基础样式重置 */
@@ -388,9 +310,7 @@ html.play-overscroll-lock body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: var(--font-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.6;
@@ -459,7 +379,7 @@ img {
 
 /* 焦点样式 */
 :focus {
-  outline: 2px solid rgba(var(--ui-accent), 0.55);
+  outline: 2px solid rgb(var(--ui-focus) / 0.55);
   outline-offset: 2px;
 }
 

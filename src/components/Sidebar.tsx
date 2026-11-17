@@ -26,9 +26,12 @@ import {
 import {
   type NavigationIcon,
   type NavigationItem,
+  catalogNavigationItems,
   isNavigationItemActive,
+  personalNavigationItems,
   sidebarNavigationItems,
 } from '@/lib/ui/navigation';
+import { useLibraryCounts } from '@/lib/ui/use-library-counts';
 
 interface SidebarContextType {
   isCollapsed: boolean;
@@ -105,6 +108,7 @@ const Sidebar = ({
     }
   }, [isCollapsed]);
 
+  const libraryCounts = useLibraryCounts();
   const [active, setActive] = useState(activePath);
 
   useEffect(() => {
@@ -157,14 +161,18 @@ const Sidebar = ({
           <Icon className='h-5 w-5' />
         </span>
         <span
-          className={`truncate overflow-hidden transition-[max-width,opacity] duration-200 ease-out ${
-            isCollapsed
-              ? 'pointer-events-none max-w-0 opacity-0'
-              : 'max-w-[9rem] opacity-100'
+          className={`truncate overflow-hidden ${
+            isCollapsed ? 'hidden' : 'max-w-[9rem] opacity-100'
           }`}
         >
           {item.label}
         </span>
+        {!isCollapsed && item.key === 'favorites' ? (
+          <span className='ui-sidebar-count'>{libraryCounts.favorites}</span>
+        ) : null}
+        {!isCollapsed && item.key === 'history' ? (
+          <span className='ui-sidebar-count'>{libraryCounts.history}</span>
+        ) : null}
       </Link>
     );
   };
@@ -176,15 +184,13 @@ const Sidebar = ({
           data-sidebar
           data-testid='desktop-sidebar'
           data-collapsed={isCollapsed}
-          className={`fixed inset-y-0 left-0 z-40 flex h-dvh flex-col border-r border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-bg))] pt-[calc(4rem+env(safe-area-inset-top))] transition-[transform,opacity] duration-motionBase ease-easeOutStrong ${
-            isCollapsed ? 'w-20' : 'w-44'
-          } ${
+          className={`ui-sidebar hidden md:flex transition-[transform,opacity] duration-motionBase ease-easeOutStrong ${
             visible
               ? 'translate-x-0 opacity-100'
               : '-translate-x-full opacity-0'
           }`}
         >
-          <div className='flex h-full flex-col px-3 pb-6'>
+          <div className='flex h-full flex-col px-3 pb-4'>
             <div
               className={`relative flex ${
                 showCollapseToggle ? 'h-16' : 'h-6'
@@ -203,8 +209,20 @@ const Sidebar = ({
               )}
             </div>
 
-            <nav aria-label='主导航' className='space-y-2'>
-              {sidebarNavigationItems.map(renderNavItem)}
+            <nav aria-label='主导航' className='ui-sidebar-nav space-y-0.5'>
+              {renderNavItem(sidebarNavigationItems[0])}
+            </nav>
+            <nav
+              aria-label='影片分类'
+              className='ui-sidebar-nav ui-sidebar-catalog space-y-0.5'
+            >
+              {catalogNavigationItems.map(renderNavItem)}
+            </nav>
+            <nav
+              aria-label='个人内容'
+              className='ui-sidebar-nav ui-sidebar-personal space-y-0.5'
+            >
+              {personalNavigationItems.map(renderNavItem)}
             </nav>
             <button
               type='button'
@@ -212,7 +230,7 @@ const Sidebar = ({
               aria-label='设置'
               aria-haspopup='dialog'
               title={isCollapsed ? '设置' : undefined}
-              className={`ui-nav-item mt-auto w-full ${
+              className={`ui-nav-item mt-auto w-full border-t border-[rgb(var(--ui-border))] pt-3 ${
                 isCollapsed ? 'justify-center' : ''
               }`}
             >

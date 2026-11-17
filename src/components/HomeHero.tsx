@@ -87,6 +87,8 @@ export default function HomeHero({
     });
   };
 
+  const listHref = type ? `/douban?type=${type}` : '/douban?type=movie';
+
   return (
     <section
       aria-label='精选推荐'
@@ -94,45 +96,53 @@ export default function HomeHero({
       data-playback-preparation-card={playbackCardKey}
       ref={surfaceRef}
     >
+      <div className='ui-home-feature-art' aria-hidden>
+        <Image
+          alt=''
+          aria-hidden
+          className='ui-home-feature-image object-cover'
+          fill
+          priority
+          referrerPolicy='no-referrer'
+          sizes='(max-width: 767px) 100vw, 720px'
+          src={posterSrc}
+        />
+        <div className='ui-home-feature-scrim' />
+      </div>
       <div className='ui-home-feature-copy'>
-        <h2 className='line-clamp-2 text-xl font-semibold leading-snug text-[rgb(var(--ui-text))] sm:text-2xl'>
-          {item.title}
-        </h2>
-        <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[rgb(var(--ui-text-muted))]'>
+        <p className='ui-home-feature-kicker'>今日私人放映</p>
+        <h2 className='ui-home-feature-title line-clamp-2'>{item.title}</h2>
+        <div className='ui-home-feature-meta'>
           {item.rate && (
-            <span className='inline-flex items-center gap-1 font-semibold text-[rgb(var(--ui-accent-warm))]'>
+            <span className='ui-home-feature-score'>
               <Star
                 aria-hidden
-                className='h-4 w-4 fill-current'
+                className='h-3.5 w-3.5 fill-current'
                 strokeWidth={0}
               />
-              {item.rate}
+              豆瓣 {item.rate}
             </span>
           )}
           {metadata && <span>{metadata}</span>}
         </div>
-        <Link
-          data-tv-focus-key='hero-play'
-          data-tv-primary={tvMode || undefined}
-          href={playHref}
-          onClick={handlePlay}
-          className='inline-flex min-h-11 items-center justify-center gap-2 rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-2 text-sm font-semibold text-[rgb(var(--ui-on-accent))] transition-[filter] duration-150 hover:brightness-110'
-        >
-          <Play aria-hidden className='h-4 w-4 fill-current' />
-          立即播放
-        </Link>
-      </div>
-      <div className='ui-home-feature-art'>
-        <Image
-          alt=''
-          aria-hidden
-          className='object-cover object-[center_18%]'
-          fill
-          loading='lazy'
-          referrerPolicy='no-referrer'
-          sizes='(max-width: 767px) 38vw, 560px'
-          src={posterSrc}
-        />
+        <div className='ui-home-feature-actions'>
+          <Link
+            data-tv-focus-key='hero-play'
+            data-tv-primary={tvMode || undefined}
+            href={playHref}
+            onClick={handlePlay}
+            className='ui-home-feature-cta'
+          >
+            <Play aria-hidden className='h-4 w-4 fill-current' />
+            立即播放
+          </Link>
+          <Link
+            href={tvMode ? buildTvModeHref(listHref, true) : listHref}
+            className='ui-home-feature-secondary'
+          >
+            查看片单
+          </Link>
+        </div>
       </div>
     </section>
   );

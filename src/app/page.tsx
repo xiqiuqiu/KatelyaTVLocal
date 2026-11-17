@@ -2,7 +2,7 @@
 
 'use client';
 
-import { ChevronRight, Clapperboard, Film, Tv } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -15,13 +15,16 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
+import { selectHomeHeroCandidate } from '@/lib/home-hero';
 import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 import { DoubanItem } from '@/lib/types';
 import { catalogNavigationItems } from '@/lib/ui/navigation';
 import { homeTabMeta, pageSectionLabels } from '@/lib/ui/page-meta';
+import { useMediaQuery } from '@/lib/ui/use-media-query';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
+import HomeHero from '@/components/HomeHero';
 import PageLayout from '@/components/PageLayout';
 import { useSite } from '@/components/SiteProvider';
 import ActionLink from '@/components/ui/ActionLink';
@@ -44,32 +47,16 @@ const BottomKatelyaLogo = () => {
   );
 };
 
-function HomeCatalogHeader({ tvMode = false }: { tvMode?: boolean }) {
+function HomeCategoryLinks() {
   return (
-    <header className='ui-home-heading'>
-      <PageHeader
-        title='首页'
-        subtitle='电影、剧集与综艺，发现下一部想看的。'
-      />
-      {!tvMode && (
-        <nav aria-label='影片分类' className='ui-home-categories'>
-          {catalogNavigationItems.map((item) => {
-            const Icon =
-              item.key === 'movie'
-                ? Film
-                : item.key === 'tv'
-                ? Tv
-                : Clapperboard;
-            return (
-              <ActionLink key={item.key} href={item.href}>
-                <Icon aria-hidden className='h-4 w-4' />
-                {item.label}
-              </ActionLink>
-            );
-          })}
-        </nav>
-      )}
-    </header>
+    <nav aria-label='影片分类' className='ui-home-channels-actions'>
+      {catalogNavigationItems.map((item) => (
+        <ActionLink key={item.key} href={item.href}>
+          {item.label}
+          <ChevronRight aria-hidden className='h-3.5 w-3.5 opacity-60' />
+        </ActionLink>
+      ))}
+    </nav>
   );
 }
 
@@ -141,6 +128,13 @@ function HomePosterSection({
                     tvMode={tvMode}
                     title={item.title}
                     type={type}
+                    typeName={
+                      type === 'movie'
+                        ? '电影'
+                        : type === 'tv'
+                        ? '剧集'
+                        : '综艺'
+                    }
                     year={item.year}
                   />
                 </div>
@@ -353,9 +347,24 @@ function HomeCatalog({
   loading: boolean;
   tvMode: boolean;
 }) {
+  // 精选 Hero 只在大屏渲染：小屏保持卡片流，避免与列表标题重复占位
+  const showHero = useMediaQuery('(min-width: 768px)');
+  // 侧栏从 768px 起出现，分类入口只在更窄的屏幕由首页承担
+  const isDesktop = showHero;
+  const heroCandidate = showHero
+    ? selectHomeHeroCandidate(hotMovies, hotTvShows, hotVarietyShows)
+    : null;
+
   return (
     <div className='ui-home-content ui-home-catalog'>
-      <HomeCatalogHeader tvMode={tvMode} />
+      <HomeHero
+        candidate={heroCandidate}
+        loading={loading && showHero}
+        tvMode={tvMode}
+      />
+      <h1 className='sr-only'>首页</h1>
+      {/* 移动端没有侧栏，保留一行分类入口；桌面与 TV 由侧栏/顶部导航承担 */}
+      {!tvMode && !isDesktop ? <HomeCategoryLinks /> : null}
       <ContinueWatching tvMode={tvMode} />
 
       <HomePosterSection
@@ -554,7 +563,7 @@ const HomeFallback = () => {
   return (
     <PageLayout activePath='/'>
       <div className='ui-home-content ui-home-catalog'>
-        <HomeCatalogHeader />
+        <h1 className='sr-only'>首页</h1>
         <ContinueWatching />
 
         {[

@@ -35,7 +35,7 @@ export function ThemeToggle() {
 
   if (!mounted) {
     // 渲染一个占位符以避免布局偏移
-    return <div className='w-11 h-11' />;
+    return <div className='h-9 w-9' />;
   }
 
   const toggleTheme = () => {
@@ -71,9 +71,9 @@ export function ThemeToggle() {
       }
     >
       {(resolvedTheme || 'light') === 'dark' ? (
-        <Sun aria-hidden className='h-5 w-5' />
+        <Sun aria-hidden className='h-4 w-4' />
       ) : (
-        <Moon aria-hidden className='h-5 w-5' />
+        <Moon aria-hidden className='h-4 w-4' />
       )}
     </button>
   );

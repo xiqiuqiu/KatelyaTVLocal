@@ -130,11 +130,11 @@
       [data-tv-player-control='true'],
       [data-tv-player-setting='true']
     ):focus {
-    outline: 4px solid #f1f3f5;
+    outline: 4px solid rgb(var(--ui-focus));
     outline-offset: -4px;
     box-shadow: none;
     border-radius: 8px;
-    background: rgb(241 243 245 / 12%);
+    background: rgb(var(--ui-focus) / 0.16);
     opacity: 1;
   }
 

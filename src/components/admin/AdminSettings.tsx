@@ -31,6 +31,8 @@ import { buildRegistrationInviteLink } from '@/lib/registration/invite-link';
 import { isTvMode } from '@/lib/tv-interaction';
 import { managementSettingsGroups } from '@/lib/ui/settings';
 
+import Switch from '@/components/ui/Switch';
+
 function useRuntimeStorageType(): string | null {
   return useSyncExternalStore(
     () => () => undefined,
@@ -373,35 +375,15 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
               </span>
             )}
           </label>
-          <button
-            onClick={() =>
-              !isD1Storage &&
-              !isUpstashStorage &&
-              toggleAllowRegister(!userSettings.enableRegistration)
-            }
+          <Switch
+            checked={userSettings.enableRegistration}
             disabled={isD1Storage || isUpstashStorage}
             id='admin-allow-register'
-            role='switch'
-            aria-label='允许注册'
-            aria-checked={userSettings.enableRegistration}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:ring-offset-2 ${
-              userSettings.enableRegistration
-                ? 'bg-[rgb(var(--ui-accent))]'
-                : 'bg-[rgb(var(--ui-surface-strong))] '
-            } ${
-              isD1Storage || isUpstashStorage
-                ? 'opacity-50 cursor-not-allowed'
-                : ''
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-[rgb(var(--ui-surface))] transition-transform ${
-                userSettings.enableRegistration
-                  ? 'translate-x-6'
-                  : 'translate-x-1'
-              }`}
-            />
-          </button>
+            label='允许注册'
+            onCheckedChange={() =>
+              toggleAllowRegister(!userSettings.enableRegistration)
+            }
+          />
         </div>
       </div>
 
@@ -419,7 +401,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                 setChangePasswordUser({ username: '', password: '' });
               }
             }}
-            className='px-3 py-1 bg-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] text-sm rounded-lg transition-colors'
+            className='ui-secondary-button ui-admin-compact'
           >
             {showAddUserForm ? '取消' : '添加用户'}
           </button>
@@ -452,7 +434,7 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
               <button
                 onClick={handleAddUser}
                 disabled={!newUser.username || !newUser.password}
-                className='w-full sm:w-auto px-4 py-2 bg-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent))] disabled:bg-[rgb(var(--ui-surface-strong))] text-[rgb(var(--ui-on-accent))] rounded-lg transition-colors'
+                className='ui-primary-button ui-admin-compact w-full sm:w-auto'
               >
                 添加
               </button>
@@ -863,14 +845,14 @@ const InviteConfig = () => {
           <button
             onClick={handleCreateInvite}
             disabled={loading}
-            className='px-4 py-2 bg-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent))] disabled:bg-[rgb(var(--ui-surface-strong))] text-[rgb(var(--ui-on-accent))] rounded-lg transition-colors'
+            className='ui-primary-button ui-admin-compact'
           >
             生成邀请码
           </button>
           <button
             onClick={fetchInvites}
             disabled={loading}
-            className='px-4 py-2 bg-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent))] disabled:bg-[rgb(var(--ui-surface-strong))] text-[rgb(var(--ui-on-accent))] rounded-lg transition-colors'
+            className='ui-secondary-button ui-admin-compact'
           >
             刷新
           </button>
@@ -1596,7 +1578,7 @@ const VideoSourceConfig = ({
               {/* 普通模式按钮 */}
               <button
                 onClick={handleToggleBatchMode}
-                className='inline-flex items-center px-3 py-1 bg-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] text-sm rounded-lg transition-colors'
+                className='ui-secondary-button ui-admin-compact'
               >
                 ☑️ 批量选择
               </button>
@@ -1612,14 +1594,14 @@ const VideoSourceConfig = ({
                     onChange={handleImportConfig}
                     className='absolute inset-0 w-full h-full opacity-0 cursor-pointer'
                   />
-                  <span className='inline-flex items-center px-3 py-1 bg-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] text-sm rounded-lg transition-colors cursor-pointer'>
+                  <span className='ui-secondary-button ui-admin-compact cursor-pointer'>
                     导入
                   </span>
                 </label>
 
                 <button
                   onClick={handleExportConfig}
-                  className='inline-flex items-center px-3 py-1 bg-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] text-sm rounded-lg transition-colors'
+                  className='ui-secondary-button ui-admin-compact'
                 >
                   导出
                 </button>
@@ -1628,7 +1610,7 @@ const VideoSourceConfig = ({
               {/* 添加视频源按钮 */}
               <button
                 onClick={() => setShowAddForm(!showAddForm)}
-                className='px-3 py-1 bg-[rgb(var(--ui-accent-warm)/0.12)] hover:bg-[rgb(var(--ui-accent-warm)/0.12)] text-[rgb(var(--ui-accent-warm))] text-sm rounded-lg transition-colors'
+                className='ui-primary-button ui-admin-compact'
               >
                 {showAddForm ? '取消' : '添加'}
               </button>
@@ -1638,7 +1620,7 @@ const VideoSourceConfig = ({
               {/* 批量模式按钮 */}
               <button
                 onClick={handleToggleBatchMode}
-                className='inline-flex items-center px-3 py-1 bg-[rgb(var(--ui-surface-strong))] hover:bg-[rgb(var(--ui-surface-strong))] text-[rgb(var(--ui-text))] text-sm rounded-lg transition-colors'
+                className='ui-secondary-button ui-admin-compact'
               >
                 退出批量
               </button>
@@ -1651,7 +1633,7 @@ const VideoSourceConfig = ({
                 <button
                   onClick={handleBatchDelete}
                   disabled={selectedSources.size === 0}
-                  className='inline-flex items-center px-3 py-1 bg-[rgb(var(--ui-critical)/0.12)] hover:bg-[rgb(var(--ui-critical)/0.12)] disabled:bg-[rgb(var(--ui-surface-strong))] text-[rgb(var(--ui-critical))] text-sm rounded-lg transition-colors'
+                  className='ui-admin-compact ui-admin-danger-button'
                 >
                   🗑️ 批量删除
                 </button>
@@ -1709,7 +1691,7 @@ const VideoSourceConfig = ({
             <button
               onClick={handleAddSource}
               disabled={!newSource.name || !newSource.key || !newSource.api}
-              className='w-full sm:w-auto px-4 py-2 bg-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent))] disabled:bg-[rgb(var(--ui-surface-strong))] text-[rgb(var(--ui-on-accent))] rounded-lg transition-colors'
+              className='ui-primary-button ui-admin-compact w-full sm:w-auto'
             >
               添加
             </button>
@@ -1805,7 +1787,7 @@ const VideoSourceConfig = ({
         <div className='flex justify-end'>
           <button
             onClick={handleSaveOrder}
-            className='px-3 py-1.5 text-sm bg-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent))] text-[rgb(var(--ui-on-accent))] rounded-lg transition-colors'
+            className='ui-primary-button ui-admin-compact'
           >
             保存排序
           </button>
@@ -2141,11 +2123,7 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
         <button
           onClick={handleSave}
           disabled={saving}
-          className={`px-4 py-2 ${
-            saving
-              ? 'bg-[rgb(var(--ui-surface-strong))] cursor-not-allowed'
-              : 'bg-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent))]'
-          } text-[rgb(var(--ui-on-accent))] rounded-lg transition-colors`}
+          className='ui-primary-button ui-admin-compact'
         >
           {saving ? '保存中…' : '保存'}
         </button>
@@ -2283,7 +2261,7 @@ const AiUsageMonitor = () => {
         <button
           onClick={fetchUsage}
           disabled={loading}
-          className='px-3 py-1.5 text-sm bg-[rgb(var(--ui-accent))] hover:bg-[rgb(var(--ui-accent))] disabled:bg-[rgb(var(--ui-surface-strong))] text-[rgb(var(--ui-on-accent))] rounded-lg transition-colors'
+          className='ui-secondary-button ui-admin-compact'
         >
           {loading ? '刷新中…' : '刷新'}
         </button>
@@ -2527,7 +2505,7 @@ const PlaybackDebugLogs = () => {
             type='button'
             onClick={() => void fetchLogs()}
             disabled={loading}
-            className='rounded-md bg-[rgb(var(--ui-accent))] px-4 py-2 text-sm font-medium text-[rgb(var(--ui-on-accent))] transition-colors hover:bg-[rgb(var(--ui-accent))] disabled:cursor-not-allowed disabled:bg-[rgb(var(--ui-surface-strong))]'
+            className='ui-secondary-button ui-admin-compact'
           >
             {loading ? '读取中…' : '刷新日志'}
           </button>
@@ -2667,7 +2645,9 @@ export function AdminSettings({
         setLoading(true);
       }
 
-      const response = await fetch(`/api/admin/config`);
+      const response = await fetch(`/api/admin/config`, {
+        cache: 'no-store',
+      });
 
       if (!response.ok) {
         const data = (await response.json()) as any;
