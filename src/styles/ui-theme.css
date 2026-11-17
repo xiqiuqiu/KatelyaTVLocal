@@ -4284,3 +4284,267 @@
 [data-tv-browse='true'] .ui-saved-query span {
   font-size: 24px;
 }
+
+/* ============================================================
+   AI 找片：最近记录卡片（叠层封面 + 状态胶囊 + 打开按钮）
+   ============================================================ */
+
+.ui-saved-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ui-saved-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.ui-saved-hint {
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+}
+
+.ui-saved-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
+  gap: 12px;
+}
+
+.ui-saved-card {
+  position: relative;
+  display: block;
+  min-height: 148px;
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-text) / 0.03);
+  text-align: left;
+  transition:
+    border-color 150ms var(--ease-out),
+    background-color 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+}
+
+.ui-saved-card:hover {
+  border-color: rgb(var(--ui-accent) / 0.45);
+  background: rgb(var(--ui-text) / 0.06);
+  transform: translateY(-2px);
+}
+
+.ui-saved-card[aria-pressed='true'] {
+  border-color: rgb(var(--ui-accent) / 0.6);
+  background: rgb(var(--ui-accent) / 0.09);
+}
+
+.ui-saved-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.ui-saved-card:focus-visible {
+  outline: 3px solid rgb(var(--ui-focus));
+  outline-offset: 3px;
+}
+
+.ui-saved-card-glow {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgb(var(--ui-accent) / 0.08),
+    transparent 42%,
+    rgb(var(--ui-success) / 0.08)
+  );
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.ui-saved-card-body {
+  position: relative;
+  display: flex;
+  height: 100%;
+  gap: 12px;
+}
+
+/* 叠层小封面 */
+.ui-saved-stack {
+  position: relative;
+  flex-shrink: 0;
+  width: 74px;
+  height: 102px;
+}
+
+.ui-saved-stack-card {
+  position: absolute;
+  display: block;
+  width: 62px;
+  height: 91px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 12px;
+  /* 固定深色卡面：模拟海报缩略图，明暗主题下都保证白色标签可读 */
+  background: linear-gradient(145deg, #1d212a, #0c0e13);
+  box-shadow: 0 14px 26px rgb(0 0 0 / 0.28);
+}
+
+.ui-saved-stack-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      circle at 35% 18%,
+      rgb(var(--ui-accent) / 0.42),
+      transparent 38%
+    ),
+    linear-gradient(180deg, transparent, rgb(0 0 0 / 0.58));
+}
+
+.ui-saved-stack-label {
+  position: absolute;
+  inset: auto 8px 8px;
+  z-index: 1;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* 右侧文案 */
+.ui-saved-card-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ui-saved-card-top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ui-saved-query-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: rgb(var(--ui-text));
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.43;
+}
+
+.ui-saved-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  padding: 1px 8px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.ui-saved-status[data-status='complete'] {
+  border-color: rgb(var(--ui-success) / 0.24);
+  background: rgb(var(--ui-success) / 0.12);
+  color: rgb(var(--ui-success));
+}
+
+.ui-saved-status[data-status='partial'] {
+  border-color: rgb(var(--ui-accent) / 0.26);
+  background: rgb(var(--ui-accent) / 0.12);
+  color: rgb(var(--ui-accent));
+}
+
+.ui-saved-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+}
+
+.ui-saved-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-saved-open {
+  display: inline-flex;
+  height: 28px;
+  width: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--ui-text) / 0.12);
+  background: rgb(var(--ui-text) / 0.08);
+  color: rgb(var(--ui-text));
+  transition:
+    border-color 150ms,
+    color 150ms;
+}
+
+.ui-saved-card:hover .ui-saved-open {
+  border-color: rgb(var(--ui-accent) / 0.4);
+  color: rgb(var(--ui-accent));
+}
+
+/* TV 10-foot */
+[data-tv-browse='true'] .ui-saved-grid {
+  grid-template-columns: repeat(auto-fill, minmax(520px, 1fr));
+  gap: 16px;
+}
+
+[data-tv-browse='true'] .ui-saved-card {
+  min-height: 176px;
+  padding: 18px;
+}
+
+[data-tv-browse='true'] .ui-saved-stack {
+  width: 108px;
+  height: 148px;
+}
+
+[data-tv-browse='true'] .ui-saved-stack-card {
+  width: 90px;
+  height: 132px;
+}
+
+[data-tv-browse='true'] .ui-saved-stack-label {
+  font-size: 16px;
+}
+
+[data-tv-browse='true'] .ui-saved-query-title {
+  font-size: 26px;
+}
+
+[data-tv-browse='true'] .ui-saved-status {
+  font-size: 18px;
+  padding: 2px 12px;
+}
+
+[data-tv-browse='true'] .ui-saved-card-foot {
+  font-size: 18px;
+}
+
+[data-tv-browse='true'] .ui-saved-open {
+  height: 44px;
+  width: 44px;
+}
