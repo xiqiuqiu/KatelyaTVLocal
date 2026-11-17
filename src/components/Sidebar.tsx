@@ -26,7 +26,9 @@ import {
 import {
   type NavigationIcon,
   type NavigationItem,
+  catalogNavigationItems,
   isNavigationItemActive,
+  personalNavigationItems,
   sidebarNavigationItems,
 } from '@/lib/ui/navigation';
 import { useLibraryCounts } from '@/lib/ui/use-library-counts';
@@ -208,7 +210,19 @@ const Sidebar = ({
             </div>
 
             <nav aria-label='主导航' className='ui-sidebar-nav space-y-0.5'>
-              {sidebarNavigationItems.map(renderNavItem)}
+              {renderNavItem(sidebarNavigationItems[0])}
+            </nav>
+            <nav
+              aria-label='影片分类'
+              className='ui-sidebar-nav ui-sidebar-catalog space-y-0.5'
+            >
+              {catalogNavigationItems.map(renderNavItem)}
+            </nav>
+            <nav
+              aria-label='个人内容'
+              className='ui-sidebar-nav ui-sidebar-personal space-y-0.5'
+            >
+              {personalNavigationItems.map(renderNavItem)}
             </nav>
             <button
               type='button'

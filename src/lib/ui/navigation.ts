@@ -31,11 +31,15 @@ export const catalogNavigationItems: readonly NavigationItem[] = [
  * 侧栏直接平铺「电影 / 剧集 / 综艺」，不再用「发现」再点一层。
  * 移动端底栏仍保留「发现」入口（见 primaryNavigationItems）。
  */
+export const personalNavigationItems: readonly NavigationItem[] = [
+  { key: 'favorites', label: '收藏夹', href: '/?tab=favorites', icon: 'heart' },
+  { key: 'history', label: '播放历史', href: '/history', icon: 'history' },
+] as const;
+
 export const sidebarNavigationItems: readonly NavigationItem[] = [
   primaryNavigationItems[0],
   ...catalogNavigationItems,
-  { key: 'favorites', label: '收藏夹', href: '/?tab=favorites', icon: 'heart' },
-  { key: 'history', label: '播放历史', href: '/history', icon: 'history' },
+  ...personalNavigationItems,
 ] as const;
 
 export function isNavigationItemActive(activePath: string, href: string) {

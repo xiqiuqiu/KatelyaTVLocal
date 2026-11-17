@@ -47,26 +47,16 @@ const BottomKatelyaLogo = () => {
   );
 };
 
-function HomeCatalogHeader({ tvMode = false }: { tvMode?: boolean }) {
+function HomeCategoryLinks() {
   return (
-    <header className='ui-home-channels'>
-      {/* 视觉上由 Hero 承担首屏标题，这里保留可访问的一级标题 */}
-      <h1 className='sr-only'>首页</h1>
-      <div className='ui-home-channels-copy'>
-        <h2>片库频道</h2>
-        <p>按类型直达豆瓣热门片单与多线路资源</p>
-      </div>
-      {!tvMode && (
-        <nav aria-label='影片分类' className='ui-home-channels-actions'>
-          {catalogNavigationItems.map((item) => (
-            <ActionLink key={item.key} href={item.href}>
-              {item.label}
-              <ChevronRight aria-hidden className='h-3.5 w-3.5 opacity-60' />
-            </ActionLink>
-          ))}
-        </nav>
-      )}
-    </header>
+    <nav aria-label='影片分类' className='ui-home-channels-actions'>
+      {catalogNavigationItems.map((item) => (
+        <ActionLink key={item.key} href={item.href}>
+          {item.label}
+          <ChevronRight aria-hidden className='h-3.5 w-3.5 opacity-60' />
+        </ActionLink>
+      ))}
+    </nav>
   );
 }
 
@@ -359,6 +349,8 @@ function HomeCatalog({
 }) {
   // 精选 Hero 只在大屏渲染：小屏保持卡片流，避免与列表标题重复占位
   const showHero = useMediaQuery('(min-width: 768px)');
+  // 侧栏从 768px 起出现，分类入口只在更窄的屏幕由首页承担
+  const isDesktop = showHero;
   const heroCandidate = showHero
     ? selectHomeHeroCandidate(hotMovies, hotTvShows, hotVarietyShows)
     : null;
@@ -370,7 +362,9 @@ function HomeCatalog({
         loading={loading && showHero}
         tvMode={tvMode}
       />
-      <HomeCatalogHeader tvMode={tvMode} />
+      <h1 className='sr-only'>首页</h1>
+      {/* 移动端没有侧栏，保留一行分类入口；桌面与 TV 由侧栏/顶部导航承担 */}
+      {!tvMode && !isDesktop ? <HomeCategoryLinks /> : null}
       <ContinueWatching tvMode={tvMode} />
 
       <HomePosterSection
@@ -569,7 +563,7 @@ const HomeFallback = () => {
   return (
     <PageLayout activePath='/'>
       <div className='ui-home-content ui-home-catalog'>
-        <HomeCatalogHeader />
+        <h1 className='sr-only'>首页</h1>
         <ContinueWatching />
 
         {[
