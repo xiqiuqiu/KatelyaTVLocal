@@ -2,6 +2,7 @@ import { CheckCircle, Film, Heart, Link, Loader2, Play } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, {
+  Fragment,
   useCallback,
   useMemo,
   useRef,
@@ -330,6 +331,7 @@ function buildVideoCardFacts({
       : '(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 240px',
     imageSrc: processImageUrl(actualPoster, resolvedImageSize),
     isAggregate,
+    isLandscape,
     isResult,
     isSmall,
     items,
@@ -342,6 +344,15 @@ function buildVideoCardFacts({
     metaClass: `ui-video-meta text-left ${
       isResult ? 'ui-search-meta' : 'ui-video-footer'
     }`,
+    footerMetaParts: isLandscape
+      ? []
+      : [
+          typeName || '',
+          displayYear || '',
+          statusText ||
+            ((actualEpisodes ?? 0) > 1 ? `共 ${actualEpisodes} 集` : ''),
+          source_name || '',
+        ].filter(Boolean),
     showInlineProgress: config.showProgress && !isResult,
     playIconSize: isSmall ? 34 : 52,
     playOverlayClass: `pointer-events-none absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-150 ease ${
@@ -883,15 +894,6 @@ function VideoCardSearchMeta({ model }: { model: VideoCardModel }) {
   );
 }
 
-function VideoCardLandscapeStatus({ model }: { model: VideoCardModel }) {
-  if (!model.showLandscapeStatus) return null;
-  return (
-    <p className='mt-1 text-sm text-[rgb(var(--ui-text-muted))]'>
-      {model.landscapeStatusText}
-    </p>
-  );
-}
-
 function VideoCardSourceChip({ model }: { model: VideoCardModel }) {
   if (!model.showSourceChip) return null;
   return (
@@ -974,14 +976,38 @@ function VideoCardContinue({ model }: { model: VideoCardModel }) {
 }
 
 function VideoCardMeta({ model }: { model: VideoCardModel }) {
+  if (!model.isResult) {
+    return (
+      <div className={model.metaClass}>
+        <div className='ui-video-footer-head'>
+          <VideoCardTitle model={model} />
+          {model.showRating ? (
+            <span className='ui-video-score'>{model.rate}</span>
+          ) : null}
+        </div>
+        {model.isLandscape ? (
+          <p className='ui-video-footer-meta'>{model.landscapeStatusText}</p>
+        ) : model.footerMetaParts.length ? (
+          <p className='ui-video-footer-meta'>
+            {model.footerMetaParts.map((part, index) => (
+              <Fragment key={`${part}-${index}`}>
+                {index > 0 ? ' · ' : null}
+                <span>{part}</span>
+              </Fragment>
+            ))}
+          </p>
+        ) : null}
+        <VideoCardContinue model={model} />
+      </div>
+    );
+  }
+
   return (
     <div className={model.metaClass}>
       <VideoCardTitle model={model} />
       <VideoCardSearchMeta model={model} />
-      <VideoCardLandscapeStatus model={model} />
       <VideoCardSourceChip model={model} />
       <VideoCardResultPanel model={model} />
-      <VideoCardContinue model={model} />
     </div>
   );
 }

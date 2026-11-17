@@ -344,6 +344,13 @@ function DoubanPageClient() {
                       douban_id={item.id}
                       rate={item.rate}
                       year={item.year}
+                      typeName={
+                        type === 'movie'
+                          ? '电影'
+                          : type === 'tv'
+                          ? '剧集'
+                          : '综艺'
+                      }
                       type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
                     />
                   </div>

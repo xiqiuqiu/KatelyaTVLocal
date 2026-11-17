@@ -141,6 +141,13 @@ function HomePosterSection({
                     tvMode={tvMode}
                     title={item.title}
                     type={type}
+                    typeName={
+                      type === 'movie'
+                        ? '电影'
+                        : type === 'tv'
+                        ? '剧集'
+                        : '综艺'
+                    }
                     year={item.year}
                   />
                 </div>

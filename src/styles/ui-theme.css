@@ -2670,43 +2670,60 @@
   background: rgb(var(--ui-surface));
 }
 
-/* ---------- 播放卡片：设计稿式整卡描边 + 内嵌控件 ---------- */
-
-/* 整张卡片作为一个描边容器，图片满出血、信息区带内边距 */
-.ui-video-card-poster {
-  overflow: hidden;
-  border: 1px solid rgb(var(--ui-border));
-  border-radius: var(--ui-radius-md);
-  background: rgb(var(--ui-surface));
-  transition: border-color 150ms var(--ease-out);
-}
-
-.ui-video-card-poster:hover,
-.ui-video-card-poster:focus-within {
-  border-color: rgb(var(--ui-accent) / 0.5);
-}
+/* ---------- 播放卡片：设计稿卡片解剖 ----------
+   海报卡：只有封面有描边，文字区在描边之外
+   继续观看卡：整卡描边 + 内嵌信息区
+   -------------------------------------------------- */
 
 .ui-video-card-poster .ui-video-poster {
-  border: none;
-  border-radius: 0;
-  background: transparent;
+  background: rgb(var(--ui-surface));
 }
 
+/* 文字区：名称在左、评分在右，下一行是类型/年份/集数 */
 .ui-video-footer {
-  padding: 12px 14px 14px;
+  margin-top: 10px;
+  padding: 0 2px;
+}
+
+.ui-video-footer-head {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .ui-video-card-poster .ui-video-title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 14px;
   line-height: 1.4;
+  font-weight: 500;
   min-height: 0;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: unset;
 }
 
-.ui-video-card-poster .ui-video-facts,
-.ui-video-card-poster .ui-video-meta > p {
-  margin-top: 4px;
-  font-size: 11px;
+.ui-video-score {
+  flex-shrink: 0;
+  color: rgb(var(--ui-accent));
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-video-footer-meta {
+  margin-top: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgb(var(--ui-text-muted));
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* 悬停播放按钮：琥珀圆形，替代大号半透明图标 */
@@ -2759,6 +2776,7 @@
 }
 
 .ui-resume-card .ui-video-meta {
+  margin-top: 0;
   padding: 12px 14px 14px;
 }
 
@@ -2803,4 +2821,31 @@
   padding: 8px 22px;
   font-size: 26px;
   border-radius: 8px;
+}
+
+/* 海报卡不再重复展示图片角标评分：评分统一放在文字行右侧 */
+.ui-video-card-poster .ui-video-rating {
+  display: none;
+}
+
+[data-tv-browse='true'] .ui-video-card-poster .ui-video-title {
+  font-size: 24px;
+  font-weight: 600;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+[data-tv-browse='true'] .ui-video-score {
+  font-size: 22px;
+}
+
+[data-tv-browse='true'] .ui-video-footer-meta {
+  font-size: 20px;
+}
+
+[data-tv-browse='true'] .ui-video-footer {
+  margin-top: 14px;
+  padding-inline: 4px;
 }
