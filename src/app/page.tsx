@@ -2,7 +2,7 @@
 
 'use client';
 
-import { ChevronRight, Clapperboard, Film, Tv } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -49,27 +49,21 @@ const BottomKatelyaLogo = () => {
 
 function HomeCatalogHeader({ tvMode = false }: { tvMode?: boolean }) {
   return (
-    <header className='ui-home-heading'>
-      <PageHeader
-        title='首页'
-        subtitle='电影、剧集与综艺，发现下一部想看的。'
-      />
+    <header className='ui-home-channels'>
+      {/* 视觉上由 Hero 承担首屏标题，这里保留可访问的一级标题 */}
+      <h1 className='sr-only'>首页</h1>
+      <div className='ui-home-channels-copy'>
+        <h2>片库频道</h2>
+        <p>按类型直达豆瓣热门片单与多线路资源</p>
+      </div>
       {!tvMode && (
-        <nav aria-label='影片分类' className='ui-home-categories'>
-          {catalogNavigationItems.map((item) => {
-            const Icon =
-              item.key === 'movie'
-                ? Film
-                : item.key === 'tv'
-                ? Tv
-                : Clapperboard;
-            return (
-              <ActionLink key={item.key} href={item.href}>
-                <Icon aria-hidden className='h-4 w-4' />
-                {item.label}
-              </ActionLink>
-            );
-          })}
+        <nav aria-label='影片分类' className='ui-home-channels-actions'>
+          {catalogNavigationItems.map((item) => (
+            <ActionLink key={item.key} href={item.href}>
+              {item.label}
+              <ChevronRight aria-hidden className='h-3.5 w-3.5 opacity-60' />
+            </ActionLink>
+          ))}
         </nav>
       )}
     </header>
@@ -371,12 +365,12 @@ function HomeCatalog({
 
   return (
     <div className='ui-home-content ui-home-catalog'>
-      <HomeCatalogHeader tvMode={tvMode} />
       <HomeHero
         candidate={heroCandidate}
         loading={loading && showHero}
         tvMode={tvMode}
       />
+      <HomeCatalogHeader tvMode={tvMode} />
       <ContinueWatching tvMode={tvMode} />
 
       <HomePosterSection

@@ -4024,3 +4024,72 @@
     max-width: 100%;
   }
 }
+
+/* 首页片库频道：设计稿式中等标题 + 右侧分类入口 */
+.ui-home-channels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgb(var(--ui-border));
+}
+
+.ui-home-channels-copy h2 {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: rgb(var(--ui-text));
+}
+
+.ui-home-channels-copy p {
+  margin-top: 4px;
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ui-home-channels-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ui-home-channels-actions .ui-action-link {
+  min-height: 36px;
+  gap: 4px;
+  padding: 8px 14px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-text));
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ui-home-channels-actions .ui-action-link:hover {
+  border-color: rgb(var(--ui-accent) / 0.55);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-accent));
+}
+
+[data-tv-browse='true'] .ui-home-channels-copy h2 {
+  font-size: 36px;
+  line-height: 46px;
+}
+
+[data-tv-browse='true'] .ui-home-channels-copy p {
+  font-size: 22px;
+  line-height: 32px;
+}
+
+@media (max-width: 767px) {
+  .ui-home-channels {
+    align-items: flex-start;
+  }
+  .ui-home-channels-actions {
+    width: 100%;
+  }
+}
