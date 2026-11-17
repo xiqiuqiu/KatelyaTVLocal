@@ -131,8 +131,8 @@ export default function AppShell({
         )}
         <main
           id='main-content'
-          className={`min-w-0 ${
-            tvMode ? '' : isSidebarCollapsed ? 'md:pl-20' : 'md:pl-44'
+          className={`min-w-0 transition-[padding-left] duration-200 ease-out ${
+            tvMode ? '' : isSidebarCollapsed ? 'md:pl-[72px]' : 'md:pl-56'
           }`}
         >
           <div className='ui-shell-content'>
