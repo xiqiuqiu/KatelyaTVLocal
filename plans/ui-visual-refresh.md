@@ -347,6 +347,48 @@
 
 ---
 
+## 8.25 AI 找片本地实跑（P6i，已完成）
+
+### 为什么之前本地跑不出结果
+
+不是 UI 问题，而是**额度存储只支持 D1**：`usage-quota.ts` 里 `getD1Database()` 拿不到库就直接返回 503「AI 找片额度存储未配置」。本地是 upstash，所以即使配好 AI 也一定失败。
+
+### 本轮改动
+
+| 项 | 改法 |
+| --- | --- |
+| 额度后端抽象 | `checkAndConsumeAiFindQuota` 改为选后端：有 D1 用 D1，否则尝试 KV 计数器 |
+| 新增 `usage-quota-kv.ts` | 用 `@upstash/redis` 的 INCR/DECR + 3 天过期实现按日计数，键形如 `ai-find:usage:find:user:admin:2026-11-17` |
+| 安全兜底 | 仅在 `NEXT_PUBLIC_STORAGE_TYPE=upstash`、存在 URL/TOKEN、且运行环境有全局 `fetch` 时启用；否则维持原 503 行为（测试环境因此不受影响） |
+
+### 本地配置（`.env`，未入库）
+
+```
+AI_FIND_ENABLED=true
+AI_BASE_URL=http://127.0.0.1:3425/v1
+AI_API_KEY=local-gateway
+AI_MODEL=group/ds4.1
+```
+
+说明：本地 3425 是 magpie 网关，实测 `Authorization: Bearer <任意值>` 即可用，所以 key 填占位值。原 `.env` 备份在 `/tmp/reelfind-env-before-ai.bak`。
+
+### 实测结果（本地 vs 线上）
+
+| 项 | 本地（upstash + KV 额度） | 线上（D1） |
+| --- | --- | --- |
+| 提交请求 | 200，返回 answer + 5 个候选片名（含高匹配/可参考置信度） | 一致 |
+| 记录保存 | 「16–32 组结果 · 部分结果 · 时间」 | 一致 |
+| 最近 AI 找片 | 有记录时列表展示，无记录时显示空态 | 有记录时列表展示 |
+| 分组加载 | 按候选片名逐个查询，可边看边加载 | 一致 |
+| 额度计数 | Redis 键 `ai-find:usage:find:{user,ip,global}:…` 正常生成 | D1 表 |
+
+### 电视端实测
+
+- `/search?mode=ai&tv=1`：Tab 后方向键直接落到记录卡（3px 琥珀焦点环，卡片 108px 高）
+- Enter 打开记录 → 候选影片区、分组标题 40px、结果卡带「查看并播放 / 展开来源」，遥控焦点正常
+
+`tsc`、ESLint、**Jest 145 套件 / 1266 用例全绿**。截图：`.scratch/ui-refresh/ai-live-*.png`。
+
 ## 8.24 AI 找片：本地空态与电视端适配（P6h，已完成）
 
 ### 线上与本地差异的真实原因
