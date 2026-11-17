@@ -31,6 +31,8 @@ import { buildRegistrationInviteLink } from '@/lib/registration/invite-link';
 import { isTvMode } from '@/lib/tv-interaction';
 import { managementSettingsGroups } from '@/lib/ui/settings';
 
+import Switch from '@/components/ui/Switch';
+
 function useRuntimeStorageType(): string | null {
   return useSyncExternalStore(
     () => () => undefined,
@@ -373,35 +375,15 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
               </span>
             )}
           </label>
-          <button
-            onClick={() =>
-              !isD1Storage &&
-              !isUpstashStorage &&
-              toggleAllowRegister(!userSettings.enableRegistration)
-            }
+          <Switch
+            checked={userSettings.enableRegistration}
             disabled={isD1Storage || isUpstashStorage}
             id='admin-allow-register'
-            role='switch'
-            aria-label='允许注册'
-            aria-checked={userSettings.enableRegistration}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ui-accent))] focus:ring-offset-2 ${
-              userSettings.enableRegistration
-                ? 'bg-[rgb(var(--ui-accent))]'
-                : 'bg-[rgb(var(--ui-surface-strong))] '
-            } ${
-              isD1Storage || isUpstashStorage
-                ? 'opacity-50 cursor-not-allowed'
-                : ''
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-[rgb(var(--ui-surface))] transition-transform ${
-                userSettings.enableRegistration
-                  ? 'translate-x-6'
-                  : 'translate-x-1'
-              }`}
-            />
-          </button>
+            label='允许注册'
+            onCheckedChange={() =>
+              toggleAllowRegister(!userSettings.enableRegistration)
+            }
+          />
         </div>
       </div>
 
@@ -2663,7 +2645,9 @@ export function AdminSettings({
         setLoading(true);
       }
 
-      const response = await fetch(`/api/admin/config`);
+      const response = await fetch(`/api/admin/config`, {
+        cache: 'no-store',
+      });
 
       if (!response.ok) {
         const data = (await response.json()) as any;

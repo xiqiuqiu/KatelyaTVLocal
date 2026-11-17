@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { AdminConfigResult } from '@/lib/admin.types';
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { getConfig } from '@/lib/config';
+import { getConfig, invalidateAdminConfigCache } from '@/lib/config';
 
 export const runtime = 'edge';
 
@@ -26,6 +26,11 @@ export async function GET(request: NextRequest) {
   const username = authInfo.username;
 
   try {
+    // 开发环境各路由模块独立，写操作触发的缓存失效不会跨路由生效，
+    // 因此读取前强制刷新，避免本地管理面板显示过期用户列表。
+    if (process.env.NODE_ENV === 'development') {
+      invalidateAdminConfigCache();
+    }
     const config = await getConfig();
     const result: AdminConfigResult = {
       Role: 'owner',
