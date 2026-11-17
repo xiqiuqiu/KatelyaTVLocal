@@ -347,6 +347,29 @@
 
 ---
 
+## 8.27 叠层封面改用结果海报（P6k，已完成）
+
+### 可行性结论：可以，且不需要数据迁移
+
+历史记录在存储层保存的是完整 `AiFindResponse`，而列表卡片拿到的 `AiFindSavedRecordSummary` 是**读时派生**的（`summarizeAiFindSavedRecord`）。所以在派生阶段顺手收集海报即可，已有的 upstash / D1 / 本地存储里的旧记录立刻生效，无需回填。
+
+### 改动
+
+| 层 | 改动 |
+| --- | --- |
+| 类型 | `AiFindSavedRecordSummary` 新增可选 `posters?: string[]`（最多 3 张） |
+| 派生 | `collectSavedRecordPosters()` 按 `response.groups[].groups[].poster` 顺序取，去重、跳过空值、取前 3 |
+| 卡片 | 每层卡面优先渲染海报（`processImageUrl` 走 image-proxy，宽 160 请求，`loading="lazy"`、`referrerPolicy="no-referrer"`）；无海报时回退为原来的文字标签 |
+| 层级 | 第一张海报（首个结果）压最上层，后两张依次右下方错位露出边缘；容器 78×104 容纳错位不裁剪 |
+| 海报态样式 | 卡面底部加 62% 黑色渐变保证叠层文字/边界清晰，标签字号降到 11px |
+
+### 验证
+
+- `/api/ai/find/history` 返回 `posters: 3`，三条 img `naturalWidth` 均加载成功（270 / 1000 / 270）
+- 暗色、亮色 1440 与 TV 1920 三种场景截图正常，TV 焦点环与卡片尺寸不变
+- `tsc`、ESLint（本次改动文件 0 warning）、**Jest 145 套件 / 1266 用例全绿**
+- 截图：`.scratch/ui-refresh/ai-cards-posters-{zoom,dark,light,tv}.png`
+
 ## 8.26 最近 AI 找片恢复叠层卡片样式（P6j，已完成）
 
 旧版（`b794b4f6.katelyatv-b3u.pages.dev`）的「最近 AI 找片」是卡片网格，而不是当前的单行列表。样式来源已确认在本仓库历史提交里：`55cd0d3` / `9af3adb`（之后被 `43ccde7` 统一界面时改成了列表）。
