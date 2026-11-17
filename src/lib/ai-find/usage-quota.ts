@@ -1,6 +1,8 @@
 import { D1DatabaseLike, getD1Database } from '@/lib/d1';
 import { getUtcDayKey } from '@/lib/utc-day';
 
+import { type KvQuotaOps, createKvQuotaOps } from './usage-quota-kv';
+
 type AiFindQuotaEndpoint = 'find' | 'group';
 
 export interface AiFindQuotaConfig {
@@ -88,7 +90,10 @@ function getScopes(input: AiFindQuotaInput): UsageScope[] {
   ];
 }
 
-function getScopeKey(endpoint: AiFindQuotaEndpoint, scope: UsageScope['scope']) {
+function getScopeKey(
+  endpoint: AiFindQuotaEndpoint,
+  scope: UsageScope['scope']
+) {
   return `ai-find:${endpoint}:${scope}`;
 }
 
@@ -206,6 +211,23 @@ async function decrementUsage({
     .run();
 }
 
+function createD1QuotaOps(db: D1DatabaseLike): KvQuotaOps {
+  return {
+    readCounts: (endpoint, scopes, dayKey) =>
+      readUsageCounts({ db, endpoint, scopes, dayKey }),
+    incrementIfUnderLimit: (endpoint, scope, dayKey, now) =>
+      incrementUsageIfUnderLimit({
+        db,
+        endpoint,
+        scope,
+        dayKey,
+        now: now ?? Date.now(),
+      }),
+    decrement: (endpoint, scope, dayKey, now) =>
+      decrementUsage({ db, endpoint, scope, dayKey, now: now ?? Date.now() }),
+  };
+}
+
 export async function checkAndConsumeAiFindQuota(
   input: AiFindQuotaInput
 ): Promise<AiFindQuotaResult> {
@@ -214,7 +236,10 @@ export async function checkAndConsumeAiFindQuota(
   const resetAt = getNextUtcDayStart(now);
   const emptyRemaining = { user: 0, ip: 0, global: 0 };
 
-  if (!db) {
+  // 有 D1 用 D1；否则若配置了 upstash 存储，用 KV 计数器限流
+  const ops = db ? createD1QuotaOps(db) : createKvQuotaOps();
+
+  if (!ops) {
     return {
       allowed: false,
       status: 503,
@@ -227,12 +252,7 @@ export async function checkAndConsumeAiFindQuota(
 
   const dayKey = getUtcDayKey(now);
   const scopes = getScopes(input);
-  const counts = await readUsageCounts({
-    db,
-    endpoint: input.endpoint,
-    scopes,
-    dayKey,
-  });
+  const counts = await ops.readCounts(input.endpoint, scopes, dayKey);
   const remaining = getRemaining(scopes, counts);
 
   const blockedIndex = counts.findIndex(
@@ -257,33 +277,21 @@ export async function checkAndConsumeAiFindQuota(
 
   const consumedScopes: UsageScope[] = [];
   for (const scope of scopes) {
-    const consumed = await incrementUsageIfUnderLimit({
-      db,
-      endpoint: input.endpoint,
+    const consumed = await ops.incrementIfUnderLimit(
+      input.endpoint,
       scope,
       dayKey,
-      now,
-    });
+      now
+    );
 
     if (!consumed) {
       await Promise.all(
         consumedScopes.map((consumedScope) =>
-          decrementUsage({
-            db,
-            endpoint: input.endpoint,
-            scope: consumedScope,
-            dayKey,
-            now,
-          })
+          ops.decrement(input.endpoint, consumedScope, dayKey, now)
         )
       );
 
-      const latestCounts = await readUsageCounts({
-        db,
-        endpoint: input.endpoint,
-        scopes,
-        dayKey,
-      });
+      const latestCounts = await ops.readCounts(input.endpoint, scopes, dayKey);
       const blockedScope = scope.scope;
 
       return {
@@ -302,12 +310,7 @@ export async function checkAndConsumeAiFindQuota(
     consumedScopes.push(scope);
   }
 
-  const latestCounts = await readUsageCounts({
-    db,
-    endpoint: input.endpoint,
-    scopes,
-    dayKey,
-  });
+  const latestCounts = await ops.readCounts(input.endpoint, scopes, dayKey);
 
   return {
     allowed: true,
