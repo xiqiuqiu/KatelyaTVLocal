@@ -244,6 +244,43 @@
 
 ---
 
+## 8.6 P1 结果（已完成）
+
+### 落地内容
+
+| 文件 | 改动 |
+| --- | --- |
+| `src/styles/ui-theme.css` | 暗/亮两套 `--ui-*` 全量替换为 ReelFind 色板；新增 `--ui-cta` / `--ui-on-cta`；`--ui-focus` 改为琥珀；阴影降为「1px 描边感」；新增 `--font-display` / `--font-mono`；主按钮改消费 cta token，次按钮改为描边卡 |
+| `src/styles/fonts.css`（新） | 三个本地 latin 变量字体 `@font-face`，`font-display: swap` |
+| `public/fonts/*.woff2`（新） | Plus Jakarta Sans / Cormorant Garamond / JetBrains Mono，共 95KB |
+| `src/app/globals.css` | 品牌字标去渐变改衬线纯色；移除 logo 光晕；粒子/几何装饰去彩色渐变；滚动条与焦点色 token 化；body 字体接 `--font-primary` |
+| `src/styles/globals.css` | ArtPlayer TV 控件焦点色改琥珀（保留 4px，见下方约束） |
+| `src/app/layout.tsx` | 引入 `fonts.css`；`themeColor` 同步新底色 |
+
+### 验证
+
+- `tsc --noEmit` 通过；ESLint 改动文件通过
+- Jest：**140 套件 / 1254 用例全部通过**
+- 截图：`.scratch/ui-refresh/after-p1/`（home / login / search-ai / settings 各暗亮 + TV 焦点态）
+- 视觉确认：暗色底已是近墨黑、主按钮与搜索键为琥珀、TV 导航焦点环为琥珀、亮色回到暖白纸感
+
+### 过程中发现的两个硬约束
+
+1. **Jest 默认配置会忽略 `.worktrees/` 路径**，在 worktree 里直接跑会「No tests found」
+   - 解决：`jest --runInBand --testPathIgnorePatterns=/node_modules/ --testPathIgnorePatterns=/.next/`
+   - 后续验收统一用这条命令，避免误判「测试不存在」
+2. **`play/page.test.tsx` 断言 ArtPlayer TV 控件焦点环必须是 `4px`**
+   - 处理：颜色改琥珀但保留 4px 宽度；其他焦点环仍按计划的 3px
+   - 教训：动 TV 焦点样式前先搜一遍测试里的硬数字断言
+
+### 遗留到后续阶段
+
+- 登录页左侧故事图仍是蓝色调素材（`public/login-cinema-bg.png`），P4 重做登录页时一并换色
+- 亮色模式下搜索键/图标按钮仍用强调色而非墨黑 CTA，P2 统一外壳时按 `--ui-cta` 收口
+- 首页仍无 hero（已确认不做），等 P3 用「继续观看」大卡承担视觉重量
+
+---
+
 ## 9. 验证矩阵
 
 | 路由 | 亮 | 暗 | 390 | 834 | 1440 | tv=1 |
@@ -258,7 +295,11 @@
 | 设置 / 账号面板 | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `/admin` `/tvbox` `/warning` | ✓ | ✓ | — | — | ✓ | — |
 
-自动化：`pnpm typecheck` → `pnpm lint:strict` → `pnpm test`。
+自动化：`pnpm typecheck` → `pnpm lint:strict` → worktree 内 Jest：
+
+```bash
+jest --runInBand --testPathIgnorePatterns=/node_modules/ --testPathIgnorePatterns=/.next/
+```
 手工：TV 遥控全流程、AI 找片一次完整提问、播放/换源/跳过片头各一次。
 
 ---
