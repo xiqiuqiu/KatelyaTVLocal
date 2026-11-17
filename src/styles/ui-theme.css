@@ -4154,7 +4154,7 @@
   white-space: normal;
 }
 
-/* 播放按钮：桌面收成圆形图标，鼠标用户靠封面悬停/整卡点击 */
+/* 播放按钮：仅在触屏（无悬停能力）保留，桌面靠封面悬停浮层与整卡点击 */
 .ui-resume-card .ui-video-continue {
   width: 36px;
   min-width: 36px;
@@ -4165,6 +4165,13 @@
   padding: 0;
   border-radius: 9999px;
   font-size: 0;
+}
+
+@media (min-width: 768px) {
+  /* 桌面/平板有悬停浮层与整卡点击，脚部圆形按钮重复且进不了焦点顺序 */
+  .ui-resume-card .ui-video-continue {
+    display: none;
+  }
 }
 
 .ui-resume-card .ui-video-continue svg {
@@ -4200,6 +4207,11 @@
 }
 
 /* TV：恢复整行 64px 按钮，遥控焦点落在按钮上 */
+[data-tv-mode='true'] .ui-resume-card .ui-video-continue,
+[data-tv-browse='true'] .ui-resume-card .ui-video-continue {
+  display: inline-flex;
+}
+
 [data-tv-mode='true'] .ui-resume-card .ui-video-continue {
   width: 100%;
   min-width: 0;
