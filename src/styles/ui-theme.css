@@ -1051,7 +1051,7 @@
 }
 @media (min-width: 1280px) {
   .ui-search-results {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 [data-tv-browse='true']
@@ -2354,4 +2354,318 @@
   .ui-user-menu-panel[data-tv-mode='true'] .ui-settings-nav {
     display: none;
   }
+}
+
+/* ============================================================
+   ReelFind 内容层：页面标题、卡片解剖、胶囊控件、结果卡
+   ============================================================ */
+
+/* 页面主标题用衬线字体，呼应设计稿的影视刊物感 */
+:is(
+    .ui-home-heading,
+    .ui-library-header,
+    .ui-search-header,
+    .ui-player-header,
+    .ui-play-loading-header
+  )
+  h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ui-home-heading h1 {
+  font-size: 30px;
+  line-height: 38px;
+}
+
+@media (min-width: 768px) {
+  .ui-home-heading h1 {
+    font-size: 34px;
+    line-height: 42px;
+  }
+  .ui-library-header h1,
+  .ui-search-header h1,
+  .ui-player-header h1 {
+    font-size: 30px;
+    line-height: 38px;
+  }
+}
+
+/* 顶部分类切换：带边框的胶囊组 */
+.ui-home-categories {
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-surface));
+}
+
+.ui-home-categories .ui-action-link {
+  min-width: 0;
+  min-height: 34px;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(var(--ui-text-muted));
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ui-home-categories .ui-action-link:hover {
+  background: rgb(var(--ui-text) / 0.06);
+  color: rgb(var(--ui-text));
+}
+
+.ui-home-categories .ui-action-link svg {
+  color: rgb(var(--ui-accent));
+}
+
+/* 区块标题与「查看更多」 */
+.ui-section-header h2 {
+  font-size: 19px;
+  line-height: 26px;
+  font-weight: 600;
+}
+
+.ui-action-link {
+  min-height: 32px;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+@media (max-width: 767px) {
+  .ui-action-link {
+    min-height: 44px;
+  }
+}
+
+/* 海报卡：细描边 + 悬停琥珀描边，不使用投影 */
+.ui-video-card .ui-glass,
+.ui-video-card .ui-glass-strong,
+.ui-video-poster {
+  border-radius: var(--ui-radius-md);
+  border: 1px solid rgb(var(--ui-border));
+  box-shadow: none;
+  transition: border-color 150ms var(--ease-out);
+}
+
+.ui-video-card:hover .ui-video-poster,
+.ui-video-card:focus-within .ui-video-poster,
+.ui-video-poster:hover {
+  border-color: rgb(var(--ui-accent) / 0.5);
+}
+
+/* 缩略图上的角标与图标 */
+.ui-video-rating,
+.ui-video-episode-badge {
+  border-radius: 4px;
+  background: rgb(0 0 0 / 0.68);
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.ui-video-rating {
+  color: rgb(var(--ui-accent));
+}
+
+.ui-video-episode-badge {
+  color: rgb(255 255 255 / 0.88);
+}
+
+.ui-video-card .ui-video-icon-button {
+  height: 30px;
+  width: 30px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.62);
+  color: rgb(255 255 255 / 0.85);
+}
+
+.ui-video-card .ui-video-icon-button:hover {
+  background: rgb(0 0 0 / 0.85);
+  color: #fff;
+}
+
+.ui-video-progress {
+  background: rgb(var(--ui-surface-strong));
+}
+
+.ui-video-progress > div {
+  background: rgb(var(--ui-accent));
+}
+
+.ui-video-title {
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 600;
+  min-height: 2.6rem;
+}
+
+.ui-video-title:hover {
+  color: rgb(var(--ui-accent));
+}
+
+.ui-video-meta {
+  margin-top: 10px;
+}
+
+.ui-video-facts {
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+/* 继续观看横卡 */
+.ui-resume-card {
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  transition: border-color 150ms var(--ease-out);
+}
+
+.ui-resume-card:hover,
+.ui-resume-card:focus-within {
+  border-color: rgb(var(--ui-accent) / 0.5);
+}
+
+/* 分段控件（普通搜索 / AI 找片） */
+.ui-mode-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-surface));
+}
+
+.ui-mode-tab {
+  min-height: 32px;
+  padding: 6px 14px;
+  border-bottom: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgb(var(--ui-text-muted));
+}
+
+.ui-mode-tab:hover {
+  color: rgb(var(--ui-text));
+}
+
+.ui-mode-tab[aria-pressed='true'] {
+  background: rgb(var(--ui-cta));
+  border-bottom-color: transparent;
+  color: rgb(var(--ui-on-cta));
+}
+
+/* 筛选胶囊 */
+.ui-filter-tab {
+  min-height: 34px;
+  padding: 6px 14px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ui-filter-tab:hover {
+  border-color: rgb(var(--ui-text) / 0.25);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-text));
+}
+
+.ui-filter-tab[aria-pressed='true'] {
+  border-color: rgb(var(--ui-accent) / 0.6);
+  background: rgb(var(--ui-accent) / 0.12);
+  color: rgb(var(--ui-accent));
+  box-shadow: none;
+}
+
+/* 主/次按钮：桌面紧凑，移动端保证触控高度 */
+.ui-primary-button,
+.ui-secondary-button {
+  min-height: 36px;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--ui-radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (max-width: 767px) {
+  .ui-primary-button,
+  .ui-secondary-button {
+    min-height: 44px;
+  }
+}
+
+/* 搜索结果卡：整块描边卡，悬停琥珀 */
+.ui-search-card {
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  padding: 16px;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 16px;
+  transition: border-color 150ms var(--ease-out);
+}
+
+.ui-search-card:hover,
+.ui-search-card:focus-within {
+  border-color: rgb(var(--ui-accent) / 0.42);
+}
+
+.ui-search-card .ui-search-poster {
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-sm);
+}
+
+.ui-search-card .ui-video-title {
+  min-height: 0;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.ui-search-card .ui-search-description {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ui-search-sources {
+  border-top-color: rgb(var(--ui-border));
+}
+
+.ui-search-sources .ui-search-card {
+  padding: 12px 0;
+  border: none;
+  border-radius: 0;
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.ui-search-meta .ui-video-facts {
+  font-family: var(--font-primary);
+  font-size: 12px;
+}
+
+/* 搜索页结果统计与分区标题 */
+:is(.ui-search-page, .ui-library-page) .ui-section-header h2 {
+  font-size: 16px;
+  line-height: 22px;
+  letter-spacing: 0;
+}
+
+/* 空态卡片 */
+.ui-empty-state {
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
 }

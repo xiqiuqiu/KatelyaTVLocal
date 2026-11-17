@@ -144,9 +144,9 @@ function FavoriteHeartButton({
 }
 
 const videoCardIconButtonClass =
-  'inline-flex h-11 w-11 items-center justify-center rounded-ui-sm bg-black/80 text-white transition-colors duration-150 hover:bg-black focus-visible:outline-white';
+  'ui-video-icon-button inline-flex h-11 w-11 items-center justify-center rounded-ui-sm bg-black/80 text-white transition-colors duration-150 hover:bg-black focus-visible:outline-white';
 const videoCardDoubanLinkClass =
-  'absolute left-2 top-2 z-20 inline-flex h-11 w-11 items-center justify-center rounded-ui-sm bg-black/80 text-white transition-colors duration-150 hover:bg-black';
+  'ui-video-icon-button absolute left-2 top-2 z-20 inline-flex h-11 w-11 items-center justify-center rounded-ui-sm bg-black/80 text-white transition-colors duration-150 hover:bg-black';
 
 function buildVideoCardFacts({
   id,
@@ -310,7 +310,7 @@ function buildVideoCardFacts({
     actualTitle,
     actualYear,
     aggregateCountText: `${items?.length ?? 0} 个来源`,
-    articleClass: `group relative w-full ${
+    articleClass: `ui-video-card group relative w-full ${
       isLandscape ? 'ui-resume-card' : ''
     } ${isResult ? 'ui-search-card' : ''}`,
     aspectRatio: isLandscape ? 'aspect-video' : 'aspect-[2/3]',
@@ -401,7 +401,7 @@ function buildVideoCardFacts({
     sourcesOpen,
     sourcesToggleLabel: sourcesOpen ? '收起来源' : '展开来源',
     statusText,
-    surfaceClass: `relative overflow-hidden ${
+    surfaceClass: `ui-video-poster relative overflow-hidden ${
       isResult ? 'ui-search-poster' : ''
     }`,
     titleActionLabel: `打开 ${actualTitle}`,
@@ -761,7 +761,7 @@ function VideoCardBadges({ model }: { model: VideoCardModel }) {
       ) : null}
       {model.showEpisodeBadge ? (
         <span
-          className={`inline-flex items-center justify-center rounded-md bg-black/80 font-semibold text-white ${model.badgeSizeClass}`}
+          className={`ui-video-episode-badge inline-flex items-center justify-center rounded-md bg-black/80 font-semibold text-white ${model.badgeSizeClass}`}
         >
           {model.episodeBadgeText}
         </span>
