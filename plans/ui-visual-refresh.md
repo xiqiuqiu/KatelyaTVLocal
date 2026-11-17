@@ -347,6 +347,35 @@
 
 ---
 
+## 8.29 继续观看卡：播放按钮只在电视保留（P6m，已完成）
+
+### 最终形态
+
+| 场景 | 脚部播放按钮 | 点按区域 |
+| --- | --- | --- |
+| 网页 / 手机 | 不渲染（不留隐形节点） | 整块文案区就是按钮：标题、集数、进度、来源全部可点，hover 时标题转琥珀色，键盘聚焦时有 2px 焦点环 |
+| 电视 | 整行 64px「继续播放」主按钮，`data-tv-primary` | 按钮自身，遥控可聚焦 |
+
+上一轮用 CSS `display:none` 隐藏的做法已废弃，改为在模型层直接不渲染（`showContinue: isLandscape && tvMode`），避免出现「存在但不可见、也进不了焦点顺序」的节点。
+
+### 实现要点
+
+- `footerIsAction = isLandscape && !tvMode`：网页/手机的文案区渲染成 `<button aria-label="继续播放 <片名>">`，点击走同一个 `handleClick`，保留 `tv` 参数与播放记录路由
+- 电视侧文案区仍是 `<div>`，保证 `VideoCard.test.tsx` 里「唯一可聚焦按钮是继续播放」的断言成立
+- 删掉了此前为圆形按钮写的 36px/媒体查询样式，改为 `.ui-video-footer-action` 的复位样式
+
+### 验证
+
+- 手机 390：脚部无按钮，`.ui-video-footer-action` 存在，点第二条「逃出布迪秀」文案区正确跳到 `/play?source=ruyi&id=88334&...`
+- 电视 1920：按钮 541×64、`tabIndex=0`、文案区不是按钮
+- 桌面 1440：无按钮，文案区可点
+- `tsc`、ESLint 0 warning、**Jest 145 套件 / 1266 用例全绿**
+- 截图：`.scratch/ui-refresh/resume-cta2-{mobile-390,tv-1920}.png`
+
+### 附注
+
+本轮中途 dev server 自己退出了，用 `next dev -p 3100` 重启（日志 `.scratch/dev.log`）。
+
 ## 8.28 继续观看卡：桌面移除脚部圆形播放按钮（P6l，已完成）
 
 ### 问题
