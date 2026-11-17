@@ -138,9 +138,9 @@
 - `PageLayout`、`ui/PageHeader`、`ui/SectionHeader`、`ui/Surface`、`ui/ActionLink`、`ui/LoadingPrimitives`：字号阶梯、留白、骨架屏配色
 
 ### P3 · 内容页
-- 首页 `app/page.tsx`、`HomeHero`、`ContinueWatching`、`ui/PosterGrid`、`VideoCard`
-  - Hero 改为 12 栅格（左文案 + 右剧照渐变）
-  - 片库频道条、横滑大卡、进度条配色
+- 首页 `app/page.tsx`、`ContinueWatching`、`ui/PosterGrid`、`VideoCard`
+  - 现状无 hero（见 §8.5），不新增区块；「继续观看」作为首屏大卡承担设计稿 hero 的视觉重量
+  - 片库频道条、海报栅格密度、进度条配色、区块标题节奏
 - `VideoCard`（1015 行）：只动 className 与 CSS，保留全部 `data-tv-*`、`model.*` 类名与播放遮罩逻辑
 - `/douban` + `DoubanSelector` + `CapsuleSwitch`：胶囊筛选条
 - `/search` + `TvSearchForm`：搜索头、豆瓣/资源/AI 三档分区
@@ -201,6 +201,46 @@
 | 字标 | 顶栏/侧栏使用文本 `ReelFind`，`logo.png` 暂时保留；如需新图标单开一步 |
 
 验收时额外确认：登录页在生产环境显示 `进入 ReelFind`，而测试环境仍渲染 `KatelyaTV` 兜底文案并全部通过。
+
+---
+
+## 8.5 P0 基线快照结果（已完成）
+
+### 环境
+
+| 项 | 值 |
+| --- | --- |
+| 目标 dev 服务 | `http://127.0.0.1:3100`（PID 55977，Next 14.2.35） |
+| 启动方式 | worktree 内 `node_modules` 软链到主目录 + 复制 `.env`（两者均不提交） |
+| 登录 | 用 `.env` 的 `PASSWORD` 走 `/api/login`，浏览器 profile 内已持有 auth cookie |
+| 设计稿服务 | `http://127.0.0.1:5199`（参考用，未参与本次截图） |
+
+### 产物
+
+路径：`.worktrees/ui-reelfind/.scratch/ui-refresh/before/`（44 张，约 50MB，已本地 exclude，不入库）
+
+| 分组 | 覆盖 |
+| --- | --- |
+| 桌面 1440 | home / favorites / history / search-normal / search-ai / douban-movie / douban-tv / play / admin / warning / settings 面板，各含暗色 + 亮色 |
+| 移动 390 | 同上一组（暗色），另含 login |
+| TV 1920 | home / search / douban / history / play（暗色 + 亮色，个别为视口截图） |
+| 登录 | login 暗/亮 1440 + 暗色 390 |
+
+### 基线观察（会直接影响 P1 之后的取舍）
+
+1. **现网主色是蓝色**（`--ui-accent: 120 170 255`，亮色为深蓝按钮），与新设计的琥珀 + 墨黑差异最大，token 层替换收益最高
+2. **首页没有 hero 区块**：`HomeHero` 组件已无页面引用，首页首屏是页头 + 海报流。设计稿的 12 栅格大 hero 在目标里没有对应结构
+   - 取舍：**不新增 hero**（属于加功能，超出改版范围），改为把「继续观看」提升为首页首屏大卡；无观看记录时保持海报流分栏
+3. **播放历史 / 收藏为空**：本地存储为 `localstorage`，播放页能进到播放器，但源视频在本机网络下未能起播，因此没有进度记录，`继续观看` 区块未渲染
+   - 影响：P6 交叉验证前需要先造一条真实观看记录（或直接写入 localStorage 播放记录键），否则该区块无法评分
+4. **TV 模式截图陷阱**：整页截图时视口外海报是懒加载，会出现大量空白卡
+   - 影响：TV 相关验收必须「先滚动预热图片，再截图」，或只截视口
+5. **全页截图体积偏大**（单张 2–4MB），后续对比改用视口 + 关键区块截图，必要时降采样
+6. 客户端页面标题仍是 `KatelyaTV`，登录按钮文案是 `进入 KatelyaTV`，与 §8 的改名方案一致
+
+### P0 结论
+
+基线可用，可以直接进入 P1（变量层替换）。唯一需要提前决策的是上面第 2 条：首页是否接受「无 hero」的还原方式。
 
 ---
 
