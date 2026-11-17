@@ -29,6 +29,7 @@ import {
   isNavigationItemActive,
   sidebarNavigationItems,
 } from '@/lib/ui/navigation';
+import { useLibraryCounts } from '@/lib/ui/use-library-counts';
 
 interface SidebarContextType {
   isCollapsed: boolean;
@@ -105,6 +106,7 @@ const Sidebar = ({
     }
   }, [isCollapsed]);
 
+  const libraryCounts = useLibraryCounts();
   const [active, setActive] = useState(activePath);
 
   useEffect(() => {
@@ -163,6 +165,12 @@ const Sidebar = ({
         >
           {item.label}
         </span>
+        {!isCollapsed && item.key === 'favorites' ? (
+          <span className='ui-sidebar-count'>{libraryCounts.favorites}</span>
+        ) : null}
+        {!isCollapsed && item.key === 'history' ? (
+          <span className='ui-sidebar-count'>{libraryCounts.history}</span>
+        ) : null}
       </Link>
     );
   };

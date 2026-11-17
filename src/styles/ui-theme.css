@@ -3688,3 +3688,339 @@
   background: rgb(var(--ui-text) / 0.07);
   border-color: rgb(var(--ui-text-muted) / 0.5);
 }
+
+/* ============================================================
+   首页精选 Hero：设计稿式编辑大图
+   ============================================================ */
+
+.ui-home-feature {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  min-height: 380px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-lg);
+  background: #0b0d12;
+}
+
+.ui-home-feature-art {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+
+.ui-home-feature-image {
+  opacity: 0.85;
+  filter: saturate(0.95) brightness(0.9);
+  object-position: center 20%;
+}
+
+.ui-home-feature-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      90deg,
+      rgb(8 9 12 / 0.97) 0%,
+      rgb(8 9 12 / 0.86) 38%,
+      rgb(8 9 12 / 0.35) 72%,
+      rgb(8 9 12 / 0.05) 100%
+    ),
+    linear-gradient(to top, rgb(8 9 12 / 0.75) 0%, transparent 55%);
+}
+
+.ui-home-feature-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-height: 380px;
+  max-width: 640px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 40px;
+}
+
+.ui-home-feature-kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-accent-warm));
+}
+
+.ui-home-feature-title {
+  font-family: var(--font-display);
+  font-size: 46px;
+  line-height: 1.08;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #f4f2ed;
+  text-wrap: balance;
+}
+
+.ui-home-feature-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  color: rgb(255 255 255 / 0.72);
+  font-size: 13px;
+}
+
+.ui-home-feature-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: rgb(var(--ui-accent));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-home-feature-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ui-home-feature-cta {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-cta));
+  color: rgb(var(--ui-on-cta));
+  font-size: 14px;
+  font-weight: 600;
+  transition: filter 150ms;
+}
+
+.ui-home-feature-cta:hover {
+  filter: brightness(1.06);
+}
+
+.ui-home-feature-secondary {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  border: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: var(--ui-radius-sm);
+  color: rgb(255 255 255 / 0.86);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 150ms, border-color 150ms;
+}
+
+.ui-home-feature-secondary:hover {
+  background: rgb(255 255 255 / 0.08);
+  border-color: rgb(255 255 255 / 0.4);
+}
+
+@media (max-width: 767px) {
+  .ui-home-feature,
+  .ui-home-feature-copy {
+    min-height: 320px;
+  }
+  .ui-home-feature-copy {
+    padding: 20px;
+  }
+  .ui-home-feature-title {
+    font-size: 30px;
+  }
+  .ui-home-feature-scrim {
+    background: linear-gradient(
+      to top,
+      rgb(8 9 12 / 0.97) 10%,
+      rgb(8 9 12 / 0.72) 55%,
+      rgb(8 9 12 / 0.3) 100%
+    );
+  }
+}
+
+[data-tv-browse='true'] .ui-home-feature,
+[data-tv-browse='true'] .ui-home-feature-copy {
+  min-height: 460px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-copy {
+  padding: 48px 56px;
+  max-width: 900px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-kicker {
+  font-size: 20px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-title {
+  font-size: 64px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-meta {
+  font-size: 24px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-cta,
+[data-tv-browse='true'] .ui-home-feature-secondary {
+  min-height: 64px;
+  padding-inline: 28px;
+  font-size: 24px;
+}
+
+/* 侧栏计数 */
+.ui-sidebar-count {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: rgb(var(--ui-text-muted));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-sidebar-nav .ui-nav-item[data-active='true'] .ui-sidebar-count {
+  color: rgb(var(--ui-nav-active-fg) / 0.75);
+}
+
+/* 顶栏 AI 找片入口 */
+.ui-topbar-ai {
+  display: inline-flex;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  margin-right: 4px;
+  padding: 0 10px;
+  border-radius: var(--ui-radius-sm);
+  color: rgb(var(--ui-accent));
+  font-size: 12px;
+  font-weight: 500;
+  transition: background-color 150ms;
+}
+
+.ui-topbar-ai:hover {
+  background: rgb(var(--ui-accent) / 0.12);
+}
+
+/* 顶栏账号胶囊 */
+.ui-topbar-account {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding-inline: 10px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-text));
+  font-size: 12px;
+  font-weight: 500;
+  transition: border-color 150ms, background-color 150ms;
+}
+
+.ui-topbar-account:hover {
+  border-color: rgb(var(--ui-text) / 0.28);
+  background: rgb(var(--ui-surface-strong));
+}
+
+.ui-topbar-account svg {
+  color: rgb(var(--ui-accent));
+}
+
+/* 播放器主题色：ArtPlayer 内置控件跟随 Accent */
+.art-video-player {
+  --art-theme: rgb(var(--ui-accent));
+}
+
+.art-video-player .art-progress-played,
+.art-video-player .art-progress-indicator {
+  background-color: rgb(var(--ui-accent));
+}
+
+.art-video-player .art-setting-item.art-current {
+  color: rgb(var(--ui-accent));
+}
+
+/* Hero 右侧保留海报竖构图，避免把竖版海报裁成超宽条 */
+.ui-home-feature-art {
+  inset: 0 0 0 auto;
+  width: 52%;
+}
+
+.ui-home-feature-scrim {
+  background:
+    linear-gradient(
+      90deg,
+      rgb(8 9 12) 0%,
+      rgb(8 9 12 / 0.98) 34%,
+      rgb(8 9 12 / 0.72) 52%,
+      rgb(8 9 12 / 0.18) 74%,
+      rgb(8 9 12 / 0) 100%
+    ),
+    linear-gradient(to top, rgb(8 9 12 / 0.55) 0%, transparent 45%);
+}
+
+.ui-home-feature-copy {
+  max-width: 58%;
+}
+
+@media (max-width: 767px) {
+  .ui-home-feature-art {
+    inset: 0;
+    width: 100%;
+  }
+  .ui-home-feature-copy {
+    max-width: 100%;
+  }
+}
+
+/* Hero 海报列：左侧遮罩淡出，避免出现硬边 */
+.ui-home-feature-art {
+  width: 40%;
+}
+
+.ui-home-feature-image {
+  opacity: 0.9;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(0 0 0 / 0.55) 18%,
+    #000 42%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(0 0 0 / 0.55) 18%,
+    #000 42%
+  );
+}
+
+.ui-home-feature {
+  min-height: 360px;
+}
+
+.ui-home-feature-copy {
+  min-height: 360px;
+  max-width: 60%;
+}
+
+@media (max-width: 767px) {
+  .ui-home-feature-art {
+    width: 100%;
+  }
+  .ui-home-feature-image {
+    -webkit-mask-image: none;
+    mask-image: none;
+    opacity: 0.7;
+  }
+  .ui-home-feature-copy {
+    max-width: 100%;
+  }
+}

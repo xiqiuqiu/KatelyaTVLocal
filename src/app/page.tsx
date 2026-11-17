@@ -15,13 +15,16 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
+import { selectHomeHeroCandidate } from '@/lib/home-hero';
 import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 import { DoubanItem } from '@/lib/types';
 import { catalogNavigationItems } from '@/lib/ui/navigation';
 import { homeTabMeta, pageSectionLabels } from '@/lib/ui/page-meta';
+import { useMediaQuery } from '@/lib/ui/use-media-query';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
+import HomeHero from '@/components/HomeHero';
 import PageLayout from '@/components/PageLayout';
 import { useSite } from '@/components/SiteProvider';
 import ActionLink from '@/components/ui/ActionLink';
@@ -360,9 +363,20 @@ function HomeCatalog({
   loading: boolean;
   tvMode: boolean;
 }) {
+  // 精选 Hero 只在大屏渲染：小屏保持卡片流，避免与列表标题重复占位
+  const showHero = useMediaQuery('(min-width: 768px)');
+  const heroCandidate = showHero
+    ? selectHomeHeroCandidate(hotMovies, hotTvShows, hotVarietyShows)
+    : null;
+
   return (
     <div className='ui-home-content ui-home-catalog'>
       <HomeCatalogHeader tvMode={tvMode} />
+      <HomeHero
+        candidate={heroCandidate}
+        loading={loading && showHero}
+        tvMode={tvMode}
+      />
       <ContinueWatching tvMode={tvMode} />
 
       <HomePosterSection
