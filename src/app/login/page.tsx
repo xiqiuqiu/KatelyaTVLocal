@@ -20,6 +20,7 @@ import { getSafeRedirectPath } from '@/lib/safe-redirect';
 import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 
 import IOSCompatibility from '@/components/IOSCompatibility';
+import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import useTvBrowseNavigation from '@/components/useTvBrowseNavigation';
 
@@ -45,6 +46,7 @@ declare global {
 }
 
 function LoginPageClient() {
+  const { siteName } = useSite();
   const searchParams = useSearchParams();
   const tvMode = isTvMode(searchParams);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -281,7 +283,7 @@ function LoginPageClient() {
                 className='h-8 w-8 object-cover'
               />
             </span>
-            <span>KatelyaTV</span>
+            <span>{siteName}</span>
           </span>
           <div className='flex items-center gap-2'>
             <a
@@ -309,7 +311,7 @@ function LoginPageClient() {
               />
             </div>
             <div className='ui-auth-story-copy'>
-              <p className='ui-auth-kicker'>KatelyaTV · Private Screening</p>
+              <p className='ui-auth-kicker'>{siteName} · Private Screening</p>
               <h2 className='ui-auth-story-title mt-3 font-semibold'>
                 你的私人放映厅
               </h2>
@@ -580,9 +582,9 @@ function LoginPageClient() {
                       {authMode === 'register' ? '注册中...' : '登录中...'}
                     </>
                   ) : authMode === 'register' ? (
-                    '创建 KatelyaTV 账号'
+                    `创建 ${siteName} 账号`
                   ) : (
-                    '进入 KatelyaTV'
+                    `进入 ${siteName}`
                   )}
                 </button>
               </form>
