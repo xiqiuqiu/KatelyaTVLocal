@@ -347,6 +347,46 @@
 
 ---
 
+## 8.30 电视模式切换后遥控器失灵排查（P7，已修复，待真机复验）
+
+### 现象
+
+电视浏览器进入站点后 URL 已带 `?tv=1`、界面也是电视版式，但遥控器方向键/确认键没有反应；刷新页面，或「退出电视模式 → 再进入电视模式」之后才正常。
+
+### 排查过程
+
+1. 本地用 Chromium 复现两条路径，逐条打点（`data-tv-mode`、`html.tv-browse-navigation`、`keydown` 是否被 `preventDefault`）：
+   - 桌面 UA 软导航 `/?tv=0 → /?tv=1`：监听已挂上，按键被消费，焦点正常移动
+   - 电视 UA（`8R710_Q7FP`）整页加载经中间件 307 到 `/?tv=1`：同上，正常
+2. 读 `enable` 依赖链：`AppShell` 传 `tvMode && browsePage`，`useTvBrowseNavigation` 的 effect 依赖 `[enabled, page, rootRef, manageInputs]`，`enabled` 变化会重挂监听，不存在闭包陈旧问题。
+3. 结论：应用层监听在软导航后**确实存在**。电视上按不动，说明按键根本没到页面 —— 电视浏览器在「页面内没有任何元素持有焦点」时，会把方向键留在自己的空间导航层（光标/浏览器焦点层），只有页面抢到焦点才把按键交回来。
+
+### 根因（高置信度）
+
+进入电视模式是一次软导航：原来的「电视模式」链接随顶栏卸载，`document.activeElement` 落回 `body`；而首帧抢焦点只在 `requestAnimationFrame` 里跑**一次**，那时电视版内容常常还没提交完，`controls` 为空 → `focusInitial()` 什么都没聚焦，之后也没有任何时机再抢。刷新时首屏已经带着电视版式渲染，这一次抢焦点成功了，所以「刷新就好」。
+
+### 修复
+
+`src/components/useTvBrowseNavigation.ts`：
+
+- effect 建立时**同步**先抢一次焦点，并在 120 / 320 / 700ms 重试；只在「当前仍没有页面内焦点」时重试，用户已经操作过（`interacted`）就完全不打扰
+- `focusInitial()` 找不到可聚焦控件时，把容器设为 `tabIndex=-1` 并 `focus()`，至少让文档拿到焦点，浏览器的空间导航层才会把按键交出来
+- `visibilitychange` / `pageshow` / `focus` 时补一次抢焦点（电视切回前台、WebView 恢复）
+- 顺手加固：`scrollIntoView` 在 jsdom 与部分电视 WebView 上不存在，统一走 `scrollIntoViewSafely()`
+
+### 验证
+
+- 本地：`/?tv=0` 软导航进入电视模式后 1.5s 内焦点落在 `data-tv-primary` 的「继续播放」按钮上，`ArrowDown` 正常横向移动
+- **Jest 145 套件 / 1266 用例全绿**（`tv-browse-navigation`、`app-shell`、`user-menu`、`light-cinema-navigation` 均通过）
+- 待真机复验：电视上第一次进电视模式是否即可用遥控器
+
+### 若真机仍复现，下一步的判定方法
+
+打开 `/tv-remote-debug`（该路径在中间件白名单里，未登录也能进），它会把所有 `keydown` 打到调试面板：
+
+- 面板里**没有任何事件** → 按键没进页面，属浏览器/WebView 层（需要整页导航或 `window.focus()` 类手段，或让 TV 走 APK 壳）
+- 面板里**有事件但主页面没反应** → 应用层监听问题，回到 `useTvBrowseNavigation` 继续查
+
 ## 8.29 继续观看卡：播放按钮只在电视保留（P6m，已完成）
 
 ### 最终形态
