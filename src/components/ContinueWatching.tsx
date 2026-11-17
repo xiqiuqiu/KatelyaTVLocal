@@ -116,7 +116,13 @@ export default function ContinueWatching({
         className='mb-4'
         title='继续观看'
       />
-      <Row className={tvMode ? undefined : '[&>div:first-child]:pb-2'}>
+      <Row
+        className={
+          tvMode
+            ? 'grid-cols-2 gap-6 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
+            : '[&>div:first-child]:pb-2'
+        }
+      >
         {loading
           ? // 加载状态显示灰色占位数据
             Array.from({ length: 6 }).map((_, index) => (

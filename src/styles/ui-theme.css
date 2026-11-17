@@ -4228,6 +4228,8 @@
   padding: 12px 20px;
   border-radius: var(--ui-radius-sm);
   font-size: 22px;
+  /* 海报网格里卡片可能较窄，按钮文案不允许换行把卡片撑高 */
+  white-space: nowrap;
 }
 
 [data-tv-browse='true'] .ui-resume-card .ui-video-footer {
@@ -4242,6 +4244,8 @@
 
 [data-tv-browse='true'] .ui-resume-card .ui-video-footer-meta {
   font-size: 22px;
+  /* 窄卡上集数/进度/来源会更长，允许三行 */
+  -webkit-line-clamp: 3;
 }
 
 [data-tv-browse='true'] .ui-resume-card .ui-video-continue {
