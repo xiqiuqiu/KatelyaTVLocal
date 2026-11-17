@@ -60,3 +60,6 @@ tmp-cloudflare-play-test.png
 .wrangler/
 .tmp-dev-*.log
 .alma-snapshots
+
+# scratch files
+.scratch
