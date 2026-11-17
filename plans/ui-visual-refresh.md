@@ -347,6 +347,33 @@
 
 ---
 
+## 8.11 搜索结果卡补评分字段（P4c，已完成）
+
+### 数据链路
+
+| 层 | 改动 |
+| --- | --- |
+| 下游接口 `lib/downstream.ts` | `ApiSearchItem` 新增 `vod_douban_score`；新增 `normalizeDoubanScore()`（只接受 0 < score ≤ 10，统一一位小数）；搜索与详情两条映射都带上 `rate` |
+| 类型 `lib/types.ts` | `SearchResult` 新增可选 `rate?: string` |
+| 搜索页 `app/search/page.tsx` | 聚合卡从同组多条来源中取第一个有评分的；分源列表直接用本条的 `rate` |
+| 卡片 `VideoCard` | 结果卡标题行改为「名称左 + 豆瓣评分右」；评分只出现在文字行，封面不再渲染评分角标 |
+
+### 验证
+
+- `tsc`、ESLint 通过
+- Jest：**142 套件 / 1258 用例全绿**（含本次新增 2 个测试文件）
+- 新增测试：
+  - `lib/douban-score.test.ts`：合法值 8.6 / 7.9 / 9 → `9.0`；空值、0、10.5、“暂无”全部丢弃
+  - `components/__tests__/video-card-rating.test.tsx`：结果卡渲染 `豆瓣 7.9`；海报卡只出现一个 `8.6` 且类名为 `ui-video-score`
+- 浏览器实测（禁用 HTTP 缓存后）：`庆余年 第二季 → 豆瓣 7.3`、`第一季 → 7.9`；豆瓣页 25 张卡全部有页脚评分，封面零角标
+
+### 一个容易误判的坑
+
+`/api/search` 带 `Cache-Control: public, max-age=…`，所以刚改完接口时旧查询词会拿到**浏览器缓存里没有 rate 的旧响应**，看起来像“没生效”。
+验证时必须禁用缓存或换一个新查询词；生产环境缓存过期后也会自然恢复。
+
+---
+
 ## 8.10 卡片解剖对齐设计稿（P4b，已完成）
 
 ### 设计稿的真实结构
