@@ -1071,7 +1071,7 @@
   font-size: 22px;
 }
 [data-tv-browse='true'] .ui-history-image {
-  width: 256px;
+  width: 144px;
 }
 [data-tv-browse='true'] .ui-history-actions {
   align-self: center;
@@ -1144,7 +1144,7 @@
     border-right: 0;
   }
   [data-tv-browse='true'] .ui-history-image {
-    width: 160px;
+    width: 112px;
   }
 }
 
@@ -1488,7 +1488,8 @@
 .ui-history-row {
   position: relative;
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
+  /* 封面是竖版 2:3 海报，列宽与缩略图一致，避免出现裁切或留白 */
+  grid-template-columns: 72px minmax(0, 1fr);
   align-items: start;
 }
 
@@ -1502,6 +1503,11 @@
   left: 12px;
   z-index: 1;
   background: rgb(var(--ui-surface));
+}
+
+/* 管理态：给左侧勾选框留出位置，别压在竖版海报上 */
+.ui-history-row[data-managing='true'] {
+  padding-left: 64px;
 }
 
 .ui-history-title {
@@ -1526,7 +1532,7 @@
 
 @media (min-width: 640px) {
   .ui-history-row {
-    grid-template-columns: 192px minmax(0, 1fr) auto;
+    grid-template-columns: 96px minmax(0, 1fr) auto;
     align-items: center;
     gap: 24px;
     padding: 20px;
@@ -1535,6 +1541,10 @@
   .ui-history-row > .ui-icon-button {
     top: 20px;
     left: 20px;
+  }
+
+  .ui-history-row[data-managing='true'] {
+    padding-left: 72px;
   }
 
   .ui-history-actions {
@@ -1562,9 +1572,13 @@
 }
 
 [data-tv-browse='true'] .ui-history-row {
-  grid-template-columns: 256px minmax(0, 1fr) auto;
+  grid-template-columns: 144px minmax(0, 1fr) auto;
   gap: 32px;
   padding: 24px;
+}
+
+[data-tv-browse='true'] .ui-history-row[data-managing='true'] {
+  padding-left: 96px;
 }
 
 [data-tv-browse='true'] .ui-history-row > .ui-icon-button {
@@ -2933,8 +2947,7 @@
   position: absolute;
   inset: 0;
   z-index: 0;
-  background:
-    linear-gradient(
+  background: linear-gradient(
       to top,
       rgb(8 9 12 / 0.72) 0%,
       rgb(8 9 12 / 0.38) 45%,
@@ -3718,8 +3731,7 @@
 .ui-home-feature-scrim {
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(
+  background: linear-gradient(
       90deg,
       rgb(8 9 12 / 0.97) 0%,
       rgb(8 9 12 / 0.86) 38%,
@@ -3955,8 +3967,7 @@
 }
 
 .ui-home-feature-scrim {
-  background:
-    linear-gradient(
+  background: linear-gradient(
       90deg,
       rgb(8 9 12) 0%,
       rgb(8 9 12 / 0.98) 34%,
@@ -4333,10 +4344,8 @@
   border-radius: var(--ui-radius-lg);
   background: rgb(var(--ui-text) / 0.03);
   text-align: left;
-  transition:
-    border-color 150ms var(--ease-out),
-    background-color 150ms var(--ease-out),
-    transform 150ms var(--ease-out);
+  transition: border-color 150ms var(--ease-out),
+    background-color 150ms var(--ease-out), transform 150ms var(--ease-out);
 }
 
 .ui-saved-card:hover {
@@ -4406,8 +4415,7 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background:
-    radial-gradient(
+  background: radial-gradient(
       circle at 35% 18%,
       rgb(var(--ui-accent) / 0.42),
       transparent 38%
@@ -4506,9 +4514,7 @@
   border: 1px solid rgb(var(--ui-text) / 0.12);
   background: rgb(var(--ui-text) / 0.08);
   color: rgb(var(--ui-text));
-  transition:
-    border-color 150ms,
-    color 150ms;
+  transition: border-color 150ms, color 150ms;
 }
 
 .ui-saved-card:hover .ui-saved-open {
