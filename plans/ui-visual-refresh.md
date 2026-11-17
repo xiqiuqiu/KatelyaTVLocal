@@ -347,6 +347,24 @@
 
 ---
 
+## 8.22 侧栏「发现」拆成一级分类（P6f，已完成）
+
+| 项 | 改法 |
+| --- | --- |
+| 侧栏结构 | 首页 / **电影 · 剧集 · 综艺** / 收藏夹 / 播放历史；去掉「发现」这层，少点一次 |
+| 数据来源 | `sidebarNavigationItems` 直接展开 `catalogNavigationItems`，不再引用 `primaryNavigationItems[1]` |
+| 高亮规则 | `/douban?type=tv` → 剧集、`?type=show` → 综艺、`/douban`（无 type，默认电影）→ 电影 |
+| 移动底栏 | **保留「发现」**：底栏只有 3 个入口，塞进三个分类会超出，且 `light-cinema-navigation` 断言底栏是 首页/发现/搜索 |
+| TV 导航 | **保留「发现」**：`app-shell.test` 断言 TV 模式存在「发现 → /douban?type=movie&tv=1」 |
+
+### 验证
+
+- 实测三种 URL 的高亮：`type=tv` → 剧集、无 type → 电影、`type=show` → 综艺，均只有一项高亮
+- `tsc`、ESLint、**Jest 145 套件 / 1266 用例全绿**
+- 截图：`.scratch/ui-refresh/after-p6f-*.png`
+
+---
+
 ## 8.21 继续观看卡显示总集数（P6e，已完成）
 
 | 项 | 改法 |
