@@ -34,6 +34,10 @@ import { buildSourceSearchUrl } from '@/lib/source-query';
 import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 import { SearchResult } from '@/lib/types';
 import { pageMeta, pageSectionLabels } from '@/lib/ui/page-meta';
+import {
+  playbackPreferences,
+  readBooleanPreference,
+} from '@/lib/ui/preferences';
 
 import AiFindPanel from '@/components/AiFindPanel';
 import CapsuleSwitch from '@/components/CapsuleSwitch';
@@ -429,13 +433,7 @@ function SearchBackToTop({ session }: { session: SearchPageSession }) {
 }
 
 function getDefaultAggregate() {
-  if (typeof window !== 'undefined') {
-    const userSetting = localStorage.getItem('defaultAggregateSearch');
-    if (userSetting !== null) {
-      return JSON.parse(userSetting);
-    }
-  }
-  return true;
+  return readBooleanPreference(playbackPreferences[0]);
 }
 
 function scrollSearchPageToTop() {

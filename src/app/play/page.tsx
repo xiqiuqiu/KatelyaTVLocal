@@ -151,6 +151,10 @@ import {
   SourceSelectionScore,
 } from '@/lib/source-selection';
 import {
+  playbackPreferences,
+  readBooleanPreference,
+} from '@/lib/ui/preferences';
+import {
   buildTvModeHref,
   getTvSeekTime,
   isTvDirectionalKey,
@@ -1489,19 +1493,9 @@ function usePlayPageSession() {
   );
 
   // 优选和测速开关
-  const [optimizationEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('enableOptimization');
-      if (saved !== null) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-    return true;
-  });
+  const [optimizationEnabled] = useState<boolean>(() =>
+    readBooleanPreference(playbackPreferences[1])
+  );
 
   // 保存优选时的测速结果，避免EpisodeSelector重复测速
   const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<

@@ -3180,3 +3180,278 @@
   width: min(920px, calc(100vw - 32px));
   height: min(680px, calc(100dvh - 48px));
 }
+
+/* ============================================================
+   设置面板：共用行、开关、账号卡片
+   ============================================================ */
+
+.ui-settings-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 12px 8px;
+  border-bottom: 1px solid rgb(var(--ui-border) / 0.7);
+  text-align: left;
+}
+
+.ui-settings-group > :last-child,
+.ui-settings-row:last-child {
+  border-bottom: none;
+}
+
+.ui-settings-row-action {
+  border-radius: var(--ui-radius-sm);
+  transition: background-color 150ms;
+}
+
+.ui-settings-row-action:hover {
+  background: rgb(var(--ui-text) / 0.05);
+}
+
+.ui-settings-row-icon {
+  display: inline-flex;
+  height: 32px;
+  width: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ui-radius-sm);
+  border: 1px solid rgb(var(--ui-border));
+  background: rgb(var(--ui-surface-strong));
+  color: rgb(var(--ui-text-muted));
+}
+
+.ui-settings-row-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ui-settings-row-title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: rgb(var(--ui-text));
+}
+
+.ui-settings-row-desc {
+  font-size: 12px;
+  line-height: 1.55;
+  color: rgb(var(--ui-text-muted));
+}
+
+.ui-settings-row-control {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.ui-settings-chevron {
+  flex-shrink: 0;
+  color: rgb(var(--ui-text-muted) / 0.75);
+}
+
+.ui-settings-row-danger .ui-settings-row-title {
+  color: rgb(var(--ui-critical));
+}
+
+.ui-settings-subtitle {
+  margin: 20px 8px 4px;
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+/* 开关 */
+.ui-switch {
+  display: inline-flex;
+  height: 24px;
+  width: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 3px;
+  border: none;
+  border-radius: 9999px;
+  background: rgb(var(--ui-text-muted) / 0.35);
+  transition: background-color 160ms var(--ease-out);
+}
+
+.ui-switch[data-checked='true'] {
+  background: rgb(var(--ui-accent));
+}
+
+.ui-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.ui-switch-knob {
+  display: block;
+  height: 18px;
+  width: 18px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 160ms var(--ease-out);
+}
+
+.ui-switch[data-checked='true'] .ui-switch-knob {
+  transform: translateX(20px);
+}
+
+.ui-switch:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 3px;
+}
+
+/* 账号卡片 */
+.ui-settings-user-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-bg));
+}
+
+.ui-settings-avatar {
+  display: inline-flex;
+  height: 44px;
+  width: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-accent) / 0.18);
+  color: rgb(var(--ui-accent));
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.ui-settings-user-meta {
+  min-width: 0;
+}
+
+.ui-settings-user-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ui-settings-username {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ui-settings-role-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 1px 8px;
+  border: 1px solid rgb(var(--ui-accent) / 0.45);
+  border-radius: 9999px;
+  background: rgb(var(--ui-accent) / 0.12);
+  color: rgb(var(--ui-accent));
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.ui-settings-user-note {
+  margin-top: 4px;
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+}
+
+/* 退出登录 */
+.ui-settings-danger {
+  margin-top: 16px;
+}
+
+.ui-settings-logout {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid rgb(var(--ui-critical) / 0.45);
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  color: rgb(var(--ui-critical));
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 150ms, border-color 150ms;
+}
+
+.ui-settings-logout:hover {
+  background: rgb(var(--ui-critical) / 0.1);
+  border-color: rgb(var(--ui-critical) / 0.7);
+}
+
+.ui-settings-danger-hint {
+  margin-top: 8px;
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+}
+
+/* TV 10-foot 放大 */
+[data-tv-browse='true'] .ui-settings-row {
+  min-height: 72px;
+  padding: 14px 12px;
+}
+
+[data-tv-browse='true'] .ui-settings-row-title {
+  font-size: 24px;
+}
+
+[data-tv-browse='true'] .ui-settings-row-desc,
+[data-tv-browse='true'] .ui-settings-subtitle,
+[data-tv-browse='true'] .ui-settings-user-note,
+[data-tv-browse='true'] .ui-settings-danger-hint {
+  font-size: 18px;
+}
+
+[data-tv-browse='true'] .ui-switch {
+  height: 34px;
+  width: 62px;
+  padding: 4px;
+}
+
+[data-tv-browse='true'] .ui-switch-knob {
+  height: 26px;
+  width: 26px;
+}
+
+[data-tv-browse='true'] .ui-switch[data-checked='true'] .ui-switch-knob {
+  transform: translateX(28px);
+}
+
+[data-tv-browse='true'] .ui-settings-logout {
+  min-height: 64px;
+  font-size: 22px;
+  padding: 12px 20px;
+}
+
+[data-tv-browse='true'] .ui-settings-avatar {
+  height: 60px;
+  width: 60px;
+  font-size: 26px;
+}
+
+[data-tv-browse='true'] .ui-settings-username {
+  font-size: 24px;
+}
+
+[data-tv-browse='true'] .ui-settings-role-chip {
+  font-size: 18px;
+  min-height: 30px;
+}

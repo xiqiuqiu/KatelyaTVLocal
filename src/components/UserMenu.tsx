@@ -7,6 +7,7 @@ import {
   History,
   KeyRound,
   LogOut,
+  Moon,
   Palette,
   Shield,
   Tv,
@@ -21,9 +22,16 @@ import { createPortal } from 'react-dom';
 
 import { getRuntimeCurrentUser } from '@/lib/auth';
 import { buildTvModeHref } from '@/lib/tv-interaction';
+import {
+  playbackPreferences,
+  readBooleanPreference,
+  writeBooleanPreference,
+} from '@/lib/ui/preferences';
 import { managementSettingsGroups } from '@/lib/ui/settings';
 
-import { ThemeToggle } from '@/components/ThemeToggle';
+import SettingsRow from '@/components/ui/SettingsRow';
+import Switch from '@/components/ui/Switch';
+import ThemeSwitch from '@/components/ui/ThemeSwitch';
 import useTvBrowseNavigation from '@/components/useTvBrowseNavigation';
 
 const AdminSettings = dynamic(
@@ -55,9 +63,6 @@ const iconButtonClassName = 'ui-icon-button';
 
 const menuItemClassName =
   'flex min-h-11 w-full items-center gap-3 rounded-ui-sm px-3 py-3 text-left text-base font-medium text-[rgb(var(--ui-text-muted))] transition-colors hover:bg-[rgb(var(--ui-surface-strong))] hover:text-[rgb(var(--ui-text))]';
-
-const dangerMenuItemClassName =
-  'flex min-h-11 w-full items-center gap-3 rounded-ui-sm px-3 py-3 text-left text-base font-medium text-[rgb(var(--ui-critical))] transition hover:bg-[rgba(var(--ui-critical),0.15)] hover:text-[rgb(var(--ui-critical))]';
 
 const modalPanelClassName =
   'fixed left-1/2 top-1/2 z-[1001] max-h-[90vh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-ui-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] p-6 text-[rgb(var(--ui-text))] shadow-ui-strong';
@@ -91,6 +96,26 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
   const [managementMounted, setManagementMounted] = useState(
     Boolean(session.initialManagementSection)
   );
+  const [preferenceValues, setPreferenceValues] = useState<
+    Record<string, boolean>
+  >(() =>
+    Object.fromEntries(
+      playbackPreferences.map((definition) => [
+        definition.id,
+        readBooleanPreference(definition),
+      ])
+    )
+  );
+
+  const togglePreference = (definitionId: string) => {
+    const definition = playbackPreferences.find(
+      (item) => item.id === definitionId
+    );
+    if (!definition) return;
+    const next = !preferenceValues[definitionId];
+    setPreferenceValues((current) => ({ ...current, [definitionId]: next }));
+    writeBooleanPreference(definition, next);
+  };
   useEffect(() => {
     if (!session.initialManagementSection) return;
     setCategory('management');
@@ -262,30 +287,43 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
               >
                 观看与收藏
               </h3>
-              <Link
+              <SettingsRow
                 href={
                   session.tvMode
                     ? buildTvModeHref('/?tab=favorites', true)
                     : '/?tab=favorites'
                 }
-                className={menuItemClassName}
+                icon={Heart}
+                title='我的收藏'
+                description='按收藏时间整理的私人片单'
                 onClick={session.handleCloseMenu}
-              >
-                <Heart aria-hidden className='h-5 w-5 shrink-0' />
-                <span>我的收藏</span>
-              </Link>
-              <Link
+              />
+              <SettingsRow
                 href={
                   session.tvMode
                     ? buildTvModeHref('/history', true)
                     : '/history'
                 }
-                className={menuItemClassName}
+                icon={History}
+                title='播放历史'
+                description='继续上次看到的进度'
                 onClick={session.handleCloseMenu}
-              >
-                <History aria-hidden className='h-5 w-5 shrink-0' />
-                <span>播放历史</span>
-              </Link>
+              />
+              <p className='ui-settings-subtitle'>播放与搜索偏好</p>
+              {playbackPreferences.map((definition) => (
+                <SettingsRow
+                  key={definition.id}
+                  title={definition.label}
+                  description={definition.description}
+                  control={
+                    <Switch
+                      checked={Boolean(preferenceValues[definition.id])}
+                      label={definition.label}
+                      onCheckedChange={() => togglePreference(definition.id)}
+                    />
+                  }
+                />
+              ))}
             </section>
 
             <section
@@ -297,15 +335,12 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
               <h3 id='user-settings-device-title' className='ui-settings-title'>
                 外观与设备
               </h3>
-              <div className='ui-settings-row flex items-center justify-between gap-4'>
-                <div>
-                  <div className='text-base font-medium'>外观</div>
-                  <p className='mt-1 text-sm text-[rgb(var(--ui-text-muted))]'>
-                    切换深浅色后立即生效
-                  </p>
-                </div>
-                <ThemeToggle />
-              </div>
+              <SettingsRow
+                icon={Moon}
+                title='深色外观'
+                description='暗色放映厅更适合夜间观影；切换后立即生效'
+                control={<ThemeSwitch />}
+              />
               <Link
                 href={buildTvModeHref(
                   [
@@ -320,11 +355,24 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
                     : '/',
                   !session.tvMode
                 )}
-                className={menuItemClassName}
+                aria-label={session.tvMode ? '退出电视模式' : '进入电视模式'}
+                className='ui-settings-row ui-settings-row-action'
                 onClick={session.handleCloseMenu}
               >
-                <Tv aria-hidden className='h-5 w-5' />
-                {session.tvMode ? '退出电视模式' : '进入电视模式'}
+                <span className='ui-settings-row-icon' aria-hidden='true'>
+                  <Tv className='h-4 w-4' />
+                </span>
+                <span className='ui-settings-row-copy'>
+                  <span className='ui-settings-row-title'>电视大屏模式</span>
+                  <span className='ui-settings-row-desc'>
+                    放大字号并强化遥控器焦点高亮；适合客厅电视
+                  </span>
+                </span>
+                <span className='ui-settings-row-control'>
+                  <span className='ui-switch' data-checked={session.tvMode}>
+                    <span className='ui-switch-knob' aria-hidden='true' />
+                  </span>
+                </span>
               </Link>
             </section>
 
@@ -340,38 +388,50 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
               >
                 账号与安全
               </h3>
-              <div className='ui-settings-account space-y-2'>
-                <div className='flex flex-wrap items-center justify-between gap-2'>
-                  <span className='break-all text-base font-semibold'>
-                    {session.authInfo?.username || 'default'}
-                  </span>
-                  <span className='text-sm text-[rgb(var(--ui-text-muted))]'>
-                    {session.getRoleText(session.authInfo?.role || 'user')}
-                  </span>
+              <div className='ui-settings-user-card'>
+                <span className='ui-settings-avatar' aria-hidden='true'>
+                  {(session.authInfo?.username || 'D')
+                    .slice(0, 1)
+                    .toUpperCase()}
+                </span>
+                <div className='ui-settings-user-meta'>
+                  <div className='ui-settings-user-line'>
+                    <span className='ui-settings-username'>
+                      {session.authInfo?.username || 'default'}
+                    </span>
+                    <span className='ui-settings-role-chip'>
+                      {session.getRoleText(session.authInfo?.role || 'user')}
+                    </span>
+                  </div>
+                  <p className='ui-settings-user-note'>
+                    数据存储：
+                    {session.storageType === 'localstorage'
+                      ? '本地浏览器'
+                      : session.storageType}
+                  </p>
                 </div>
-                <p className='text-sm text-[rgb(var(--ui-text-muted))]'>
-                  数据存储：
-                  {session.storageType === 'localstorage'
-                    ? '本地'
-                    : session.storageType}
-                </p>
               </div>
               {session.showChangePassword && (
-                <button
+                <SettingsRow
+                  icon={KeyRound}
+                  title='修改密码'
+                  description='更新站点访问密码，已登录设备会自动失效'
                   onClick={session.handleChangePassword}
-                  className={menuItemClassName}
-                >
-                  <KeyRound aria-hidden className='h-5 w-5' />
-                  <span>修改密码</span>
-                </button>
+                />
               )}
-              <button
-                onClick={session.handleLogout}
-                className={dangerMenuItemClassName}
-              >
-                <LogOut aria-hidden className='h-5 w-5' />
-                <span>退出登录</span>
-              </button>
+              <div className='ui-settings-danger'>
+                <button
+                  onClick={session.handleLogout}
+                  className='ui-settings-logout'
+                  type='button'
+                >
+                  <LogOut aria-hidden className='h-4 w-4' />
+                  <span>退出登录</span>
+                </button>
+                <p className='ui-settings-danger-hint'>
+                  退出后需要重新输入访问密码才能继续使用
+                </p>
+              </div>
             </section>
 
             {session.showAdminPanel && (
