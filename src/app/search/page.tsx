@@ -211,6 +211,7 @@ function SearchResultCards({ session }: { session: SearchPageSession }) {
       {session.viewMode === 'agg'
         ? session.aggregatedResults.map(([mapKey, group]) => {
             const meta = getSearchCardMeta(group[0]);
+            const groupRate = group.find((entry) => entry.rate)?.rate;
             return (
               <div key={`agg-${mapKey}`} className='w-full'>
                 <VideoCard
@@ -226,6 +227,7 @@ function SearchResultCards({ session }: { session: SearchPageSession }) {
                   statusText={meta.statusText}
                   typeName={meta.typeChip}
                   year={meta.year}
+                  rate={groupRate}
                 />
               </div>
             );
@@ -255,6 +257,7 @@ function SearchResultCards({ session }: { session: SearchPageSession }) {
                   type={item.episodes.length > 1 ? 'tv' : 'movie'}
                   typeName={meta.typeChip}
                   statusText={meta.statusText}
+                  rate={item.rate}
                 />
               </div>
             );

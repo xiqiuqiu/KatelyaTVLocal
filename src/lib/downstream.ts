@@ -15,6 +15,7 @@ interface ApiSearchItem {
   vod_year?: string;
   vod_content?: string;
   vod_douban_id?: number;
+  vod_douban_score?: number | string;
   type_name?: string;
 }
 
@@ -59,6 +60,15 @@ function selectPlaylistGroup(groups: string[][]): string[] {
   return selected;
 }
 
+export function normalizeDoubanScore(
+  value?: number | string | null
+): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const score = typeof value === 'number' ? value : Number.parseFloat(value);
+  if (!Number.isFinite(score) || score <= 0 || score > 10) return undefined;
+  return score.toFixed(1);
+}
+
 function toSearchResult(item: ApiSearchItem, apiSite: ApiSite): SearchResult {
   return {
     id: item.vod_id.toString(),
@@ -74,6 +84,7 @@ function toSearchResult(item: ApiSearchItem, apiSite: ApiSite): SearchResult {
     desc: cleanHtmlTags(item.vod_content || ''),
     type_name: item.type_name,
     douban_id: item.vod_douban_id,
+    rate: normalizeDoubanScore(item.vod_douban_score),
   };
 }
 
@@ -372,6 +383,7 @@ export async function getDetailFromApi(
     desc: cleanHtmlTags(videoDetail.vod_content),
     type_name: videoDetail.type_name,
     douban_id: videoDetail.vod_douban_id,
+    rate: normalizeDoubanScore(videoDetail.vod_douban_score),
   };
 }
 

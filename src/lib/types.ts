@@ -177,6 +177,8 @@ export interface SearchResult {
   desc?: string;
   type_name?: string;
   douban_id?: number;
+  /** 豆瓣评分，形如 "8.6"；下游源未提供时为空 */
+  rate?: string;
 }
 
 export type SourcePlaybackMode = 'direct' | 'proxy';

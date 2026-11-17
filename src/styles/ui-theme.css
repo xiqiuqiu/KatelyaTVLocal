@@ -2823,11 +2823,6 @@
   border-radius: 8px;
 }
 
-/* 海报卡不再重复展示图片角标评分：评分统一放在文字行右侧 */
-.ui-video-card-poster .ui-video-rating {
-  display: none;
-}
-
 [data-tv-browse='true'] .ui-video-card-poster .ui-video-title {
   font-size: 24px;
   font-weight: 600;
@@ -2848,4 +2843,30 @@
 [data-tv-browse='true'] .ui-video-footer {
   margin-top: 14px;
   padding-inline: 4px;
+}
+
+/* 搜索结果卡：名称左、豆瓣评分右 */
+.ui-video-result-head {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ui-video-result-head .ui-video-title {
+  min-width: 0;
+}
+
+.ui-video-search-score {
+  flex-shrink: 0;
+  color: rgb(var(--ui-accent));
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-tv-browse='true'] .ui-video-search-score {
+  font-size: 20px;
 }

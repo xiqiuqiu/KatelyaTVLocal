@@ -393,7 +393,7 @@ function buildVideoCardFacts({
     showOpeningState,
     showPlayOverlay: config.showPlayButton || showOpeningState,
     showProgress: config.showProgress,
-    showRating: !!(config.showRating && rate),
+    showRating: !!rate && (config.showRating || !!isResult),
     showResultDescription: !!(description || aggregateData?.first.desc),
     showSearchMeta:
       from === 'search' && !!(typeName || displayYear || statusText),
@@ -760,13 +760,6 @@ function VideoCardDoubanLink({ model }: { model: VideoCardModel }) {
 function VideoCardBadges({ model }: { model: VideoCardModel }) {
   return (
     <div className='absolute right-3 top-3 z-20 flex flex-col items-end gap-2'>
-      {model.showRating ? (
-        <span
-          className={`ui-video-rating inline-flex items-center justify-center rounded-md bg-black/80 font-semibold text-amber-200 ${model.badgeSizeClass}`}
-        >
-          {model.rate}
-        </span>
-      ) : null}
       {model.showEpisodeBadge ? (
         <span
           className={`ui-video-episode-badge inline-flex items-center justify-center rounded-md bg-black/80 font-semibold text-white ${model.badgeSizeClass}`}
@@ -1004,7 +997,12 @@ function VideoCardMeta({ model }: { model: VideoCardModel }) {
 
   return (
     <div className={model.metaClass}>
-      <VideoCardTitle model={model} />
+      <div className='ui-video-result-head'>
+        <VideoCardTitle model={model} />
+        {model.showRating ? (
+          <span className='ui-video-search-score'>豆瓣 {model.rate}</span>
+        ) : null}
+      </div>
       <VideoCardSearchMeta model={model} />
       <VideoCardSourceChip model={model} />
       <VideoCardResultPanel model={model} />
