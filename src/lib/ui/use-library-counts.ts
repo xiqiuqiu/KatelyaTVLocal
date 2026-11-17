@@ -7,6 +7,7 @@ import {
   getRecentPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { buildContinueWatchingRecords } from '@/lib/play-records';
 
 export interface LibraryCounts {
   favorites: number;
@@ -35,7 +36,8 @@ export function useLibraryCounts(): LibraryCounts {
         if (cancelled) return;
         setCounts({
           favorites: Object.keys(favorites).length,
-          history: Object.keys(records).length,
+          // 与「继续观看」/ 历史页一致：按作品分组后再计数
+          history: buildContinueWatchingRecords(records).length,
         });
       } catch {
         /* 取数失败时保持上一次的计数，不阻塞导航 */

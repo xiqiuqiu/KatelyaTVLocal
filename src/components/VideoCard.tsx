@@ -317,7 +317,9 @@ function buildVideoCardFacts({
     episodeBadgeText: currentEpisode
       ? `${currentEpisode}/${actualEpisodes}`
       : `${actualEpisodes ?? ''}`,
-    favoriteBarClass: tvMode ? '!opacity-100' : '',
+    favoriteBarClass: `ui-video-card-actions ${
+      isLandscape ? 'ui-video-card-actions-top' : ''
+    } ${tvMode ? '!opacity-100' : ''}`.trim(),
     favoriteStorageKey,
     hasImageError,
     hasImageLoaded,
@@ -956,7 +958,7 @@ function VideoCardContinue({ model }: { model: VideoCardModel }) {
       data-tv-focus-key={`play:${model.playbackCardKey}`}
       data-tv-card-primary={model.tvCardPrimary}
       data-tv-primary={model.tvCardPrimary}
-      className='mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-2 text-sm font-semibold text-[rgb(var(--ui-on-accent))] transition-[filter] duration-150 hover:brightness-110 disabled:opacity-60'
+      className='ui-video-continue mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-ui-sm bg-[rgb(var(--ui-accent))] px-4 py-2 text-sm font-semibold text-[rgb(var(--ui-on-accent))] transition-[filter] duration-150 hover:brightness-110 disabled:opacity-60'
     >
       {model.showOpeningState ? (
         <Loader2 aria-hidden className='h-4 w-4 animate-spin' />
@@ -972,24 +974,26 @@ function VideoCardMeta({ model }: { model: VideoCardModel }) {
   if (!model.isResult) {
     return (
       <div className={model.metaClass}>
-        <div className='ui-video-footer-head'>
-          <VideoCardTitle model={model} />
-          {model.showRating ? (
-            <span className='ui-video-score'>{model.rate}</span>
+        <div className='ui-video-footer-text'>
+          <div className='ui-video-footer-head'>
+            <VideoCardTitle model={model} />
+            {model.showRating ? (
+              <span className='ui-video-score'>{model.rate}</span>
+            ) : null}
+          </div>
+          {model.isLandscape ? (
+            <p className='ui-video-footer-meta'>{model.landscapeStatusText}</p>
+          ) : model.footerMetaParts.length ? (
+            <p className='ui-video-footer-meta'>
+              {model.footerMetaParts.map((part, index) => (
+                <Fragment key={`${part}-${index}`}>
+                  {index > 0 ? ' · ' : null}
+                  <span>{part}</span>
+                </Fragment>
+              ))}
+            </p>
           ) : null}
         </div>
-        {model.isLandscape ? (
-          <p className='ui-video-footer-meta'>{model.landscapeStatusText}</p>
-        ) : model.footerMetaParts.length ? (
-          <p className='ui-video-footer-meta'>
-            {model.footerMetaParts.map((part, index) => (
-              <Fragment key={`${part}-${index}`}>
-                {index > 0 ? ' · ' : null}
-                <span>{part}</span>
-              </Fragment>
-            ))}
-          </p>
-        ) : null}
         <VideoCardContinue model={model} />
       </div>
     );

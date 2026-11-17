@@ -4093,3 +4093,137 @@
     width: 100%;
   }
 }
+
+/* ============================================================
+   继续观看横卡：对齐设计稿（整卡描边 + 满出血封面 + 紧凑操作）
+   ============================================================ */
+
+.ui-resume-card {
+  overflow: hidden;
+  padding-bottom: 0;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  transition: border-color 150ms var(--ease-out);
+}
+
+.ui-resume-card:hover,
+.ui-resume-card:focus-within {
+  border-color: rgb(var(--ui-accent) / 0.5);
+}
+
+.ui-resume-card .ui-video-poster,
+.ui-resume-card .ui-video-frame {
+  border: none;
+  border-radius: 0;
+}
+
+/* 信息区：左文字、右紧凑播放按钮 */
+.ui-resume-card .ui-video-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 0;
+  padding: 12px 14px;
+}
+
+.ui-resume-card .ui-video-footer-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.ui-resume-card .ui-video-title {
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  -webkit-line-clamp: unset;
+}
+
+.ui-resume-card .ui-video-footer-meta {
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+/* 播放按钮：桌面收成圆形图标，鼠标用户靠封面悬停/整卡点击 */
+.ui-resume-card .ui-video-continue {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  margin-top: 0;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: 9999px;
+  font-size: 0;
+}
+
+.ui-resume-card .ui-video-continue svg {
+  height: 15px;
+  width: 15px;
+  margin-left: 1px;
+}
+
+/* 进度条贴封面底部内侧 */
+.ui-resume-card .ui-video-progress-inline {
+  height: 3px;
+  background: rgb(255 255 255 / 0.25);
+}
+
+.ui-resume-card .ui-video-progress-inline > div {
+  background: rgb(var(--ui-accent));
+}
+
+/* 移除/收藏按钮移到封面左上，呼应设计稿 */
+.ui-video-card-actions-top {
+  top: 10px;
+  left: 10px;
+  right: auto;
+  bottom: auto;
+}
+
+.ui-video-card-actions-top .ui-video-icon-button {
+  height: 28px;
+  width: 28px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.62);
+  color: rgb(255 255 255 / 0.85);
+}
+
+/* TV：恢复整行 64px 按钮，遥控焦点落在按钮上 */
+[data-tv-mode='true'] .ui-resume-card .ui-video-continue {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 64px;
+  padding: 12px 20px;
+  border-radius: var(--ui-radius-sm);
+  font-size: 22px;
+}
+
+[data-tv-browse='true'] .ui-resume-card .ui-video-footer {
+  display: block;
+  padding: 16px 18px;
+}
+
+[data-tv-browse='true'] .ui-resume-card .ui-video-title {
+  font-size: 26px;
+  white-space: normal;
+}
+
+[data-tv-browse='true'] .ui-resume-card .ui-video-footer-meta {
+  font-size: 22px;
+}
+
+[data-tv-browse='true'] .ui-resume-card .ui-video-continue {
+  margin-top: 14px;
+  width: 100%;
+  height: auto;
+  min-height: 64px;
+  padding: 12px 24px;
+  border-radius: var(--ui-radius-sm);
+  font-size: 26px;
+}
