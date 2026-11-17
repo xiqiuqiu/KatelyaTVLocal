@@ -234,7 +234,7 @@
   padding: 8px;
 }
 
-.ui-topbar-content .ui-topbar-pill {
+.ui-topbar-pill {
   display: inline-flex;
   height: 36px;
   align-items: center;
@@ -249,7 +249,7 @@
   transition: border-color 150ms, color 150ms, background-color 150ms;
 }
 
-.ui-topbar-content .ui-topbar-pill:hover {
+.ui-topbar-pill:hover {
   border-color: rgb(var(--ui-text) / 0.28);
   color: rgb(var(--ui-text));
 }
@@ -2869,4 +2869,314 @@
 
 [data-tv-browse='true'] .ui-video-search-score {
   font-size: 20px;
+}
+
+/* ============================================================
+   ReelFind 登录页与设置面板
+   ============================================================ */
+
+/* ---------- 登录页：编辑式左右分栏 ---------- */
+.ui-auth-page {
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+}
+
+.ui-auth-toolbar {
+  padding: 0 0 16px;
+  border-bottom: 1px solid rgb(var(--ui-border));
+}
+
+.ui-auth-layout {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+.ui-auth-layout {
+  overflow: hidden;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-strong);
+}
+
+@media (min-width: 1024px) {
+  .ui-auth-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  }
+}
+
+/* 左侧氛围剧照：整幅铺满 + 暖色叠加，替代原来的蓝色插画块 */
+.ui-auth-story {
+  position: relative;
+  overflow: hidden;
+  min-height: 520px;
+  background: #0b0d12;
+  color: #f4f2ed;
+  padding: 40px;
+  border-right: 1px solid rgb(var(--ui-border));
+}
+
+.ui-auth-story-media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.ui-auth-story-media img {
+  opacity: 0.92;
+  filter: hue-rotate(172deg) saturate(1.15) brightness(1.2) contrast(1.02);
+}
+
+.ui-auth-story::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(
+      to top,
+      rgb(8 9 12 / 0.72) 0%,
+      rgb(8 9 12 / 0.38) 45%,
+      rgb(8 9 12 / 0.14) 100%
+    ),
+    radial-gradient(
+      120% 90% at 15% 10%,
+      rgb(229 169 60 / 0.24) 0%,
+      transparent 60%
+    );
+  pointer-events: none;
+}
+
+.ui-auth-story-copy,
+.ui-auth-story-meta {
+  position: relative;
+  z-index: 1;
+}
+
+.ui-auth-kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-accent-warm));
+}
+
+.ui-auth-story-title {
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.ui-auth-story-desc {
+  max-width: 24rem;
+  color: rgb(255 255 255 / 0.75);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.ui-auth-story-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid rgb(255 255 255 / 0.16);
+  color: rgb(255 255 255 / 0.68);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* 右侧表单 */
+.ui-auth-form-panel {
+  padding: 32px 24px;
+}
+
+@media (min-width: 640px) {
+  .ui-auth-form-panel {
+    padding: 40px;
+  }
+}
+
+.ui-auth-title {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ui-auth-form-heading {
+  margin-bottom: 20px;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.ui-auth-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-bg));
+}
+
+.ui-auth-tab {
+  min-height: 36px;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(var(--ui-text-muted));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ui-auth-tab:hover {
+  color: rgb(var(--ui-text));
+}
+
+.ui-auth-tab[aria-pressed='true'] {
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-text));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.14);
+}
+
+.ui-auth-label {
+  color: rgb(var(--ui-text));
+  font-size: 13px;
+}
+
+.ui-auth-input {
+  min-height: 44px;
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-bg));
+  font-size: 14px;
+}
+
+.ui-auth-input:focus,
+.ui-auth-input:focus-visible {
+  border-color: rgb(var(--ui-accent) / 0.8);
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(var(--ui-accent) / 0.16);
+}
+
+.ui-auth-submit {
+  min-height: 44px;
+  border-radius: var(--ui-radius-sm);
+  font-size: 14px;
+}
+
+.ui-auth-input-icon {
+  height: 18px;
+  width: 18px;
+}
+
+/* ---------- 设置 / 账号面板 ---------- */
+.ui-user-menu-panel {
+  border-radius: var(--ui-radius-lg);
+  box-shadow: var(--ui-shadow-strong);
+}
+
+.ui-settings-header {
+  padding: 16px 24px;
+}
+
+.ui-settings-header h2 {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+}
+
+.ui-settings-nav {
+  background: rgb(var(--ui-sidebar-bg));
+  padding: 16px 12px;
+}
+
+.ui-settings-nav-label {
+  margin: 0 12px 6px;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+}
+
+.ui-settings-nav-group + .ui-settings-nav-group {
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.ui-settings-nav-group button {
+  min-height: 38px;
+  border-radius: var(--ui-radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ui-settings-nav-group button[data-active='true'] {
+  background: rgb(var(--ui-nav-active-bg));
+  color: rgb(var(--ui-nav-active-fg));
+  font-weight: 600;
+}
+
+.ui-settings-content {
+  padding: 24px;
+}
+
+.ui-settings-title {
+  margin: 0 0 12px;
+  padding-bottom: 12px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.ui-settings-row,
+.ui-settings-group > a,
+.ui-settings-group > button {
+  border-bottom: 1px solid rgb(var(--ui-border) / 0.7);
+  padding: 14px 0;
+}
+
+.ui-settings-group > a,
+.ui-settings-group > button {
+  border-radius: var(--ui-radius-sm);
+  padding-inline: 8px;
+}
+
+.ui-settings-group > :last-child {
+  border-bottom: none;
+}
+
+.ui-settings-row + a,
+.ui-settings-group > a + a {
+  border-top: none;
+}
+
+.ui-settings-group h3 {
+  margin-bottom: 4px;
+}
+
+.ui-settings-account {
+  padding: 14px 0;
+  border-bottom: 1px solid rgb(var(--ui-border) / 0.7);
+}
+
+@media (min-width: 768px) {
+  .ui-settings-layout {
+    grid-template-columns: 208px minmax(0, 1fr);
+  }
+}
+
+[data-tv-browse='true'] .ui-settings-title {
+  font-size: 26px;
+  line-height: 34px;
+}
+
+/* 设置面板收窄到设计稿的居中弹窗比例 */
+.ui-user-menu-panel:not([data-tv-mode='true']) {
+  width: min(920px, calc(100vw - 32px));
+  height: min(680px, calc(100dvh - 48px));
 }
