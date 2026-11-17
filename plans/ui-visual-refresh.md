@@ -347,6 +347,46 @@
 
 ---
 
+## 8.14 本地开启站点管理并回归管理面板样式（P4f，已完成）
+
+### 为什么本地看不到「站点管理」
+
+`UserMenu` 的门控是 `role === 'owner' || role === 'admin'`，而 `/api/login` 在 `NEXT_PUBLIC_STORAGE_TYPE=localstorage` 时只会发 `role: 'user'`。所以不是样式缺失，是单用户模式不支持后台。
+
+### 本地开启方式（不修改任何源码）
+
+1. 启动 Redis 容器：`docker run -d --name katelya-redis -p 6379:6379 redis:7-alpine`
+2. 启动 Upstash REST 代理（让 edge runtime 能访问 Redis）：
+   `docker run -d --name katelya-srh -p 8079:80 -e SRH_MODE=env -e SRH_TOKEN=devtoken -e SRH_CONNECTION_STRING=redis://host.docker.internal:6379 hiett/serverless-redis-http:latest`
+3. worktree 的 `.env`：
+   - `NEXT_PUBLIC_STORAGE_TYPE=upstash`
+   - `UPSTASH_URL=http://127.0.0.1:8079`
+   - `UPSTASH_TOKEN=devtoken`
+4. 重启 dev server，用 `USERNAME=admin` + `PASSWORD` 登录 → `role: owner` → 设置面板出现「站点管理」三组
+
+> 为什么不用 `redis` 存储类型：`/api/login` 跑在 edge runtime，`@redis/client` 在 edge 下会报 `url_1.URL is not a constructor`；`upstash` 走 REST，edge 兼容。
+>
+> 原配置备份在 `/tmp/reelfind-env-localstorage.bak`；不想开后台时改名回去并停掉两个容器即可。
+
+### 管理面板实测结果
+
+设置项均能正常渲染（内容与站点 / 用户与访问 / 运行与诊断），发现并修掉 4 处与新视觉不一致的地方：
+
+| 问题 | 修法 |
+| --- | --- |
+| 管理员开关的滑块用 `--ui-surface`（深色）叠在深色轨道上，看起来像黑块 | 统一为 44×24 轨道 + 白色 18px 滑块，开启态琥珀 |
+| `input[type=checkbox]` 被强制 44×44 | 恢复 18px，保留琥珀 accent-color |
+| 「重置配置」是暗红小胶囊，不像按钮 | 改为危险态描边按钮（与退出登录一致） |
+| 表格无容器、表头无区分度 | 加发丝描边容器，表头用 surface-strong + muted 12px，行间发丝线 |
+
+### 回归验证
+
+- `tsc`、ESLint、**Jest 144 套件 / 1264 用例全绿**
+- 浏览器实测：owner 登录成功（`/api/session` 返回 `role: owner`）；三组管理分类均可切换与渲染；个人三区样式无回退
+- 截图：`.scratch/ui-refresh/after-p4f/`（owner 导航、账号、内容与站点、用户与访问、运行与诊断、亮色账号）
+
+---
+
 ## 8.13 设置面板升级与线上设置项对照（P4e，已完成）
 
 ### 线上部署（movie.sigclr.com）实际设置清单
