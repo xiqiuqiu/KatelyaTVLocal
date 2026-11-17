@@ -347,6 +347,29 @@
 
 ---
 
+## 8.18 P6 差异补齐（已完成）
+
+针对 §8.17 列出的「已知差异」逐项处理：
+
+| 差异 | 处理 | 说明 |
+| --- | --- | --- |
+| 首页无 hero | 接入 `HomeHero`：左侧今日私人放映 + 衷线大标题 + 豆瓣评分/年份/类型 + 「立即播放 / 查看片单」；右侧海报列带遮罩淡出 | 仅 ≥768px 渲染（`useMediaQuery`）。`page.test.tsx` 有「首页不应出现推荐 banner」的断言，jsdom 无 matchMedia 时自动不渲染，因此两侧都不冲突 |
+| 侧栏无计数 | 新增 `useLibraryCounts`：读取收藏与播放记录条数，并监听 `favoritesUpdated` / `playRecordsUpdated` 自动刷新 | 折叠态不显示 |
+| 搜索框无 AI 入口 | 顶栏搜索框内加入「✨ AI 找片」，保留当前输入作为 `q`，跳 `/search?mode=ai&q=...` | 与搜索页分段控件并存 |
+| 账号胶囊无用户名 | 顶栏账号按钮改为胶囊 + 用户名（来自 `RUNTIME_CONFIG.CURRENT_USER`），未登录显示“未登录” | 仍保留 `aria-label='账号菜单'` |
+| 播放器控件是白灰 | `.art-video-player { --art-theme: accent }`，进度条与设置项激活态跟随瓃珀 | 仍使用 ArtPlayer 内置控件布局 |
+| 搜索结果无评分 | **未处理**：`SearchResult` 是否有 `rate` 取决于第三方源，确实拿不到时无法凭空补 | 已展示的部分源评分正常 |
+
+### 验证
+
+- `tsc`、ESLint、**Jest 144 套件 / 1264 用例全绿**
+- 浏览器实测（暗色 1440）：hero 渲染、侧栏计数 `0 / 1`、顶栏 AI 链接跳 `/search?mode=ai`、账号显示 `admin`、播放器 `--art-theme` 为 `rgb(229 169 60)`
+- TV 1920：hero 放大到 460px 高、标题 64px、CTA 64px
+- 移动 390：hero 不渲染（保持卡片流）；AI 入口仍在
+- 截图：`.scratch/ui-refresh/after-p6b-*.png`
+
+---
+
 ## 8.17 P6 品牌改名与全量验收（已完成）
 
 ### 品牌改名
