@@ -74,6 +74,8 @@ export interface AiFindSavedRecordSummary {
   answer: string;
   candidateCount: number;
   foundGroupCount: number;
+  /** 结果里前几张可用海报，用于历史卡片的叠层封面 */
+  posters?: string[];
   status: AiFindSavedRecordStatus;
   createdAt: number;
   updatedAt: number;

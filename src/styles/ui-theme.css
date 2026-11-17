@@ -4375,8 +4375,9 @@
 .ui-saved-stack {
   position: relative;
   flex-shrink: 0;
-  width: 74px;
-  height: 102px;
+  /* 容纳 62×91 卡面 + 两层各 14/12px 的错位 */
+  width: 78px;
+  height: 104px;
 }
 
 .ui-saved-stack-card {
@@ -4547,4 +4548,23 @@
 [data-tv-browse='true'] .ui-saved-open {
   height: 44px;
   width: 44px;
+}
+
+/* 叠层封面：有海报时铺满整张卡面，文字标签退到海报底部渐变里 */
+.ui-saved-stack-card[data-has-poster='true']::after {
+  background: linear-gradient(180deg, transparent 45%, rgb(0 0 0 / 0.62));
+}
+
+.ui-saved-stack-poster {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.ui-saved-stack-card[data-has-poster='true'] .ui-saved-stack-label {
+  inset: auto 6px 6px;
+  font-size: 11px;
 }

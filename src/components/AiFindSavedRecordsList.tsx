@@ -4,6 +4,7 @@ import { Clock3, PlayCircle } from 'lucide-react';
 import { Fragment } from 'react';
 
 import type { AiFindSavedRecordSummary } from '@/lib/types';
+import { processImageUrl } from '@/lib/utils';
 
 interface AiFindSavedRecordsListProps {
   tvMode?: boolean;
@@ -92,6 +93,7 @@ export default function AiFindSavedRecordsList({
       <div className='ui-saved-grid'>
         {savedRecords.slice(0, 8).map((record) => {
           const initials = getSavedRecordInitials(record.query);
+          const posters = record.posters ?? [];
           const isComplete = record.status === 'complete';
           const isActive = activeSavedRecordId === record.id;
 
@@ -109,20 +111,45 @@ export default function AiFindSavedRecordsList({
               <span className='ui-saved-card-glow' aria-hidden='true' />
               <span className='ui-saved-card-body'>
                 <span className='ui-saved-stack' aria-hidden='true'>
-                  {initials.map((label, index) => (
-                    <Fragment key={`${record.id}-${index}`}>
-                      <span
-                        className='ui-saved-stack-card'
-                        style={{
-                          left: `${index * 7}px`,
-                          top: `${index * 6}px`,
-                          transform: `rotate(${index * 4 - 5}deg)`,
-                        }}
-                      >
-                        <span className='ui-saved-stack-label'>{label}</span>
-                      </span>
-                    </Fragment>
-                  ))}
+                  {initials.map((label, index) => {
+                    const poster = posters[index];
+                    return (
+                      <Fragment key={`${record.id}-${index}`}>
+                        <span
+                          className='ui-saved-stack-card'
+                          data-has-poster={poster ? 'true' : undefined}
+                          style={{
+                            left: `${index * 7}px`,
+                            top: `${index * 6}px`,
+                            transform: `rotate(${index * 4 - 5}deg)`,
+                            // 第一张（首个结果）压在最上层，后面的依次露出边缘
+                            zIndex: initials.length - index,
+                          }}
+                        >
+                          {poster ? (
+                            // 海报走 image-proxy，尺寸很小，无需 next/image 优化
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              alt=''
+                              aria-hidden='true'
+                              className='ui-saved-stack-poster'
+                              loading='lazy'
+                              referrerPolicy='no-referrer'
+                              src={processImageUrl(poster, {
+                                width: 160,
+                                height: 240,
+                                quality: 70,
+                              })}
+                            />
+                          ) : (
+                            <span className='ui-saved-stack-label'>
+                              {label}
+                            </span>
+                          )}
+                        </span>
+                      </Fragment>
+                    );
+                  })}
                 </span>
 
                 <span className='ui-saved-card-main'>

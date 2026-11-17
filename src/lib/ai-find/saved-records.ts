@@ -4,6 +4,28 @@ export const AI_FIND_SAVED_RECORD_LIMIT = 30;
 
 export type AiFindSavedRecordMap = Record<string, AiFindSavedRecord>;
 
+const SAVED_RECORD_POSTER_LIMIT = 3;
+
+/** 按查询返回顺序取前几张可用海报（去重、跳过空值）。 */
+function collectSavedRecordPosters(
+  response: AiFindSavedRecord['response']
+): string[] {
+  const posters: string[] = [];
+  const seen = new Set<string>();
+
+  for (const group of response.groups) {
+    for (const aggregated of group.groups) {
+      const poster = aggregated.poster?.trim();
+      if (!poster || seen.has(poster)) continue;
+      seen.add(poster);
+      posters.push(poster);
+      if (posters.length >= SAVED_RECORD_POSTER_LIMIT) return posters;
+    }
+  }
+
+  return posters;
+}
+
 export function summarizeAiFindSavedRecord(
   record: AiFindSavedRecord
 ): AiFindSavedRecordSummary {
@@ -16,6 +38,7 @@ export function summarizeAiFindSavedRecord(
       (count, group) => count + group.groupedCount,
       0
     ),
+    posters: collectSavedRecordPosters(record.response),
     status: record.status,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
