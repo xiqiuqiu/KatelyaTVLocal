@@ -139,7 +139,6 @@ export default function HomeHero({
   const metadata = [item.year, MEDIA_TYPE_LABEL[type]]
     .filter(Boolean)
     .join(' · ');
-  const listHref = `/douban?type=${type}`;
   const playbackCardKey = `hero:douban:${item.id || item.title}`;
 
   const handlePlay = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -247,12 +246,6 @@ export default function HomeHero({
               >
                 <Play aria-hidden className='h-4 w-4 fill-current' />
                 立即播放
-              </Link>
-              <Link
-                href={tvMode ? buildTvModeHref(listHref, true) : listHref}
-                className='ui-home-feature-secondary'
-              >
-                查看片单
               </Link>
             </div>
 

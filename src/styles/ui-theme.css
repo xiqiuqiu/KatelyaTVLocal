@@ -3916,25 +3916,6 @@
   filter: brightness(1.06);
 }
 
-.ui-home-feature-secondary {
-  display: inline-flex;
-  min-height: 40px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 16px;
-  border: 1px solid rgb(255 255 255 / 0.22);
-  border-radius: var(--ui-radius-sm);
-  color: rgb(255 255 255 / 0.86);
-  font-size: 13px;
-  font-weight: 500;
-  transition: background-color 150ms, border-color 150ms;
-}
-
-.ui-home-feature-secondary:hover {
-  background: rgb(255 255 255 / 0.08);
-  border-color: rgb(255 255 255 / 0.4);
-}
-
 @media (max-width: 767px) {
   .ui-home-feature {
     min-height: 0;
@@ -3971,8 +3952,7 @@
   font-size: 24px;
 }
 
-[data-tv-browse='true'] .ui-home-feature-cta,
-[data-tv-browse='true'] .ui-home-feature-secondary {
+[data-tv-browse='true'] .ui-home-feature-cta {
   min-height: 64px;
   padding-inline: 28px;
   font-size: 24px;
@@ -4815,24 +4795,35 @@
 }
 
 @media (max-width: 767px) {
+  /* 小屏不锁高度：内容多高就多高，避免卡片底部留出一大片空白 */
   .ui-home-feature[data-layout='backdrop'] .ui-home-feature-stage {
-    min-height: 320px;
+    min-height: 0;
+  }
+
+  .ui-home-feature[data-layout='backdrop'] .ui-home-feature-body {
+    padding: 18px;
   }
 
   /* 手机上横版剧照顶部是亮区，改用自下而上的重遮罩，文字才读得清 */
   .ui-home-feature[data-layout='backdrop'] .ui-home-feature-scrim {
     background: linear-gradient(
       to top,
-      rgb(8 9 12 / 0.97) 22%,
-      rgb(8 9 12 / 0.88) 52%,
-      rgb(8 9 12 / 0.5) 82%,
-      rgb(8 9 12 / 0.25) 100%
+      rgb(8 9 12 / 0.94) 18%,
+      rgb(8 9 12 / 0.84) 50%,
+      rgb(8 9 12 / 0.42) 82%,
+      rgb(8 9 12 / 0.18) 100%
     );
   }
 
   .ui-home-feature[data-layout='backdrop'] .ui-home-feature-meta {
     font-size: 12px;
     gap: 4px 10px;
+  }
+
+  /* 触屏点击目标至少 44px */
+  .ui-home-feature-cta {
+    min-height: 44px;
+    padding-inline: 20px;
   }
 }
 
