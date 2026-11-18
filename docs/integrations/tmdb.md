@@ -15,6 +15,9 @@
 
 未配置时 `/api/tmdb/*` 返回 **503**，前端必须按「没有 TMDB」降级，不能白屏。
 
+本地做法：把 key 填进 worktree 的 `.env`（该文件不入库），保存后重启 `next dev`。
+`.env.example` 里已保留两个空占位，方便新环境照着填。
+
 ## 代理端点
 
 `GET /api/tmdb/<path>?<params>`
