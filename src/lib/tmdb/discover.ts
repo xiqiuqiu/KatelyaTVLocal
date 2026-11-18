@@ -1,3 +1,5 @@
+import { resolveAnimeKeywordId } from '@/lib/tmdb/tags';
+
 export type DiscoverMedia = 'movie' | 'tv';
 
 export interface DiscoverFilters {
@@ -11,6 +13,8 @@ export interface DiscoverFilters {
   /** 原始语言，null 表示不限 */
   language: string | null;
   sortBy: string;
+  /** 二级标签（动漫 keyword），null 表示不限 */
+  tag: string | null;
 }
 
 export interface TmdbDiscoverItem {
@@ -27,18 +31,55 @@ export interface TmdbDiscoverItem {
   overview?: string;
 }
 
-/** 年份档位：用区间而不是逐年列，筛选条才不会爆炸。 */
-export const YEAR_OPTIONS: Array<{
+export interface YearOption {
   key: string;
   label: string;
   gte: string;
   lte: string;
-}> = [
-  { key: '2020s', label: '2020 年代', gte: '2020-01-01', lte: '2029-12-31' },
-  { key: '2010s', label: '2010 年代', gte: '2010-01-01', lte: '2019-12-31' },
-  { key: '2000s', label: '2000 年代', gte: '2000-01-01', lte: '2009-12-31' },
-  { key: 'older', label: '更早', gte: '1950-01-01', lte: '1999-12-31' },
-];
+}
+
+/**
+ * 年份档位：今年/去年按参考年份动态计算，其余按年代切。
+ * 参考年份可注入，便于测试固定时间。
+ */
+export function buildYearOptions(referenceYear: number): YearOption[] {
+  const year = Number.isFinite(referenceYear) ? referenceYear : 2026;
+  const start = (value: number) => `${value}-01-01`;
+  const end = (value: number) => `${value}-12-31`;
+  const options: YearOption[] = [
+    { key: 'this-year', label: '今年', gte: start(year), lte: end(year) },
+    {
+      key: 'last-year',
+      label: '去年',
+      gte: start(year - 1),
+      lte: end(year - 1),
+    },
+  ];
+
+  if (year - 2 >= 2020) {
+    options.push({
+      key: 'recent',
+      label: `2020–${year - 2}`,
+      gte: start(2020),
+      lte: end(year - 2),
+    });
+  }
+
+  options.push(
+    { key: '2010s', label: '2010 年代', gte: start(2010), lte: end(2019) },
+    { key: '2000s', label: '2000 年代', gte: start(2000), lte: end(2009) },
+    { key: '1990s', label: '90 年代', gte: start(1990), lte: end(1999) },
+    { key: '1980s', label: '80 年代', gte: start(1980), lte: end(1989) },
+    { key: 'older', label: '更早', gte: start(1950), lte: end(1979) }
+  );
+
+  return options;
+}
+
+/** 运行时使用的年份档位（今年/去年按当前时间算）。 */
+export function getYearOptions(now: Date = new Date()): YearOption[] {
+  return buildYearOptions(now.getFullYear());
+}
 
 export const RATING_OPTIONS: Array<{
   key: string;
@@ -84,6 +125,7 @@ export function createDefaultFilters(
     minRating: null,
     language: null,
     sortBy: 'popularity.desc',
+    tag: null,
   };
 }
 
@@ -103,7 +145,7 @@ export function buildDiscoverParams(
   }
 
   if (filters.yearRange) {
-    const range = YEAR_OPTIONS.find(
+    const range = getYearOptions().find(
       (option) => option.key === filters.yearRange
     );
     if (range) {
@@ -129,6 +171,9 @@ export function buildDiscoverParams(
   if (filters.language) {
     params.with_original_language = filters.language;
   }
+
+  const keywordId = resolveAnimeKeywordId(filters.tag);
+  if (keywordId) params.with_keywords = String(keywordId);
 
   return params;
 }
@@ -171,6 +216,7 @@ export function hasActiveFilters(filters: DiscoverFilters): boolean {
     filters.yearRange !== null ||
     filters.minRating !== null ||
     filters.language !== null ||
+    filters.tag !== null ||
     !isDefaultSort
   );
 }

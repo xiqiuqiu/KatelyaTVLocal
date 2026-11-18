@@ -138,6 +138,17 @@ describe('tmdb endpoint allowlist', () => {
     }
   });
 
+  it('keeps the discover-only parameters we rely on', () => {
+    const params = sanitizeTmdbParams(
+      new URLSearchParams(
+        'with_genres=16&with_keywords=9914&vote_count.gte=200&with_origin_country=JP'
+      )
+    );
+    expect(params.get('with_genres')).toBe('16');
+    expect(params.get('with_keywords')).toBe('9914');
+    expect(params.get('vote_count.gte')).toBe('200');
+  });
+
   it('drops unknown query parameters', () => {
     const params = sanitizeTmdbParams(
       new URLSearchParams('query=庆余年&year=2019&api_key=leak&evil=1')

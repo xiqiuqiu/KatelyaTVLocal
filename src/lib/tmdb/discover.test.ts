@@ -1,9 +1,9 @@
 import {
   buildDiscoverParams,
+  buildYearOptions,
   createDefaultFilters,
   hasActiveFilters,
   mapDiscoverItem,
-  YEAR_OPTIONS,
 } from '@/lib/tmdb/discover';
 
 describe('buildDiscoverParams', () => {
@@ -22,14 +22,14 @@ describe('buildDiscoverParams', () => {
       {
         ...createDefaultFilters('movie'),
         genres: [18, 80],
-        yearRange: '2020s',
+        yearRange: '2010s',
       },
       3
     );
 
     expect(params.with_genres).toBe('18,80');
-    expect(params['primary_release_date.gte']).toBe('2020-01-01');
-    expect(params['primary_release_date.lte']).toBe('2029-12-31');
+    expect(params['primary_release_date.gte']).toBe('2010-01-01');
+    expect(params['primary_release_date.lte']).toBe('2019-12-31');
     expect(params.page).toBe('3');
     expect(params.year).toBeUndefined();
   });
@@ -94,16 +94,16 @@ describe('mapDiscoverItem', () => {
   });
 });
 
-  it('keeps the original title when it differs from the localized one', () => {
-    expect(
-      mapDiscoverItem({
-        id: 1399,
-        name: '权力的游戏',
-        original_name: 'Game of Thrones',
-        first_air_date: '2011-04-17',
-      }).originalTitle
-    ).toBe('Game of Thrones');
-  });
+it('keeps the original title when it differs from the localized one', () => {
+  expect(
+    mapDiscoverItem({
+      id: 1399,
+      name: '权力的游戏',
+      original_name: 'Game of Thrones',
+      first_air_date: '2011-04-17',
+    }).originalTitle
+  ).toBe('Game of Thrones');
+});
 
 describe('hasActiveFilters', () => {
   it('is false for defaults and true once anything changes', () => {
@@ -123,13 +123,40 @@ describe('hasActiveFilters', () => {
   });
 });
 
-describe('YEAR_OPTIONS', () => {
-  it('covers contiguous decades without gaps between 1950 and 2029', () => {
-    const ranges = [...YEAR_OPTIONS].sort((a, b) => a.gte.localeCompare(b.gte));
-    for (let index = 1; index < ranges.length; index += 1) {
-      const previous = Number(ranges[index - 1].lte.slice(0, 4));
-      const current = Number(ranges[index].gte.slice(0, 4));
-      expect(current).toBe(previous + 1);
+describe('buildYearOptions', () => {
+  it('derives this year / last year from the reference year', () => {
+    const options = buildYearOptions(2026);
+    const byKey = Object.fromEntries(
+      options.map((option) => [option.key, option])
+    );
+
+    expect(byKey['this-year'].gte).toBe('2026-01-01');
+    expect(byKey['this-year'].lte).toBe('2026-12-31');
+    expect(byKey['last-year'].gte).toBe('2025-01-01');
+    expect(byKey.recent.label).toBe('2020–2024');
+    expect(byKey.recent.gte).toBe('2020-01-01');
+    expect(byKey.recent.lte).toBe('2024-12-31');
+  });
+
+  it('keeps decades contiguous from 1980 to 2019 without overlaps', () => {
+    const options = buildYearOptions(2026).filter((option) =>
+      ['2010s', '2000s', '1990s', '1980s'].includes(option.key)
+    );
+    for (const option of options) {
+      const start = Number(option.gte.slice(0, 4));
+      const end = Number(option.lte.slice(0, 4));
+      expect(end - start).toBe(9);
     }
+    for (let index = 1; index < options.length; index += 1) {
+      const previousStart = Number(options[index - 1].gte.slice(0, 4));
+      const currentStart = Number(options[index].gte.slice(0, 4));
+      // 相邻年代正好相差 10 年，不重叠也不留缝
+      expect(previousStart - currentStart).toBe(10);
+    }
+  });
+
+  it('drops the 2020 decade bucket early in the decade', () => {
+    const keys = buildYearOptions(2021).map((option) => option.key);
+    expect(keys).not.toContain('recent');
   });
 });
