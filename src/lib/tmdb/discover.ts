@@ -1,5 +1,3 @@
-import { resolveAnimeKeywordId } from '@/lib/tmdb/tags';
-
 export type DiscoverMedia = 'movie' | 'tv';
 
 export interface DiscoverFilters {
@@ -13,8 +11,6 @@ export interface DiscoverFilters {
   /** 原始语言，null 表示不限 */
   language: string | null;
   sortBy: string;
-  /** 二级标签（动漫 keyword），null 表示不限 */
-  tag: string | null;
 }
 
 export interface TmdbDiscoverItem {
@@ -125,7 +121,6 @@ export function createDefaultFilters(
     minRating: null,
     language: null,
     sortBy: 'popularity.desc',
-    tag: null,
   };
 }
 
@@ -172,9 +167,6 @@ export function buildDiscoverParams(
     params.with_original_language = filters.language;
   }
 
-  const keywordId = resolveAnimeKeywordId(filters.tag);
-  if (keywordId) params.with_keywords = String(keywordId);
-
   return params;
 }
 
@@ -216,7 +208,6 @@ export function hasActiveFilters(filters: DiscoverFilters): boolean {
     filters.yearRange !== null ||
     filters.minRating !== null ||
     filters.language !== null ||
-    filters.tag !== null ||
     !isDefaultSort
   );
 }

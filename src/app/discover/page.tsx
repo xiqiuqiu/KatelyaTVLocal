@@ -24,7 +24,6 @@ import {
   SORT_OPTIONS,
 } from '@/lib/tmdb/discover';
 import { buildTmdbImageUrl } from '@/lib/tmdb/matching';
-import { ANIME_TAGS, shouldShowAnimeTags } from '@/lib/tmdb/tags';
 import { isTvMode } from '@/lib/tv-interaction';
 import { useMediaQuery } from '@/lib/ui/use-media-query';
 
@@ -72,7 +71,6 @@ function DiscoverPageClient() {
   const [error, setError] = useState('');
   const [disabled, setDisabled] = useState(false);
   const [total, setTotal] = useState(0);
-  const [tagCounts, setTagCounts] = useState<Record<string, number>>({});
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const media = filters.media;
@@ -203,38 +201,6 @@ function DiscoverPageClient() {
     setFilters(createDefaultFilters(media));
   }, [media]);
 
-  // 二级标签只在动画类目下出现；数量探测失败就退化为「全部显示」
-  const showAnimeTags = shouldShowAnimeTags(filters.genres);
-  useEffect(() => {
-    if (!showAnimeTags) {
-      setTagCounts({});
-      return;
-    }
-    let cancelled = false;
-    const base = buildDiscoverParams({ ...filters, tag: null }, 1);
-    const probes = ANIME_TAGS.map(async (tag) => {
-      const params = new URLSearchParams(base);
-      params.set('with_keywords', String(tag.keywordId));
-      try {
-        const response = await fetch(
-          `/api/tmdb/discover/${filters.media}?${params.toString()}`
-        );
-        if (!response.ok) return [tag.key, 0] as const;
-        const payload = (await response.json()) as { total_results?: number };
-        return [tag.key, payload.total_results ?? 0] as const;
-      } catch {
-        return [tag.key, 0] as const;
-      }
-    });
-    void Promise.all(probes).then((entries) => {
-      if (cancelled) return;
-      setTagCounts(Object.fromEntries(entries));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [filters, showAnimeTags]);
-
   const active = hasActiveFilters(filters);
   const gridClass = isWide
     ? 'grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'
@@ -310,37 +276,6 @@ function DiscoverPageClient() {
               </button>
             ))}
           </ChipGroup>
-
-          {showAnimeTags ? (
-            <ChipGroup label='标签'>
-              <button
-                aria-pressed={filters.tag === null}
-                className='ui-filter-chip'
-                onClick={() => patchFilters({ tag: null })}
-                type='button'
-              >
-                不限
-              </button>
-              {ANIME_TAGS.filter((tag) => (tagCounts[tag.key] ?? 0) > 0).map(
-                (tag) => (
-                  <button
-                    aria-pressed={filters.tag === tag.key}
-                    className='ui-filter-chip'
-                    key={tag.key}
-                    onClick={() =>
-                      patchFilters({
-                        tag: filters.tag === tag.key ? null : tag.key,
-                      })
-                    }
-                    title={`${tagCounts[tag.key]} 个结果`}
-                    type='button'
-                  >
-                    {tag.label}
-                  </button>
-                )
-              )}
-            </ChipGroup>
-          ) : null}
 
           <ChipGroup label='年份'>
             <button
