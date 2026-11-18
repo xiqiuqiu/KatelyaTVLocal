@@ -135,7 +135,9 @@ describe('Home page composition', () => {
     await screen.findAllByText('庆余年');
 
     // 首屏推荐：热榜里评分最高的条目，带一句可读的推荐理由
-    const hero = await screen.findByRole('region', { name: '为你推荐' });
+    // （首屏在等待 TMDB 与本地信号时先渲染骨架，所以要等标题出现）
+    await screen.findByRole('heading', { name: '庆余年' });
+    const hero = screen.getByRole('region', { name: '为你推荐' });
     expect(
       within(hero).getByRole('heading', { name: '庆余年' })
     ).toBeInTheDocument();
@@ -198,6 +200,7 @@ describe('Home page composition', () => {
       .find((element) => element.hasAttribute('data-tv-card-mode'));
     expect(catalogCard).toHaveAttribute('data-tv-card-mode', 'true');
     // 电视端首屏同样是可聚焦的推荐区，播放入口带电视参数
+    await screen.findByRole('link', { name: /立即播放/i });
     const hero = screen.getByRole('region', { name: '为你推荐' });
     expect(
       within(hero).getByRole('link', { name: /立即播放/i })

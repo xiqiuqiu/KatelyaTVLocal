@@ -4760,6 +4760,13 @@
 
 /* ---------- 豆瓣高分 Top 10：大号描边名次 + 海报 ---------- */
 
+/* 骨架占位：与真实卡片同高，避免数据到达时的跳动 */
+.ui-home-feature-stage-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
 /* ---------- 首屏全幅模式：TMDB backdrop 到位时替换竖版海报 ---------- */
 
 .ui-home-feature-backdrop {
@@ -4986,6 +4993,16 @@
   display: flex;
   justify-content: center;
   padding: 24px 0;
+}
+
+.ui-discovery-grid {
+  transition: opacity 160ms var(--ease-out);
+}
+
+/* 切换筛选时保留旧结果并淡化，避免网格整块消失又出现 */
+.ui-discovery-grid[data-loading='true'] {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .ui-discovery-sentinel {

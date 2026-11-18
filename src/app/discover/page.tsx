@@ -134,7 +134,7 @@ function DiscoverPageClient() {
     let cancelled = false;
     setLoading(true);
     setError('');
-    setItems([]);
+    // 保留上一批结果，等新数据到了再整体替换，避免网格整块消失造成闪屏
     setPage(1);
     setHasMore(true);
 
@@ -384,38 +384,49 @@ function DiscoverPageClient() {
           <div className='ui-empty-state'>
             <p>{error}</p>
           </div>
-        ) : loading ? (
-          <div className='ui-discovery-loading'>
-            <LoadingRing />
-          </div>
+        ) : loading && items.length === 0 ? (
+          <PosterGrid className={gridClass}>
+            {Array.from({ length: 12 }).map((_, index) => (
+              <div className='w-full' key={`skeleton-${index}`}>
+                <div className='ui-skeleton-block aspect-[2/3] w-full rounded-ui-md' />
+                <div className='ui-skeleton-block mt-2 h-3 w-3/4 rounded-ui-sm' />
+                <div className='ui-skeleton-block mt-1.5 h-2.5 w-1/2 rounded-ui-sm' />
+              </div>
+            ))}
+          </PosterGrid>
         ) : items.length === 0 ? (
           <div className='ui-empty-state'>
             <p>这个组合下没有找到影片。</p>
             <p className='ui-empty-state-hint'>试试放宽年份或评分条件。</p>
           </div>
         ) : (
-          <PosterGrid className={gridClass}>
-            {items.map((item) => (
-              <div className='w-full' key={item.id}>
-                <VideoCard
-                  from='douban'
-                  linkParams={{
-                    from: 'discover',
-                    alt: item.originalTitle,
-                    stype: media,
-                  }}
-                  poster={buildTmdbImageUrl(item.posterPath, 'w342')}
-                  rate={item.rate}
-                  size={tvMode ? 'default' : 'small'}
-                  title={item.title}
-                  tvMode={tvMode}
-                  type={media}
-                  typeName={media === 'movie' ? '电影' : '剧集'}
-                  year={item.year}
-                />
-              </div>
-            ))}
-          </PosterGrid>
+          <div
+            className='ui-discovery-grid'
+            data-loading={loading || undefined}
+          >
+            <PosterGrid className={gridClass}>
+              {items.map((item) => (
+                <div className='w-full' key={item.id}>
+                  <VideoCard
+                    from='douban'
+                    linkParams={{
+                      from: 'discover',
+                      alt: item.originalTitle,
+                      stype: media,
+                    }}
+                    poster={buildTmdbImageUrl(item.posterPath, 'w342')}
+                    rate={item.rate}
+                    size={tvMode ? 'default' : 'small'}
+                    title={item.title}
+                    tvMode={tvMode}
+                    type={media}
+                    typeName={media === 'movie' ? '电影' : '剧集'}
+                    year={item.year}
+                  />
+                </div>
+              ))}
+            </PosterGrid>
+          </div>
         )}
 
         {tvMode && hasMore && !loading ? (

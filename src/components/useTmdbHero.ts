@@ -12,6 +12,8 @@ export interface TmdbHeroState {
   items: TmdbHeroEnrichment[];
   /** TMDB 未配置时为 false，首屏据此保持竖版海报布局 */
   enabled: boolean;
+  /** 仍在等待 TMDB 结果：首屏据此先占位，避免「先分栏再闪成横图」 */
+  pending: boolean;
 }
 
 /**
@@ -26,6 +28,7 @@ export default function useTmdbHero(
   const [state, setState] = useState<TmdbHeroState>({
     items: [],
     enabled: true,
+    pending: true,
   });
 
   const seeds = useMemo<TmdbHeroSeed[]>(
@@ -47,21 +50,33 @@ export default function useTmdbHero(
   );
 
   useEffect(() => {
-    if (seeds.length === 0) return;
+    if (seeds.length === 0) {
+      setState((previous) => ({ ...previous, pending: false }));
+      return;
+    }
 
     let cancelled = false;
+    // 推荐列表换了（例如播放记录加载完）就重新进入占位态，
+    // 否则会先按旧数据渲染一帧再跳成新布局，产生闪屏
+    setState((previous) =>
+      previous.pending ? previous : { ...previous, items: [], pending: true }
+    );
     try {
       const cached = window.sessionStorage.getItem(cacheKey);
       if (cached) {
-        setState(JSON.parse(cached) as TmdbHeroState);
+        const parsed = JSON.parse(cached) as Omit<TmdbHeroState, 'pending'>;
+        setState({ ...parsed, pending: false });
         return;
       }
     } catch {
       /* sessionStorage 不可用（隐私模式）时继续走网络 */
     }
 
-    // jsdom 等没有 fetch 的环境直接跳过补数据，保持竖版海报布局
-    if (typeof globalThis.fetch !== 'function') return;
+    // jsdom 等没有 fetch 的环境直接结束占位，回到竖版海报布局
+    if (typeof globalThis.fetch !== 'function') {
+      setState({ items: [], enabled: false, pending: false });
+      return;
+    }
 
     const url = `/api/tmdb/hero?items=${encodeURIComponent(
       JSON.stringify(seeds)
@@ -69,24 +84,28 @@ export default function useTmdbHero(
 
     void fetch(url)
       .then(async (response) => {
-        if (!response.ok) return { items: [], enabled: false };
+        if (!response.ok) return { items: [], enabled: false, pending: false };
         const payload = (await response.json()) as Partial<TmdbHeroState>;
         return {
           items: Array.isArray(payload.items) ? payload.items : [],
           enabled: payload.enabled !== false,
+          pending: false,
         };
       })
       .then((next) => {
         if (cancelled) return;
         setState(next);
         try {
-          window.sessionStorage.setItem(cacheKey, JSON.stringify(next));
+          window.sessionStorage.setItem(
+            cacheKey,
+            JSON.stringify({ items: next.items, enabled: next.enabled })
+          );
         } catch {
           /* 缓存失败不影响展示 */
         }
       })
       .catch(() => {
-        if (!cancelled) setState({ items: [], enabled: false });
+        if (!cancelled) setState({ items: [], enabled: false, pending: false });
       });
 
     return () => {

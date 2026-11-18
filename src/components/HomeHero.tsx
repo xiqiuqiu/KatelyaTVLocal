@@ -48,8 +48,14 @@ interface HomeHeroProps {
 
 function HomeHeroSkeleton() {
   return (
-    <section aria-busy='true' aria-label='为你推荐' className='ui-home-feature'>
+    <section
+      aria-busy='true'
+      aria-label='为你推荐'
+      className='ui-home-feature'
+      data-layout='backdrop'
+    >
       <div className='ui-home-feature-stage'>
+        <div className='ui-skeleton-block ui-home-feature-stage-fill' />
         <div className='ui-home-feature-body'>
           <div className='ui-home-feature-copy'>
             <div className='ui-skeleton-block h-3 w-24 rounded-ui-sm' />
@@ -57,7 +63,6 @@ function HomeHeroSkeleton() {
             <div className='ui-skeleton-block h-4 w-1/2 rounded-ui-sm' />
             <div className='ui-skeleton-block h-11 w-28 rounded-ui-sm' />
           </div>
-          <div className='ui-skeleton-block ui-home-feature-poster' />
         </div>
       </div>
     </section>
@@ -113,7 +118,7 @@ export default function HomeHero({
     return () => window.clearInterval(timer);
   }, [count, paused, tvMode, safeIndex]);
 
-  if (loading && count === 0) {
+  if ((loading && count === 0) || (count > 0 && tmdb.pending)) {
     return <HomeHeroSkeleton />;
   }
 
@@ -122,7 +127,11 @@ export default function HomeHero({
   }
 
   const { item, type, reason } = active;
-  const activeEnrichment = tmdb.items[safeIndex];
+  // 按标题查而不是按下标：推荐列表可能在本地信号到达后重排
+  const enrichmentByTitle = new Map(
+    tmdb.items.map((entry) => [entry.title, entry])
+  );
+  const activeEnrichment = enrichmentByTitle.get(item.title);
   const activeBackdrop = activeEnrichment?.matched
     ? activeEnrichment.backdropPath || ''
     : '';
@@ -181,7 +190,8 @@ export default function HomeHero({
               data-active={index === safeIndex}
               key={getHomeRecommendationKey(recommendation)}
             >
-              {tmdb.items[index]?.matched && tmdb.items[index]?.backdropPath ? (
+              {enrichmentByTitle.get(recommendation.item.title)?.matched &&
+              enrichmentByTitle.get(recommendation.item.title)?.backdropPath ? (
                 <Image
                   alt=''
                   aria-hidden
@@ -191,7 +201,11 @@ export default function HomeHero({
                   referrerPolicy='no-referrer'
                   sizes='100vw'
                   src={processImageUrl(
-                    buildTmdbImageUrl(tmdb.items[index].backdropPath, 'w1280'),
+                    buildTmdbImageUrl(
+                      enrichmentByTitle.get(recommendation.item.title)
+                        ?.backdropPath ?? '',
+                      'w1280'
+                    ),
                     BACKDROP_IMAGE_SIZE
                   )}
                 />

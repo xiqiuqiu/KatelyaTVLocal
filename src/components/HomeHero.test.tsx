@@ -70,16 +70,17 @@ describe('HomeHero TMDB layout', () => {
       <HomeHero recommendations={[recommendation]} />
     );
 
-    await waitFor(() =>
-      expect(container.querySelector('.ui-home-feature')).toHaveAttribute(
-        'data-layout',
-        'backdrop'
-      )
-    );
+    // 等待期间先渲染骨架，数据到达后才换成 backdrop 图
     // next/image 在测试里被 mock 成裸 img，class 会丢，这里按 src 判断
-    expect(
-      container.querySelector('img[src*="image.tmdb.org"]')
-    ).not.toBeNull();
+    await waitFor(() =>
+      expect(
+        container.querySelector('img[src*="image.tmdb.org"]')
+      ).not.toBeNull()
+    );
+    expect(container.querySelector('.ui-home-feature')).toHaveAttribute(
+      'data-layout',
+      'backdrop'
+    );
     expect(screen.getByText('剧情')).toBeInTheDocument();
     expect(screen.getByText('120 分钟')).toBeInTheDocument();
   });

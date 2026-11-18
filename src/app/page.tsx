@@ -385,9 +385,8 @@ function HomeCatalog({
   return (
     <div className='ui-home-content ui-home-catalog'>
       <HomeHero
-        loading={
-          loading || (signals.loading && heroRecommendations.length === 0)
-        }
+        // 热榜与本地信号都就绪后才渲染，避免推荐列表变化导致首屏重排两次
+        loading={loading || signals.loading}
         recommendations={heroRecommendations}
         tvMode={tvMode}
       />
