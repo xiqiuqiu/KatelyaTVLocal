@@ -76,6 +76,7 @@ describe('mapDiscoverItem', () => {
       year: '2024',
       rate: '8.2',
       posterPath: '/abc.jpg',
+      originalTitle: '',
     });
   });
 
@@ -88,9 +89,21 @@ describe('mapDiscoverItem', () => {
       year: '',
       rate: '',
       posterPath: '',
+      originalTitle: '',
     });
   });
 });
+
+  it('keeps the original title when it differs from the localized one', () => {
+    expect(
+      mapDiscoverItem({
+        id: 1399,
+        name: '权力的游戏',
+        original_name: 'Game of Thrones',
+        first_air_date: '2011-04-17',
+      }).originalTitle
+    ).toBe('Game of Thrones');
+  });
 
 describe('hasActiveFilters', () => {
   it('is false for defaults and true once anything changes', () => {

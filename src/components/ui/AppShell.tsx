@@ -1,6 +1,14 @@
 'use client';
 
-import { Compass, Heart, History, Home, Search, Settings } from 'lucide-react';
+import {
+  Compass,
+  Heart,
+  History,
+  Home,
+  Search,
+  Settings,
+  SlidersHorizontal,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
@@ -30,6 +38,7 @@ interface AppShellProps {
 const tvNavigation = [
   { href: '/', label: '首页', key: 'home', icon: Home },
   { href: '/douban?type=movie', label: '发现', key: 'discover', icon: Compass },
+  { href: '/discover', label: '筛选', key: 'filter', icon: SlidersHorizontal },
   { href: '/search', label: '搜索', key: 'search', icon: Search },
   { href: '/?tab=favorites', label: '收藏夹', key: 'favorites', icon: Heart },
   { href: '/history', label: '播放历史', key: 'history', icon: History },

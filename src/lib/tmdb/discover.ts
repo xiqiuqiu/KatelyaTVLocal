@@ -17,6 +17,8 @@ export interface TmdbDiscoverItem {
   id: number;
   title?: string;
   name?: string;
+  original_title?: string;
+  original_name?: string;
   release_date?: string;
   first_air_date?: string;
   vote_average?: number;
@@ -138,6 +140,8 @@ export function mapDiscoverItem(item: TmdbDiscoverItem): {
   year: string;
   rate: string;
   posterPath: string;
+  /** 原名，用来在播放页搜不到时再试一次 */
+  originalTitle: string;
 } {
   const title = item.title || item.name || '';
   const date = item.release_date || item.first_air_date || '';
@@ -147,12 +151,14 @@ export function mapDiscoverItem(item: TmdbDiscoverItem): {
       ? item.vote_average.toFixed(1)
       : '';
 
+  const originalTitle = item.original_title || item.original_name || '';
   return {
     id: String(item.id),
     title,
     year,
     rate,
     posterPath: item.poster_path || '',
+    originalTitle: originalTitle !== title ? originalTitle : '',
   };
 }
 

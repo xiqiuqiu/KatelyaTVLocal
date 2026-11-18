@@ -4989,6 +4989,12 @@
   height: 1px;
 }
 
+.ui-discovery-more {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 24px;
+}
+
 @media (max-width: 767px) {
   .ui-filter-row {
     flex-direction: column;

@@ -390,6 +390,11 @@ function DiscoverPageClient() {
               <div className='w-full' key={item.id}>
                 <VideoCard
                   from='douban'
+                  linkParams={{
+                    from: 'discover',
+                    alt: item.originalTitle,
+                    stype: media,
+                  }}
                   poster={buildTmdbImageUrl(item.posterPath, 'w342')}
                   rate={item.rate}
                   size={tvMode ? 'default' : 'small'}
@@ -403,6 +408,31 @@ function DiscoverPageClient() {
             ))}
           </PosterGrid>
         )}
+
+        {tvMode && hasMore && !loading ? (
+          <div className='ui-discovery-more'>
+            <button
+              className='ui-primary-button'
+              disabled={loadingMore}
+              onClick={() => {
+                if (loadingMore) return;
+                setLoadingMore(true);
+                const nextPage = page + 1;
+                fetchPage(nextPage, filters)
+                  .then((result) => {
+                    setItems((previous) => [...previous, ...result.items]);
+                    setPage(nextPage);
+                    setHasMore(result.hasMore);
+                  })
+                  .catch(() => setHasMore(false))
+                  .finally(() => setLoadingMore(false));
+              }}
+              type='button'
+            >
+              {loadingMore ? '正在加载' : '加载更多'}
+            </button>
+          </div>
+        ) : null}
 
         <div className='ui-discovery-sentinel' ref={sentinelRef} />
         {loadingMore ? (

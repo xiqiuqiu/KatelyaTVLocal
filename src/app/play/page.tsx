@@ -3,7 +3,14 @@
 'use client';
 
 import Hls from 'hls.js';
-import { AlertCircle, ArrowLeft, RefreshCw, Search } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  Languages,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useReducer, useRef, useState } from 'react';
 
@@ -671,6 +678,32 @@ function PlayErrorView({
               </button>
             ) : null}
 
+            {session.altRetryHref ? (
+              <button
+                type='button'
+                onClick={() => session.router.push(session.altRetryHref)}
+                className='ui-secondary-button'
+              >
+                <Languages className='h-4 w-4' />
+                用原名再搜一次
+              </button>
+            ) : null}
+
+            {session.fromDiscover ? (
+              <button
+                type='button'
+                onClick={() =>
+                  session.router.push(
+                    session.isTvMode ? '/discover?tv=1' : '/discover'
+                  )
+                }
+                className='ui-secondary-button'
+              >
+                <SlidersHorizontal className='h-4 w-4' />
+                回到筛选页
+              </button>
+            ) : null}
+
             <button
               type='button'
               onClick={() => session.router.back()}
@@ -1109,6 +1142,36 @@ function usePlayPageSession() {
   );
 
   // 搜索所需信息
+  // 筛选页带过来的原名：本页搜不到时用它再试一次
+  const altTitleParam = (searchParams.get('alt') || '').trim();
+  const fromDiscoverParam = searchParams.get('from') === 'discover';
+  const altRetryHref = (() => {
+    if (!altTitleParam) return '';
+    const params = new URLSearchParams();
+    params.set('title', altTitleParam);
+    const yearParam = searchParams.get('year');
+    if (yearParam) params.set('year', yearParam);
+    const typeParam = searchParams.get('stype');
+    if (typeParam) params.set('stype', typeParam);
+    if (isTvMode) params.set('tv', '1');
+    params.set('from', 'discover');
+    return `/play?${params.toString()}`;
+  })();
+
+  /** 首次按中文名没搜到、且带原名时，自动用原名再试一次（只会发生一次）。 */
+  const retriedWithAltRef = useRef(false);
+  const retryWithAltIfPossible = () => {
+    if (retriedWithAltRef.current || !altRetryHref) return false;
+    if (
+      !altTitleParam ||
+      altTitleParam === (searchParams.get('title') || '').trim()
+    )
+      return false;
+    retriedWithAltRef.current = true;
+    router.replace(altRetryHref);
+    return true;
+  };
+
   const [searchTitle, setSearchTitle] = useState(
     () => searchParams.get('stitle') || ''
   );
@@ -5724,6 +5787,7 @@ function usePlayPageSession() {
 
             if (!recovery.detail) {
               if (cancelled) return;
+              if (!urlFromPlayRecord && retryWithAltIfPossible()) return;
               setPlaybackError(
                 recovery.error || '未找到匹配结果',
                 recovery.errorKind === 'missing-episode'
@@ -5748,6 +5812,7 @@ function usePlayPageSession() {
 
           if (!detailData || sourcesInfo.length === 0) {
             if (cancelled) return;
+            if (!urlFromPlayRecord && retryWithAltIfPossible()) return;
             setPlaybackError(
               '未找到匹配结果',
               urlFromPlayRecord ? 'history-expired' : 'not-found'
@@ -5770,6 +5835,7 @@ function usePlayPageSession() {
               detailData = target;
             } else {
               if (cancelled) return;
+              if (retryWithAltIfPossible()) return;
               setPlaybackError('未找到匹配结果', 'not-found');
               setLoading(false);
               return;
@@ -8411,8 +8477,10 @@ function usePlayPageSession() {
   if (error) {
     return {
       phase: 'error' as const,
+      altRetryHref,
       error,
       errorKind,
+      fromDiscover: fromDiscoverParam,
       isTvMode,
       router,
       searchTitle,

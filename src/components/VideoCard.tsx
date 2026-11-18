@@ -57,6 +57,8 @@ interface VideoCardProps {
   imageSize?: ImageProxyOptions;
   tvMode?: boolean;
   layout?: 'poster' | 'landscape' | 'result';
+  /** 追加到 /play 链接上的参数（例如筛选页带过来的原名与来源） */
+  linkParams?: Record<string, string>;
 }
 
 interface FavoriteHeartButtonProps {
@@ -436,6 +438,7 @@ function useVideoCardModel({
   progress = 0,
   playedSeconds,
   totalSeconds,
+  linkParams,
   year,
   from,
   currentEpisode,
@@ -588,7 +591,7 @@ function useVideoCardModel({
     let href = '';
 
     if (from === 'douban') {
-      href = buildHomeHeroPlayHref(
+      const base = buildHomeHeroPlayHref(
         { title: actualTitle, year: actualYear || '' },
         actualSearchType === 'movie' ||
           actualSearchType === 'tv' ||
@@ -596,6 +599,15 @@ function useVideoCardModel({
           ? actualSearchType
           : ''
       );
+      if (linkParams && Object.keys(linkParams).length > 0) {
+        const params = new URLSearchParams(base.split('?')[1] ?? '');
+        for (const [key, value] of Object.entries(linkParams)) {
+          if (value) params.set(key, value);
+        }
+        href = `/play?${params.toString()}`;
+      } else {
+        href = base;
+      }
     } else if (actualSource && actualId) {
       const params = new URLSearchParams();
       params.set('source', actualSource);
@@ -644,6 +656,7 @@ function useVideoCardModel({
     aggregateCard,
     from,
     playbackCardKey,
+    linkParams,
     playbackPreparation,
     router,
     showOpeningState,
