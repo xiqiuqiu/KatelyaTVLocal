@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { getTmdbCredentials } from '@/lib/tmdb/env';
 import {
   type TmdbJsonFetcher,
   enrichTmdbHero,
@@ -11,20 +12,14 @@ export const runtime = 'edge';
 const TMDB_API_BASE = 'https://api.themoviedb.org/3';
 const CACHE_SECONDS = 86400;
 
-function getAuth() {
-  return {
-    readToken: process.env.TMDB_READ_TOKEN?.trim() || undefined,
-    apiKey: process.env.TMDB_API_KEY?.trim() || undefined,
-  };
-}
-
 /**
  * 首屏聚合接口：一次拿到 5 部片的 backdrop / 简介 / 时长 / 类型。
  *
  * 这不是开放代理：只接受最多 6 条标题，只返回白名单字段。
  */
 export async function GET(request: Request) {
-  const auth = getAuth();
+  // 运行时变量在 Cloudflare 上走 request context，本地走 process.env
+  const auth = getTmdbCredentials();
   if (!auth.readToken && !auth.apiKey) {
     return NextResponse.json({ enabled: false, items: [] }, { status: 200 });
   }

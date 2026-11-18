@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { isAllowedTmdbPath, sanitizeTmdbParams } from '@/lib/tmdb/endpoints';
+import { type TmdbCredentials, getTmdbCredentials } from '@/lib/tmdb/env';
 
 export const runtime = 'edge';
 
@@ -11,22 +12,10 @@ const DEFAULT_LANGUAGE = 'zh-CN';
 const LIST_CACHE_SECONDS = 3600;
 const DETAIL_CACHE_SECONDS = 21600;
 
-interface TmdbAuth {
-  apiKey?: string;
-  readToken?: string;
-}
-
-function getAuth(): TmdbAuth {
-  return {
-    readToken: process.env.TMDB_READ_TOKEN?.trim() || undefined,
-    apiKey: process.env.TMDB_API_KEY?.trim() || undefined,
-  };
-}
-
 function buildUpstreamUrl(
   path: string,
   params: URLSearchParams,
-  auth: TmdbAuth
+  auth: TmdbCredentials
 ): string {
   const upstream = new URL(`${TMDB_API_BASE}/${path}`);
   const merged = new URLSearchParams(params);
@@ -46,7 +35,8 @@ function cacheSecondsFor(path: string): number {
 }
 
 async function handle(request: Request, path: string) {
-  const auth = getAuth();
+  // 运行时变量在 Cloudflare 上走 request context，本地走 process.env
+  const auth = getTmdbCredentials();
   if (!auth.readToken && !auth.apiKey) {
     return NextResponse.json(
       { error: 'TMDB 未配置：需要 TMDB_API_KEY 或 TMDB_READ_TOKEN' },
