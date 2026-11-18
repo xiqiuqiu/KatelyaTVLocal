@@ -19,6 +19,11 @@ export interface HomeSignals {
   loading: boolean;
 }
 
+interface SignalData {
+  playRecords: HomeRecommendationSignal[];
+  favorites: HomeRecommendationSignal[];
+}
+
 function toRecordSignals(
   records: Record<string, PlayRecord>
 ): HomeRecommendationSignal[] {
@@ -40,16 +45,22 @@ function toFavoriteSignals(
 /**
  * 首屏推荐只需要「看过什么 / 收藏过什么」两类本地信号。
  * 全部在浏览器本地读取与计算，不上报服务器。
+ *
+ * 两类信号放在**同一个 state** 里一次性写入：分成两个 state 会让首屏
+ * 先按「只有播放记录」算出一版推荐、再按「记录 + 收藏」算第二版，
+ * 于是首屏会多画出一次中间布局（骨架 → 分栏 → 横图的来源之一）。
  */
 export default function useHomeSignals(): HomeSignals {
-  const [playRecords, setPlayRecords] = useState<HomeRecommendationSignal[]>(
-    []
-  );
-  const [favorites, setFavorites] = useState<HomeRecommendationSignal[]>([]);
+  const [data, setData] = useState<SignalData>({
+    playRecords: [],
+    favorites: [],
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
+    // 初次读取完成前忽略订阅事件，避免重复写入导致推荐列表二次变化
+    let settled = false;
 
     const load = async () => {
       try {
@@ -58,14 +69,16 @@ export default function useHomeSignals(): HomeSignals {
           getAllFavorites(),
         ]);
         if (cancelled) return;
-        setPlayRecords(toRecordSignals(records));
-        setFavorites(toFavoriteSignals(favoriteMap));
+        setData({
+          playRecords: toRecordSignals(records),
+          favorites: toFavoriteSignals(favoriteMap),
+        });
       } catch {
         // 读取失败时退回「只看热榜」，首屏仍然可用
         if (cancelled) return;
-        setPlayRecords([]);
-        setFavorites([]);
+        setData({ playRecords: [], favorites: [] });
       } finally {
+        settled = true;
         if (!cancelled) setLoading(false);
       }
     };
@@ -75,13 +88,21 @@ export default function useHomeSignals(): HomeSignals {
     const unsubscribeRecords = subscribeToDataUpdates(
       'playRecordsUpdated',
       (records: Record<string, PlayRecord>) => {
-        setPlayRecords(toRecordSignals(records));
+        if (!settled) return;
+        setData((previous) => ({
+          ...previous,
+          playRecords: toRecordSignals(records),
+        }));
       }
     );
     const unsubscribeFavorites = subscribeToDataUpdates(
       'favoritesUpdated',
       (favoriteMap: Record<string, Favorite>) => {
-        setFavorites(toFavoriteSignals(favoriteMap));
+        if (!settled) return;
+        setData((previous) => ({
+          ...previous,
+          favorites: toFavoriteSignals(favoriteMap),
+        }));
       }
     );
 
@@ -92,5 +113,5 @@ export default function useHomeSignals(): HomeSignals {
     };
   }, []);
 
-  return { playRecords, favorites, loading };
+  return { ...data, loading };
 }

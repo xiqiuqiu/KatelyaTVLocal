@@ -118,7 +118,9 @@ export default function HomeHero({
     return () => window.clearInterval(timer);
   }, [count, paused, tvMode, safeIndex]);
 
-  if ((loading && count === 0) || (count > 0 && tmdb.pending)) {
+  // 只要还在等数据（热榜 / 本地信号 / TMDB 任一未就绪）就保持骨架，
+  // 不能因为「热榜先到」就先画一版中间布局
+  if (loading || (count > 0 && tmdb.pending)) {
     return <HomeHeroSkeleton />;
   }
 

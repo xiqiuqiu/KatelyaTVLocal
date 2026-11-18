@@ -175,22 +175,43 @@ TMDB 要求署名，且不得用其数据做竞品服务。上线时需要页脚
 
 ## 加载态与闪烁处理（P7）
 
-### 首屏会「先分栏再闪成横图」的原因
+### 现象
 
-首屏分两步拿到数据：豆瓣热榜（推荐列表）与本地播放记录/收藏（偏好加权），TMDB 补数据是第三跳。任何一跳晚到都会让 `data-layout` 从 `split` 翻到 `backdrop`，用户在页面上看到的就是布局闪一下。
+刷新首页时会看到「骨架 → 分栏 → 海报图」三段跳。用 `requestAnimationFrame` 逐帧采样 `data-layout` 才定位到真实序列：
 
-处理：
+```
+backdrop+sk → split+bd+list|克拉克森的农场 第五季 → backdrop+sk → backdrop+bd|罗斯
+```
 
-1. `useTmdbHero` 增加 `pending` 状态：请求未回来前为 `true`
-2. `HomeHero` 在 `pending` 时渲染**与真实卡片同高**的骨架（`data-layout="backdrop"` + `.ui-home-feature-stage-fill`），而不是先画分栏
-3. 推荐列表变化（本地信号到达导致重排）时，hook 立刻回到 `pending`，避免用旧数据渲染一帧
-4. TMDB 结果按**标题**匹配而不是下标匹配，列表重排时不会张冠李戴
-5. 首屏 `loading` 同时等本地信号（`loading || signals.loading`），把两次重排合并成一次
+即：先按**没有本地信号**的那份推荐（综艺排第一、且它的 TMDB 记录没有 backdrop）画了一版分栏，再换成有信号的推荐。
 
-采样验证（清 sessionStorage 后每 70ms 记录一次）：`backdrop+骨架 → backdrop+横图`，没有中间态。
+### 根因（四处，缺一不可）
+
+1. `useTmdbHero` 的 `pending` 是在 effect 里手动置位的 → 推荐列表一变，会先用上一份结果渲染一帧
+2. `HomeHero` 的骨架条件写成 `loading && count === 0` → 热榜先到、本地信号没到时（`count > 0`）就直接画内容
+3. `useHomeSignals` 把「播放记录」和「收藏」放在两个 state → 首屏会先后算出两版推荐
+4. TMDB 结果按下标匹配推荐列表 → 列表重排时张冠李戴
+
+### 处理
+
+- `pending` 改为**渲染期推导**：`resolved.key !== cacheKey` 即为待定，effect 只写结果不置位
+- 骨架条件统一为 `loading || pending`：热榜 / 本地信号 / TMDB 任一未就绪都保持骨架
+- `useHomeSignals` 合并成单个 state，一次写入；初次读取完成前忽略订阅事件
+- TMDB 结果按**标题**匹配（`enrichmentByTitle`），不再依赖下标
+- TMDB 请求失败**重试一次**，避免偶发失败把首屏从横图退回分栏
+
+### 验证
+
+清缓存/有缓存各刷新多次，逐帧采样结果全部是：
+
+```
+backdrop+骨架 → backdrop+横图
+```
+
+没有任何 `split` 中间帧。桌面 1440、移动端 390 均如此。
 
 ### 筛选页
 
 - 切换筛选条件时**不再清空结果**，旧网格保留并淡化（`data-loading` → `opacity: .45`），新数据到达后整体替换
-- 首次加载显示 12 张骨架卡（`aspect-[2/3]`），避免空白 + 跳动
-- 实测切换「电影 → 剧集」时卡片数量始终为 20，中途没有归零
+- 首次加载显示 12 张骨架卡（`aspect-[2/3]`）
+- 实测切换「电影 → 剧集」时卡片数量始终为 20，中途不归零
