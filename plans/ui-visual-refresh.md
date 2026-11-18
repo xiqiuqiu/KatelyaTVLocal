@@ -347,6 +347,53 @@
 
 ---
 
+## 8.34 首屏推荐轮播（P8，已完成）
+
+### 背景
+
+首屏原本是「豆瓣热榜第一条有海报的条目」——`selectHomeHeroCandidate()` 只看顺序，跟用户无关，等于固定 banner，移动端还完全不渲染。改成 3–5 张可翻页的**本地个性化推荐**。
+
+### 打分逻辑（`src/lib/home-recommendations.ts`）
+
+| 项 | 规则 |
+| --- | --- |
+| 候选池 | 豆瓣 电影/剧集/综艺 三榜，必须有海报 |
+| 排除 | 播放历史或收藏里已有的片（按标题归一化去重） |
+| 评分 | `豆瓣评分 + 类型偏好占比 × 4`；偏好最多加 4 分，盖不过 9 分好片 |
+| 类型偏好 | 播放历史/收藏里电影 vs 剧集 vs 综艺的占比（`total_episodes > 1` 记为剧集） |
+| 多样性 | 同类型最多 3 张，不足 limit 时按分数补位 |
+| 理由文案 | 偏好 ≥50% → 「你常看剧集 · 优先推荐」；评分 ≥8.5 → 「本周口碑高分」；否则「本周电影热榜」 |
+
+个人信号由 `src/components/useHomeSignals.ts` 读取：`getRecentPlayRecords(50)` + `getAllFavorites()`，并订阅 `playRecordsUpdated` / `favoritesUpdated`。**全部在浏览器本地计算，不上报服务器。**
+
+### 组件（`src/components/HomeHero.tsx`）
+
+- 5 张背景图叠放，激活张淡入（520ms），文字区只渲染当前张 → 不会出现重复焦点/重复链接
+- 上一张 / 圆点 / 下一张；手动切换后重新计时
+- 自动轮播 9s：**电视模式、悬停中、聚焦中、`prefers-reduced-motion` 时不自动切换**
+- 电视端：圆点会被遥控焦点尺寸撑成 64px 方块，改为「1 / 5」计数 + 64px 左右箭头
+- 手机端：首屏现在也渲染（此前只在 ≥768px 出现）
+
+### 测试调整（有意修改）
+
+- 新增 `src/lib/home-recommendations.test.ts`（6 例：排序、偏好加权、排除已看、类型上限、无海报、稳定 key）
+- `src/app/page.test.tsx`：原来断言「首页不得出现推荐 banner」，改为断言**首屏推荐区存在且在最上**、继续观看在片库之前；`findByText('庆余年')` 改 `findAllByText`（首屏与卡片现在各出现一次）
+- `src/components/HomeHero.test.tsx`：props 从 `candidate` 改为 `recommendations`
+
+### 验证
+
+- 桌面 1440：首屏 1144×362，5 张、圆点可点、9s 自动切换、悬停暂停（实测 9.5s 内不切换）
+- 手机 390：358×362，翻页控件在卡片内右下
+- 电视 1920：1784×462，`1 / 5` 计数 + 64px 箭头；`hero-play → 查看片单 → 上一张推荐` 焦点链正常，无自动切换
+- 亮色主题：首屏保持深色海报底（有 scrim），文字对比度不变
+- `tsc`、ESLint 0 warning、**Jest 146 套件 / 1272 用例全绿**
+- 截图：`.scratch/ui-refresh/hero-carousel-{desktop-1440,light-1440,mobile-390,tv-1920}.png`
+
+### 已知取舍
+
+- `useHomeSignals` 与 `ContinueWatching` 各自读取一次播放记录（本地存储几乎无成本，upstash 下多一次 GET）；后续可合并成一个数据源
+- 首屏在电视端不自动轮播，需要用户用遥控器翻页
+
 ## 8.33 电视端继续观看海报网格挤压修正（P6p，已完成）
 
 ### 问题

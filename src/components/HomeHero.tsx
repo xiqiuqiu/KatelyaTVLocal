@@ -1,37 +1,49 @@
 'use client';
 
-import { Play, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Star } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { type MouseEvent, useRef } from 'react';
-
 import {
-  type HomeHeroCandidate,
-  type HomeHeroMediaType,
-  buildHomeHeroPlayHref,
-} from '@/lib/home-hero';
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
+import { buildHomeHeroPlayHref } from '@/lib/home-hero';
+import {
+  type HomeRecommendation,
+  type HomeRecommendationType,
+  getHomeRecommendationKey,
+} from '@/lib/home-recommendations';
 import { buildTvModeHref } from '@/lib/tv-interaction';
 import { processImageUrl } from '@/lib/utils';
 
 import { usePlaybackPreparation } from '@/components/playback-preparation/PlaybackPreparationProvider';
 
-const MEDIA_TYPE_LABEL: Record<Exclude<HomeHeroMediaType, ''>, string> = {
+const MEDIA_TYPE_LABEL: Record<HomeRecommendationType, string> = {
   movie: '电影',
   tv: '剧集',
   show: '综艺',
 };
 
+/** 自动轮播间隔；手动切换后会重新计时。 */
+const ROTATE_INTERVAL_MS = 9000;
+
 interface HomeHeroProps {
-  candidate: HomeHeroCandidate | null;
+  recommendations: HomeRecommendation[];
   loading?: boolean;
   tvMode?: boolean;
 }
 
 function HomeHeroSkeleton() {
   return (
-    <section aria-busy='true' aria-label='精选推荐' className='ui-home-feature'>
+    <section aria-busy='true' aria-label='为你推荐' className='ui-home-feature'>
       <div className='ui-home-feature-copy'>
-        <div className='ui-skeleton-block h-7 w-3/4 rounded-ui-sm' />
+        <div className='ui-skeleton-block h-3 w-24 rounded-ui-sm' />
+        <div className='ui-skeleton-block h-9 w-3/4 rounded-ui-sm' />
         <div className='ui-skeleton-block h-4 w-1/2 rounded-ui-sm' />
         <div className='ui-skeleton-block h-11 w-28 rounded-ui-sm' />
       </div>
@@ -41,31 +53,68 @@ function HomeHeroSkeleton() {
 }
 
 export default function HomeHero({
-  candidate,
+  recommendations,
   loading = false,
   tvMode = false,
 }: HomeHeroProps) {
   const surfaceRef = useRef<HTMLElement>(null);
   const playbackPreparation = usePlaybackPreparation();
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
 
-  if (loading) {
+  const count = recommendations.length;
+  const safeIndex = count > 0 ? Math.min(activeIndex, count - 1) : 0;
+  const active = count > 0 ? recommendations[safeIndex] : null;
+  const listKey = useMemo(
+    () => recommendations.map(getHomeRecommendationKey).join('|'),
+    [recommendations]
+  );
+
+  // 推荐列表变化时回到第一张，避免索引越界指到别的内容
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [listKey]);
+
+  const goTo = useCallback(
+    (next: number) => {
+      if (count < 2) return;
+      setActiveIndex(((next % count) + count) % count);
+    },
+    [count]
+  );
+
+  // 自动轮播：电视端、悬停/聚焦中、用户要求减少动效时都不自动切换
+  useEffect(() => {
+    if (tvMode || paused || count < 2) return;
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      return;
+    }
+    const timer = window.setInterval(
+      () => setActiveIndex((current) => (current + 1) % count),
+      ROTATE_INTERVAL_MS
+    );
+    return () => window.clearInterval(timer);
+  }, [count, paused, tvMode, safeIndex]);
+
+  if (loading && count === 0) {
     return <HomeHeroSkeleton />;
   }
 
-  if (!candidate) {
+  if (!active) {
     return null;
   }
 
-  const { item, type } = candidate;
+  const { item, type, reason } = active;
   const href = buildHomeHeroPlayHref(item, type);
   const playHref = tvMode ? buildTvModeHref(href, true) : href;
-  const typeLabel = type ? MEDIA_TYPE_LABEL[type] : null;
-  const metadata = [item.year, typeLabel].filter(Boolean).join(' · ');
-  const posterSrc = processImageUrl(item.poster, {
-    width: 640,
-    height: 360,
-    quality: 78,
-  });
+  const metadata = [item.year, MEDIA_TYPE_LABEL[type]]
+    .filter(Boolean)
+    .join(' · ');
+  const listHref = `/douban?type=${type}`;
   const playbackCardKey = `hero:douban:${item.id || item.title}`;
 
   const handlePlay = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -87,28 +136,43 @@ export default function HomeHero({
     });
   };
 
-  const listHref = type ? `/douban?type=${type}` : '/douban?type=movie';
-
   return (
     <section
-      aria-label='精选推荐'
+      aria-label='为你推荐'
       className='ui-home-feature'
       data-playback-preparation-card={playbackCardKey}
+      onBlurCapture={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
       ref={surfaceRef}
     >
       <div className='ui-home-feature-art' aria-hidden>
-        <Image
-          alt=''
-          aria-hidden
-          className='ui-home-feature-image object-cover'
-          fill
-          priority
-          referrerPolicy='no-referrer'
-          sizes='(max-width: 767px) 100vw, 720px'
-          src={posterSrc}
-        />
+        {recommendations.map((recommendation, index) => (
+          <span
+            className='ui-home-feature-slide'
+            data-active={index === safeIndex}
+            key={getHomeRecommendationKey(recommendation)}
+          >
+            <Image
+              alt=''
+              aria-hidden
+              className='ui-home-feature-image object-cover'
+              fill
+              priority={index === 0}
+              referrerPolicy='no-referrer'
+              sizes='(max-width: 767px) 100vw, 720px'
+              src={processImageUrl(recommendation.item.poster, {
+                width: 640,
+                height: 360,
+                quality: 78,
+              })}
+            />
+          </span>
+        ))}
         <div className='ui-home-feature-scrim' />
       </div>
+
       <div className='ui-home-feature-copy'>
         <p className='ui-home-feature-kicker'>今日私人放映</p>
         <h2 className='ui-home-feature-title line-clamp-2'>{item.title}</h2>
@@ -125,6 +189,7 @@ export default function HomeHero({
           )}
           {metadata && <span>{metadata}</span>}
         </div>
+        <p className='ui-home-feature-reason'>{reason}</p>
         <div className='ui-home-feature-actions'>
           <Link
             data-tv-focus-key='hero-play'
@@ -144,6 +209,47 @@ export default function HomeHero({
           </Link>
         </div>
       </div>
+
+      {count > 1 && (
+        <div className='ui-home-feature-pager'>
+          <button
+            aria-label='上一张推荐'
+            className='ui-home-feature-arrow'
+            data-tv-focus-key='hero-prev'
+            onClick={() => goTo(safeIndex - 1)}
+            type='button'
+          >
+            <ChevronLeft aria-hidden className='h-4 w-4' />
+          </button>
+          <span className='ui-home-feature-counter' aria-hidden>
+            {safeIndex + 1} / {count}
+          </span>
+          <div className='ui-home-feature-dots'>
+            {recommendations.map((recommendation, index) => (
+              <button
+                aria-current={index === safeIndex ? 'true' : undefined}
+                aria-label={`第 ${index + 1} 张推荐：${
+                  recommendation.item.title
+                }`}
+                className='ui-home-feature-dot'
+                data-tv-focus-key={`hero-dot-${index}`}
+                key={getHomeRecommendationKey(recommendation)}
+                onClick={() => goTo(index)}
+                type='button'
+              />
+            ))}
+          </div>
+          <button
+            aria-label='下一张推荐'
+            className='ui-home-feature-arrow'
+            data-tv-focus-key='hero-next'
+            onClick={() => goTo(safeIndex + 1)}
+            type='button'
+          >
+            <ChevronRight aria-hidden className='h-4 w-4' />
+          </button>
+        </div>
+      )}
     </section>
   );
 }

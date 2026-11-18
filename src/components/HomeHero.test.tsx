@@ -33,16 +33,20 @@ describe('HomeHero playback preparation', () => {
   it('keeps a real play link while starting the shared transition', () => {
     render(
       <HomeHero
-        candidate={{
-          type: 'movie',
-          item: {
-            id: 'hero-1',
-            title: '庆余年',
-            poster: 'https://img.example/hero.jpg',
-            rate: '9.4',
-            year: '2024',
+        recommendations={[
+          {
+            type: 'movie',
+            reason: '本周口碑高分',
+            score: 9.4,
+            item: {
+              id: 'hero-1',
+              title: '庆余年',
+              poster: 'https://img.example/hero.jpg',
+              rate: '9.4',
+              year: '2024',
+            },
           },
-        }}
+        ]}
       />
     );
 

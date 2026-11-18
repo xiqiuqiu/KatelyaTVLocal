@@ -3887,6 +3887,147 @@
   font-size: 24px;
 }
 
+/* ---------- 首屏推荐轮播 ---------- */
+
+.ui-home-feature-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 520ms var(--ease-out);
+}
+
+.ui-home-feature-slide[data-active='true'] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-home-feature-slide {
+    transition: none;
+  }
+}
+
+.ui-home-feature-reason {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid rgb(var(--ui-accent) / 0.32);
+  border-radius: 9999px;
+  background: rgb(var(--ui-accent) / 0.12);
+  color: rgb(var(--ui-accent-warm));
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ui-home-feature-pager {
+  position: absolute;
+  right: 20px;
+  bottom: 18px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ui-home-feature-arrow {
+  display: inline-flex;
+  height: 30px;
+  width: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 9999px;
+  background: rgb(8 9 12 / 0.55);
+  color: rgb(255 255 255 / 0.82);
+  backdrop-filter: blur(6px);
+  transition: background-color 150ms, border-color 150ms, color 150ms;
+}
+
+.ui-home-feature-arrow:hover {
+  border-color: rgb(var(--ui-accent) / 0.55);
+  background: rgb(var(--ui-accent) / 0.22);
+  color: #fff;
+}
+
+.ui-home-feature-arrow:focus-visible,
+.ui-home-feature-dot:focus-visible {
+  outline: 2px solid rgb(var(--ui-accent));
+  outline-offset: 2px;
+}
+
+.ui-home-feature-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 电视端圆点会被遥控焦点尺寸撑成大方块，改用「1 / 5」计数 */
+.ui-home-feature-counter {
+  display: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(255 255 255 / 0.72);
+}
+
+.ui-home-feature-dot {
+  height: 6px;
+  width: 6px;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.34);
+  transition: width 200ms var(--ease-out), background-color 200ms;
+}
+
+.ui-home-feature-dot[aria-current='true'] {
+  width: 18px;
+  background: rgb(var(--ui-accent));
+}
+
+@media (max-width: 767px) {
+  .ui-home-feature-pager {
+    right: 14px;
+    bottom: 12px;
+  }
+
+  .ui-home-feature-copy {
+    max-width: 100%;
+    gap: 10px;
+  }
+
+  .ui-home-feature-reason {
+    font-size: 11px;
+  }
+}
+
+[data-tv-browse='true'] .ui-home-feature-pager {
+  right: 40px;
+  bottom: 36px;
+  gap: 14px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-arrow {
+  height: 64px;
+  width: 64px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-dots {
+  display: none;
+}
+
+[data-tv-browse='true'] .ui-home-feature-counter {
+  display: inline-flex;
+  align-items: center;
+  min-width: 96px;
+  justify-content: center;
+  font-size: 22px;
+  color: rgb(255 255 255 / 0.8);
+}
+
+[data-tv-browse='true'] .ui-home-feature-reason {
+  padding: 6px 18px;
+  font-size: 22px;
+}
+
 /* 侧栏计数 */
 .ui-sidebar-count {
   margin-left: auto;

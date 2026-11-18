@@ -4,7 +4,7 @@
 
 import { ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
 // 客户端收藏 API
 import {
@@ -15,7 +15,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
-import { selectHomeHeroCandidate } from '@/lib/home-hero';
+import { buildHomeRecommendations } from '@/lib/home-recommendations';
 import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 import { DoubanItem } from '@/lib/types';
 import { catalogNavigationItems } from '@/lib/ui/navigation';
@@ -32,6 +32,7 @@ import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
 import PageHeader from '@/components/ui/PageHeader';
 import PosterGrid from '@/components/ui/PosterGrid';
 import SectionHeader from '@/components/ui/SectionHeader';
+import useHomeSignals from '@/components/useHomeSignals';
 import VideoCard from '@/components/VideoCard';
 
 export const runtime = 'edge';
@@ -347,19 +348,35 @@ function HomeCatalog({
   loading: boolean;
   tvMode: boolean;
 }) {
-  // 精选 Hero 只在大屏渲染：小屏保持卡片流，避免与列表标题重复占位
-  const showHero = useMediaQuery('(min-width: 768px)');
   // 侧栏从 768px 起出现，分类入口只在更窄的屏幕由首页承担
-  const isDesktop = showHero;
-  const heroCandidate = showHero
-    ? selectHomeHeroCandidate(hotMovies, hotTvShows, hotVarietyShows)
-    : null;
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const signals = useHomeSignals();
+  // 首屏推荐：热榜为池，播放历史/收藏在本地做偏好加权
+  const heroRecommendations = useMemo(
+    () =>
+      buildHomeRecommendations({
+        movies: hotMovies,
+        tvShows: hotTvShows,
+        varietyShows: hotVarietyShows,
+        playRecords: signals.playRecords,
+        favorites: signals.favorites,
+      }),
+    [
+      hotMovies,
+      hotTvShows,
+      hotVarietyShows,
+      signals.playRecords,
+      signals.favorites,
+    ]
+  );
 
   return (
     <div className='ui-home-content ui-home-catalog'>
       <HomeHero
-        candidate={heroCandidate}
-        loading={loading && showHero}
+        loading={
+          loading || (signals.loading && heroRecommendations.length === 0)
+        }
+        recommendations={heroRecommendations}
         tvMode={tvMode}
       />
       <h1 className='sr-only'>首页</h1>
