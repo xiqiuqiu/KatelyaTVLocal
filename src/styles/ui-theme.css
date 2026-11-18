@@ -3669,15 +3669,11 @@
    首页精选 Hero：设计稿式编辑大图
    ============================================================ */
 
-.ui-home-feature {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-}
-
-/* 左半舞台：虚化铺底 + 文案 + 完整竖版海报 */
 .ui-home-feature-stage {
   position: relative;
+  display: grid;
+  align-items: center;
+  min-block-size: 420px;
   overflow: hidden;
   border: 1px solid rgb(var(--ui-border));
   border-radius: var(--ui-radius-lg);
@@ -3694,162 +3690,66 @@
   transform: scale(1.18);
 }
 
+.ui-home-feature-backdrop {
+  object-position: center 25%;
+}
+
 .ui-home-feature-scrim {
   position: absolute;
   inset: 0;
   background: linear-gradient(
       90deg,
-      rgb(8 9 12 / 0.96) 0%,
-      rgb(8 9 12 / 0.9) 46%,
-      rgb(8 9 12 / 0.55) 72%,
-      rgb(8 9 12 / 0.28) 100%
+      rgb(8 9 12 / 0.95) 0%,
+      rgb(8 9 12 / 0.82) 38%,
+      rgb(8 9 12 / 0.2) 72%,
+      transparent 100%
     ),
-    linear-gradient(to top, rgb(8 9 12 / 0.7) 0%, transparent 55%);
+    linear-gradient(to top, rgb(8 9 12 / 0.85) 0%, transparent 62%);
 }
 
 .ui-home-feature-body {
+  --hero-inline-padding: 40px;
+  --hero-poster-width: clamp(140px, 15vw, 208px);
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 32px;
-  padding: 32px 40px;
+  grid-template-columns: minmax(0, 640px);
+  padding: 32px var(--hero-inline-padding);
 }
 
 .ui-home-feature-copy {
   display: flex;
-  min-width: 0;
+  min-inline-size: 0;
   flex-direction: column;
-  justify-content: center;
   align-items: flex-start;
   gap: 12px;
 }
 
-/* 右侧竖版海报卡：2:3 原比例展示，不裁切 */
 .ui-home-feature-poster {
-  position: relative;
-  width: clamp(140px, 15vw, 208px);
-  aspect-ratio: 2 / 3;
-  overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 0.14);
-  border-radius: var(--ui-radius-md);
-  background: rgb(var(--ui-surface-strong));
-  box-shadow: 0 26px 60px rgb(0 0 0 / 0.5);
-}
-
-/* 右半：候选清单 */
-.ui-home-feature-list {
   display: none;
-  flex-direction: column;
-  gap: 10px;
-  padding: 16px;
-  border: 1px solid rgb(var(--ui-border));
-  border-radius: var(--ui-radius-lg);
-  background: rgb(var(--ui-surface));
-}
-
-.ui-home-feature-list-title {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgb(var(--ui-text-muted));
-}
-
-.ui-home-feature-list ul {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.ui-home-feature-list-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 10px;
-  padding: 6px;
-  border: 1px solid transparent;
-  border-radius: var(--ui-radius-sm);
-  text-align: left;
-  transition: background-color 150ms, border-color 150ms;
-}
-
-.ui-home-feature-list-item:hover {
-  background: rgb(var(--ui-text) / 0.06);
-}
-
-.ui-home-feature-list-item[aria-current='true'] {
-  border-color: rgb(var(--ui-accent) / 0.45);
-  background: rgb(var(--ui-accent) / 0.1);
-}
-
-.ui-home-feature-list-item:focus-visible {
-  outline: 2px solid rgb(var(--ui-accent));
-  outline-offset: 2px;
-}
-
-.ui-home-feature-list-thumb {
-  position: relative;
-  height: 54px;
-  width: 36px;
-  flex-shrink: 0;
-  overflow: hidden;
-  border-radius: var(--ui-radius-sm);
-  background: rgb(var(--ui-surface-strong));
-}
-
-.ui-home-feature-list-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ui-home-feature-list-name {
-  overflow: hidden;
-  color: rgb(var(--ui-text));
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ui-home-feature-list-meta {
-  overflow: hidden;
-  color: rgb(var(--ui-text-muted));
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ui-home-feature-list-score {
-  flex-shrink: 0;
-  color: rgb(var(--ui-accent));
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 
 @media (min-width: 1024px) {
-  .ui-home-feature {
-    grid-template-columns: minmax(0, 1.72fr) minmax(260px, 0.85fr);
-    align-items: stretch;
+  .ui-home-feature-body {
+    grid-template-columns: minmax(0, 640px) var(--hero-poster-width);
+    justify-content: space-between;
+    column-gap: 32px;
   }
 
-  .ui-home-feature-list {
-    display: flex;
+  .ui-home-feature-poster {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-end: var(--hero-inline-padding);
+    display: block;
+    inline-size: var(--hero-poster-width);
+    aspect-ratio: 2 / 3;
+    transform: translateY(-50%);
+    overflow: hidden;
+    border: 1px solid rgb(255 255 255 / 0.14);
+    border-radius: var(--ui-radius-md);
+    background: rgb(var(--ui-surface-strong));
+    box-shadow: 0 26px 60px rgb(0 0 0 / 0.5);
   }
-}
-
-/* 电视端只保留舞台 + 左右箭头，清单太密不适合 10-foot 遥控焦点 */
-[data-tv-browse='true'] .ui-home-feature {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-[data-tv-browse='true'] .ui-home-feature-list {
-  display: none;
 }
 
 .ui-home-feature-kicker {
@@ -3865,6 +3765,7 @@
   font-family: var(--font-display);
   font-size: 46px;
   line-height: 1.08;
+  min-block-size: 2.16em;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: #f4f2ed;
@@ -3873,15 +3774,25 @@
 
 .ui-home-feature-meta {
   display: flex;
-  flex-wrap: wrap;
+  max-inline-size: 100%;
+  min-block-size: 1.5em;
   align-items: center;
   gap: 6px 14px;
   color: rgb(255 255 255 / 0.72);
   font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.ui-home-feature-meta > span:not(.ui-home-feature-score) {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ui-home-feature-score {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 5px;
   color: rgb(var(--ui-accent));
@@ -3917,27 +3828,45 @@
 }
 
 @media (max-width: 767px) {
-  .ui-home-feature {
-    min-height: 0;
+  .ui-home-feature-stage {
+    min-block-size: 304px;
   }
+
+  .ui-home-feature-body {
+    padding: 18px;
+  }
+
   .ui-home-feature-copy {
-    padding: 0;
+    gap: 10px;
   }
+
   .ui-home-feature-title {
     font-size: 30px;
   }
+
+  .ui-home-feature-meta {
+    font-size: 12px;
+    column-gap: 10px;
+  }
+
   .ui-home-feature-scrim {
     background: linear-gradient(
       to top,
-      rgb(8 9 12 / 0.97) 10%,
-      rgb(8 9 12 / 0.72) 55%,
-      rgb(8 9 12 / 0.3) 100%
+      rgb(8 9 12 / 0.94) 18%,
+      rgb(8 9 12 / 0.84) 50%,
+      rgb(8 9 12 / 0.42) 82%,
+      rgb(8 9 12 / 0.18) 100%
     );
+  }
+
+  .ui-home-feature-cta {
+    min-height: 44px;
+    padding-inline: 20px;
   }
 }
 
-[data-tv-browse='true'] .ui-home-feature {
-  min-height: 0;
+[data-tv-browse='true'] .ui-home-feature-stage {
+  min-block-size: 520px;
 }
 
 [data-tv-browse='true'] .ui-home-feature-kicker {
@@ -4026,7 +3955,6 @@
 .ui-home-feature-dots {
   display: flex;
   align-items: center;
-  gap: 6px;
 }
 
 /* 电视端圆点会被遥控焦点尺寸撑成大方块，改用「1 / 5」计数 */
@@ -4039,37 +3967,28 @@
 }
 
 .ui-home-feature-dot {
-  height: 6px;
-  width: 6px;
+  display: grid;
+  place-items: center;
+  block-size: 24px;
+  inline-size: 24px;
   border-radius: 9999px;
-  background: rgb(255 255 255 / 0.34);
-  transition: width 200ms var(--ease-out), background-color 200ms;
 }
 
-.ui-home-feature-dot[aria-current='true'] {
-  width: 18px;
+.ui-home-feature-dot::before {
+  content: '';
+  block-size: 6px;
+  inline-size: 6px;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.34);
+  transition: inline-size 200ms var(--ease-out), background-color 200ms;
+}
+
+.ui-home-feature-dot[aria-current='true']::before {
+  inline-size: 18px;
   background: rgb(var(--ui-accent));
 }
 
 @media (max-width: 767px) {
-  .ui-home-feature-body {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 14px;
-    padding: 18px;
-  }
-
-  .ui-home-feature-poster {
-    width: clamp(92px, 27vw, 128px);
-  }
-
-  .ui-home-feature-body {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .ui-home-feature-copy {
-    gap: 10px;
-  }
-
   .ui-home-feature-reason {
     font-size: 11px;
   }
@@ -4081,12 +4000,10 @@
 }
 
 [data-tv-browse='true'] .ui-home-feature-body {
+  --hero-inline-padding: 56px;
+  --hero-poster-width: clamp(220px, 20vw, 320px);
   gap: 56px;
-  padding: 44px 56px;
-}
-
-[data-tv-browse='true'] .ui-home-feature-poster {
-  width: clamp(220px, 20vw, 320px);
+  padding-block: 44px;
 }
 
 [data-tv-browse='true'] .ui-home-feature-arrow {
@@ -4765,79 +4682,6 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-}
-
-/* ---------- 首屏全幅模式：TMDB backdrop 到位时替换竖版海报 ---------- */
-
-.ui-home-feature-backdrop {
-  object-position: center 25%;
-}
-
-.ui-home-feature[data-layout='backdrop'] {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.ui-home-feature[data-layout='backdrop'] .ui-home-feature-stage {
-  min-height: 420px;
-}
-
-.ui-home-feature[data-layout='backdrop'] .ui-home-feature-poster,
-.ui-home-feature[data-layout='backdrop'] .ui-home-feature-list {
-  display: none;
-}
-
-.ui-home-feature[data-layout='backdrop'] .ui-home-feature-scrim {
-  background: linear-gradient(
-      90deg,
-      rgb(8 9 12 / 0.95) 0%,
-      rgb(8 9 12 / 0.82) 38%,
-      rgb(8 9 12 / 0.2) 72%,
-      transparent 100%
-    ),
-    linear-gradient(to top, rgb(8 9 12 / 0.85) 0%, transparent 62%);
-}
-
-.ui-home-feature[data-layout='backdrop'] .ui-home-feature-copy {
-  max-width: 640px;
-}
-
-@media (max-width: 767px) {
-  /* 小屏不锁高度：内容多高就多高，避免卡片底部留出一大片空白 */
-  .ui-home-feature[data-layout='backdrop'] .ui-home-feature-stage {
-    min-height: 0;
-  }
-
-  .ui-home-feature[data-layout='backdrop'] .ui-home-feature-body {
-    padding: 18px;
-  }
-
-  /* 手机上横版剧照顶部是亮区，改用自下而上的重遮罩，文字才读得清 */
-  .ui-home-feature[data-layout='backdrop'] .ui-home-feature-scrim {
-    background: linear-gradient(
-      to top,
-      rgb(8 9 12 / 0.94) 18%,
-      rgb(8 9 12 / 0.84) 50%,
-      rgb(8 9 12 / 0.42) 82%,
-      rgb(8 9 12 / 0.18) 100%
-    );
-  }
-
-  .ui-home-feature[data-layout='backdrop'] .ui-home-feature-meta {
-    font-size: 12px;
-    gap: 4px 10px;
-  }
-
-  /* 触屏点击目标至少 44px */
-  .ui-home-feature-cta {
-    min-height: 44px;
-    padding-inline: 20px;
-  }
-}
-
-[data-tv-browse='true']
-  .ui-home-feature[data-layout='backdrop']
-  .ui-home-feature-stage {
-  min-height: 520px;
 }
 
 /* 名次压在海报左下角后面，只露出左半边（Netflix Top 10 的排版手法） */

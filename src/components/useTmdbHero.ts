@@ -17,7 +17,7 @@ interface ResolvedState {
 
 export interface TmdbHeroState {
   items: TmdbHeroEnrichment[];
-  /** TMDB 未配置时为 false，首屏据此保持竖版海报布局 */
+  /** TMDB 未配置时为 false，可用豆瓣海报兜底 */
   enabled: boolean;
   /** 当前推荐列表还没有结果：首屏用骨架占位，避免「先分栏再闪成横图」 */
   pending: boolean;
@@ -117,7 +117,7 @@ export default function useTmdbHero(
       };
     }
 
-    // jsdom 等没有 fetch 的环境直接结束占位，回到竖版海报布局
+    // jsdom 等没有 fetch 的环境直接结束占位，使用豆瓣海报
     if (typeof globalThis.fetch !== 'function') {
       finish({ items: [], enabled: false });
       return () => {
@@ -144,7 +144,7 @@ export default function useTmdbHero(
       };
     };
 
-    // 失败重试一次：偶发失败会让首屏从横图退回分栏，观感上就是「跳一下」
+    // 偶发失败重试一次，尽量保留横图
     void request()
       .catch(() =>
         new Promise<never>((_, reject) =>

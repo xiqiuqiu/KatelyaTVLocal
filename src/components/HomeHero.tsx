@@ -34,10 +34,7 @@ const MEDIA_TYPE_LABEL: Record<HomeRecommendationType, string> = {
 /** 自动轮播间隔；手动切换后会重新计时。 */
 const ROTATE_INTERVAL_MS = 9000;
 
-/** 首屏只有竖版海报可用，取三种尺寸：虚化铺底、完整海报、侧栏缩略图。 */
-const AMBIENT_IMAGE_SIZE = { width: 480, height: 720, quality: 70 };
 const POSTER_IMAGE_SIZE = { width: 480, height: 720, quality: 80 };
-const THUMB_IMAGE_SIZE = { width: 144, height: 216, quality: 66 };
 const BACKDROP_IMAGE_SIZE = { width: 1280, height: 720, quality: 78 };
 
 interface HomeHeroProps {
@@ -48,12 +45,7 @@ interface HomeHeroProps {
 
 function HomeHeroSkeleton() {
   return (
-    <section
-      aria-busy='true'
-      aria-label='为你推荐'
-      className='ui-home-feature'
-      data-layout='backdrop'
-    >
+    <section aria-busy='true' aria-label='为你推荐' className='ui-home-feature'>
       <div className='ui-home-feature-stage'>
         <div className='ui-skeleton-block ui-home-feature-stage-fill' />
         <div className='ui-home-feature-body'>
@@ -79,6 +71,9 @@ export default function HomeHero({
   const tmdb = useTmdbHero(recommendations);
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [failedImages, setFailedImages] = useState<Set<string>>(
+    () => new Set()
+  );
 
   const count = recommendations.length;
   const safeIndex = count > 0 ? Math.min(activeIndex, count - 1) : 0;
@@ -134,11 +129,25 @@ export default function HomeHero({
     tmdb.items.map((entry) => [entry.title, entry])
   );
   const activeEnrichment = enrichmentByTitle.get(item.title);
-  const activeBackdrop = activeEnrichment?.matched
-    ? activeEnrichment.backdropPath || ''
-    : '';
-  // 有横版剧照就走全幅大图，否则保持竖版海报双栏
-  const layout = activeBackdrop ? 'backdrop' : 'split';
+  const slideImages = recommendations.map(({ item }) => {
+    const enrichment = enrichmentByTitle.get(item.title);
+    const backdrop =
+      enrichment?.matched && enrichment.backdropPath
+        ? processImageUrl(
+            buildTmdbImageUrl(enrichment.backdropPath, 'w1280'),
+            BACKDROP_IMAGE_SIZE
+          )
+        : '';
+    const poster = processImageUrl(item.poster, POSTER_IMAGE_SIZE);
+    return {
+      backdrop: failedImages.has(backdrop) ? '' : backdrop,
+      poster: failedImages.has(poster) ? '' : poster,
+    };
+  });
+  const { backdrop, poster } = slideImages[safeIndex];
+  const markImageFailed = (src: string) =>
+    setFailedImages((failed) => new Set(failed).add(src));
+
   const extraMeta = activeEnrichment?.matched
     ? [
         (activeEnrichment.genres ?? []).slice(0, 2).join(' / '),
@@ -174,8 +183,8 @@ export default function HomeHero({
   return (
     <section
       aria-label='为你推荐'
+      aria-roledescription='轮播'
       className='ui-home-feature'
-      data-layout={layout}
       data-playback-preparation-card={playbackCardKey}
       onBlurCapture={() => setPaused(false)}
       onFocusCapture={() => setPaused(true)}
@@ -183,51 +192,35 @@ export default function HomeHero({
       onMouseLeave={() => setPaused(false)}
       ref={surfaceRef}
     >
-      {/* 左半：虚化铺底 + 文案 + 完整竖版海报；右半：候选清单 */}
       <div className='ui-home-feature-stage'>
         <div className='ui-home-feature-art' aria-hidden>
-          {recommendations.map((recommendation, index) => (
-            <span
-              className='ui-home-feature-slide'
-              data-active={index === safeIndex}
-              key={getHomeRecommendationKey(recommendation)}
-            >
-              {enrichmentByTitle.get(recommendation.item.title)?.matched &&
-              enrichmentByTitle.get(recommendation.item.title)?.backdropPath ? (
-                <Image
-                  alt=''
-                  aria-hidden
-                  className='ui-home-feature-backdrop object-cover'
-                  fill
-                  priority={index === 0}
-                  referrerPolicy='no-referrer'
-                  sizes='100vw'
-                  src={processImageUrl(
-                    buildTmdbImageUrl(
-                      enrichmentByTitle.get(recommendation.item.title)
-                        ?.backdropPath ?? '',
-                      'w1280'
-                    ),
-                    BACKDROP_IMAGE_SIZE
-                  )}
-                />
-              ) : (
-                <Image
-                  alt=''
-                  aria-hidden
-                  className='ui-home-feature-ambient object-cover'
-                  fill
-                  priority={index === 0}
-                  referrerPolicy='no-referrer'
-                  sizes='(max-width: 1023px) 100vw, 760px'
-                  src={processImageUrl(
-                    recommendation.item.poster,
-                    AMBIENT_IMAGE_SIZE
-                  )}
-                />
-              )}
-            </span>
-          ))}
+          {slideImages.map(({ backdrop, poster }, index) => {
+            const src = backdrop || poster;
+            return (
+              <span
+                className='ui-home-feature-slide'
+                data-active={index === safeIndex}
+                key={getHomeRecommendationKey(recommendations[index])}
+              >
+                {src && (
+                  <Image
+                    alt=''
+                    className={
+                      backdrop
+                        ? 'ui-home-feature-backdrop object-cover'
+                        : 'ui-home-feature-ambient object-cover'
+                    }
+                    fill
+                    onError={() => markImageFailed(src)}
+                    priority={index === 0}
+                    referrerPolicy='no-referrer'
+                    sizes={backdrop ? '100vw' : '480px'}
+                    src={src}
+                  />
+                )}
+              </span>
+            );
+          })}
           <div className='ui-home-feature-scrim' />
         </div>
 
@@ -307,84 +300,21 @@ export default function HomeHero({
             )}
           </div>
 
-          <div className='ui-home-feature-poster'>
-            {recommendations.map((recommendation, index) => (
-              <span
-                className='ui-home-feature-slide'
-                data-active={index === safeIndex}
-                key={getHomeRecommendationKey(recommendation)}
-              >
-                <Image
-                  alt=''
-                  aria-hidden
-                  className='object-cover'
-                  fill
-                  priority={index === 0}
-                  referrerPolicy='no-referrer'
-                  sizes='(max-width: 767px) 34vw, 260px'
-                  src={processImageUrl(
-                    recommendation.item.poster,
-                    POSTER_IMAGE_SIZE
-                  )}
-                />
-              </span>
-            ))}
-          </div>
+          {!backdrop && poster && (
+            <div className='ui-home-feature-poster' aria-hidden>
+              <Image
+                alt=''
+                className='object-cover'
+                fill
+                onError={() => markImageFailed(poster)}
+                referrerPolicy='no-referrer'
+                sizes='(min-width: 1024px) 320px, 1px'
+                src={poster}
+              />
+            </div>
+          )}
         </div>
       </div>
-
-      {count > 1 && (
-        <aside aria-label='更多推荐' className='ui-home-feature-list'>
-          <p className='ui-home-feature-list-title'>接下来</p>
-          <ul>
-            {recommendations.map((recommendation, index) => (
-              <li key={getHomeRecommendationKey(recommendation)}>
-                <button
-                  aria-current={index === safeIndex ? 'true' : undefined}
-                  aria-label={`切换到${recommendation.item.title}`}
-                  className='ui-home-feature-list-item'
-                  data-tv-focus-key={`hero-item-${index}`}
-                  onClick={() => goTo(index)}
-                  type='button'
-                >
-                  <span className='ui-home-feature-list-thumb'>
-                    <Image
-                      alt=''
-                      aria-hidden
-                      className='object-cover'
-                      fill
-                      referrerPolicy='no-referrer'
-                      sizes='72px'
-                      src={processImageUrl(
-                        recommendation.item.poster,
-                        THUMB_IMAGE_SIZE
-                      )}
-                    />
-                  </span>
-                  <span className='ui-home-feature-list-text'>
-                    <span className='ui-home-feature-list-name'>
-                      {recommendation.item.title}
-                    </span>
-                    <span className='ui-home-feature-list-meta'>
-                      {[
-                        recommendation.item.year,
-                        MEDIA_TYPE_LABEL[recommendation.type],
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </span>
-                  </span>
-                  {recommendation.item.rate && (
-                    <span className='ui-home-feature-list-score'>
-                      {recommendation.item.rate}
-                    </span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </aside>
-      )}
     </section>
   );
 }

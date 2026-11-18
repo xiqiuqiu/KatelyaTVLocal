@@ -8,10 +8,10 @@
 
 两种鉴权方式，任选其一（v4 Read Token 优先）：
 
-| 环境变量 | 说明 |
-| --- | --- |
+| 环境变量          | 说明                                                               |
+| ----------------- | ------------------------------------------------------------------ |
 | `TMDB_READ_TOKEN` | v4 Read Access Token，走 `Authorization: Bearer`，key 不出现在 URL |
-| `TMDB_API_KEY` | v3 API Key，会拼进查询串 |
+| `TMDB_API_KEY`    | v3 API Key，会拼进查询串                                           |
 
 未配置时 `/api/tmdb/*` 返回 **503**，前端必须按「没有 TMDB」降级，不能白屏。
 
@@ -76,23 +76,23 @@ TMDB 要求署名，且不得用其数据做竞品服务。上线时需要页脚
 - 入参最多 6 条：`[{ title, year?, kind: 'movie'|'tv'|'show' }]`
 - 服务端逐条 search → detail，只返回 `{ title, matched, tmdbId, media, backdropPath, overview, runtime, genres, vote }`
 - 单条失败不影响其它条目；匹配不到返回 `matched: false`
-- 未配置 TMDB 时返回 `{ enabled: false, items: [] }`（HTTP 200），前端据此保持竖版海报布局
+- 未配置 TMDB 时返回 `{ enabled: false, items: [] }`（HTTP 200），前端用豆瓣海报展示所有推荐
 - 响应 `cache-control: public, s-maxage=86400`；前端另用 sessionStorage 按推荐列表缓存
 
 前端消费：`src/components/useTmdbHero.ts`
 
-- 有 backdrop → `data-layout="backdrop"`，全幅 16:9 大图 + 左侧渐变，右侧海报列与候选清单隐藏
-- 没有 backdrop（综艺命中率低）或 TMDB 未配置 → `data-layout="split"`，保留「竖版海报 + 候选清单」双栏
+- 横幅始终是全幅布局。有 backdrop 时展示 TMDB 剧照；否则用豆瓣海报虚化铺底，桌面和电视视口额外展示竖版海报。
+- 横图加载失败时也切到豆瓣海报；海报不可用时保留渐变、文案和播放入口。轮播按钮的位置不随单条素材变化。
 
 ## 实测命中率（2026-11-18，本地 60 条豆瓣条目）
 
-| 榜单 | 命中 | 有 backdrop | 有简介 |
-| --- | --- | --- | --- |
-| 热门电影 | 19/20 | 19 | 18 |
-| 热门剧集 | 20/20 | 20 | 20 |
-| 热门综艺 | 5/20 | 4 | 5 |
+| 榜单     | 命中  | 有 backdrop | 有简介 |
+| -------- | ----- | ----------- | ------ |
+| 热门电影 | 19/20 | 19          | 18     |
+| 热门剧集 | 20/20 | 20          | 20     |
+| 热门综艺 | 5/20  | 4           | 5      |
 
-结论：电影/剧集足够支撑全幅首屏；国产综艺覆盖差，必须保留双栏回退。
+结论：电影/剧集足够支撑全幅首屏；国产综艺覆盖差，需要豆瓣海报兜底。
 
 ## 筛选片库（P4a）
 
@@ -100,14 +100,14 @@ TMDB 要求署名，且不得用其数据做竞品服务。上线时需要页脚
 
 筛选维度与对应 TMDB 参数：
 
-| 维度 | 参数 | 说明 |
-| --- | --- | --- |
-| 内容 | `discover/movie` / `discover/tv` | 切换时会清空类型选择（两种媒体的 genre id 不通用） |
-| 类型（多选） | `with_genres=18,80` | 取自 `genre/{movie\|tv}/list?language=zh-CN` |
-| 年份 | `primary_release_date.gte/lte`（电影）`first_air_date.gte/lte`（剧集） | 2020 年代 / 2010 年代 / 2000 年代 / 更早 |
-| 评分 | `vote_average.gte` + `vote_count.gte=200` | 7/8/9 分以上；票数下限防止冷门刷分 |
-| 语言 | `with_original_language` | 华语 zh / 英语 en / 日语 ja / 韩语 ko |
-| 排序 | `sort_by` | 人气 / 评分 / 最新 |
+| 维度         | 参数                                                                   | 说明                                               |
+| ------------ | ---------------------------------------------------------------------- | -------------------------------------------------- |
+| 内容         | `discover/movie` / `discover/tv`                                       | 切换时会清空类型选择（两种媒体的 genre id 不通用） |
+| 类型（多选） | `with_genres=18,80`                                                    | 取自 `genre/{movie\|tv}/list?language=zh-CN`       |
+| 年份         | `primary_release_date.gte/lte`（电影）`first_air_date.gte/lte`（剧集） | 2020 年代 / 2010 年代 / 2000 年代 / 更早           |
+| 评分         | `vote_average.gte` + `vote_count.gte=200`                              | 7/8/9 分以上；票数下限防止冷门刷分                 |
+| 语言         | `with_original_language`                                               | 华语 zh / 英语 en / 日语 ja / 韩语 ko              |
+| 排序         | `sort_by`                                                              | 人气 / 评分 / 最新                                 |
 
 - 每页 20 条，`IntersectionObserver` 无限滚动（实测 20 → 40）
 - 卡片走 `VideoCard from='douban'`，点击后进入 `/play?title&year&stype`，由播放页现有逻辑做多线路聚合搜索
@@ -141,13 +141,13 @@ TMDB 要求署名，且不得用其数据做竞品服务。上线时需要页脚
 
 `buildYearOptions(referenceYear)` / `getYearOptions()`（运行时按当前年份算）：
 
-| 档位 | 区间 |
-| --- | --- |
-| 今年 | 当年整年 |
-| 去年 | 上一年整年 |
-| 2020–(今年-2) | 2020 至前年（2022 年后才出现） |
-| 2010 年代 / 2000 年代 / 90 年代 / 80 年代 | 各十年 |
-| 更早 | 1950–1979 |
+| 档位                                      | 区间                           |
+| ----------------------------------------- | ------------------------------ |
+| 今年                                      | 当年整年                       |
+| 去年                                      | 上一年整年                     |
+| 2020–(今年-2)                             | 2020 至前年（2022 年后才出现） |
+| 2010 年代 / 2000 年代 / 90 年代 / 80 年代 | 各十年                         |
+| 更早                                      | 1950–1979                      |
 
 ### 结果统计
 
@@ -160,7 +160,7 @@ TMDB 要求署名，且不得用其数据做竞品服务。上线时需要页脚
 - 日漫尚可（异世界 190、热血 543、少女 189、竞技 145、治愈 760）
 - 国漫几乎为空（异世界 19、热血 6、少女 1、竞技 6、治愈 31）
 
-其他类型也评估过（动作→功夫 中文 576、恐怖→丧尸 中文 13、科幻→时间旅行 中文 10…），整体标签体系不完整、效果不稳定，已整体移除，不再展示。
+其他类型也评估过（动作 → 功夫 中文 576、恐怖 → 丧尸 中文 13、科幻 → 时间旅行 中文 10…），整体标签体系不完整、效果不稳定，已整体移除，不再展示。
 
 代理层的 `with_keywords` / `without_keywords` / `with_origin_country` 白名单保留，供以后接入更完整的标签源时使用。
 
@@ -222,10 +222,10 @@ backdrop+骨架 → backdrop+横图
 
 ### 必须配置
 
-| 位置 | 项 | 值 |
-| --- | --- | --- |
-| Pages → Settings → Environment variables | `TMDB_READ_TOKEN` | v4 Read Access Token，**勾选 Secret/加密**，Production 与 Preview 都要加 |
-| Pages → Settings → Functions → Compatibility flags | `nodejs_compat` | 仓库 `wrangler.toml` 里已声明，确认控制台里也开着 |
+| 位置                                               | 项                | 值                                                                       |
+| -------------------------------------------------- | ----------------- | ------------------------------------------------------------------------ |
+| Pages → Settings → Environment variables           | `TMDB_READ_TOKEN` | v4 Read Access Token，**勾选 Secret/加密**，Production 与 Preview 都要加 |
+| Pages → Settings → Functions → Compatibility flags | `nodejs_compat`   | 仓库 `wrangler.toml` 里已声明，确认控制台里也开着                        |
 
 说明：
 
@@ -234,8 +234,8 @@ backdrop+骨架 → backdrop+横图
 
 ### 建议配置
 
-| 项 | 值 | 作用 |
-| --- | --- | --- |
+| 项                        | 值                      | 作用                                                                                             |
+| ------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------ |
 | `NEXT_PUBLIC_IMAGE_PROXY` | `/api/image-proxy?url=` | 让 TMDB 图片（`image.tmdb.org`）走自家图片代理，国内网络更稳。这是**构建期变量**，改了要重新部署 |
 
 注意结尾必须带 `?url=`：代码里是 `${proxyUrl}${encodeURIComponent(originalUrl)}` 直接拼接。
