@@ -149,7 +149,7 @@ export default function AppShell({
             tvMode ? '' : isSidebarCollapsed ? 'md:pl-[72px]' : 'md:pl-56'
           }`}
         >
-          <div className='ui-shell-content'>
+          <div className='ui-shell-content' data-home={activePath === '/'}>
             {tvMode && (
               <nav aria-label='电视导航' className='ui-tv-nav'>
                 <span className='ui-brand'>{siteName}</span>
