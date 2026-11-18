@@ -438,30 +438,6 @@
   font-size: 26px;
 }
 
-.ui-home-feature {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 38%;
-  min-height: 176px;
-  overflow: hidden;
-  border-radius: var(--ui-radius-md);
-  background: rgb(var(--ui-surface));
-}
-
-.ui-home-feature-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 20px;
-}
-
-.ui-home-feature-art {
-  position: relative;
-  min-height: 176px;
-}
-
 .ui-video-title {
   display: -webkit-box;
   overflow: hidden;
@@ -596,19 +572,6 @@
   :is(.ui-home-poster-section, .ui-library-posters) .ui-poster-grid {
     column-gap: 24px;
     row-gap: 32px;
-  }
-
-  .ui-home-feature {
-    grid-template-columns: minmax(0, 1fr) 42%;
-    min-height: 200px;
-  }
-
-  .ui-home-feature-copy {
-    padding: 24px 32px;
-  }
-
-  .ui-home-feature-art {
-    min-height: 200px;
   }
 }
 
@@ -3707,10 +3670,15 @@
    ============================================================ */
 
 .ui-home-feature {
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+/* 左半舞台：虚化铺底 + 文案 + 完整竖版海报 */
+.ui-home-feature-stage {
   position: relative;
   overflow: hidden;
-  min-height: 380px;
   border: 1px solid rgb(var(--ui-border));
   border-radius: var(--ui-radius-lg);
   background: #0b0d12;
@@ -3719,13 +3687,11 @@
 .ui-home-feature-art {
   position: absolute;
   inset: 0;
-  min-height: 0;
 }
 
-.ui-home-feature-image {
-  opacity: 0.85;
-  filter: saturate(0.95) brightness(0.9);
-  object-position: center 20%;
+.ui-home-feature-ambient {
+  filter: blur(26px) saturate(1.15) brightness(0.55);
+  transform: scale(1.18);
 }
 
 .ui-home-feature-scrim {
@@ -3733,25 +3699,157 @@
   inset: 0;
   background: linear-gradient(
       90deg,
-      rgb(8 9 12 / 0.97) 0%,
-      rgb(8 9 12 / 0.86) 38%,
-      rgb(8 9 12 / 0.35) 72%,
-      rgb(8 9 12 / 0.05) 100%
+      rgb(8 9 12 / 0.96) 0%,
+      rgb(8 9 12 / 0.9) 46%,
+      rgb(8 9 12 / 0.55) 72%,
+      rgb(8 9 12 / 0.28) 100%
     ),
-    linear-gradient(to top, rgb(8 9 12 / 0.75) 0%, transparent 55%);
+    linear-gradient(to top, rgb(8 9 12 / 0.7) 0%, transparent 55%);
+}
+
+.ui-home-feature-body {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 32px;
+  padding: 32px 40px;
 }
 
 .ui-home-feature-copy {
-  position: relative;
-  z-index: 1;
   display: flex;
-  min-height: 380px;
-  max-width: 640px;
+  min-width: 0;
   flex-direction: column;
   justify-content: center;
   align-items: flex-start;
   gap: 12px;
-  padding: 40px;
+}
+
+/* 右侧竖版海报卡：2:3 原比例展示，不裁切 */
+.ui-home-feature-poster {
+  position: relative;
+  width: clamp(140px, 15vw, 208px);
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface-strong));
+  box-shadow: 0 26px 60px rgb(0 0 0 / 0.5);
+}
+
+/* 右半：候选清单 */
+.ui-home-feature-list {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-surface));
+}
+
+.ui-home-feature-list-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-text-muted));
+}
+
+.ui-home-feature-list ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ui-home-feature-list-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-sm);
+  text-align: left;
+  transition: background-color 150ms, border-color 150ms;
+}
+
+.ui-home-feature-list-item:hover {
+  background: rgb(var(--ui-text) / 0.06);
+}
+
+.ui-home-feature-list-item[aria-current='true'] {
+  border-color: rgb(var(--ui-accent) / 0.45);
+  background: rgb(var(--ui-accent) / 0.1);
+}
+
+.ui-home-feature-list-item:focus-visible {
+  outline: 2px solid rgb(var(--ui-accent));
+  outline-offset: 2px;
+}
+
+.ui-home-feature-list-thumb {
+  position: relative;
+  height: 54px;
+  width: 36px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-surface-strong));
+}
+
+.ui-home-feature-list-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ui-home-feature-list-name {
+  overflow: hidden;
+  color: rgb(var(--ui-text));
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-home-feature-list-meta {
+  overflow: hidden;
+  color: rgb(var(--ui-text-muted));
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-home-feature-list-score {
+  flex-shrink: 0;
+  color: rgb(var(--ui-accent));
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 1024px) {
+  .ui-home-feature {
+    grid-template-columns: minmax(0, 1.72fr) minmax(260px, 0.85fr);
+    align-items: stretch;
+  }
+
+  .ui-home-feature-list {
+    display: flex;
+  }
+}
+
+/* 电视端只保留舞台 + 左右箭头，清单太密不适合 10-foot 遥控焦点 */
+[data-tv-browse='true'] .ui-home-feature {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+[data-tv-browse='true'] .ui-home-feature-list {
+  display: none;
 }
 
 .ui-home-feature-kicker {
@@ -3838,12 +3936,11 @@
 }
 
 @media (max-width: 767px) {
-  .ui-home-feature,
-  .ui-home-feature-copy {
-    min-height: 320px;
+  .ui-home-feature {
+    min-height: 0;
   }
   .ui-home-feature-copy {
-    padding: 20px;
+    padding: 0;
   }
   .ui-home-feature-title {
     font-size: 30px;
@@ -3858,14 +3955,8 @@
   }
 }
 
-[data-tv-browse='true'] .ui-home-feature,
-[data-tv-browse='true'] .ui-home-feature-copy {
-  min-height: 460px;
-}
-
-[data-tv-browse='true'] .ui-home-feature-copy {
-  padding: 48px 56px;
-  max-width: 900px;
+[data-tv-browse='true'] .ui-home-feature {
+  min-height: 0;
 }
 
 [data-tv-browse='true'] .ui-home-feature-kicker {
@@ -3920,13 +4011,10 @@
 }
 
 .ui-home-feature-pager {
-  position: absolute;
-  right: 20px;
-  bottom: 18px;
-  z-index: 2;
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-top: 6px;
 }
 
 .ui-home-feature-arrow {
@@ -3984,13 +4072,21 @@
 }
 
 @media (max-width: 767px) {
-  .ui-home-feature-pager {
-    right: 14px;
-    bottom: 12px;
+  .ui-home-feature-body {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    padding: 18px;
+  }
+
+  .ui-home-feature-poster {
+    width: clamp(92px, 27vw, 128px);
+  }
+
+  .ui-home-feature-body {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .ui-home-feature-copy {
-    max-width: 100%;
     gap: 10px;
   }
 
@@ -4000,9 +4096,17 @@
 }
 
 [data-tv-browse='true'] .ui-home-feature-pager {
-  right: 40px;
-  bottom: 36px;
   gap: 14px;
+  margin-top: 10px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-body {
+  gap: 56px;
+  padding: 44px 56px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-poster {
+  width: clamp(220px, 20vw, 320px);
 }
 
 [data-tv-browse='true'] .ui-home-feature-arrow {
@@ -4099,82 +4203,6 @@
 
 .art-video-player .art-setting-item.art-current {
   color: rgb(var(--ui-accent));
-}
-
-/* Hero 右侧保留海报竖构图，避免把竖版海报裁成超宽条 */
-.ui-home-feature-art {
-  inset: 0 0 0 auto;
-  width: 52%;
-}
-
-.ui-home-feature-scrim {
-  background: linear-gradient(
-      90deg,
-      rgb(8 9 12) 0%,
-      rgb(8 9 12 / 0.98) 34%,
-      rgb(8 9 12 / 0.72) 52%,
-      rgb(8 9 12 / 0.18) 74%,
-      rgb(8 9 12 / 0) 100%
-    ),
-    linear-gradient(to top, rgb(8 9 12 / 0.55) 0%, transparent 45%);
-}
-
-.ui-home-feature-copy {
-  max-width: 58%;
-}
-
-@media (max-width: 767px) {
-  .ui-home-feature-art {
-    inset: 0;
-    width: 100%;
-  }
-  .ui-home-feature-copy {
-    max-width: 100%;
-  }
-}
-
-/* Hero 海报列：左侧遮罩淡出，避免出现硬边 */
-.ui-home-feature-art {
-  width: 40%;
-}
-
-.ui-home-feature-image {
-  opacity: 0.9;
-  -webkit-mask-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgb(0 0 0 / 0.55) 18%,
-    #000 42%
-  );
-  mask-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgb(0 0 0 / 0.55) 18%,
-    #000 42%
-  );
-}
-
-.ui-home-feature {
-  min-height: 360px;
-}
-
-.ui-home-feature-copy {
-  min-height: 360px;
-  max-width: 60%;
-}
-
-@media (max-width: 767px) {
-  .ui-home-feature-art {
-    width: 100%;
-  }
-  .ui-home-feature-image {
-    -webkit-mask-image: none;
-    mask-image: none;
-    opacity: 0.7;
-  }
-  .ui-home-feature-copy {
-    max-width: 100%;
-  }
 }
 
 /* 首页片库频道：设计稿式中等标题 + 右侧分类入口 */

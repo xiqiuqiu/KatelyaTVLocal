@@ -32,6 +32,11 @@ const MEDIA_TYPE_LABEL: Record<HomeRecommendationType, string> = {
 /** 自动轮播间隔；手动切换后会重新计时。 */
 const ROTATE_INTERVAL_MS = 9000;
 
+/** 首屏只有竖版海报可用，取三种尺寸：虚化铺底、完整海报、侧栏缩略图。 */
+const AMBIENT_IMAGE_SIZE = { width: 480, height: 720, quality: 70 };
+const POSTER_IMAGE_SIZE = { width: 480, height: 720, quality: 80 };
+const THUMB_IMAGE_SIZE = { width: 144, height: 216, quality: 66 };
+
 interface HomeHeroProps {
   recommendations: HomeRecommendation[];
   loading?: boolean;
@@ -41,13 +46,17 @@ interface HomeHeroProps {
 function HomeHeroSkeleton() {
   return (
     <section aria-busy='true' aria-label='为你推荐' className='ui-home-feature'>
-      <div className='ui-home-feature-copy'>
-        <div className='ui-skeleton-block h-3 w-24 rounded-ui-sm' />
-        <div className='ui-skeleton-block h-9 w-3/4 rounded-ui-sm' />
-        <div className='ui-skeleton-block h-4 w-1/2 rounded-ui-sm' />
-        <div className='ui-skeleton-block h-11 w-28 rounded-ui-sm' />
+      <div className='ui-home-feature-stage'>
+        <div className='ui-home-feature-body'>
+          <div className='ui-home-feature-copy'>
+            <div className='ui-skeleton-block h-3 w-24 rounded-ui-sm' />
+            <div className='ui-skeleton-block h-9 w-3/4 rounded-ui-sm' />
+            <div className='ui-skeleton-block h-4 w-1/2 rounded-ui-sm' />
+            <div className='ui-skeleton-block h-11 w-28 rounded-ui-sm' />
+          </div>
+          <div className='ui-skeleton-block ui-home-feature-poster' />
+        </div>
       </div>
-      <div className='ui-skeleton-block ui-home-feature-art' />
     </section>
   );
 }
@@ -83,7 +92,7 @@ export default function HomeHero({
     [count]
   );
 
-  // 自动轮播：电视端、悬停/聚焦中、用户要求减少动效时都不自动切换
+  // 自动轮播：电视端、悬停/聚焦中、系统要求减少动效时都不自动切换
   useEffect(() => {
     if (tvMode || paused || count < 2) return;
     if (
@@ -147,108 +156,189 @@ export default function HomeHero({
       onMouseLeave={() => setPaused(false)}
       ref={surfaceRef}
     >
-      <div className='ui-home-feature-art' aria-hidden>
-        {recommendations.map((recommendation, index) => (
-          <span
-            className='ui-home-feature-slide'
-            data-active={index === safeIndex}
-            key={getHomeRecommendationKey(recommendation)}
-          >
-            <Image
-              alt=''
-              aria-hidden
-              className='ui-home-feature-image object-cover'
-              fill
-              priority={index === 0}
-              referrerPolicy='no-referrer'
-              sizes='(max-width: 767px) 100vw, 720px'
-              src={processImageUrl(recommendation.item.poster, {
-                width: 640,
-                height: 360,
-                quality: 78,
-              })}
-            />
-          </span>
-        ))}
-        <div className='ui-home-feature-scrim' />
-      </div>
-
-      <div className='ui-home-feature-copy'>
-        <p className='ui-home-feature-kicker'>今日私人放映</p>
-        <h2 className='ui-home-feature-title line-clamp-2'>{item.title}</h2>
-        <div className='ui-home-feature-meta'>
-          {item.rate && (
-            <span className='ui-home-feature-score'>
-              <Star
+      {/* 左半：虚化铺底 + 文案 + 完整竖版海报；右半：候选清单 */}
+      <div className='ui-home-feature-stage'>
+        <div className='ui-home-feature-art' aria-hidden>
+          {recommendations.map((recommendation, index) => (
+            <span
+              className='ui-home-feature-slide'
+              data-active={index === safeIndex}
+              key={getHomeRecommendationKey(recommendation)}
+            >
+              <Image
+                alt=''
                 aria-hidden
-                className='h-3.5 w-3.5 fill-current'
-                strokeWidth={0}
+                className='ui-home-feature-ambient object-cover'
+                fill
+                priority={index === 0}
+                referrerPolicy='no-referrer'
+                sizes='(max-width: 1023px) 100vw, 760px'
+                src={processImageUrl(
+                  recommendation.item.poster,
+                  AMBIENT_IMAGE_SIZE
+                )}
               />
-              豆瓣 {item.rate}
             </span>
-          )}
-          {metadata && <span>{metadata}</span>}
+          ))}
+          <div className='ui-home-feature-scrim' />
         </div>
-        <p className='ui-home-feature-reason'>{reason}</p>
-        <div className='ui-home-feature-actions'>
-          <Link
-            data-tv-focus-key='hero-play'
-            data-tv-primary={tvMode || undefined}
-            href={playHref}
-            onClick={handlePlay}
-            className='ui-home-feature-cta'
-          >
-            <Play aria-hidden className='h-4 w-4 fill-current' />
-            立即播放
-          </Link>
-          <Link
-            href={tvMode ? buildTvModeHref(listHref, true) : listHref}
-            className='ui-home-feature-secondary'
-          >
-            查看片单
-          </Link>
+
+        <div className='ui-home-feature-body'>
+          <div className='ui-home-feature-copy'>
+            <p className='ui-home-feature-kicker'>今日私人放映</p>
+            <h2 className='ui-home-feature-title line-clamp-2'>{item.title}</h2>
+            <div className='ui-home-feature-meta'>
+              {item.rate && (
+                <span className='ui-home-feature-score'>
+                  <Star
+                    aria-hidden
+                    className='h-3.5 w-3.5 fill-current'
+                    strokeWidth={0}
+                  />
+                  豆瓣 {item.rate}
+                </span>
+              )}
+              {metadata && <span>{metadata}</span>}
+            </div>
+            <p className='ui-home-feature-reason'>{reason}</p>
+            <div className='ui-home-feature-actions'>
+              <Link
+                data-tv-focus-key='hero-play'
+                data-tv-primary={tvMode || undefined}
+                href={playHref}
+                onClick={handlePlay}
+                className='ui-home-feature-cta'
+              >
+                <Play aria-hidden className='h-4 w-4 fill-current' />
+                立即播放
+              </Link>
+              <Link
+                href={tvMode ? buildTvModeHref(listHref, true) : listHref}
+                className='ui-home-feature-secondary'
+              >
+                查看片单
+              </Link>
+            </div>
+
+            {count > 1 && (
+              <div className='ui-home-feature-pager'>
+                <button
+                  aria-label='上一张推荐'
+                  className='ui-home-feature-arrow'
+                  data-tv-focus-key='hero-prev'
+                  onClick={() => goTo(safeIndex - 1)}
+                  type='button'
+                >
+                  <ChevronLeft aria-hidden className='h-4 w-4' />
+                </button>
+                <span className='ui-home-feature-counter' aria-hidden>
+                  {safeIndex + 1} / {count}
+                </span>
+                <div className='ui-home-feature-dots'>
+                  {recommendations.map((recommendation, index) => (
+                    <button
+                      aria-current={index === safeIndex ? 'true' : undefined}
+                      aria-label={`第 ${index + 1} 张推荐：${
+                        recommendation.item.title
+                      }`}
+                      className='ui-home-feature-dot'
+                      data-tv-focus-key={`hero-dot-${index}`}
+                      key={getHomeRecommendationKey(recommendation)}
+                      onClick={() => goTo(index)}
+                      type='button'
+                    />
+                  ))}
+                </div>
+                <button
+                  aria-label='下一张推荐'
+                  className='ui-home-feature-arrow'
+                  data-tv-focus-key='hero-next'
+                  onClick={() => goTo(safeIndex + 1)}
+                  type='button'
+                >
+                  <ChevronRight aria-hidden className='h-4 w-4' />
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className='ui-home-feature-poster'>
+            {recommendations.map((recommendation, index) => (
+              <span
+                className='ui-home-feature-slide'
+                data-active={index === safeIndex}
+                key={getHomeRecommendationKey(recommendation)}
+              >
+                <Image
+                  alt=''
+                  aria-hidden
+                  className='object-cover'
+                  fill
+                  priority={index === 0}
+                  referrerPolicy='no-referrer'
+                  sizes='(max-width: 767px) 34vw, 260px'
+                  src={processImageUrl(
+                    recommendation.item.poster,
+                    POSTER_IMAGE_SIZE
+                  )}
+                />
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
       {count > 1 && (
-        <div className='ui-home-feature-pager'>
-          <button
-            aria-label='上一张推荐'
-            className='ui-home-feature-arrow'
-            data-tv-focus-key='hero-prev'
-            onClick={() => goTo(safeIndex - 1)}
-            type='button'
-          >
-            <ChevronLeft aria-hidden className='h-4 w-4' />
-          </button>
-          <span className='ui-home-feature-counter' aria-hidden>
-            {safeIndex + 1} / {count}
-          </span>
-          <div className='ui-home-feature-dots'>
+        <aside aria-label='更多推荐' className='ui-home-feature-list'>
+          <p className='ui-home-feature-list-title'>接下来</p>
+          <ul>
             {recommendations.map((recommendation, index) => (
-              <button
-                aria-current={index === safeIndex ? 'true' : undefined}
-                aria-label={`第 ${index + 1} 张推荐：${
-                  recommendation.item.title
-                }`}
-                className='ui-home-feature-dot'
-                data-tv-focus-key={`hero-dot-${index}`}
-                key={getHomeRecommendationKey(recommendation)}
-                onClick={() => goTo(index)}
-                type='button'
-              />
+              <li key={getHomeRecommendationKey(recommendation)}>
+                <button
+                  aria-current={index === safeIndex ? 'true' : undefined}
+                  aria-label={`切换到${recommendation.item.title}`}
+                  className='ui-home-feature-list-item'
+                  data-tv-focus-key={`hero-item-${index}`}
+                  onClick={() => goTo(index)}
+                  type='button'
+                >
+                  <span className='ui-home-feature-list-thumb'>
+                    <Image
+                      alt=''
+                      aria-hidden
+                      className='object-cover'
+                      fill
+                      referrerPolicy='no-referrer'
+                      sizes='72px'
+                      src={processImageUrl(
+                        recommendation.item.poster,
+                        THUMB_IMAGE_SIZE
+                      )}
+                    />
+                  </span>
+                  <span className='ui-home-feature-list-text'>
+                    <span className='ui-home-feature-list-name'>
+                      {recommendation.item.title}
+                    </span>
+                    <span className='ui-home-feature-list-meta'>
+                      {[
+                        recommendation.item.year,
+                        MEDIA_TYPE_LABEL[recommendation.type],
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </span>
+                  {recommendation.item.rate && (
+                    <span className='ui-home-feature-list-score'>
+                      {recommendation.item.rate}
+                    </span>
+                  )}
+                </button>
+              </li>
             ))}
-          </div>
-          <button
-            aria-label='下一张推荐'
-            className='ui-home-feature-arrow'
-            data-tv-focus-key='hero-next'
-            onClick={() => goTo(safeIndex + 1)}
-            type='button'
-          >
-            <ChevronRight aria-hidden className='h-4 w-4' />
-          </button>
-        </div>
+          </ul>
+        </aside>
       )}
     </section>
   );
