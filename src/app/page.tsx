@@ -4,7 +4,7 @@
 
 import { ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
 // 客户端收藏 API
 import {
@@ -15,7 +15,8 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
-import { selectHomeHeroCandidate } from '@/lib/home-hero';
+import { buildHomeRecommendations } from '@/lib/home-recommendations';
+import { buildTopRated } from '@/lib/top-rated';
 import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 import { DoubanItem } from '@/lib/types';
 import { catalogNavigationItems } from '@/lib/ui/navigation';
@@ -27,11 +28,13 @@ import ContinueWatching from '@/components/ContinueWatching';
 import HomeHero from '@/components/HomeHero';
 import PageLayout from '@/components/PageLayout';
 import { useSite } from '@/components/SiteProvider';
+import TopRatedRail from '@/components/TopRatedRail';
 import ActionLink from '@/components/ui/ActionLink';
 import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
 import PageHeader from '@/components/ui/PageHeader';
 import PosterGrid from '@/components/ui/PosterGrid';
 import SectionHeader from '@/components/ui/SectionHeader';
+import useHomeSignals from '@/components/useHomeSignals';
 import VideoCard from '@/components/VideoCard';
 
 export const runtime = 'edge';
@@ -347,25 +350,52 @@ function HomeCatalog({
   loading: boolean;
   tvMode: boolean;
 }) {
-  // 精选 Hero 只在大屏渲染：小屏保持卡片流，避免与列表标题重复占位
-  const showHero = useMediaQuery('(min-width: 768px)');
   // 侧栏从 768px 起出现，分类入口只在更窄的屏幕由首页承担
-  const isDesktop = showHero;
-  const heroCandidate = showHero
-    ? selectHomeHeroCandidate(hotMovies, hotTvShows, hotVarietyShows)
-    : null;
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const signals = useHomeSignals();
+  // 评分榜：三榜合池取前 10，纯展示排序，不涉及个人数据
+  const topRated = useMemo(
+    () =>
+      buildTopRated({
+        movies: hotMovies,
+        tvShows: hotTvShows,
+        varietyShows: hotVarietyShows,
+      }),
+    [hotMovies, hotTvShows, hotVarietyShows]
+  );
+  // 首屏推荐：热榜为池，播放历史/收藏在本地做偏好加权
+  const heroRecommendations = useMemo(
+    () =>
+      buildHomeRecommendations({
+        movies: hotMovies,
+        tvShows: hotTvShows,
+        varietyShows: hotVarietyShows,
+        playRecords: signals.playRecords,
+        favorites: signals.favorites,
+      }),
+    [
+      hotMovies,
+      hotTvShows,
+      hotVarietyShows,
+      signals.playRecords,
+      signals.favorites,
+    ]
+  );
 
   return (
     <div className='ui-home-content ui-home-catalog'>
       <HomeHero
-        candidate={heroCandidate}
-        loading={loading && showHero}
+        // 热榜与本地信号都就绪后才渲染，避免推荐列表变化导致首屏重排两次
+        loading={loading || signals.loading}
+        recommendations={heroRecommendations}
         tvMode={tvMode}
       />
       <h1 className='sr-only'>首页</h1>
       {/* 移动端没有侧栏，保留一行分类入口；桌面与 TV 由侧栏/顶部导航承担 */}
       {!tvMode && !isDesktop ? <HomeCategoryLinks /> : null}
       <ContinueWatching tvMode={tvMode} />
+
+      <TopRatedRail entries={topRated} tvMode={tvMode} />
 
       <HomePosterSection
         href='/douban?type=movie'

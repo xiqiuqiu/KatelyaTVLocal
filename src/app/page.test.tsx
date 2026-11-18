@@ -130,15 +130,24 @@ describe('Home page composition', () => {
     jest.mocked(Swal.fire).mockReset();
   });
 
-  it('shows Continue Watching before the movie catalog without a recommendation banner', async () => {
-    const { container } = render(<HomePage />);
-    await screen.findByText('庆余年');
+  it('leads with the personalized hero, then Continue Watching, then the catalog', async () => {
+    render(<HomePage />);
+    await screen.findAllByText('庆余年');
+
+    // 首屏推荐：热榜里评分最高的条目，带一句可读的推荐理由
+    // （首屏在等待 TMDB 与本地信号时先渲染骨架，所以要等标题出现）
+    await screen.findByRole('heading', { name: '庆余年' });
+    const hero = screen.getByRole('region', { name: '为你推荐' });
     expect(
-      screen.queryByRole('region', { name: '精选推荐' })
-    ).not.toBeInTheDocument();
+      within(hero).getByRole('heading', { name: '庆余年' })
+    ).toBeInTheDocument();
+    expect(within(hero).getByText('本周口碑高分')).toBeInTheDocument();
     expect(
-      screen.queryByRole('link', { name: /立即播放/i })
-    ).not.toBeInTheDocument();
+      within(hero).getByRole('link', { name: /立即播放/i })
+    ).toHaveAttribute(
+      'href',
+      '/play?title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024&stype=movie'
+    );
 
     const continueHeading = await screen.findByRole('heading', {
       name: '继续观看',
@@ -151,10 +160,20 @@ describe('Home page composition', () => {
       })
     ).toHaveAttribute('href', '/history');
 
-    const movieIndex = container.textContent?.indexOf('庆余年') ?? -1;
-    const continueIndex = container.textContent?.indexOf('继续观看') ?? -1;
-    expect(movieIndex).toBeGreaterThanOrEqual(0);
-    expect(movieIndex).toBeGreaterThan(continueIndex);
+    // 首屏推荐在最上，继续观看在片库之前
+    const catalogSection = screen
+      .getByRole('heading', { name: '热门电影' })
+      .closest('section');
+    expect(catalogSection).not.toBeNull();
+    expect(
+      hero.compareDocumentPosition(catalogSection as HTMLElement) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      (continueSection as HTMLElement).compareDocumentPosition(
+        catalogSection as HTMLElement
+      ) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
 
     expect(
       screen.getByRole('heading', { name: '首页', level: 1 })
@@ -170,18 +189,25 @@ describe('Home page composition', () => {
   it('keeps TV mode on catalog cards, continue watching and history', async () => {
     mockSearchParams.set('tv', '1');
     render(<HomePage />);
-    await screen.findByText('庆余年');
+    await screen.findAllByText('庆余年');
     expect(screen.getByTestId('page-layout')).toHaveAttribute(
       'data-tv-mode',
       'true'
     );
-    expect(screen.getByText('庆余年')).toHaveAttribute(
-      'data-tv-card-mode',
-      'true'
-    );
+    // 页面上有两处「庆余年」：首屏推荐标题 + 片库卡片，这里断言卡片本身
+    const catalogCard = screen
+      .getAllByText('庆余年')
+      .find((element) => element.hasAttribute('data-tv-card-mode'));
+    expect(catalogCard).toHaveAttribute('data-tv-card-mode', 'true');
+    // 电视端首屏同样是可聚焦的推荐区，播放入口带电视参数
+    await screen.findByRole('link', { name: /立即播放/i });
+    const hero = screen.getByRole('region', { name: '为你推荐' });
     expect(
-      screen.queryByRole('region', { name: '精选推荐' })
-    ).not.toBeInTheDocument();
+      within(hero).getByRole('link', { name: /立即播放/i })
+    ).toHaveAttribute(
+      'href',
+      '/play?title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024&stype=movie&tv=1'
+    );
     expect(
       screen.queryByRole('navigation', { name: '影片分类' })
     ).not.toBeInTheDocument();
@@ -200,7 +226,7 @@ describe('Home page composition', () => {
     async (tvMode) => {
       if (tvMode) mockSearchParams.set('tv', '1');
       render(<HomePage />);
-      await screen.findByText('庆余年');
+      await screen.findAllByText('庆余年');
 
       const section = screen.getByRole('region', { name: '热门剧集' });
       expect(section).toHaveAttribute('aria-busy', 'false');

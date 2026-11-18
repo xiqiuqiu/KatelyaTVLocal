@@ -10,6 +10,7 @@ import {
   Menu,
   Search,
   Settings,
+  SlidersHorizontal,
   Tv,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -68,6 +69,7 @@ const iconMap: Record<NavigationIcon, typeof Home> = {
   heart: Heart,
   compass: Compass,
   history: History,
+  sliders: SlidersHorizontal,
 };
 
 const Sidebar = ({

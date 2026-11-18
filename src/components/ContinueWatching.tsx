@@ -113,13 +113,13 @@ export default function ContinueWatching({
             </ActionLink>
           ) : null
         }
-        className='mb-4'
+        className={tvMode ? 'mb-2' : 'mb-4'}
         title='继续观看'
       />
       <Row
         className={
           tvMode
-            ? 'grid-cols-2 gap-6 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
+            ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
             : '[&>div:first-child]:pb-2'
         }
       >
@@ -129,6 +129,7 @@ export default function ContinueWatching({
               <div key={index} className={cardWidthClass}>
                 <SkeletonPosterCard
                   aspectRatio='aspect-[2/3]'
+                  className={tvMode ? 'ui-tv-resume-skeleton' : undefined}
                   delayIndex={index}
                   widths={['84%', '62%']}
                 />
@@ -154,6 +155,8 @@ export default function ContinueWatching({
                     source={source}
                     source_name={record.source_name}
                     progress={getProgress(record)}
+                    playedSeconds={record.play_time}
+                    totalSeconds={record.total_time}
                     episodes={record.total_episodes}
                     currentEpisode={record.index}
                     query={record.search_title}

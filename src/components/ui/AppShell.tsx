@@ -1,6 +1,14 @@
 'use client';
 
-import { Compass, Heart, History, Home, Search, Settings } from 'lucide-react';
+import {
+  Compass,
+  Heart,
+  History,
+  Home,
+  Search,
+  Settings,
+  SlidersHorizontal,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
@@ -30,6 +38,7 @@ interface AppShellProps {
 const tvNavigation = [
   { href: '/', label: '首页', key: 'home', icon: Home },
   { href: '/douban?type=movie', label: '发现', key: 'discover', icon: Compass },
+  { href: '/discover', label: '筛选', key: 'filter', icon: SlidersHorizontal },
   { href: '/search', label: '搜索', key: 'search', icon: Search },
   { href: '/?tab=favorites', label: '收藏夹', key: 'favorites', icon: Heart },
   { href: '/history', label: '播放历史', key: 'history', icon: History },
@@ -46,9 +55,14 @@ export default function AppShell({
   const rootRef = useRef<HTMLDivElement>(null);
   const { siteName } = useSite();
   const browsePage =
-    ['/', '/?tab=favorites', '/history', '/search', '/admin'].includes(
-      activePath
-    ) || activePath.startsWith('/douban');
+    [
+      '/',
+      '/?tab=favorites',
+      '/history',
+      '/search',
+      '/admin',
+      '/discover',
+    ].includes(activePath) || activePath.startsWith('/douban');
   useTvBrowseNavigation(
     rootRef,
     tvMode && browsePage,
@@ -135,7 +149,7 @@ export default function AppShell({
             tvMode ? '' : isSidebarCollapsed ? 'md:pl-[72px]' : 'md:pl-56'
           }`}
         >
-          <div className='ui-shell-content'>
+          <div className='ui-shell-content' data-home={activePath === '/'}>
             {tvMode && (
               <nav aria-label='电视导航' className='ui-tv-nav'>
                 <span className='ui-brand'>{siteName}</span>

@@ -438,30 +438,6 @@
   font-size: 26px;
 }
 
-.ui-home-feature {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 38%;
-  min-height: 176px;
-  overflow: hidden;
-  border-radius: var(--ui-radius-md);
-  background: rgb(var(--ui-surface));
-}
-
-.ui-home-feature-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 20px;
-}
-
-.ui-home-feature-art {
-  position: relative;
-  min-height: 176px;
-}
-
 .ui-video-title {
   display: -webkit-box;
   overflow: hidden;
@@ -596,19 +572,6 @@
   :is(.ui-home-poster-section, .ui-library-posters) .ui-poster-grid {
     column-gap: 24px;
     row-gap: 32px;
-  }
-
-  .ui-home-feature {
-    grid-template-columns: minmax(0, 1fr) 42%;
-    min-height: 200px;
-  }
-
-  .ui-home-feature-copy {
-    padding: 24px 32px;
-  }
-
-  .ui-home-feature-art {
-    min-height: 200px;
   }
 }
 
@@ -3706,11 +3669,12 @@
    首页精选 Hero：设计稿式编辑大图
    ============================================================ */
 
-.ui-home-feature {
-  display: block;
+.ui-home-feature-stage {
   position: relative;
+  display: grid;
+  align-items: center;
+  min-block-size: 420px;
   overflow: hidden;
-  min-height: 380px;
   border: 1px solid rgb(var(--ui-border));
   border-radius: var(--ui-radius-lg);
   background: #0b0d12;
@@ -3719,13 +3683,15 @@
 .ui-home-feature-art {
   position: absolute;
   inset: 0;
-  min-height: 0;
 }
 
-.ui-home-feature-image {
-  opacity: 0.85;
-  filter: saturate(0.95) brightness(0.9);
-  object-position: center 20%;
+.ui-home-feature-ambient {
+  filter: blur(26px) saturate(1.15) brightness(0.55);
+  transform: scale(1.18);
+}
+
+.ui-home-feature-backdrop {
+  object-position: center 25%;
 }
 
 .ui-home-feature-scrim {
@@ -3733,25 +3699,57 @@
   inset: 0;
   background: linear-gradient(
       90deg,
-      rgb(8 9 12 / 0.97) 0%,
-      rgb(8 9 12 / 0.86) 38%,
-      rgb(8 9 12 / 0.35) 72%,
-      rgb(8 9 12 / 0.05) 100%
+      rgb(8 9 12 / 0.95) 0%,
+      rgb(8 9 12 / 0.82) 38%,
+      rgb(8 9 12 / 0.2) 72%,
+      transparent 100%
     ),
-    linear-gradient(to top, rgb(8 9 12 / 0.75) 0%, transparent 55%);
+    linear-gradient(to top, rgb(8 9 12 / 0.85) 0%, transparent 62%);
+}
+
+.ui-home-feature-body {
+  --hero-inline-padding: 40px;
+  --hero-poster-width: clamp(140px, 15vw, 208px);
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 640px);
+  padding: 32px var(--hero-inline-padding);
 }
 
 .ui-home-feature-copy {
-  position: relative;
-  z-index: 1;
   display: flex;
-  min-height: 380px;
-  max-width: 640px;
+  min-inline-size: 0;
   flex-direction: column;
-  justify-content: center;
   align-items: flex-start;
   gap: 12px;
-  padding: 40px;
+}
+
+.ui-home-feature-poster {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .ui-home-feature-body {
+    grid-template-columns: minmax(0, 640px) var(--hero-poster-width);
+    justify-content: space-between;
+    column-gap: 32px;
+  }
+
+  .ui-home-feature-poster {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-end: var(--hero-inline-padding);
+    display: block;
+    inline-size: var(--hero-poster-width);
+    aspect-ratio: 2 / 3;
+    transform: translateY(-50%);
+    overflow: hidden;
+    border: 1px solid rgb(255 255 255 / 0.14);
+    border-radius: var(--ui-radius-md);
+    background: rgb(var(--ui-surface-strong));
+    box-shadow: 0 26px 60px rgb(0 0 0 / 0.5);
+  }
 }
 
 .ui-home-feature-kicker {
@@ -3767,6 +3765,7 @@
   font-family: var(--font-display);
   font-size: 46px;
   line-height: 1.08;
+  min-block-size: 2.16em;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: #f4f2ed;
@@ -3775,15 +3774,25 @@
 
 .ui-home-feature-meta {
   display: flex;
-  flex-wrap: wrap;
+  max-inline-size: 100%;
+  min-block-size: 1.5em;
   align-items: center;
   gap: 6px 14px;
   color: rgb(255 255 255 / 0.72);
   font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.ui-home-feature-meta > span:not(.ui-home-feature-score) {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ui-home-feature-score {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 5px;
   color: rgb(var(--ui-accent));
@@ -3818,73 +3827,229 @@
   filter: brightness(1.06);
 }
 
-.ui-home-feature-secondary {
-  display: inline-flex;
-  min-height: 40px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 16px;
-  border: 1px solid rgb(255 255 255 / 0.22);
-  border-radius: var(--ui-radius-sm);
-  color: rgb(255 255 255 / 0.86);
-  font-size: 13px;
-  font-weight: 500;
-  transition: background-color 150ms, border-color 150ms;
-}
-
-.ui-home-feature-secondary:hover {
-  background: rgb(255 255 255 / 0.08);
-  border-color: rgb(255 255 255 / 0.4);
-}
-
 @media (max-width: 767px) {
-  .ui-home-feature,
-  .ui-home-feature-copy {
-    min-height: 320px;
+  .ui-home-feature-stage {
+    min-block-size: 304px;
   }
-  .ui-home-feature-copy {
-    padding: 20px;
+
+  .ui-home-feature-body {
+    padding: 18px;
   }
+
+  .ui-home-feature-copy {
+    gap: 10px;
+  }
+
   .ui-home-feature-title {
     font-size: 30px;
   }
+
+  .ui-home-feature-meta {
+    font-size: 12px;
+    column-gap: 10px;
+  }
+
   .ui-home-feature-scrim {
     background: linear-gradient(
       to top,
-      rgb(8 9 12 / 0.97) 10%,
-      rgb(8 9 12 / 0.72) 55%,
-      rgb(8 9 12 / 0.3) 100%
+      rgb(8 9 12 / 0.94) 18%,
+      rgb(8 9 12 / 0.84) 50%,
+      rgb(8 9 12 / 0.42) 82%,
+      rgb(8 9 12 / 0.18) 100%
     );
+  }
+
+  .ui-home-feature-cta {
+    min-height: 44px;
+    padding-inline: 20px;
   }
 }
 
-[data-tv-browse='true'] .ui-home-feature,
-[data-tv-browse='true'] .ui-home-feature-copy {
-  min-height: 460px;
-}
-
-[data-tv-browse='true'] .ui-home-feature-copy {
-  padding: 48px 56px;
-  max-width: 900px;
+[data-tv-browse='true'] .ui-home-feature-stage {
+  min-block-size: 296px;
 }
 
 [data-tv-browse='true'] .ui-home-feature-kicker {
-  font-size: 20px;
+  font-size: 16px;
 }
 
 [data-tv-browse='true'] .ui-home-feature-title {
-  font-size: 64px;
+  font-size: clamp(2rem, 3.5vw, 3rem);
 }
 
 [data-tv-browse='true'] .ui-home-feature-meta {
-  font-size: 24px;
+  font-size: 19px;
 }
 
-[data-tv-browse='true'] .ui-home-feature-cta,
-[data-tv-browse='true'] .ui-home-feature-secondary {
+[data-tv-browse='true'] .ui-home-feature-cta {
   min-height: 64px;
-  padding-inline: 28px;
-  font-size: 24px;
+  padding-inline: 20px;
+  font-size: 20px;
+}
+
+/* ---------- 首屏推荐轮播 ---------- */
+
+.ui-home-feature-slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 520ms var(--ease-out);
+}
+
+.ui-home-feature-slide[data-active='true'] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-home-feature-slide {
+    transition: none;
+  }
+}
+
+.ui-home-feature-reason {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid rgb(var(--ui-accent) / 0.32);
+  border-radius: 9999px;
+  background: rgb(var(--ui-accent) / 0.12);
+  color: rgb(var(--ui-accent-warm));
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ui-home-feature-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.ui-home-feature-arrow {
+  display: inline-flex;
+  height: 30px;
+  width: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 9999px;
+  background: rgb(8 9 12 / 0.55);
+  color: rgb(255 255 255 / 0.82);
+  backdrop-filter: blur(6px);
+  transition: background-color 150ms, border-color 150ms, color 150ms;
+}
+
+.ui-home-feature-arrow:hover {
+  border-color: rgb(var(--ui-accent) / 0.55);
+  background: rgb(var(--ui-accent) / 0.22);
+  color: #fff;
+}
+
+.ui-home-feature-arrow:focus-visible,
+.ui-home-feature-dot:focus-visible {
+  outline: 2px solid rgb(var(--ui-accent));
+  outline-offset: 2px;
+}
+
+.ui-home-feature-dots {
+  display: flex;
+  align-items: center;
+}
+
+/* 电视端圆点会被遥控焦点尺寸撑成大方块，改用「1 / 5」计数 */
+.ui-home-feature-counter {
+  display: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(255 255 255 / 0.72);
+}
+
+.ui-home-feature-dot {
+  display: grid;
+  place-items: center;
+  block-size: 24px;
+  inline-size: 24px;
+  border-radius: 9999px;
+}
+
+.ui-home-feature-dot::before {
+  content: '';
+  block-size: 6px;
+  inline-size: 6px;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.34);
+  transition: inline-size 200ms var(--ease-out), background-color 200ms;
+}
+
+.ui-home-feature-dot[aria-current='true']::before {
+  inline-size: 18px;
+  background: rgb(var(--ui-accent));
+}
+
+@media (max-width: 767px) {
+  .ui-home-feature-reason {
+    font-size: 11px;
+  }
+}
+
+[data-tv-browse='true'] .ui-home-feature-pager {
+  gap: 10px;
+  margin-top: 0;
+}
+
+[data-tv-browse='true'] .ui-home-feature-body {
+  --hero-inline-padding: 32px;
+  --hero-poster-width: clamp(132px, 12vw, 168px);
+  padding-block: 20px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-copy {
+  gap: 8px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-actions {
+  margin-top: 0;
+}
+
+@media (min-width: 768px) {
+  [data-tv-browse='true'] .ui-home-feature-copy {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    column-gap: 20px;
+  }
+
+  [data-tv-browse='true']
+    .ui-home-feature-copy
+    > :not(.ui-home-feature-actions, .ui-home-feature-pager) {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+[data-tv-browse='true'] .ui-home-feature-arrow {
+  height: 64px;
+  width: 64px;
+}
+
+[data-tv-browse='true'] .ui-home-feature-dots {
+  display: none;
+}
+
+[data-tv-browse='true'] .ui-home-feature-counter {
+  display: inline-flex;
+  align-items: center;
+  min-width: 64px;
+  justify-content: center;
+  font-size: 18px;
+  color: rgb(255 255 255 / 0.8);
+}
+
+[data-tv-browse='true'] .ui-home-feature-reason {
+  padding: 3px 12px;
+  font-size: 16px;
 }
 
 /* 侧栏计数 */
@@ -3958,82 +4123,6 @@
 
 .art-video-player .art-setting-item.art-current {
   color: rgb(var(--ui-accent));
-}
-
-/* Hero 右侧保留海报竖构图，避免把竖版海报裁成超宽条 */
-.ui-home-feature-art {
-  inset: 0 0 0 auto;
-  width: 52%;
-}
-
-.ui-home-feature-scrim {
-  background: linear-gradient(
-      90deg,
-      rgb(8 9 12) 0%,
-      rgb(8 9 12 / 0.98) 34%,
-      rgb(8 9 12 / 0.72) 52%,
-      rgb(8 9 12 / 0.18) 74%,
-      rgb(8 9 12 / 0) 100%
-    ),
-    linear-gradient(to top, rgb(8 9 12 / 0.55) 0%, transparent 45%);
-}
-
-.ui-home-feature-copy {
-  max-width: 58%;
-}
-
-@media (max-width: 767px) {
-  .ui-home-feature-art {
-    inset: 0;
-    width: 100%;
-  }
-  .ui-home-feature-copy {
-    max-width: 100%;
-  }
-}
-
-/* Hero 海报列：左侧遮罩淡出，避免出现硬边 */
-.ui-home-feature-art {
-  width: 40%;
-}
-
-.ui-home-feature-image {
-  opacity: 0.9;
-  -webkit-mask-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgb(0 0 0 / 0.55) 18%,
-    #000 42%
-  );
-  mask-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgb(0 0 0 / 0.55) 18%,
-    #000 42%
-  );
-}
-
-.ui-home-feature {
-  min-height: 360px;
-}
-
-.ui-home-feature-copy {
-  min-height: 360px;
-  max-width: 60%;
-}
-
-@media (max-width: 767px) {
-  .ui-home-feature-art {
-    width: 100%;
-  }
-  .ui-home-feature-image {
-    -webkit-mask-image: none;
-    mask-image: none;
-    opacity: 0.7;
-  }
-  .ui-home-feature-copy {
-    max-width: 100%;
-  }
 }
 
 /* 首页片库频道：设计稿式中等标题 + 右侧分类入口 */
@@ -4165,6 +4254,31 @@
   white-space: normal;
 }
 
+/* 继续观看卡：封面左下角「还剩 N 分钟」 */
+.ui-video-remaining {
+  position: absolute;
+  bottom: 12px;
+  left: 10px;
+  z-index: 20;
+  padding: 2px 8px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  background: rgb(0 0 0 / 0.72);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+}
+
+[data-tv-browse='true'] .ui-video-remaining {
+  bottom: 6px;
+  inset-inline: 4px;
+  padding: 2px 4px;
+  font-size: 12px;
+  text-align: center;
+  white-space: normal;
+}
+
 /* 文案区即点按区域（网页与手机），TV 则由整行按钮接管 */
 .ui-resume-card .ui-video-footer-action {
   display: block;
@@ -4232,30 +4346,58 @@
   white-space: nowrap;
 }
 
+[data-tv-browse='true'] .ui-resume-card,
+.ui-tv-resume-skeleton {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+}
+
 [data-tv-browse='true'] .ui-resume-card .ui-video-footer {
-  display: block;
-  padding: 16px 18px;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 8px 10px;
 }
 
 [data-tv-browse='true'] .ui-resume-card .ui-video-title {
-  font-size: 26px;
-  white-space: normal;
+  font-size: 20px;
+  white-space: nowrap;
 }
 
 [data-tv-browse='true'] .ui-resume-card .ui-video-footer-meta {
-  font-size: 22px;
-  /* 窄卡上集数/进度/来源会更长，允许三行 */
-  -webkit-line-clamp: 3;
+  font-size: 16px;
+  -webkit-line-clamp: 2;
 }
 
 [data-tv-browse='true'] .ui-resume-card .ui-video-continue {
-  margin-top: 14px;
-  width: 100%;
-  height: auto;
-  min-height: 64px;
-  padding: 12px 24px;
-  border-radius: var(--ui-radius-sm);
-  font-size: 26px;
+  margin-top: 0;
+  padding: 6px 8px;
+  font-size: 18px;
+}
+
+[data-tv-browse='true'] [data-home='true'] {
+  padding-block-start: 24px;
+}
+
+[data-tv-browse='true'] [data-home='true'] .ui-tv-nav {
+  gap: 8px;
+  margin-block-end: 16px;
+  padding-block-end: 12px;
+}
+
+[data-tv-browse='true'] [data-home='true'] .ui-tv-nav > .ui-brand {
+  margin-inline-end: 12px;
+}
+
+[data-tv-browse='true'] [data-home='true'] .ui-tv-nav .ui-nav-item {
+  padding-inline: 8px;
+}
+
+[data-tv-browse='true'] [data-home='true'] .ui-home-content {
+  row-gap: 24px;
 }
 
 /* AI 找片：最近记录与空态 */
@@ -4586,4 +4728,235 @@
 .ui-saved-stack-card[data-has-poster='true'] .ui-saved-stack-label {
   inset: auto 6px 6px;
   font-size: 11px;
+}
+
+/* ---------- 豆瓣高分 Top 10：大号描边名次 + 海报 ---------- */
+
+/* 骨架占位：与真实卡片同高，避免数据到达时的跳动 */
+.ui-home-feature-stage-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* 名次压在海报左下角后面，只露出左半边（Netflix Top 10 的排版手法） */
+.ui-top10-item {
+  position: relative;
+  padding-left: 30px;
+}
+
+/* 榜内标题固定两行、副信息固定一行，保证同一行卡片等高，名次才对得齐 */
+.ui-top10-item .ui-video-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-height: 2.86em;
+}
+
+.ui-top10-item .ui-video-footer-meta {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ui-top10-rank {
+  position: absolute;
+  z-index: 0;
+  bottom: 46px;
+  left: 0;
+  font-family: var(--font-display);
+  font-size: 62px;
+  font-weight: 700;
+  line-height: 0.72;
+  letter-spacing: -0.05em;
+  color: transparent;
+  -webkit-text-stroke: 2px rgb(var(--ui-text) / 0.72);
+  user-select: none;
+  pointer-events: none;
+}
+
+.ui-top10-card {
+  position: relative;
+  z-index: 1;
+}
+
+[data-tv-browse='true'] .ui-top10-item {
+  padding-left: 62px;
+}
+
+[data-tv-browse='true'] .ui-top10-rank {
+  bottom: 96px;
+  left: 0;
+  font-size: 108px;
+  -webkit-text-stroke-width: 3px;
+}
+
+/* ---------- 筛选片库（TMDB discover） ---------- */
+
+.ui-filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+}
+
+.ui-filter-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ui-filter-count {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: 9999px;
+  color: rgb(var(--ui-text-muted));
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ui-filter-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ui-filter-reset {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.ui-filter-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ui-filter-row-label {
+  flex-shrink: 0;
+  width: 36px;
+  padding-top: 5px;
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+}
+
+.ui-filter-row-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ui-filter-chip {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: 9999px;
+  color: rgb(var(--ui-text-muted));
+  font-size: 12px;
+  transition: border-color 150ms, background-color 150ms, color 150ms;
+}
+
+.ui-filter-chip:hover {
+  border-color: rgb(var(--ui-accent) / 0.5);
+  color: rgb(var(--ui-text));
+}
+
+.ui-filter-chip[aria-pressed='true'] {
+  border-color: rgb(var(--ui-accent));
+  background: rgb(var(--ui-accent) / 0.16);
+  color: rgb(var(--ui-accent));
+  font-weight: 600;
+}
+
+.ui-filter-chip:focus-visible {
+  outline: 2px solid rgb(var(--ui-accent));
+  outline-offset: 2px;
+}
+
+.ui-discovery-loading {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0;
+}
+
+.ui-discovery-grid {
+  transition: opacity 160ms var(--ease-out);
+}
+
+/* 切换筛选时保留旧结果并淡化，避免网格整块消失又出现 */
+.ui-discovery-grid[data-loading='true'] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.ui-discovery-sentinel {
+  height: 1px;
+}
+
+.ui-discovery-more {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 24px;
+}
+
+@media (max-width: 767px) {
+  .ui-filter-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ui-filter-row-label {
+    width: auto;
+    padding-top: 0;
+  }
+}
+
+/* 电视端：筛选胶囊和网格都放大到 10-foot 尺度 */
+[data-tv-browse='true'] .ui-filter-chip {
+  min-height: 64px;
+  padding: 0 24px;
+  font-size: 22px;
+}
+
+[data-tv-browse='true'] .ui-filter-row-label {
+  width: 96px;
+  padding-top: 16px;
+  font-size: 20px;
+}
+
+[data-tv-browse='true'] .ui-filter-count {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid rgb(var(--ui-border));
+  border-radius: 9999px;
+  color: rgb(var(--ui-text-muted));
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ui-filter-panel-title {
+  font-size: 20px;
+}
+
+[data-tv-browse='true'] .ui-filter-reset {
+  min-height: 64px;
+  padding: 0 24px;
+  font-size: 22px;
 }

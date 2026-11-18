@@ -6,7 +6,8 @@ export type NavigationIcon =
   | 'clover'
   | 'heart'
   | 'compass'
-  | 'history';
+  | 'history'
+  | 'sliders';
 
 export interface NavigationItem {
   href: string;
@@ -25,6 +26,7 @@ export const catalogNavigationItems: readonly NavigationItem[] = [
   { key: 'movie', label: '电影', href: '/douban?type=movie', icon: 'film' },
   { key: 'tv', label: '剧集', href: '/douban?type=tv', icon: 'tv' },
   { key: 'show', label: '综艺', href: '/douban?type=show', icon: 'clover' },
+  { key: 'filter', label: '筛选', href: '/discover', icon: 'sliders' },
 ] as const;
 
 /**
