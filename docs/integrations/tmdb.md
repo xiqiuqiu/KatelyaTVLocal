@@ -215,3 +215,39 @@ backdrop+骨架 → backdrop+横图
 - 切换筛选条件时**不再清空结果**，旧网格保留并淡化（`data-loading` → `opacity: .45`），新数据到达后整体替换
 - 首次加载显示 12 张骨架卡（`aspect-[2/3]`）
 - 实测切换「电影 → 剧集」时卡片数量始终为 20，中途不归零
+
+## Cloudflare Pages 部署清单
+
+部署方式：`@cloudflare/next-on-pages`（项目名 `katelyatv-b3u`），通过 GitHub 连接自动构建。
+
+### 必须配置
+
+| 位置 | 项 | 值 |
+| --- | --- | --- |
+| Pages → Settings → Environment variables | `TMDB_READ_TOKEN` | v4 Read Access Token，**勾选 Secret/加密**，Production 与 Preview 都要加 |
+| Pages → Settings → Functions → Compatibility flags | `nodejs_compat` | 仓库 `wrangler.toml` 里已声明，确认控制台里也开着 |
+
+说明：
+
+- 只用 v3 key 时可改成 `TMDB_API_KEY`（会拼进上游查询串，安全性略低，优先用 v4）
+- 未配置时 `/api/tmdb/*` 返回 503 / `enabled:false`，首屏与筛选页会自动降级，**不会白屏**
+
+### 建议配置
+
+| 项 | 值 | 作用 |
+| --- | --- | --- |
+| `NEXT_PUBLIC_IMAGE_PROXY` | `/api/image-proxy?url=` | 让 TMDB 图片（`image.tmdb.org`）走自家图片代理，国内网络更稳。这是**构建期变量**，改了要重新部署 |
+
+注意结尾必须带 `?url=`：代码里是 `${proxyUrl}${encodeURIComponent(originalUrl)}` 直接拼接。
+
+### 不需要做的事
+
+- **无需新的依赖 / 构建命令变更**：本次改动没有新增 npm 包
+- **无需 D1 迁移**：TMDB 相关代码不落库，只走内存与 sessionStorage 缓存
+- **无需新增 wrangler 绑定**：不新增 KV / D1 / R2
+
+### 需要知道的限制
+
+- Pages Functions 的响应**不会**自动进 Cloudflare 边缘缓存，`Cache-Control: s-maxage` 只是声明；实际复用的是浏览器 sessionStorage 与服务端对 TMDB 的实时请求。若要真正边缘缓存，需要改用 Cache API（`caches.default`）
+- 首屏聚合接口一次最多 6 部片 × 2 次上游请求（search + detail），即单次访问最多 12 个 TMDB 请求；TMDB 免费额度约 50 次/秒，个人使用量级无压力
+- `/api/tmdb/*` 走登录校验（middleware 未放行），token 只在服务端使用，不会出现在浏览器请求里
