@@ -347,6 +347,41 @@
 
 ---
 
+## 8.36 借鉴 Netflix：剩余时长卡片标记 + 豆瓣高分 Top 10（P8c，已完成）
+
+参考 Netflix / Hulu / Prime Video 的公开实践，挑了两条**不依赖新素材**的做法落地。
+
+### A. 继续观看卡标「还剩多久」
+
+- `VideoCard` 新增 `playedSeconds` / `totalSeconds`，`ContinueWatching` 从 `play_time` / `total_time` 传入
+- 封面左下角（进度条上方）显示「本集还剩 48 分钟」；剧集写「本集还剩」，电影写「还剩」；超过 60 分钟显示「2 小时 45 分钟」
+- 没有时长数据（`total_time` 为 0）或已播完时不渲染，避免出现「还剩 0 分钟」
+- 电视端 18px / `padding: 4px 14px`，10-foot 可读
+
+### B. 「豆瓣高分 Top 10」榜单行
+
+- 新 `src/lib/top-rated.ts`：三榜合池、按评分降序、去重、剔除无海报/无评分条目、取前 10
+- 新 `src/components/TopRatedRail.tsx`：大号描边名次压在海报左下角后面（Netflix Top 10 手法），网页横向滚动、电视 5 列网格
+- 榜内标题固定两行、副信息固定一行，保证同排卡片等高，名次才对得齐（实测网页卡片统一 264px、电视统一 527px）
+- 文案写「豆瓣高分 Top 10」而不是「今日热播」——我们只有评分，没有真实播放量
+
+### 验证
+
+- 继续观看：`可能 的爱`「还剩 2 小时 45 分钟」、`我的有罪之人`「本集还剩 48 分钟」、`逃出布迪秀`「还剩 1 小时 36 分钟」
+- Top 10：网页 1280 一行 8 张可横滑，卡片高度 264 统一；电视 1920 五列、高度 527 统一、名次 108px
+- `tsc`、ESLint 0 warning、**Jest 147 套件 / 1276 用例全绿**（新增 `top-rated.test.ts` 4 例）
+- 截图：`.scratch/ui-refresh/remaining-resume-viewport.png`、`.scratch/ui-refresh/top10-{desktop-1280,tv-1920}.png`
+
+### 没有照抄的部分
+
+| 大厂做法 | 为什么不抄 |
+| --- | --- |
+| 全幅横向 key art / 片名 logo | 片源只给竖版海报，没有 backdrop 与 title logo |
+| hover 自动播放预告片 | 没有 trailer 数据 |
+| 编辑化情绪/地区分行 | 豆瓣接口只有 3 个榜单 |
+
+下一步可选项：接入 TMDB 拿 `backdrop_path`，首屏就能做成真正的全幅横图（需要 API key）。
+
 ## 8.35 首屏改双栏：舞台 + 候选清单（P8b，已完成）
 
 ### 问题

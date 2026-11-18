@@ -16,6 +16,7 @@ import {
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
 import { buildHomeRecommendations } from '@/lib/home-recommendations';
+import { buildTopRated } from '@/lib/top-rated';
 import { buildTvModeHref, isTvMode } from '@/lib/tv-interaction';
 import { DoubanItem } from '@/lib/types';
 import { catalogNavigationItems } from '@/lib/ui/navigation';
@@ -27,6 +28,7 @@ import ContinueWatching from '@/components/ContinueWatching';
 import HomeHero from '@/components/HomeHero';
 import PageLayout from '@/components/PageLayout';
 import { useSite } from '@/components/SiteProvider';
+import TopRatedRail from '@/components/TopRatedRail';
 import ActionLink from '@/components/ui/ActionLink';
 import { SkeletonPosterCard } from '@/components/ui/LoadingPrimitives';
 import PageHeader from '@/components/ui/PageHeader';
@@ -351,6 +353,16 @@ function HomeCatalog({
   // 侧栏从 768px 起出现，分类入口只在更窄的屏幕由首页承担
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const signals = useHomeSignals();
+  // 评分榜：三榜合池取前 10，纯展示排序，不涉及个人数据
+  const topRated = useMemo(
+    () =>
+      buildTopRated({
+        movies: hotMovies,
+        tvShows: hotTvShows,
+        varietyShows: hotVarietyShows,
+      }),
+    [hotMovies, hotTvShows, hotVarietyShows]
+  );
   // 首屏推荐：热榜为池，播放历史/收藏在本地做偏好加权
   const heroRecommendations = useMemo(
     () =>
@@ -383,6 +395,8 @@ function HomeCatalog({
       {/* 移动端没有侧栏，保留一行分类入口；桌面与 TV 由侧栏/顶部导航承担 */}
       {!tvMode && !isDesktop ? <HomeCategoryLinks /> : null}
       <ContinueWatching tvMode={tvMode} />
+
+      <TopRatedRail entries={topRated} tvMode={tvMode} />
 
       <HomePosterSection
         href='/douban?type=movie'

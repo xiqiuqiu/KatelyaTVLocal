@@ -154,6 +154,8 @@ export default function ContinueWatching({
                     source={source}
                     source_name={record.source_name}
                     progress={getProgress(record)}
+                    playedSeconds={record.play_time}
+                    totalSeconds={record.total_time}
                     episodes={record.total_episodes}
                     currentEpisode={record.index}
                     query={record.search_title}

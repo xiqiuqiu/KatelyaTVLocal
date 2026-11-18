@@ -4334,6 +4334,27 @@
   white-space: normal;
 }
 
+/* 继续观看卡：封面左下角「还剩 N 分钟」 */
+.ui-video-remaining {
+  position: absolute;
+  bottom: 12px;
+  left: 10px;
+  z-index: 20;
+  padding: 2px 8px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  background: rgb(0 0 0 / 0.72);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+}
+
+[data-tv-browse='true'] .ui-video-remaining {
+  padding: 4px 14px;
+  font-size: 18px;
+}
+
 /* 文案区即点按区域（网页与手机），TV 则由整行按钮接管 */
 .ui-resume-card .ui-video-footer-action {
   display: block;
@@ -4755,4 +4776,60 @@
 .ui-saved-stack-card[data-has-poster='true'] .ui-saved-stack-label {
   inset: auto 6px 6px;
   font-size: 11px;
+}
+
+/* ---------- 豆瓣高分 Top 10：大号描边名次 + 海报 ---------- */
+
+/* 名次压在海报左下角后面，只露出左半边（Netflix Top 10 的排版手法） */
+.ui-top10-item {
+  position: relative;
+  padding-left: 30px;
+}
+
+/* 榜内标题固定两行、副信息固定一行，保证同一行卡片等高，名次才对得齐 */
+.ui-top10-item .ui-video-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-height: 2.86em;
+}
+
+.ui-top10-item .ui-video-footer-meta {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ui-top10-rank {
+  position: absolute;
+  z-index: 0;
+  bottom: 46px;
+  left: 0;
+  font-family: var(--font-display);
+  font-size: 62px;
+  font-weight: 700;
+  line-height: 0.72;
+  letter-spacing: -0.05em;
+  color: transparent;
+  -webkit-text-stroke: 2px rgb(var(--ui-text) / 0.72);
+  user-select: none;
+  pointer-events: none;
+}
+
+.ui-top10-card {
+  position: relative;
+  z-index: 1;
+}
+
+[data-tv-browse='true'] .ui-top10-item {
+  padding-left: 62px;
+}
+
+[data-tv-browse='true'] .ui-top10-rank {
+  bottom: 96px;
+  left: 0;
+  font-size: 108px;
+  -webkit-text-stroke-width: 3px;
 }
