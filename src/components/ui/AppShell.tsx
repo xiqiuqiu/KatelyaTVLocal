@@ -46,9 +46,14 @@ export default function AppShell({
   const rootRef = useRef<HTMLDivElement>(null);
   const { siteName } = useSite();
   const browsePage =
-    ['/', '/?tab=favorites', '/history', '/search', '/admin'].includes(
-      activePath
-    ) || activePath.startsWith('/douban');
+    [
+      '/',
+      '/?tab=favorites',
+      '/history',
+      '/search',
+      '/admin',
+      '/discover',
+    ].includes(activePath) || activePath.startsWith('/douban');
   useTvBrowseNavigation(
     rootRef,
     tvMode && browsePage,

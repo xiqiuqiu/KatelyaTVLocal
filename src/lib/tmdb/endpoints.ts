@@ -29,9 +29,15 @@ const ALLOWED_PARAMS = new Set([
   'include_adult',
   'with_genres',
   'sort_by',
-  'vote_average_gte',
   'vote_average.gte',
+  'vote_count.gte',
+  'primary_release_date.gte',
+  'primary_release_date.lte',
+  'first_air_date.gte',
+  'first_air_date.lte',
   'with_original_language',
+  'with_runtime.lte',
+  'region',
   'append_to_response',
 ]);
 

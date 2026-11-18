@@ -93,3 +93,27 @@ TMDB 要求署名，且不得用其数据做竞品服务。上线时需要页脚
 | 热门综艺 | 5/20 | 4 | 5 |
 
 结论：电影/剧集足够支撑全幅首屏；国产综艺覆盖差，必须保留双栏回退。
+
+## 筛选片库（P4a）
+
+页面：`/discover`（Web 优先，已加侧栏「筛选」入口）
+
+筛选维度与对应 TMDB 参数：
+
+| 维度 | 参数 | 说明 |
+| --- | --- | --- |
+| 内容 | `discover/movie` / `discover/tv` | 切换时会清空类型选择（两种媒体的 genre id 不通用） |
+| 类型（多选） | `with_genres=18,80` | 取自 `genre/{movie\|tv}/list?language=zh-CN` |
+| 年份 | `primary_release_date.gte/lte`（电影）`first_air_date.gte/lte`（剧集） | 2020 年代 / 2010 年代 / 2000 年代 / 更早 |
+| 评分 | `vote_average.gte` + `vote_count.gte=200` | 7/8/9 分以上；票数下限防止冷门刷分 |
+| 语言 | `with_original_language` | 华语 zh / 英语 en / 日语 ja / 韩语 ko |
+| 排序 | `sort_by` | 人气 / 评分 / 最新 |
+
+- 每页 20 条，`IntersectionObserver` 无限滚动（实测 20 → 40）
+- 卡片走 `VideoCard from='douban'`，点击后进入 `/play?title&year&stype`，由播放页现有逻辑做多线路聚合搜索
+- TMDB 未配置时 `data` 为空并显示「筛选暂不可用」空态，不影响其它页面
+
+## 已知待补（P4b/P4c）
+
+- 播放页搜不到片源时，尚未自动用 `original_title` 重搜，也没有「回到筛选页」出口
+- 电视端筛选胶囊已经是 64px，但电视导航里还没有「筛选」入口（目前只能靠 URL 进入）
