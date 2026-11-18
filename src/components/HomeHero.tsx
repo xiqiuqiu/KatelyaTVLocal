@@ -18,10 +18,12 @@ import {
   type HomeRecommendationType,
   getHomeRecommendationKey,
 } from '@/lib/home-recommendations';
+import { buildTmdbImageUrl } from '@/lib/tmdb/matching';
 import { buildTvModeHref } from '@/lib/tv-interaction';
 import { processImageUrl } from '@/lib/utils';
 
 import { usePlaybackPreparation } from '@/components/playback-preparation/PlaybackPreparationProvider';
+import useTmdbHero from '@/components/useTmdbHero';
 
 const MEDIA_TYPE_LABEL: Record<HomeRecommendationType, string> = {
   movie: '电影',
@@ -36,6 +38,7 @@ const ROTATE_INTERVAL_MS = 9000;
 const AMBIENT_IMAGE_SIZE = { width: 480, height: 720, quality: 70 };
 const POSTER_IMAGE_SIZE = { width: 480, height: 720, quality: 80 };
 const THUMB_IMAGE_SIZE = { width: 144, height: 216, quality: 66 };
+const BACKDROP_IMAGE_SIZE = { width: 1280, height: 720, quality: 78 };
 
 interface HomeHeroProps {
   recommendations: HomeRecommendation[];
@@ -68,6 +71,7 @@ export default function HomeHero({
 }: HomeHeroProps) {
   const surfaceRef = useRef<HTMLElement>(null);
   const playbackPreparation = usePlaybackPreparation();
+  const tmdb = useTmdbHero(recommendations);
   const [activeIndex, setActiveIndex] = useState(0);
   const [paused, setPaused] = useState(false);
 
@@ -118,6 +122,18 @@ export default function HomeHero({
   }
 
   const { item, type, reason } = active;
+  const activeEnrichment = tmdb.items[safeIndex];
+  const activeBackdrop = activeEnrichment?.matched
+    ? activeEnrichment.backdropPath || ''
+    : '';
+  // 有横版剧照就走全幅大图，否则保持竖版海报双栏
+  const layout = activeBackdrop ? 'backdrop' : 'split';
+  const extraMeta = activeEnrichment?.matched
+    ? [
+        (activeEnrichment.genres ?? []).slice(0, 2).join(' / '),
+        activeEnrichment.runtime ? `${activeEnrichment.runtime} 分钟` : '',
+      ].filter(Boolean)
+    : [];
   const href = buildHomeHeroPlayHref(item, type);
   const playHref = tvMode ? buildTvModeHref(href, true) : href;
   const metadata = [item.year, MEDIA_TYPE_LABEL[type]]
@@ -149,6 +165,7 @@ export default function HomeHero({
     <section
       aria-label='为你推荐'
       className='ui-home-feature'
+      data-layout={layout}
       data-playback-preparation-card={playbackCardKey}
       onBlurCapture={() => setPaused(false)}
       onFocusCapture={() => setPaused(true)}
@@ -165,19 +182,35 @@ export default function HomeHero({
               data-active={index === safeIndex}
               key={getHomeRecommendationKey(recommendation)}
             >
-              <Image
-                alt=''
-                aria-hidden
-                className='ui-home-feature-ambient object-cover'
-                fill
-                priority={index === 0}
-                referrerPolicy='no-referrer'
-                sizes='(max-width: 1023px) 100vw, 760px'
-                src={processImageUrl(
-                  recommendation.item.poster,
-                  AMBIENT_IMAGE_SIZE
-                )}
-              />
+              {tmdb.items[index]?.matched && tmdb.items[index]?.backdropPath ? (
+                <Image
+                  alt=''
+                  aria-hidden
+                  className='ui-home-feature-backdrop object-cover'
+                  fill
+                  priority={index === 0}
+                  referrerPolicy='no-referrer'
+                  sizes='100vw'
+                  src={processImageUrl(
+                    buildTmdbImageUrl(tmdb.items[index].backdropPath, 'w1280'),
+                    BACKDROP_IMAGE_SIZE
+                  )}
+                />
+              ) : (
+                <Image
+                  alt=''
+                  aria-hidden
+                  className='ui-home-feature-ambient object-cover'
+                  fill
+                  priority={index === 0}
+                  referrerPolicy='no-referrer'
+                  sizes='(max-width: 1023px) 100vw, 760px'
+                  src={processImageUrl(
+                    recommendation.item.poster,
+                    AMBIENT_IMAGE_SIZE
+                  )}
+                />
+              )}
             </span>
           ))}
           <div className='ui-home-feature-scrim' />
@@ -199,6 +232,9 @@ export default function HomeHero({
                 </span>
               )}
               {metadata && <span>{metadata}</span>}
+              {extraMeta.map((entry) => (
+                <span key={entry}>{entry}</span>
+              ))}
             </div>
             <p className='ui-home-feature-reason'>{reason}</p>
             <div className='ui-home-feature-actions'>

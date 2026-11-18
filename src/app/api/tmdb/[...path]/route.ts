@@ -23,11 +23,6 @@ function getAuth(): TmdbAuth {
   };
 }
 
-export function isTmdbConfigured(): boolean {
-  const auth = getAuth();
-  return Boolean(auth.readToken || auth.apiKey);
-}
-
 function buildUpstreamUrl(
   path: string,
   params: URLSearchParams,

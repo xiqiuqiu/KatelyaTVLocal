@@ -4780,6 +4780,68 @@
 
 /* ---------- 豆瓣高分 Top 10：大号描边名次 + 海报 ---------- */
 
+/* ---------- 首屏全幅模式：TMDB backdrop 到位时替换竖版海报 ---------- */
+
+.ui-home-feature-backdrop {
+  object-position: center 25%;
+}
+
+.ui-home-feature[data-layout='backdrop'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ui-home-feature[data-layout='backdrop'] .ui-home-feature-stage {
+  min-height: 420px;
+}
+
+.ui-home-feature[data-layout='backdrop'] .ui-home-feature-poster,
+.ui-home-feature[data-layout='backdrop'] .ui-home-feature-list {
+  display: none;
+}
+
+.ui-home-feature[data-layout='backdrop'] .ui-home-feature-scrim {
+  background: linear-gradient(
+      90deg,
+      rgb(8 9 12 / 0.95) 0%,
+      rgb(8 9 12 / 0.82) 38%,
+      rgb(8 9 12 / 0.2) 72%,
+      transparent 100%
+    ),
+    linear-gradient(to top, rgb(8 9 12 / 0.85) 0%, transparent 62%);
+}
+
+.ui-home-feature[data-layout='backdrop'] .ui-home-feature-copy {
+  max-width: 640px;
+}
+
+@media (max-width: 767px) {
+  .ui-home-feature[data-layout='backdrop'] .ui-home-feature-stage {
+    min-height: 320px;
+  }
+
+  /* 手机上横版剧照顶部是亮区，改用自下而上的重遮罩，文字才读得清 */
+  .ui-home-feature[data-layout='backdrop'] .ui-home-feature-scrim {
+    background: linear-gradient(
+      to top,
+      rgb(8 9 12 / 0.97) 22%,
+      rgb(8 9 12 / 0.88) 52%,
+      rgb(8 9 12 / 0.5) 82%,
+      rgb(8 9 12 / 0.25) 100%
+    );
+  }
+
+  .ui-home-feature[data-layout='backdrop'] .ui-home-feature-meta {
+    font-size: 12px;
+    gap: 4px 10px;
+  }
+}
+
+[data-tv-browse='true']
+  .ui-home-feature[data-layout='backdrop']
+  .ui-home-feature-stage {
+  min-height: 520px;
+}
+
 /* 名次压在海报左下角后面，只露出左半边（Netflix Top 10 的排版手法） */
 .ui-top10-item {
   position: relative;

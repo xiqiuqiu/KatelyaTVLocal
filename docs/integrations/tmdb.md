@@ -68,3 +68,28 @@ processImageUrl(buildTmdbImageUrl(path, 'w1280'));
 
 TMDB 要求署名，且不得用其数据做竞品服务。上线时需要页脚显示
 “This product uses the TMDB API but is not endorsed or certified by TMDB.”
+
+## 首屏聚合接口（P2）
+
+`GET /api/tmdb/hero?items=<JSON>`
+
+- 入参最多 6 条：`[{ title, year?, kind: 'movie'|'tv'|'show' }]`
+- 服务端逐条 search → detail，只返回 `{ title, matched, tmdbId, media, backdropPath, overview, runtime, genres, vote }`
+- 单条失败不影响其它条目；匹配不到返回 `matched: false`
+- 未配置 TMDB 时返回 `{ enabled: false, items: [] }`（HTTP 200），前端据此保持竖版海报布局
+- 响应 `cache-control: public, s-maxage=86400`；前端另用 sessionStorage 按推荐列表缓存
+
+前端消费：`src/components/useTmdbHero.ts`
+
+- 有 backdrop → `data-layout="backdrop"`，全幅 16:9 大图 + 左侧渐变，右侧海报列与候选清单隐藏
+- 没有 backdrop（综艺命中率低）或 TMDB 未配置 → `data-layout="split"`，保留「竖版海报 + 候选清单」双栏
+
+## 实测命中率（2026-11-18，本地 60 条豆瓣条目）
+
+| 榜单 | 命中 | 有 backdrop | 有简介 |
+| --- | --- | --- | --- |
+| 热门电影 | 19/20 | 19 | 18 |
+| 热门剧集 | 20/20 | 20 | 20 |
+| 热门综艺 | 5/20 | 4 | 5 |
+
+结论：电影/剧集足够支撑全幅首屏；国产综艺覆盖差，必须保留双栏回退。
