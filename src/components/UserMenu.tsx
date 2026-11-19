@@ -85,6 +85,16 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
     '/settings',
     true
   );
+  const [dashboardExpanded, setDashboardExpanded] = useState(false);
+  const expandButton = useRef<HTMLButtonElement | null>(null);
+  const backButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (dashboardExpanded) backButton.current?.focus();
+    else if (expandButton.current) {
+      expandButton.current.focus();
+      expandButton.current = null;
+    }
+  }, [dashboardExpanded]);
   const [category, setCategory] = useState(
     session.initialManagementSection ? 'management' : 'device'
   );
@@ -118,6 +128,7 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
   };
   useEffect(() => {
     if (!session.initialManagementSection) return;
+    setDashboardExpanded(false);
     setCategory('management');
     setManagementMounted(true);
     setManagementGroup(
@@ -155,7 +166,8 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
         ref={panelRef}
         role='dialog'
         aria-modal='true'
-        aria-label='设置与账号'
+        aria-label={dashboardExpanded ? '播放质量看板' : '设置与账号'}
+        data-dashboard-expanded={dashboardExpanded || undefined}
         aria-hidden={!session.isOpen}
         data-tv-mode={session.tvMode}
         data-management={category === 'management' || undefined}
@@ -163,10 +175,16 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
         data-open={session.isMenuVisible ? 'true' : 'false'}
         className='ui-user-menu-panel z-[1001] rounded-ui-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] p-0 text-[rgb(var(--ui-text))] shadow-ui-strong transition-opacity duration-[180ms] data-[open=false]:pointer-events-none data-[open=false]:opacity-0 data-[open=true]:opacity-100'
         onKeyDown={(event) => {
+          if (dashboardExpanded && event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            setDashboardExpanded(false);
+            return;
+          }
           if (event.key !== 'Tab') return;
           const controls = Array.from(
             event.currentTarget.querySelectorAll<HTMLElement>(
-              'button:not(:disabled), a[href], input:not(:disabled):not([type=hidden]), textarea:not(:disabled), select:not(:disabled)'
+              'button:not(:disabled), a[href], input:not(:disabled):not([type=hidden]), textarea:not(:disabled), select:not(:disabled), summary'
             )
           ).filter(
             (control) =>
@@ -185,16 +203,31 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
         }}
       >
         <div className='ui-settings-header flex shrink-0 items-center justify-between gap-4'>
-          <h2 className='text-lg font-semibold'>设置与账号</h2>
+          <h2 className='text-lg font-semibold'>
+            {dashboardExpanded ? '播放质量看板' : '设置与账号'}
+          </h2>
           <button
             type='button'
             autoFocus
             data-tv-back
-            aria-label='关闭设置与账号'
-            className='ui-icon-button'
-            onClick={session.handleCloseMenu}
+            ref={backButton}
+            aria-label={dashboardExpanded ? '收起看板' : '关闭设置与账号'}
+            className={
+              dashboardExpanded
+                ? 'ui-secondary-button ui-admin-compact'
+                : 'ui-icon-button'
+            }
+            onClick={
+              dashboardExpanded
+                ? () => setDashboardExpanded(false)
+                : session.handleCloseMenu
+            }
           >
-            <X aria-hidden className='h-5 w-5' />
+            {dashboardExpanded ? (
+              '收起看板'
+            ) : (
+              <X aria-hidden className='h-5 w-5' />
+            )}
           </button>
         </div>
         <label className='ui-settings-mobile-nav'>
@@ -446,6 +479,10 @@ function UserMenuPanel({ session }: { session: UserMenuSession }) {
                 </span>
                 {(managementMounted || category === 'management') && (
                   <AdminSettings
+                    onExpandDashboard={(button) => {
+                      expandButton.current = button;
+                      setDashboardExpanded(true);
+                    }}
                     groupId={managementGroup}
                     initialSection={
                       session.initialManagementSection || undefined

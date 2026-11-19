@@ -2397,7 +2397,11 @@ function debugCohortLabel(details: unknown) {
   return '';
 }
 
-const PlaybackDebugLogs = () => {
+type DashboardViewProps = {
+  onExpandDashboard?: (button: HTMLButtonElement) => void;
+};
+
+const PlaybackDebugLogs = ({ onExpandDashboard }: DashboardViewProps) => {
   const [data, setData] = useState<PlaybackDebugLogResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -2472,6 +2476,15 @@ const PlaybackDebugLogs = () => {
 
   return (
     <div className='space-y-4'>
+      {onExpandDashboard && (
+        <button
+          type='button'
+          className='ui-dashboard-expand ui-secondary-button ui-admin-compact'
+          onClick={(event) => onExpandDashboard(event.currentTarget)}
+        >
+          展开看板
+        </button>
+      )}
       <PlaybackQualityMetrics />
       <h4 className='font-semibold'>播放调试日志</h4>
       <div className='flex flex-wrap items-center justify-between gap-3'>
@@ -2586,14 +2599,22 @@ const PlaybackDebugLogs = () => {
                     <div>分片：{log.segmentMode || '-'}</div>
                   </td>
                   <td className='max-w-[360px] px-3 py-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-                    <div className='line-clamp-3 break-all'>
-                      {stringifyDebugDetails(log.details) || '-'}
-                    </div>
-                    {log.userAgent && (
-                      <div className='mt-1 line-clamp-2 break-all text-[rgb(var(--ui-text-muted))]'>
-                        {log.userAgent}
+                    <details>
+                      <summary tabIndex={0} className='cursor-pointer'>
+                        查看完整日志
+                      </summary>
+                      <pre className='mt-2 whitespace-pre-wrap break-all'>
+                        {JSON.stringify(log, null, 2)}
+                      </pre>
+                    </details>
+                    <div className='break-all'>
+                      <div className='line-clamp-3'>
+                        {stringifyDebugDetails(log.details) || '-'}
                       </div>
-                    )}
+                      {log.userAgent && (
+                        <div className='mt-1 line-clamp-2'>{log.userAgent}</div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -2612,8 +2633,9 @@ type ManagementSection =
 export function AdminSettings({
   groupId,
   initialSection,
+  onExpandDashboard,
   tvMode = false,
-}: {
+}: DashboardViewProps & {
   groupId: ManagementGroupId;
   initialSection?: ManagementSection;
   tvMode?: boolean;
@@ -2756,7 +2778,7 @@ export function AdminSettings({
       content: <AiUsageMonitor />,
     },
     playbackDebug: {
-      content: <PlaybackDebugLogs />,
+      content: <PlaybackDebugLogs onExpandDashboard={onExpandDashboard} />,
     },
   };
 

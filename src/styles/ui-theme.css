@@ -3157,6 +3157,49 @@
   height: min(680px, calc(100dvh - 48px));
 }
 
+/* 播放质量看板占用可用视口，保留原面板和筛选状态。 */
+.ui-user-menu-panel[data-dashboard-expanded] {
+  inset: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+  width: auto;
+  height: auto;
+  max-height: none;
+  border-radius: 0;
+}
+
+.ui-user-menu-panel[data-dashboard-expanded] .ui-settings-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ui-user-menu-panel[data-dashboard-expanded]
+  :is(
+    .ui-settings-nav,
+    .ui-settings-mobile-nav,
+    .ui-admin-tabs,
+    .ui-admin-heading,
+    .ui-dashboard-expand
+  ) {
+  display: none;
+}
+
+.ui-user-menu-panel[data-dashboard-expanded]
+  #admin-playbackDebug
+  td:last-child {
+  width: 38%;
+  min-width: min(280px, 72vw);
+  max-width: none;
+}
+
+@media (max-width: 767px) {
+  .ui-user-menu-panel[data-dashboard-expanded] .ui-settings-content {
+    padding-inline: 12px;
+  }
+}
+
+#admin-playbackDebug details[open] + div {
+  display: none;
+}
+
 /* ============================================================
    设置面板：共用行、开关、账号卡片
    ============================================================ */

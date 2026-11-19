@@ -34,10 +34,12 @@ jest.mock('next/dynamic', () => ({
       groupId,
       tvMode,
       initialSection,
+      onExpandDashboard,
     }: {
       groupId: string;
       tvMode: boolean;
       initialSection?: string;
+      onExpandDashboard: (button: HTMLButtonElement) => void;
     }) =>
       (
         <div
@@ -48,6 +50,11 @@ jest.mock('next/dynamic', () => ({
         >
           <input aria-label='管理配置输入' />
           <button>保存管理配置</button>
+          {initialSection === 'playbackDebug' && (
+            <button onClick={(e) => onExpandDashboard(e.currentTarget)}>
+              展开看板
+            </button>
+          )}
         </div>
       ),
 }));
@@ -376,6 +383,15 @@ describe('UserMenu', () => {
       'data-initial-section',
       'playbackDebug'
     );
+    const expand = screen.getByRole('button', { name: '展开看板' });
+    fireEvent.click(expand);
+    const dialog = screen.getByRole('dialog', { name: '播放质量看板' });
+    expect(dialog).toHaveAttribute('data-dashboard-expanded', 'true');
+    const collapse = screen.getByRole('button', { name: '收起看板' });
+    expect(collapse).toHaveFocus();
+    fireEvent.keyDown(collapse, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: '设置与账号' })).toBe(dialog);
+    expect(expand).toHaveFocus();
     fireEvent.click(screen.getByRole('button', { name: '关闭设置与账号' }));
     expect(replace).toHaveBeenCalledWith('/', { scroll: false });
   });
