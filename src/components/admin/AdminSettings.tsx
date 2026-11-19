@@ -27,10 +27,12 @@ import Swal from 'sweetalert2';
 
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getRuntimeCurrentUser } from '@/lib/auth';
+import { playbackQoeMessages } from '@/lib/playback-qoe.client';
 import { buildRegistrationInviteLink } from '@/lib/registration/invite-link';
 import { isTvMode } from '@/lib/tv-interaction';
 import { managementSettingsGroups } from '@/lib/ui/settings';
 
+import PlaybackQualityMetrics from '@/components/admin/PlaybackQualityMetrics';
 import Switch from '@/components/ui/Switch';
 
 function useRuntimeStorageType(): string | null {
@@ -1806,7 +1808,6 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
     SiteInterfaceCacheTime: 7200,
     ImageProxy: '',
     DoubanProxy: '',
-    PlaybackDebugEnabled: false,
   });
   // 保存状态
   const [saving, setSaving] = useState(false);
@@ -1821,7 +1822,7 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
         ...config.SiteConfig,
         ImageProxy: config.SiteConfig.ImageProxy || '',
         DoubanProxy: config.SiteConfig.DoubanProxy || '',
-        PlaybackDebugEnabled: Boolean(config.SiteConfig.PlaybackDebugEnabled),
+        PlaybackDebugEnabled: undefined,
       });
     }
   }, [config]);
@@ -2086,38 +2087,6 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
           </p>
         </div>
       </fieldset>
-      <fieldset className='ui-admin-field-group space-y-4'>
-        <legend>诊断记录</legend>
-        {/* 播放调试模式 */}
-        <div>
-          <label
-            htmlFor='admin-playback-debug'
-            className='flex cursor-pointer items-start gap-3'
-          >
-            <input
-              type='checkbox'
-              id='admin-playback-debug'
-              checked={Boolean(siteSettings.PlaybackDebugEnabled)}
-              onChange={(e) =>
-                setSiteSettings((prev) => ({
-                  ...prev,
-                  PlaybackDebugEnabled: e.target.checked,
-                }))
-              }
-              className='mt-1 h-4 w-4 rounded border-[rgb(var(--ui-border))] text-[rgb(var(--ui-accent-warm))] focus:ring-[rgb(var(--ui-accent-warm))]'
-            />
-            <span>
-              <span className='block text-sm font-medium text-[rgb(var(--ui-text))]'>
-                播放调试模式
-              </span>
-              <span className='mt-1 block text-xs leading-5 text-[rgb(var(--ui-text-muted))]'>
-                开启后，管理员播放页会显示调试面板，并把卡顿、恢复、播放策略等信息写入后台日志表。关闭后不会记录。
-              </span>
-            </span>
-          </label>
-        </div>
-      </fieldset>
-
       {/* 操作按钮 */}
       <div className='flex justify-end'>
         <button
@@ -2420,11 +2389,40 @@ const formatPlaybackDebugLogsForExport = (
   );
 };
 
+function debugCohortLabel(details: unknown) {
+  const testSession = (details as { testSession?: unknown } | null)
+    ?.testSession;
+  if (typeof testSession === 'boolean')
+    return testSession ? '测试会话' : '普通会话';
+  return '';
+}
+
 const PlaybackDebugLogs = () => {
   const [data, setData] = useState<PlaybackDebugLogResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [copying, setCopying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [saving, setSaving] = useState(false);
+
+  async function toggleDebug() {
+    if (!data) return;
+    setSaving(true);
+    try {
+      const enabled = !data.enabled;
+      const response = await fetch('/api/admin/playback-debug', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!response.ok) throw new Error('保存调试开关失败');
+      setData({ ...data, enabled });
+    } catch (err) {
+      showError(err instanceof Error ? err.message : '保存调试开关失败');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -2474,22 +2472,22 @@ const PlaybackDebugLogs = () => {
 
   return (
     <div className='space-y-4'>
+      <PlaybackQualityMetrics />
+      <h4 className='font-semibold'>播放调试日志</h4>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div>
-          <p className='text-sm text-[rgb(var(--ui-text-muted))]'>
-            当前状态：
-            <span
-              className={`ml-1 font-medium ${
-                data?.enabled
-                  ? 'text-[rgb(var(--ui-success))] '
-                  : 'text-[rgb(var(--ui-text-muted))] '
-              }`}
-            >
-              {data?.enabled ? '已开启' : '未开启'}
-            </span>
-          </p>
+          <label className='flex items-center gap-2 text-sm'>
+            <input
+              type='checkbox'
+              checked={Boolean(data?.enabled)}
+              disabled={!data || loading || saving}
+              onChange={() => void toggleDebug()}
+            />
+            记录管理员播放调试日志
+          </label>
           <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-            这里只展示最近 100 条管理员播放调试日志。
+            最近 100
+            条管理员日志，包含所有会话分组。关闭详细日志后仍统计播放质量。
           </p>
         </div>
         <div className='flex flex-wrap items-center gap-2'>
@@ -2504,7 +2502,7 @@ const PlaybackDebugLogs = () => {
           <button
             type='button'
             onClick={() => void fetchLogs()}
-            disabled={loading}
+            disabled={loading || saving}
             className='ui-secondary-button ui-admin-compact'
           >
             {loading ? '读取中…' : '刷新日志'}
@@ -2518,7 +2516,7 @@ const PlaybackDebugLogs = () => {
         </div>
       )}
 
-      {!loading && logs.length === 0 && (
+      {data && !error && !loading && logs.length === 0 && (
         <div className='rounded-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] p-6 text-center text-sm text-[rgb(var(--ui-text-muted))]'>
           暂无播放调试日志
         </div>
@@ -2561,7 +2559,17 @@ const PlaybackDebugLogs = () => {
                     {formatCreatedAt(log.createdAt)}
                   </td>
                   <td className='whitespace-nowrap px-3 py-2 font-medium text-[rgb(var(--ui-text))]'>
-                    {log.eventType}
+                    {Object.prototype.hasOwnProperty.call(
+                      playbackQoeMessages,
+                      log.eventType
+                    )
+                      ? playbackQoeMessages[
+                          log.eventType as keyof typeof playbackQoeMessages
+                        ]
+                      : log.eventType}
+                    <div className='text-xs font-normal'>
+                      {debugCohortLabel(log.details)}
+                    </div>
                   </td>
                   <td className='whitespace-nowrap px-3 py-2 text-[rgb(var(--ui-text))]'>
                     {formatDebugTime(log.currentTime)}

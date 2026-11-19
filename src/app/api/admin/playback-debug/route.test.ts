@@ -1,5 +1,6 @@
 import { isAdminRequest } from '@/lib/admin-auth';
 import { getConfig } from '@/lib/config';
+import { getStorage } from '@/lib/db';
 import { listPlaybackDebugLogs } from '@/lib/playback-debug/logs';
 
 class MockResponse {
@@ -19,6 +20,7 @@ class MockResponse {
   }
 }
 
+let PATCH: (request: { json: () => Promise<unknown> }) => Promise<MockResponse>;
 let GET: (request: { url: string }) => Promise<MockResponse>;
 
 jest.mock('next/server', () => ({
@@ -36,7 +38,10 @@ jest.mock('@/lib/admin-auth', () => ({
 
 jest.mock('@/lib/config', () => ({
   getConfig: jest.fn(),
+  invalidateAdminConfigCache: jest.fn(),
 }));
+
+jest.mock('@/lib/db', () => ({ getStorage: jest.fn() }));
 
 jest.mock('@/lib/playback-debug/logs', () => ({
   listPlaybackDebugLogs: jest.fn(),
@@ -62,7 +67,7 @@ describe('admin playback debug route', () => {
 
   beforeAll(() => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    ({ GET } = require('@/app/api/admin/playback-debug/route'));
+    ({ GET, PATCH } = require('@/app/api/admin/playback-debug/route'));
   });
 
   beforeEach(() => {
@@ -112,6 +117,27 @@ describe('admin playback debug route', () => {
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' });
     expect(mockedListPlaybackDebugLogs).not.toHaveBeenCalled();
+  });
+
+  it('only saves a validated administrator toggle and preserves existing configuration', async () => {
+    const setAdminConfig = jest.fn();
+    (getStorage as jest.Mock).mockReturnValue({ setAdminConfig });
+    const request = { json: async () => ({ enabled: false }) };
+    mockedIsAdminRequest.mockResolvedValueOnce(false);
+    expect((await PATCH(request)).status).toBe(401);
+    expect(
+      (await PATCH({ json: async () => ({ enabled: 'false' }) })).status
+    ).toBe(400);
+    expect(setAdminConfig).not.toHaveBeenCalled();
+    mockedGetConfig.mockResolvedValueOnce({
+      SiteConfig: { SiteName: '测试', PlaybackDebugEnabled: true },
+      SourceConfig: [],
+    } as unknown as Awaited<ReturnType<typeof getConfig>>);
+    expect((await PATCH(request)).status).toBe(200);
+    expect(setAdminConfig).toHaveBeenCalledWith({
+      SiteConfig: { SiteName: '测试', PlaybackDebugEnabled: false },
+      SourceConfig: [],
+    });
   });
 
   it('returns latest playback debug logs for admins', async () => {

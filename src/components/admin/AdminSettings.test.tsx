@@ -150,7 +150,6 @@ it('associates visible site and registration labels with their actual controls',
     'admin-site-cache-time',
     'admin-image-proxy',
     'admin-douban-proxy',
-    'admin-playback-debug',
   ]) {
     const label = document.querySelector<HTMLLabelElement>(
       `label[for="${id}"]`
@@ -198,4 +197,65 @@ it('switches settings tabs with desktop arrow keys', async () => {
   fireEvent.keyDown(first, { key: 'ArrowRight' });
   expect(screen.getByRole('tab', { name: '视频源配置' })).toHaveFocus();
   expect(screen.getByRole('tabpanel', { name: '视频源配置' })).toBeVisible();
+});
+
+it('separates cohorts and distinguishes missing samples, zero success and unavailable storage', async () => {
+  let enabled = false;
+  (fetch as jest.Mock).mockImplementation(
+    async (url: string, options?: RequestInit) => {
+      let payload: unknown;
+      if (url.includes('playback-quality')) {
+        const test = url.includes('cohort=test');
+        payload = url.includes('days=30')
+          ? { available: false }
+          : {
+              available: true,
+              qoe: {
+                observedVisits: test ? 4 : 0,
+                uninterruptedVisits: test ? 3 : 0,
+                recovered: 0,
+                failed: test ? 1 : 0,
+                uninterruptedRate: test ? 0.75 : null,
+                recoverySuccessRate: test ? 0 : null,
+              },
+            };
+      } else if (url.includes('playback-debug')) {
+        if (options?.method === 'PATCH')
+          enabled = JSON.parse(String(options.body)).enabled;
+        payload = {
+          enabled,
+          logs: [
+            {
+              id: 'log1',
+              eventType: 'qoe.recovered',
+              details: { testSession: true },
+            },
+          ],
+        };
+      } else payload = { Config: config, Role: mockRole };
+      return { ok: true, json: async () => payload };
+    }
+  );
+  render(
+    <AdminSettings groupId='diagnostics' initialSection='playbackDebug' />
+  );
+  expect(await screen.findAllByText('暂无样本')).toHaveLength(2);
+  expect(
+    screen.getByRole('row', { name: /故障恢复成功.*测试会话/ })
+  ).toBeVisible();
+  fireEvent.change(screen.getByLabelText(/会话分组/), {
+    target: { value: 'test' },
+  });
+  expect(await screen.findByText('75%')).toBeVisible();
+  expect(screen.getByText('0%')).toBeVisible();
+  expect(screen.getByText(/3 \/ 4/)).toBeVisible();
+  fireEvent.change(screen.getByLabelText(/统计周期/), {
+    target: { value: '30' },
+  });
+  expect(await screen.findByText('播放质量统计暂不可用')).toBeVisible();
+  expect(screen.queryByText('75%')).toBeNull();
+  const toggle = screen.getByLabelText('记录管理员播放调试日志');
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle).toBeChecked());
+  expect(enabled).toBe(true);
 });

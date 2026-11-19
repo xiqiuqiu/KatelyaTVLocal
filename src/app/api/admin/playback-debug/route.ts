@@ -2,7 +2,8 @@ import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { isAdminRequest } from '@/lib/admin-auth';
-import { getConfig } from '@/lib/config';
+import { getConfig, invalidateAdminConfigCache } from '@/lib/config';
+import { getStorage } from '@/lib/db';
 import { listPlaybackDebugLogs } from '@/lib/playback-debug/logs';
 
 export const runtime = 'edge';
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const limit = Number(url.searchParams.get('limit') || '100');
+    invalidateAdminConfigCache();
     const config = await getConfig();
     const logs = await listPlaybackDebugLogs(resolveEnv(), limit);
 
@@ -48,5 +50,25 @@ export async function GET(request: NextRequest) {
       },
       { status: 500 }
     );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  if (!(await isAdminRequest(request)))
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const body = await request.json().catch(() => null);
+  if (typeof body?.enabled !== 'boolean')
+    return NextResponse.json({ error: '调试开关无效' }, { status: 400 });
+  try {
+    invalidateAdminConfigCache();
+    const config = await getConfig();
+    await getStorage().setAdminConfig({
+      ...config,
+      SiteConfig: { ...config.SiteConfig, PlaybackDebugEnabled: body.enabled },
+    });
+    invalidateAdminConfigCache();
+    return NextResponse.json({ enabled: body.enabled });
+  } catch {
+    return NextResponse.json({ error: '保存调试开关失败' }, { status: 500 });
   }
 }

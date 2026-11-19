@@ -42,8 +42,8 @@ export const managementSettingsGroups = [
       },
       {
         id: 'playbackDebug',
-        label: '播放调试日志',
-        description: '播放状态与故障排查',
+        label: '播放质量看板',
+        description: '无中断播放率、故障恢复与调试日志',
       },
     ],
   },

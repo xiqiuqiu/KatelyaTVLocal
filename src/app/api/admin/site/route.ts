@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
     }
 
+    invalidateAdminConfigCache();
     const adminConfig = await getConfig();
     const storage = getStorage();
 
@@ -82,7 +83,8 @@ export async function POST(request: NextRequest) {
       SiteInterfaceCacheTime,
       ImageProxy,
       DoubanProxy,
-      PlaybackDebugEnabled: Boolean(PlaybackDebugEnabled),
+      PlaybackDebugEnabled:
+        PlaybackDebugEnabled ?? adminConfig.SiteConfig.PlaybackDebugEnabled,
     };
 
     // 写入数据库
