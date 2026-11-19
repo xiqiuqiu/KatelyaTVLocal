@@ -499,6 +499,62 @@ describe('source ranking scheduler', () => {
     }
   );
 
+  it('stores valid probes before the budget runs out and skips platform failures', async () => {
+    const statements: StatementRecord[] = [];
+    const fetchDetail = jest.fn(async ({ source, id }) => ({
+      id,
+      source,
+      source_name: source,
+      title: 'Example',
+      year: '2026',
+      poster: '',
+      episodes: [
+        'https://media.example.com/one.m3u8',
+        'https://media.example.com/two.m3u8',
+      ],
+    }));
+    const persistProbeResult = jest.fn(async () => undefined);
+    const probePlayback = jest
+      .fn()
+      .mockResolvedValueOnce({ kind: 'direct', domain: 'media.example.com' })
+      .mockResolvedValueOnce({
+        kind: 'unavailable',
+        reason: 'Too many subrequests.',
+      });
+
+    const result = await runLowFrequencySourceRankingCheck({
+      env: { DB: createFakeDatabase(statements) },
+      origin: 'https://app.example.com',
+      getUsers: async () => ['alice'],
+      getPlayRecords: async (user): Promise<Record<string, PlayRecord>> =>
+        user === 'alice'
+          ? {
+              'source+first': createPlayRecord({ save_time: 2 }),
+              'source+next': createPlayRecord({ save_time: 1 }),
+            }
+          : {},
+      fetchDetail,
+      probePlayback,
+      persistProbeResult,
+    });
+
+    expect(fetchDetail).toHaveBeenCalledTimes(1);
+    expect(persistProbeResult).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      status: 'completed_with_errors',
+      sampledRecordCount: 2,
+      taskCount: 2,
+      probeCount: 1,
+      snapshotCount: 1,
+      errorCount: 1,
+    });
+    const snapshot = statements.find(({ sql }) =>
+      sql.includes('INSERT OR REPLACE INTO source_rank_snapshots')
+    );
+    expect(snapshot?.values[12]).toBe(0);
+    expect(snapshot?.values[13]).toBe(1);
+  });
+
   it('samples content-key records and counts dual writes once per user', async () => {
     const fetchDetail = jest.fn(async ({ source, id }) => ({
       id,

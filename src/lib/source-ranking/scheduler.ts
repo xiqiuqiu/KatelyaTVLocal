@@ -7,6 +7,7 @@ import { PlayRecord, SearchResult } from '@/lib/types';
 import { isWatchProgressStorageKey } from '@/lib/watch-progress';
 
 import {
+  isPlatformProbeFailure,
   OfflineProbeResult,
   OfflineProbeTask,
   persistOfflineProbeResult,
@@ -382,18 +383,18 @@ function mergeProbeSamples(samples: RecentPlaySample[]): RecentPlaySample[] {
   return merged;
 }
 
-async function buildProbeTasksFromRecentPlays(
+async function* buildProbeTasksFromRecentPlays(
   samples: RecentPlaySample[],
-  fetchDetail: NonNullable<LowFrequencySourceRankingOptions['fetchDetail']>
-): Promise<{ tasks: SampledProbeTask[]; errors: string[] }> {
-  const tasks: SampledProbeTask[] = [];
-  const errors: string[] = [];
+  fetchDetail: NonNullable<LowFrequencySourceRankingOptions['fetchDetail']>,
+  errors: string[]
+): AsyncGenerator<SampledProbeTask> {
+  let taskCount = 0;
   const perSourceCount = new Map<string, number>();
   const seenVideoKeys = new Set<string>();
   const seenEpisodeUrls = new Set<string>();
 
   for (const sample of samples) {
-    if (tasks.length >= MAX_TASKS_TOTAL) {
+    if (taskCount >= MAX_TASKS_TOTAL) {
       break;
     }
 
@@ -418,6 +419,9 @@ async function buildProbeTasksFromRecentPlays(
           .replace(/https?:\/\/\S+/gi, '[url]')
           .slice(0, 200)
       );
+      if (isPlatformProbeFailure({ kind: 'unavailable', reason: message })) {
+        return;
+      }
       continue;
     }
 
@@ -442,7 +446,7 @@ async function buildProbeTasksFromRecentPlays(
     }
 
     for (const episodeUrl of episodeUrls) {
-      if (tasks.length >= MAX_TASKS_TOTAL) {
+      if (taskCount >= MAX_TASKS_TOTAL) {
         break;
       }
 
@@ -455,7 +459,9 @@ async function buildProbeTasksFromRecentPlays(
       }
       seenEpisodeUrls.add(episodeUrl);
 
-      tasks.push({
+      taskCount += 1;
+      perSourceCount.set(sourceKey, (perSourceCount.get(sourceKey) || 0) + 1);
+      yield {
         userName: sample.userName,
         sourceKey,
         sourceId: normalizedId,
@@ -463,12 +469,9 @@ async function buildProbeTasksFromRecentPlays(
           detail.source_name || sample.record.source_name || normalizedSource,
         titleSample: detail.title || sample.record.title,
         episodeUrl,
-      });
-      perSourceCount.set(sourceKey, (perSourceCount.get(sourceKey) || 0) + 1);
+      };
     }
   }
-
-  return { tasks, errors };
 }
 
 function createAggregationBucket(task: SampledProbeTask): AggregationBucket {
@@ -694,12 +697,47 @@ export async function runLowFrequencySourceRankingCheck(
     const samples = mergeProbeSamples([...playSamples, ...feedbackSamples]);
     sampledRecordCount = samples.length;
 
-    const { tasks, errors: detailErrors } =
-      await buildProbeTasksFromRecentPlays(samples, fetchDetail);
-    errors.push(...detailErrors);
-    taskCount = tasks.length;
+    const buckets = new Map<string, AggregationBucket>();
+    // Run each probe before more detail lookups consume the request budget.
+    for await (const task of buildProbeTasksFromRecentPlays(
+      samples,
+      fetchDetail,
+      errors
+    )) {
+      taskCount += 1;
+      try {
+        const measuredAt = now();
+        const probeResult = await probePlayback(task.episodeUrl, origin);
+        if (isPlatformProbeFailure(probeResult)) {
+          errors.push(
+            `${task.sourceKey}: probe stopped - Cloudflare subrequest limit`
+          );
+          break;
+        }
+        probeCount += 1;
 
-    if (tasks.length === 0) {
+        await persistProbeResult(
+          { DB: database },
+          runId,
+          task,
+          probeResult,
+          measuredAt
+        );
+
+        const bucket =
+          buckets.get(task.sourceKey) || createAggregationBucket(task);
+        appendProbeToBucket(bucket, probeResult);
+        buckets.set(task.sourceKey, bucket);
+      } catch (error) {
+        errors.push(
+          error instanceof Error
+            ? `${task.sourceKey}: ${error.message}`
+            : `${task.sourceKey}: probe failed`
+        );
+      }
+    }
+
+    if (taskCount === 0) {
       const status = errors.length > 0 ? 'failed' : 'skipped';
       const reason =
         status === 'failed'
@@ -729,35 +767,6 @@ export async function runLowFrequencySourceRankingCheck(
         reason,
         notes,
       };
-    }
-
-    const buckets = new Map<string, AggregationBucket>();
-
-    for (const task of tasks) {
-      try {
-        const measuredAt = now();
-        const probeResult = await probePlayback(task.episodeUrl, origin);
-        probeCount += 1;
-
-        await persistProbeResult(
-          { DB: database },
-          runId,
-          task,
-          probeResult,
-          measuredAt
-        );
-
-        const bucket =
-          buckets.get(task.sourceKey) || createAggregationBucket(task);
-        appendProbeToBucket(bucket, probeResult);
-        buckets.set(task.sourceKey, bucket);
-      } catch (error) {
-        errors.push(
-          error instanceof Error
-            ? `${task.sourceKey}: ${error.message}`
-            : `${task.sourceKey}: probe failed`
-        );
-      }
     }
 
     for (const [sourceKey, bucket] of Array.from(buckets.entries())) {

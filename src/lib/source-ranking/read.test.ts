@@ -86,6 +86,12 @@ describe('source ranking read', () => {
       1,
       expect.stringContaining('updated_at >= ?')
     );
+    expect(prepare).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining(
+        'source_rank_snapshots.updated_at BETWEEN run.started_at AND run.finished_at'
+      )
+    );
     expect(bind).toHaveBeenNthCalledWith(
       1,
       '24h',

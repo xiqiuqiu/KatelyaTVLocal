@@ -81,11 +81,10 @@ export async function GET(request: NextRequest) {
   try {
     console.log('Cron job triggered:', new Date().toISOString());
 
-    const refreshPromise = refreshRecordAndFavorites();
     const sourceRanking = await tryRunSourceRankingCron(request, rankingEnv);
 
     await Promise.all([
-      refreshPromise,
+      refreshRecordAndFavorites(),
       cleanupPlaybackQuality(rankingEnv).catch(() => undefined),
     ]);
 

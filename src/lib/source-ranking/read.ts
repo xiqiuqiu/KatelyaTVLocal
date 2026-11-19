@@ -219,6 +219,15 @@ export async function readLatestSourceRanks(
            WHERE window_key = ?
              AND updated_at >= ?
              AND source_key IN (${placeholders})
+             AND (
+               unavailable_rate < 100 OR EXISTS (
+                 SELECT 1
+                 FROM source_probe_results AS probe
+                 JOIN source_probe_runs AS run ON run.id = probe.run_id
+                 WHERE probe.source_key = source_rank_snapshots.source_key
+                   AND source_rank_snapshots.updated_at BETWEEN run.started_at AND run.finished_at
+               )
+             )
            ORDER BY final_score DESC, updated_at DESC`
         )
         .bind(windowKey, cutoffTime, ...sourceKeys)
