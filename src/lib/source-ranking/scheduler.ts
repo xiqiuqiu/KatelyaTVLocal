@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { parsePlayRecordKey } from '@/lib/play-record-key';
 import { PlayRecord, SearchResult } from '@/lib/types';
+import { isWatchProgressStorageKey } from '@/lib/watch-progress';
 
 import {
   OfflineProbeResult,
@@ -249,23 +250,26 @@ async function loadRecentPlaySamples(
         : await getPlayRecords(userName);
       const userSamples = Object.entries(playRecords)
         .map(([key, record]) => {
-          const parsedKey = parsePlayRecordKey(key);
-          if (!parsedKey) {
+          const route = isWatchProgressStorageKey(key)
+            ? { source: record.route_source, id: record.route_id }
+            : parsePlayRecordKey(key);
+          if (!route?.source || !route.id) {
             return null;
           }
 
           return {
             userName,
-            source: parsedKey.source,
-            id: parsedKey.id,
+            source: route.source,
+            id: route.id,
             record,
           } satisfies RecentPlaySample;
         })
         .filter((sample): sample is RecentPlaySample => Boolean(sample))
-        .sort((left, right) => right.record.save_time - left.record.save_time)
-        .slice(0, MAX_SAMPLES_PER_USER);
+        .sort((left, right) => right.record.save_time - left.record.save_time);
 
-      samples.push(...userSamples);
+      samples.push(
+        ...mergeProbeSamples(userSamples).slice(0, MAX_SAMPLES_PER_USER)
+      );
     } catch (error) {
       console.error(
         `source ranking: load play records failed for ${userName}`,
@@ -380,9 +384,10 @@ function mergeProbeSamples(samples: RecentPlaySample[]): RecentPlaySample[] {
 
 async function buildProbeTasksFromRecentPlays(
   samples: RecentPlaySample[],
-  fetchDetail: LowFrequencySourceRankingOptions['fetchDetail']
-): Promise<SampledProbeTask[]> {
+  fetchDetail: NonNullable<LowFrequencySourceRankingOptions['fetchDetail']>
+): Promise<{ tasks: SampledProbeTask[]; errors: string[] }> {
   const tasks: SampledProbeTask[] = [];
+  const errors: string[] = [];
   const perSourceCount = new Map<string, number>();
   const seenVideoKeys = new Set<string>();
   const seenEpisodeUrls = new Set<string>();
@@ -398,11 +403,23 @@ async function buildProbeTasksFromRecentPlays(
     }
     seenVideoKeys.add(videoKey);
 
-    const detail = await fetchDetail?.({
-      source: sample.source,
-      id: sample.id,
-      fallbackTitle: sample.record.search_title || sample.record.title,
-    });
+    let detail: SearchResult;
+    try {
+      detail = await fetchDetail({
+        source: sample.source,
+        id: sample.id,
+        fallbackTitle: sample.record.search_title || sample.record.title,
+      });
+    } catch (error) {
+      const sourceKey = buildSourceIdentityKey(sample.source, sample.id);
+      const message = error instanceof Error ? error.message : 'unknown error';
+      errors.push(
+        `${sourceKey}: detail failed - ${message}`
+          .replace(/https?:\/\/\S+/gi, '[url]')
+          .slice(0, 200)
+      );
+      continue;
+    }
 
     if (!detail || !detail.episodes?.length) {
       continue;
@@ -451,7 +468,7 @@ async function buildProbeTasksFromRecentPlays(
     }
   }
 
-  return tasks;
+  return { tasks, errors };
 }
 
 function createAggregationBucket(task: SampledProbeTask): AggregationBucket {
@@ -677,37 +694,39 @@ export async function runLowFrequencySourceRankingCheck(
     const samples = mergeProbeSamples([...playSamples, ...feedbackSamples]);
     sampledRecordCount = samples.length;
 
-    let tasks: SampledProbeTask[] = [];
-    try {
-      tasks = await buildProbeTasksFromRecentPlays(samples, fetchDetail);
-    } catch (error) {
-      errors.push(
-        error instanceof Error ? error.message : 'build probe tasks failed'
-      );
-    }
+    const { tasks, errors: detailErrors } =
+      await buildProbeTasksFromRecentPlays(samples, fetchDetail);
+    errors.push(...detailErrors);
     taskCount = tasks.length;
 
     if (tasks.length === 0) {
+      const status = errors.length > 0 ? 'failed' : 'skipped';
+      const reason =
+        status === 'failed'
+          ? 'detail lookup failed and no probe tasks were built'
+          : 'no probe task built from recent play records';
       const notes = JSON.stringify({
         sampledRecordCount,
         taskCount,
         probeCount,
         snapshotCount,
-        reason: 'no probe task built from recent play records',
+        reason,
+        errorCount: errors.length,
+        errors: errors.slice(0, 5),
       });
 
-      await finalizeProbeRun(database, runId, now(), 'skipped', notes);
+      await finalizeProbeRun(database, runId, now(), status, notes);
 
       return {
         triggered: true,
-        status: 'skipped',
+        status,
         runId,
         sampledRecordCount,
         taskCount,
         probeCount,
         snapshotCount,
         errorCount: errors.length,
-        reason: 'no probe task built from recent play records',
+        reason,
         notes,
       };
     }
@@ -761,7 +780,7 @@ export async function runLowFrequencySourceRankingCheck(
     }
 
     const status: SchedulerStatus =
-      probeCount === 0
+      snapshotCount === 0
         ? 'failed'
         : errors.length > 0
         ? 'completed_with_errors'
@@ -771,6 +790,7 @@ export async function runLowFrequencySourceRankingCheck(
       taskCount,
       probeCount,
       snapshotCount,
+      errorCount: errors.length,
       errors: errors.slice(0, 5),
     });
 
@@ -797,6 +817,7 @@ export async function runLowFrequencySourceRankingCheck(
       taskCount,
       probeCount,
       snapshotCount,
+      errorCount: errors.length + 1,
       errors: [...errors, message].slice(0, 5),
     });
 

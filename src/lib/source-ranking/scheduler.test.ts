@@ -407,6 +407,139 @@ describe('source ranking scheduler', () => {
     expect(persistedTasks).toEqual(['mdzy-16302']);
   });
 
+  it.each([
+    {
+      status: 'completed_with_errors',
+      taskCount: 2,
+      snapshotCount: 2,
+      errorCount: 1,
+    },
+    { status: 'failed', taskCount: 0, snapshotCount: 0, errorCount: 3 },
+    { status: 'failed', taskCount: 2, snapshotCount: 0, errorCount: 3 },
+  ])(
+    'records $status when $taskCount tasks yield $snapshotCount snapshots after a detail failure',
+    async (expected) => {
+      const statements: StatementRecord[] = [];
+      const fetchDetail = jest.fn(async ({ source, id }) => {
+        if (expected.taskCount === 0 || id === 'bad') {
+          throw new Error(
+            'Detail HTTP 503 https://media.example.com/?token=secret'
+          );
+        }
+        return {
+          id,
+          source,
+          source_name: source,
+          title: 'Example',
+          year: '2026',
+          poster: '',
+          episodes: [`https://media.example.com/${id}.m3u8`],
+        };
+      });
+      const probePlayback = jest.fn(async () => ({
+        kind: 'direct' as const,
+        domain: 'media.example.com',
+        reason: '可直连',
+        upstreamStatus: 200,
+        probeTimeMs: 100,
+        resolutionLabel: null,
+        firstSegmentLatencyMs: null,
+        firstSegmentSpeedKbps: null,
+      }));
+      const result = await runLowFrequencySourceRankingCheck({
+        env: { DB: createFakeDatabase(statements) },
+        origin: 'https://app.example.com',
+        getUsers: async () => ['alice', 'bob'],
+        getPlayRecords: async (user): Promise<Record<string, PlayRecord>> =>
+          user === 'alice'
+            ? {
+                'source+first': createPlayRecord({ save_time: 3 }),
+                'source+bad': createPlayRecord({ save_time: 2 }),
+              }
+            : user === 'bob'
+            ? { 'source+last': createPlayRecord({ save_time: 1 }) }
+            : {},
+        fetchDetail,
+        probePlayback,
+        persistProbeResult: async () => {
+          if (expected.snapshotCount === 0) {
+            throw new Error('Could not persist probe result');
+          }
+        },
+      });
+
+      expect(fetchDetail.mock.calls.map(([sample]) => sample.id)).toEqual([
+        'first',
+        'bad',
+        'last',
+      ]);
+      expect(result).toMatchObject({
+        ...expected,
+        sampledRecordCount: 3,
+      });
+      expect(probePlayback).toHaveBeenCalledTimes(expected.taskCount);
+      expect(
+        statements
+          .filter(({ sql }) =>
+            sql.includes('INSERT OR REPLACE INTO source_rank_snapshots')
+          )
+          .map(({ values }) => values[1])
+      ).toEqual(expected.snapshotCount ? ['source-first', 'source-last'] : []);
+      const finalized = statements.find(({ sql }) =>
+        sql.includes('UPDATE source_probe_runs')
+      );
+      expect(finalized?.values[1]).toBe(result.status);
+      expect(finalized?.values[2]).toBe(result.notes);
+      expect(JSON.parse(result.notes ?? '{}')).toMatchObject({
+        errorCount: expected.errorCount,
+      });
+      expect(result.notes).toContain('source-bad');
+      expect(result.notes).toContain('HTTP 503');
+      expect(result.notes).not.toContain('token=secret');
+    }
+  );
+
+  it('samples content-key records and counts dual writes once per user', async () => {
+    const fetchDetail = jest.fn(async ({ source, id }) => ({
+      id,
+      source,
+      source_name: source,
+      title: 'Example',
+      year: '2026',
+      poster: '',
+      episodes: [],
+    }));
+    const result = await runLowFrequencySourceRankingCheck({
+      env: { DB: createFakeDatabase([]) },
+      origin: 'https://app.example.com',
+      getUsers: async () => ['alice'],
+      getPlayRecords: async (user): Promise<Record<string, PlayRecord>> =>
+        user === 'alice'
+          ? {
+              'wp:missing+route::2026#0': createPlayRecord({ save_time: 4 }),
+              'wp:show+plus::2026#1': createPlayRecord({
+                route_source: 'alpha',
+                route_id: 'video+part',
+                save_time: 3,
+                search_title: 'Content title',
+              }),
+              'alpha+video+part': createPlayRecord({ save_time: 2 }),
+              'beta+other': createPlayRecord({ save_time: 1 }),
+            }
+          : {},
+      fetchDetail,
+    });
+    expect(fetchDetail.mock.calls).toEqual([
+      [{ source: 'alpha', id: 'video+part', fallbackTitle: 'Content title' }],
+      [{ source: 'beta', id: 'other', fallbackTitle: '示例标题' }],
+    ]);
+    expect(result).toMatchObject({
+      status: 'skipped',
+      sampledRecordCount: 2,
+      errorCount: 0,
+    });
+  });
+
   it('caps multi-user sampling and total probe tasks', async () => {
     const originalUsername = process.env.USERNAME;
     delete process.env.USERNAME;
