@@ -200,6 +200,8 @@ export interface SourceVideoInfo {
   speedSource?: 'backend' | 'browser' | 'feedback' | 'none';
   speedUpdatedAt?: number;
   speedPending?: boolean;
+  playbackBitrateBps?: number;
+  browserSpeedUnmeasured?: boolean;
   hasError?: boolean;
   errorReason?: string;
 }

@@ -27,9 +27,11 @@ import {
   getRememberedSourceStatusForSource,
   getSourceIdentityKey,
   getVideoResolutionFromM3u8,
+  markBrowserSpeedUnmeasured,
   probeSourcePlayback,
   rememberSourceDomainPreference,
   rememberSourcePlaybackQuality,
+  SourceSpeedProbeTimeoutError,
 } from '@/lib/utils';
 
 import EpisodeSelectorEpisodes from '@/components/player/EpisodeSelectorEpisodes';
@@ -61,6 +63,14 @@ function mergeVideoInfoMaps(
         (value.speedUpdatedAt ?? 0) >= (existing.speedUpdatedAt ?? 0))
     ) {
       next.set(key, value);
+    } else if (
+      existing.browserSpeedUnmeasured &&
+      value.speedSource === 'backend' &&
+      !value.speedPending
+    ) {
+      next.set(key, markBrowserSpeedUnmeasured(value));
+    } else if (value.browserSpeedUnmeasured) {
+      next.set(key, markBrowserSpeedUnmeasured(existing));
     }
   });
 
@@ -506,13 +516,12 @@ function useEpisodeSelectorState({
       });
 
       try {
-        const info = await getVideoResolutionFromM3u8(episodeUrl);
-        const browserInfo: SourceVideoInfo = {
-          ...info,
-          speedSource: 'browser',
-          speedUpdatedAt: Date.now(),
-          speedPending: false,
-        };
+        const result = await getVideoResolutionFromM3u8(episodeUrl);
+        const existing = videoInfoMapRef.current.get(sourceKey);
+        const browserInfo =
+          result.browserSpeedUnmeasured && existing?.speedSource === 'backend'
+            ? markBrowserSpeedUnmeasured(existing)
+            : result;
         setVideoInfoMap((prev) => new Map(prev).set(sourceKey, browserInfo));
 
         const directStatus = createSourceStatus('direct', {
@@ -527,11 +536,34 @@ function useEpisodeSelectorState({
         rememberSourceDomainPreference(directStatus.domain || null, 'direct');
         rememberSourcePlaybackQuality(sourceKey, directStatus.domain || null, {
           mode: 'direct',
-          browserSpeedLabel: browserInfo.loadSpeed,
+          browserSpeedLabel: isBrowserSourceMeasurement(result)
+            ? result.loadSpeed
+            : undefined,
           confidence: 'high',
         });
         return directStatus;
       } catch (error) {
+        if (error instanceof SourceSpeedProbeTimeoutError) {
+          const latestStatus = sourceStatusMapRef.current.get(sourceKey);
+          const status =
+            (latestStatus && latestStatus.kind !== 'probing'
+              ? latestStatus
+              : knownStatus) ||
+            createPlayableSourceStatus({
+              reason: '速度未测得，可尝试播放',
+              playbackMode: 'direct',
+              domain: serverProbeResult.domain || null,
+            });
+          const info = markBrowserSpeedUnmeasured(
+            videoInfoMapRef.current.get(sourceKey) || status.measured
+          );
+          const retainedStatus = { ...status, measured: info };
+          setSourceStatusMap((prev) =>
+            new Map(prev).set(sourceKey, retainedStatus)
+          );
+          setVideoInfoMap((prev) => new Map(prev).set(sourceKey, info));
+          return retainedStatus;
+        }
         const failureReason =
           error instanceof Error ? error.message : '浏览器直连检测失败';
         const unavailableInfo: SourceVideoInfo = {
@@ -789,7 +821,12 @@ function useEpisodeSelectorState({
             return;
           }
 
-          next.set(result.sourceKey, measured);
+          next.set(
+            result.sourceKey,
+            previous?.browserSpeedUnmeasured
+              ? markBrowserSpeedUnmeasured(measured)
+              : measured
+          );
         });
 
         return next;

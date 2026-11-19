@@ -30,11 +30,28 @@ describe('calculateMeasuredSourceScore', () => {
           loadSpeed: '2.0 MB/s',
           pingTime: 80,
         },
-        2048,
         80,
         480
       )
     ).toBe(90);
+  });
+  it('caps bandwidth for the current variant and does not score old feedback speed', () => {
+    const variant = {
+      quality: '1080p',
+      pingTime: 80,
+      playbackBitrateBps: 4_000_000,
+    };
+    const score = (loadSpeed: string) =>
+      calculateMeasuredSourceScore({ ...variant, loadSpeed }, 80, 480);
+    expect(score('800 KB/s')).toBe(score('290.9 MB/s'));
+    expect(score('400 KB/s')).toBeLessThan(score('800 KB/s'));
+    expect(
+      calculateMeasuredSourceScore(
+        { ...variant, loadSpeed: '290.9 MB/s', speedSource: 'feedback' },
+        80,
+        480
+      )
+    ).toBe(score('速度未测得'));
   });
 });
 
@@ -114,6 +131,28 @@ describe('buildSourceSelectionScores', () => {
       scores.get('global-1')?.score || 0
     );
     expect(sortSourcesBySelectionScore(sources, scores)[0]).toBe(sources[1]);
+  });
+
+  it('keeps other line scores independent from an outlying download', () => {
+    const sources = [createSource('steady', '1'), createSource('outlier', '2')];
+    const measured = new Map([
+      ['steady-1', { quality: '720p', loadSpeed: '650 KB/s', pingTime: 80 }],
+      ['outlier-2', { quality: '720p', loadSpeed: '291 MB/s', pingTime: 80 }],
+    ]);
+    const score = () =>
+      buildSourceSelectionScores({ sources, measured, currentEpisodeIndex: 0 });
+    const withOutlier = score();
+    measured.set('outlier-2', {
+      quality: '720p',
+      loadSpeed: '650 KB/s',
+      pingTime: 80,
+    });
+    expect(score().get('steady-1')?.score).toBe(
+      withOutlier.get('steady-1')?.score
+    );
+    expect(score().get('outlier-2')?.score).toBe(
+      withOutlier.get('outlier-2')?.score
+    );
   });
 
   it('keeps missing-score sources in original order after scored sources', () => {

@@ -88,6 +88,14 @@ const withPWA = require('next-pwa')({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
   publicExcludes: ['!tv-test/hls/**/*'],
+  runtimeCaching: [
+    {
+      // Respect explicit HTTP cache bypass before Workbox's cache fallback.
+      urlPattern: ({ request }) => request.cache === 'no-store',
+      handler: 'NetworkOnly',
+    },
+    ...require('next-pwa/cache'),
+  ],
   register: true,
   skipWaiting: true,
 });

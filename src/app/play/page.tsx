@@ -190,8 +190,10 @@ import {
   getSourceDomainFromEpisodes,
   getSourceIdentityKey,
   getVideoResolutionFromM3u8,
+  markBrowserSpeedUnmeasured,
   rememberSourceDomainPreference,
   rememberSourcePlaybackQuality,
+  SourceSpeedProbeTimeoutError,
 } from '@/lib/utils';
 import {
   adaptWatchProgressPlayhead,
@@ -4494,16 +4496,17 @@ function usePlayPageSession() {
     try {
       const testResult = await getVideoResolutionFromM3u8(episodeUrl, {
         timeoutMs: SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS,
+        background: true,
       });
 
       if (hlsRecoveryStateRef.current.playbackSessionId === sessionId) {
-        const browserInfo: SourceVideoInfo = {
-          ...testResult,
-          speedSource: 'browser',
-          speedUpdatedAt: Date.now(),
-          speedPending: false,
-        };
         const nextVideoInfo = new Map(precomputedVideoInfoRef.current);
+        const previousInfo = nextVideoInfo.get(sourceKey);
+        const browserInfo =
+          testResult.browserSpeedUnmeasured &&
+          previousInfo?.speedSource === 'backend'
+            ? markBrowserSpeedUnmeasured(previousInfo)
+            : testResult;
         nextVideoInfo.set(sourceKey, browserInfo);
         setPrecomputedVideoInfo(nextVideoInfo);
 
@@ -4533,7 +4536,9 @@ function usePlayPageSession() {
         );
         rememberSourcePlaybackQuality(sourceKey, domain, {
           mode: 'direct',
-          browserSpeedLabel: testResult.loadSpeed,
+          browserSpeedLabel: isBrowserSourceMeasurement(testResult)
+            ? testResult.loadSpeed
+            : undefined,
           confidence: 'medium',
         });
         emitPlaybackDebugLog(
@@ -4551,6 +4556,29 @@ function usePlayPageSession() {
       if (hlsRecoveryStateRef.current.playbackSessionId === sessionId) {
         const reason = error instanceof Error ? error.message : '后台测速失败';
         const nextStatuses = new Map(precomputedSourceStatusesRef.current);
+        if (error instanceof SourceSpeedProbeTimeoutError) {
+          const latestStatus = nextStatuses.get(sourceKey);
+          const status =
+            (latestStatus && latestStatus.kind !== 'probing'
+              ? latestStatus
+              : previousStatus) ||
+            getRememberedSourceStatusForSource(sourceKey, candidate.episodes) ||
+            createSourceStatus('idle', { domain });
+          const nextVideoInfo = new Map(precomputedVideoInfoRef.current);
+          nextVideoInfo.set(
+            sourceKey,
+            markBrowserSpeedUnmeasured(nextVideoInfo.get(sourceKey))
+          );
+          nextStatuses.set(sourceKey, status);
+          setPrecomputedSourceStatuses(nextStatuses);
+          setPrecomputedVideoInfo(nextVideoInfo);
+          updateSourceSelectionScores(
+            availableSourcesRef.current,
+            nextStatuses,
+            nextVideoInfo
+          );
+          return;
+        }
         nextStatuses.set(
           sourceKey,
           createProgressiveSourceProbeFailureStatus({
@@ -4748,7 +4776,13 @@ function usePlayPageSession() {
 
         statusMap.set(result.sourceKey, nextStatus);
         if (measured) {
-          videoInfoMap.set(result.sourceKey, measured);
+          const previousInfo = videoInfoMap.get(result.sourceKey);
+          videoInfoMap.set(
+            result.sourceKey,
+            previousInfo?.browserSpeedUnmeasured
+              ? markBrowserSpeedUnmeasured(measured)
+              : measured
+          );
         }
         rememberSourceDomainPreference(
           result.domain || null,

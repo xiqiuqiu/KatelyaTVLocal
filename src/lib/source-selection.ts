@@ -22,7 +22,7 @@ interface BuildSourceSelectionScoresInput {
   getSourceKey?: (source: SearchResult) => string;
 }
 
-function parseSpeedKbps(loadSpeed: string): number {
+function parseSpeedBps(loadSpeed: string): number {
   const match = loadSpeed.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
   if (!match) {
     return 0;
@@ -33,8 +33,18 @@ function parseSpeedKbps(loadSpeed: string): number {
     return 0;
   }
 
-  return match[2] === 'MB/s' ? value * 1024 : value;
+  return value * (match[2] === 'MB/s' ? 1024 * 8192 : 8192);
 }
+
+// Fallback bandwidth targets when the HLS variant does not advertise a bitrate.
+const SPEED_TARGET_BPS: Record<string, number> = {
+  '4K': 25_000_000,
+  '2K': 16_000_000,
+  '1080p': 10_000_000,
+  '720p': 5_000_000,
+  '480p': 3_000_000,
+  SD: 2_000_000,
+};
 
 function getQualityScore(quality: string): number {
   switch (quality) {
@@ -92,8 +102,7 @@ function getStatusReason(status?: SourceStatus | null): string {
 }
 
 export function calculateMeasuredSourceScore(
-  testResult: Pick<SourceVideoInfo, 'quality' | 'loadSpeed' | 'pingTime'>,
-  maxSpeed: number,
+  testResult: SourceVideoInfo,
   minPing: number,
   maxPing: number
 ): number {
@@ -101,11 +110,16 @@ export function calculateMeasuredSourceScore(
 
   score += getQualityScore(testResult.quality) * 0.4;
 
-  const speedKbps = parseSpeedKbps(testResult.loadSpeed);
-  const speedScore =
-    speedKbps > 0 && maxSpeed > 0
-      ? Math.min(100, Math.max(0, (speedKbps / maxSpeed) * 100))
-      : 30;
+  const variantBitrate = testResult.playbackBitrateBps;
+  const targetBps =
+    variantBitrate && Number.isFinite(variantBitrate) && variantBitrate > 0
+      ? variantBitrate * 1.5
+      : SPEED_TARGET_BPS[testResult.quality] ?? SPEED_TARGET_BPS['720p'];
+  const speedBps =
+    testResult.speedSource === 'feedback' || testResult.speedPending
+      ? 0
+      : parseSpeedBps(testResult.loadSpeed);
+  const speedScore = Math.min(100, (speedBps / targetBps) * 100);
   score += speedScore * 0.4;
 
   const pingScore = (() => {
@@ -123,22 +137,16 @@ export function calculateMeasuredSourceScore(
   return Math.round(score * 100) / 100;
 }
 
-export function buildMeasuredScoreContext(measured: SourceVideoInfo[]): {
-  maxSpeed: number;
+function buildMeasuredScoreContext(measured: SourceVideoInfo[]): {
   minPing: number;
   maxPing: number;
 } {
-  const validSpeeds = measured
-    .filter((item) => !item.hasError)
-    .map((item) => parseSpeedKbps(item.loadSpeed))
-    .filter((speed) => speed > 0);
   const validPings = measured
     .filter((item) => !item.hasError)
     .map((item) => item.pingTime)
     .filter((ping) => ping > 0);
 
   return {
-    maxSpeed: validSpeeds.length > 0 ? Math.max(...validSpeeds) : 1024,
     minPing: validPings.length > 0 ? Math.min(...validPings) : 50,
     maxPing: validPings.length > 0 ? Math.max(...validPings) : 1000,
   };
@@ -184,7 +192,6 @@ export function buildSourceSelectionScores({
         score +=
           calculateMeasuredSourceScore(
             info,
-            measuredContext.maxSpeed,
             measuredContext.minPing,
             measuredContext.maxPing
           ) * 0.75;
