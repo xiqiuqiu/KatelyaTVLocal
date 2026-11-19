@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
-import Hls from 'hls.js';
+import Hls, { type FragLoadingData } from 'hls.js';
 
 import { formatSourceSpeedKbps } from './source-preference-video-info';
 import {
@@ -808,7 +808,11 @@ const MAX_SPEED_SAMPLE_ATTEMPTS = 3;
 /** Use a dedicated HLS instance so playback can keep its normal cache. */
 export function getVideoResolutionFromM3u8(
   m3u8Url: string,
-  options: { timeoutMs?: number; background?: boolean } = {}
+  options: {
+    timeoutMs?: number;
+    background?: boolean;
+    extension?: { maxTimeoutMs: number; canContinue: () => boolean };
+  } = {}
 ): Promise<SourceVideoInfo> {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
@@ -830,6 +834,8 @@ export function getVideoResolutionFromM3u8(
       },
     });
     let hasMetadata = false;
+    let activeFragment: FragLoadingData['frag'] | undefined;
+    let receivedFragmentData = false;
     let sampleCount = 0;
     let sampleAttempts = 0;
     let sampleBytes = 0;
@@ -837,6 +843,13 @@ export function getVideoResolutionFromM3u8(
     let pingTime = 0;
     let playbackBitrateBps: number | undefined;
     let settled = false;
+    let extending = false;
+    const timeoutMs = options.timeoutMs ?? 8000;
+    const extension = options.background ? options.extension : undefined;
+    const startedAt = performance.now();
+    const softDeadline = startedAt + timeoutMs;
+    const hardDeadline = startedAt + (extension?.maxTimeoutMs ?? timeoutMs);
+    let timeout: ReturnType<typeof setTimeout>;
 
     const cleanup = () => {
       settled = true;
@@ -867,7 +880,11 @@ export function getVideoResolutionFromM3u8(
           ? 'SD'
           : '未知';
       const speed =
-        sampleCount >= REQUIRED_SPEED_SAMPLES
+        sampleCount >= REQUIRED_SPEED_SAMPLES &&
+        (performance.now() < softDeadline ||
+          (extending &&
+            performance.now() < hardDeadline &&
+            extension?.canContinue()))
           ? formatSourceSpeedKbps((sampleBytes * 8) / sampleTimeMs)
           : null;
       cleanup();
@@ -881,13 +898,33 @@ export function getVideoResolutionFromM3u8(
       };
       resolve(speed ? info : markBrowserSpeedUnmeasured(info));
     };
-    const timeout = setTimeout(() => {
+    const expire = () => {
       if (hasMetadata) {
         finish();
       } else {
         fail(new SourceSpeedProbeTimeoutError());
       }
-    }, options.timeoutMs ?? 8000);
+    };
+    const checkExtension = () => {
+      const remaining = hardDeadline - performance.now();
+      if (remaining <= 0 || !extension?.canContinue()) {
+        expire();
+        return;
+      }
+      timeout = setTimeout(checkExtension, Math.min(100, remaining));
+    };
+    timeout = setTimeout(() => {
+      const activeFragmentHasData =
+        activeFragment &&
+        uncachedUrls.has(activeFragment.url) &&
+        activeFragment.stats.loaded > 0;
+      if (extension && (receivedFragmentData || activeFragmentHasData)) {
+        extending = true;
+        checkExtension();
+      } else {
+        expire();
+      }
+    }, timeoutMs);
     const hasFinishedSampling = () =>
       sampleCount >= REQUIRED_SPEED_SAMPLES ||
       sampleAttempts >= MAX_SPEED_SAMPLE_ATTEMPTS;
@@ -901,6 +938,12 @@ export function getVideoResolutionFromM3u8(
       if (!uncachedUrls.has(url) && !uncachedUrls.has(m3u8Url)) return;
       pingTime = Math.max(0, stats.loading.first - stats.loading.start);
     });
+    hls.on(Hls.Events.FRAG_LOADING, (_event, { frag, part }) => {
+      if (frag.type === 'main' && frag.sn !== 'initSegment' && !part) {
+        // The fragment loader updates this fragment's stats as the body arrives.
+        activeFragment = frag;
+      }
+    });
     hls.on(Hls.Events.FRAG_LOADED, (_event, { frag, part }) => {
       if (frag.type !== 'main' || frag.sn === 'initSegment' || part) return;
       const level = hls.levels[frag.level];
@@ -909,6 +952,7 @@ export function getVideoResolutionFromM3u8(
       if (hasFinishedSampling() || !uncachedUrls.delete(frag.url)) return;
       sampleAttempts += 1;
       const { loaded, loading } = frag.stats;
+      receivedFragmentData ||= loaded > 0;
       const elapsed = loading.end - loading.start;
       if (
         loaded >= MIN_SPEED_SAMPLE_BYTES &&

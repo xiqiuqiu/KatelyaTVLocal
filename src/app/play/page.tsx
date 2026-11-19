@@ -231,6 +231,8 @@ const SOURCE_PREFERENCE_FAST_BUDGET_MS = 500;
 // 用充分的服务端排名/实时探测数据换取“首源不踩不可用源”，避免起播卡死后才慢慢自动切源。
 const SOURCE_PREFERENCE_MAX_BUDGET_MS = 3000;
 const SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS = 1800;
+const PROGRESSIVE_SOURCE_PROBE_MAX_TIMEOUT_MS = 2600;
+const PROGRESSIVE_SOURCE_PROBE_BUFFER_SECONDS = 5;
 const SOURCE_CHANGE_TIMEOUT_MS = 10_000;
 const PROGRESSIVE_SOURCE_PROBE_STABLE_DELAY_MS = 10000;
 const PROGRESSIVE_SOURCE_PROBE_INTERVAL_MS = 20000;
@@ -4428,6 +4430,8 @@ function usePlayPageSession() {
     const now = Date.now();
     const hlsState = hlsRecoveryStateRef.current;
     const sessionId = hlsState.playbackSessionId;
+    const foregroundSourceKey = getCurrentSourceKey();
+    const episodeIndex = currentEpisodeIndexRef.current;
     const shouldStart = shouldStartProgressiveSourceProbe({
       now,
       stablePlaybackStartedAt: progressiveSourceProbeStableStartedAtRef.current,
@@ -4449,11 +4453,11 @@ function usePlayPageSession() {
 
     const candidates = selectProgressiveSourceProbeCandidates({
       sources: availableSourcesRef.current,
-      currentSourceKey: getCurrentSourceKey(),
+      currentSourceKey: foregroundSourceKey,
       attemptedSourceKeys: progressiveSourceProbeAttemptedKeysRef.current,
       statuses: precomputedSourceStatusesRef.current,
       scores: sourceSelectionScoresRef.current,
-      currentEpisodeIndex: currentEpisodeIndexRef.current,
+      currentEpisodeIndex: episodeIndex,
       limit: PROGRESSIVE_SOURCE_PROBE_LIMIT,
       getSourceKey: (source) => getSourceIdentityKey(source.source, source.id),
     });
@@ -4465,7 +4469,7 @@ function usePlayPageSession() {
     }
 
     const sourceKey = getSourceIdentityKey(candidate.source, candidate.id);
-    const episodeUrl = candidate.episodes[currentEpisodeIndexRef.current];
+    const episodeUrl = candidate.episodes[episodeIndex];
     const domain = getSourceDomainFromEpisodes(candidate.episodes);
     const previousStatus =
       precomputedSourceStatusesRef.current.get(sourceKey) ?? null;
@@ -4497,6 +4501,32 @@ function usePlayPageSession() {
       const testResult = await getVideoResolutionFromM3u8(episodeUrl, {
         timeoutMs: SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS,
         background: true,
+        extension: {
+          maxTimeoutMs: PROGRESSIVE_SOURCE_PROBE_MAX_TIMEOUT_MS,
+          canContinue: () => {
+            const currentState = hlsRecoveryStateRef.current;
+            return Boolean(
+              video &&
+                artPlayerRef.current?.video === video &&
+                currentState.playbackSessionId === sessionId &&
+                getCurrentSourceKey() === foregroundSourceKey &&
+                currentEpisodeIndexRef.current === episodeIndex &&
+                !document.hidden &&
+                !video.paused &&
+                !video.ended &&
+                !video.seeking &&
+                video.readyState >= 3 &&
+                !currentState.isSeeking &&
+                !isVideoLoadingRef.current &&
+                waitingRecoveryTimerRef.current === null &&
+                currentState.stallCount === 0 &&
+                currentState.stallWindowCount === 0 &&
+                getForwardBufferSecondsFromVideo(video) >=
+                  PROGRESSIVE_SOURCE_PROBE_BUFFER_SECONDS *
+                    Math.max(1, video.playbackRate)
+            );
+          },
+        },
       });
 
       if (hlsRecoveryStateRef.current.playbackSessionId === sessionId) {

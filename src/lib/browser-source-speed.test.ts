@@ -18,6 +18,7 @@ jest.mock('hls.js', () => ({
     static Events: Record<string, string> = {
       ERROR: 'error',
       MANIFEST_LOADED: 'manifestLoaded',
+      FRAG_LOADING: 'fragLoading',
       FRAG_LOADED: 'fragLoaded',
     };
     levels = [{ averageBitrate: 4_000_000 }];
@@ -46,18 +47,25 @@ const stream = 'https://fixture.example/episode.m3u8';
 const originalRequest = globalThis.Request;
 const request = jest.fn((url: string) => ({ url }));
 
-function loadFragment(index: number, bytes = 100_000, elapsed = 100) {
+function startFragment(index: number) {
   const url = new URL(`clip${index}.ts`, stream).href;
+  const frag = {
+    url,
+    level: 0,
+    sn: index,
+    type: 'main',
+    stats: { loaded: 0, loading: { start: 0, end: 0 } },
+  };
+  mockHandlers.get('fragLoading')?.('fragLoading', { frag });
   mockFetchSetup?.({ url, responseType: 'arraybuffer' }, {});
-  mockHandlers.get('fragLoaded')?.('fragLoaded', {
-    frag: {
-      url,
-      level: 0,
-      sn: index,
-      type: 'main',
-      stats: { loaded: bytes, loading: { start: 0, end: elapsed } },
-    },
-  });
+  return frag;
+}
+
+function loadFragment(index: number, bytes = 100_000, elapsed = 100) {
+  const frag = startFragment(index);
+  frag.stats.loaded = bytes;
+  frag.stats.loading.end = elapsed;
+  mockHandlers.get('fragLoaded')?.('fragLoaded', { frag });
 }
 
 beforeEach(() => {
@@ -133,5 +141,70 @@ it('reports the timeout separately and can show it alongside known backend speed
   });
   expect(getSourceStatusDescription({ kind: 'direct' }, info)).toBe(
     '后端 291.2 KB/s · 本机速度未测得 · 180ms'
+  );
+});
+
+describe('conditional background deadline', () => {
+  function startMeasurement(canContinue: () => boolean) {
+    return getVideoResolutionFromM3u8(stream, {
+      timeoutMs: 1800,
+      background: true,
+      extension: { maxTimeoutMs: 2600, canContinue },
+    });
+  }
+
+  it('keeps the soft deadline while a fragment has no body bytes', async () => {
+    const canContinue = jest.fn(() => true);
+    const measurement = startMeasurement(canContinue);
+    const result = expect(measurement).rejects.toBeInstanceOf(
+      SourceSpeedProbeTimeoutError
+    );
+    startFragment(0);
+    jest.advanceTimersByTime(1800);
+    await result;
+    expect(canContinue).not.toHaveBeenCalled();
+  });
+
+  it('accepts two valid segments after the soft deadline if bytes and buffer are present', async () => {
+    const measurement = startMeasurement(() => true);
+    const frag = startFragment(0);
+    frag.stats.loaded = 80_000;
+    jest.advanceTimersByTime(1800);
+    expect(mockDestroy).not.toHaveBeenCalled();
+
+    frag.stats.loaded = 100_000;
+    frag.stats.loading.end = 2000;
+    mockHandlers.get('fragLoaded')?.('fragLoaded', { frag });
+    mockVideo.dispatchEvent(new Event('loadedmetadata'));
+    jest.advanceTimersByTime(500);
+    loadFragment(1);
+    await expect(measurement).resolves.toMatchObject({
+      speedSource: 'browser',
+    });
+  });
+
+  it.each([
+    [false, 1800, 0],
+    [true, 1900, 100],
+    [true, 2600, 800],
+  ])(
+    'stops with insufficient samples when buffer starts %s and deadline is %i ms',
+    async (bufferInitiallyHealthy, expectedStop, advanceAfterSoft) => {
+      let healthy = bufferInitiallyHealthy;
+      const measurement = startMeasurement(() => healthy);
+      loadFragment(0);
+      mockVideo.dispatchEvent(new Event('loadedmetadata'));
+      jest.advanceTimersByTime(1799);
+      jest.advanceTimersByTime(1);
+      if (expectedStop > 1800) {
+        expect(mockDestroy).not.toHaveBeenCalled();
+        if (expectedStop === 1900) healthy = false;
+        jest.advanceTimersByTime(advanceAfterSoft - 1);
+        expect(mockDestroy).not.toHaveBeenCalled();
+        jest.advanceTimersByTime(1);
+      }
+      await expect(measurement).resolves.toMatchObject({ speedSource: 'none' });
+      expect(mockDestroy).toHaveBeenCalledTimes(1);
+    }
   );
 });
