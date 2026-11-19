@@ -9,6 +9,7 @@ const SOURCE_PROBE_POSITIVE_TTL_SECONDS = 10 * 60;
 const SOURCE_PROBE_NEGATIVE_TTL_SECONDS = 2 * 60;
 const SOURCE_PROBE_FETCH_TIMEOUT_MS = 5000;
 const SOURCE_PROBE_MAX_NESTED_REQUESTS = 3;
+const FIRST_SEGMENT_SAMPLE_BYTES = 256 * 1024;
 const PLAYLIST_CONTENT_TYPES = [
   'application/vnd.apple.mpegurl',
   'application/x-mpegurl',
@@ -19,6 +20,16 @@ const PLAYLIST_CONTENT_TYPES = [
 export interface SourceProbeMetrics extends SourceProbeResult {
   probeTimeMs?: number;
   cacheState?: 'hit' | 'miss';
+}
+
+interface HlsProbeMetrics {
+  resolutionHeight: number | null;
+  firstSegmentLatencyMs: number | null;
+  firstSegmentSpeedKbps: number | null;
+}
+
+interface UpstreamProbeOptions extends SourceProbeOptions {
+  measureHls?: boolean;
 }
 
 export interface SourcePreferenceProbeResult extends SourceProbeMetrics {
@@ -114,35 +125,79 @@ function isCorsAccessible(response: Response, origin: string): boolean {
 function getFirstPlaylistTarget(
   content: string,
   baseUrl: string
-): string | null {
-  const lines = content.split('\n');
+): { url: string; resolutionHeight: number | null } | null {
+  let resolutionHeight = null;
 
-  for (const rawLine of lines) {
+  for (const rawLine of content.split('\n')) {
     const line = rawLine.trim();
+    if (line.startsWith('#EXT-X-STREAM-INF:')) {
+      const resolution = line.match(/RESOLUTION=\d+x(\d+)/i);
+      resolutionHeight = resolution ? Number(resolution[1]) : null;
+    }
     if (!line || line.startsWith('#')) {
       continue;
     }
 
-    return buildAbsoluteUrl(line, baseUrl);
+    return { url: buildAbsoluteUrl(line, baseUrl), resolutionHeight };
   }
 
   return null;
 }
 
+async function measureFirstSegment(
+  response: Response,
+  startedAt: number,
+  timeoutMs: number
+): Promise<Pick<
+  HlsProbeMetrics,
+  'firstSegmentLatencyMs' | 'firstSegmentSpeedKbps'
+> | null> {
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+
+  let bytes = 0;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    void reader.cancel().catch(() => undefined);
+  }, Math.max(0, timeoutMs - (Date.now() - startedAt)));
+  try {
+    while (bytes < FIRST_SEGMENT_SAMPLE_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += Math.min(value.byteLength, FIRST_SEGMENT_SAMPLE_BYTES - bytes);
+    }
+    if (timedOut || !bytes) return null;
+    const elapsed = Math.max(1, Date.now() - startedAt);
+    return {
+      firstSegmentLatencyMs: elapsed,
+      firstSegmentSpeedKbps: Number(((bytes / elapsed) * 8).toFixed(2)),
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    void reader.cancel().catch(() => undefined);
+  }
+}
+
 async function probeNestedTarget(
-  targetUrl: string,
+  target: NonNullable<ReturnType<typeof getFirstPlaylistTarget>>,
   rootUrl: string,
   origin: string,
-  options?: SourceProbeOptions
+  options?: UpstreamProbeOptions
 ): Promise<{
   ok: boolean;
   corsAccessible: boolean;
   status?: number;
   reason?: string;
+  hlsMetrics?: HlsProbeMetrics;
+  mediaReadyAt?: number;
 }> {
   const rootValidation = validateProxyTargetUrl(rootUrl);
   const visited = new Set(rootValidation.ok ? [rootValidation.url.href] : []);
-  let currentUrl = targetUrl;
+  let currentUrl = target.url;
+  let resolutionHeight = target.resolutionHeight;
   let corsAccessible = true;
 
   for (
@@ -169,16 +224,27 @@ async function probeNestedTarget(
     }
     visited.add(currentUrl);
 
-    const response = await fetchValidatedProbeTarget(
-      currentUrl,
-      {
-        headers: buildUpstreamHeaders(
-          currentUrl,
-          currentUrl.toLowerCase().includes('.m3u8') ? null : 'bytes=0-1'
-        ),
-      },
-      options
+    const fetchTarget = (range: string | null) =>
+      fetchValidatedProbeTarget(
+        currentUrl,
+        { headers: buildUpstreamHeaders(currentUrl, range) },
+        options
+      );
+    const isPlaylistUrl = isPlaylistResponse(currentUrl, null);
+    let sampleSegment = Boolean(options?.measureHls) && !isPlaylistUrl;
+    const startedAt = Date.now();
+    let response = await fetchTarget(
+      isPlaylistUrl
+        ? null
+        : sampleSegment
+        ? `bytes=0-${FIRST_SEGMENT_SAMPLE_BYTES - 1}`
+        : 'bytes=0-1'
     );
+    if (sampleSegment && response.status === 416) {
+      void response.body?.cancel().catch(() => undefined);
+      sampleSegment = false;
+      response = await fetchTarget('bytes=0-1');
+    }
     const ok = response.ok || response.status === 206;
     corsAccessible = corsAccessible && isCorsAccessible(response, origin);
 
@@ -192,7 +258,27 @@ async function probeNestedTarget(
     }
 
     if (!isPlaylistResponse(currentUrl, response.headers.get('content-type'))) {
-      return { ok: true, corsAccessible, status: response.status };
+      if (!options?.measureHls)
+        return { ok: true, corsAccessible, status: response.status };
+      const mediaReadyAt = Date.now();
+      const measurement = sampleSegment
+        ? await measureFirstSegment(
+            response,
+            startedAt,
+            normalizeProbeTimeoutMs(options.timeoutMs)
+          )
+        : null;
+      return {
+        ok: true,
+        corsAccessible,
+        status: response.status,
+        mediaReadyAt,
+        hlsMetrics: {
+          resolutionHeight,
+          firstSegmentLatencyMs: measurement?.firstSegmentLatencyMs ?? null,
+          firstSegmentSpeedKbps: measurement?.firstSegmentSpeedKbps ?? null,
+        },
+      };
     }
 
     if (requestCount === SOURCE_PROBE_MAX_NESTED_REQUESTS - 1) {
@@ -206,7 +292,7 @@ async function probeNestedTarget(
 
     const nextTarget = getFirstPlaylistTarget(
       await response.text(),
-      currentUrl
+      response.url || currentUrl
     );
     if (!nextTarget) {
       return {
@@ -216,7 +302,8 @@ async function probeNestedTarget(
         reason: '播放列表未包含可探测的媒体对象',
       };
     }
-    currentUrl = nextTarget;
+    currentUrl = nextTarget.url;
+    resolutionHeight = nextTarget.resolutionHeight ?? resolutionHeight;
   }
 
   return {
@@ -272,8 +359,8 @@ function getProbeCacheTtl(result: SourceProbeResult): number {
 export async function probeSourcePlaybackUpstream(
   targetUrl: string,
   origin: string,
-  options?: SourceProbeOptions
-): Promise<SourceProbeMetrics> {
+  options?: UpstreamProbeOptions
+): Promise<SourceProbeMetrics & { hlsMetrics?: HlsProbeMetrics }> {
   const startedAt = Date.now();
 
   try {
@@ -317,7 +404,8 @@ export async function probeSourcePlaybackUpstream(
     }
 
     const playlistContent = await upstreamResponse.text();
-    const nextTarget = getFirstPlaylistTarget(playlistContent, targetUrl);
+    const playlistUrl = upstreamResponse.url || targetUrl;
+    const nextTarget = getFirstPlaylistTarget(playlistContent, playlistUrl);
 
     if (!nextTarget) {
       return {
@@ -331,7 +419,7 @@ export async function probeSourcePlaybackUpstream(
 
     const nestedProbe = await probeNestedTarget(
       nextTarget,
-      targetUrl,
+      playlistUrl,
       origin,
       options
     );
@@ -354,7 +442,8 @@ export async function probeSourcePlaybackUpstream(
         : '上游可用，但至少一层缺少浏览器跨域头，建议走代理',
       domain,
       upstreamStatus: upstreamResponse.status,
-      probeTimeMs: Date.now() - startedAt,
+      probeTimeMs: (nestedProbe.mediaReadyAt ?? Date.now()) - startedAt,
+      ...(nestedProbe.hlsMetrics && { hlsMetrics: nestedProbe.hlsMetrics }),
     };
   } catch (error) {
     return {
