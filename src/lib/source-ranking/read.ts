@@ -307,8 +307,9 @@ export async function readLatestSourceRanks(
       const probe = latestProbeByKey.get(snapshot.sourceKey);
       const feedback = latestFeedbackByKey.get(snapshot.sourceKey);
       const kind = probe?.kind || inferKindFromSnapshot(snapshot);
-      const hasFeedbackSpeed = Boolean(feedback?.browserSpeedLabel);
-      const hasBackendSpeed = typeof probe?.firstSegmentSpeedKbps === 'number';
+      const backendSpeed = formatSourceSpeedKbps(probe?.firstSegmentSpeedKbps);
+      const feedbackSpeed = feedback?.browserSpeedLabel;
+      const speedLabel = backendSpeed || feedbackSpeed || null;
       const feedbackAdjustment = getFeedbackRankAdjustment(
         feedbackRowsByKey.get(snapshot.sourceKey) || []
       );
@@ -326,21 +327,18 @@ export async function readLatestSourceRanks(
         probeTimeMs: probe?.probeTimeMs ?? undefined,
         qualityLabel:
           feedback?.browserQuality || probe?.resolutionLabel || null,
-        speedLabel:
-          feedback?.browserSpeedLabel ||
-          formatSourceSpeedKbps(probe?.firstSegmentSpeedKbps) ||
-          null,
-        speedSource: hasFeedbackSpeed
-          ? 'browser'
-          : hasBackendSpeed
+        speedLabel,
+        speedSource: backendSpeed
           ? 'backend'
+          : feedbackSpeed
+          ? 'feedback'
           : 'none',
-        speedUpdatedAt: hasFeedbackSpeed
-          ? feedback?.recordedAt
-          : hasBackendSpeed
+        speedUpdatedAt: backendSpeed
           ? probe?.measuredAt
+          : feedbackSpeed
+          ? feedback?.recordedAt
           : undefined,
-        speedPending: !hasFeedbackSpeed && !hasBackendSpeed,
+        speedPending: !speedLabel,
         pingTimeMs:
           feedback?.browserPingMs ??
           probe?.firstSegmentLatencyMs ??
@@ -403,7 +401,7 @@ export async function readLatestSourceRanks(
           latestFeedback.startupSuccess && successfulFeedback
             ? successfulFeedback.browserSpeedLabel || null
             : null,
-        speedSource: hasFeedbackSpeed ? 'browser' : 'none',
+        speedSource: hasFeedbackSpeed ? 'feedback' : 'none',
         speedUpdatedAt: hasFeedbackSpeed
           ? successfulFeedback?.recordedAt
           : undefined,

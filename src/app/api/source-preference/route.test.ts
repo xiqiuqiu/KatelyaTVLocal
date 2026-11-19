@@ -573,7 +573,7 @@ describe('source preference route', () => {
     expect(payload.results).toEqual([
       expect.objectContaining({
         sourceKey: 'alpha',
-        speedLabel: '3.5 MB/s',
+        speedLabel: '439.5 KB/s',
         speedKbps: 3600,
         speedSource: 'backend',
         latencyMs: 230,

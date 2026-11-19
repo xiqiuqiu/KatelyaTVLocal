@@ -151,7 +151,10 @@ import {
   selectRecoveryCandidate,
 } from '@/lib/source-availability/index';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
-import { buildVideoInfoFromPreferenceResult } from '@/lib/source-preference-video-info';
+import {
+  buildVideoInfoFromPreferenceResult,
+  isBrowserSourceMeasurement,
+} from '@/lib/source-preference-video-info';
 import { buildSourceSearchUrl, SOURCE_DATA_VERSION } from '@/lib/source-query';
 import {
   buildSourceSelectionScores,
@@ -1561,12 +1564,11 @@ function usePlayPageSession() {
   );
 
   // 保存优选时的测速结果，避免EpisodeSelector重复测速
-  const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<
+  const [precomputedVideoInfo, setPrecomputedVideoInfoState] = useState<
     Map<string, SourceVideoInfo>
   >(new Map());
-  const [precomputedSourceStatuses, setPrecomputedSourceStatuses] = useState<
-    Map<string, SourceStatus>
-  >(new Map());
+  const [precomputedSourceStatuses, setPrecomputedSourceStatusesState] =
+    useState<Map<string, SourceStatus>>(new Map());
   const [sourceSelectionScores, setSourceSelectionScores] = useState<
     Map<string, SourceSelectionScore>
   >(new Map());
@@ -2270,13 +2272,17 @@ function usePlayPageSession() {
     availableSourcesRef.current = availableSources;
   }, [availableSources]);
 
-  useEffect(() => {
-    precomputedVideoInfoRef.current = precomputedVideoInfo;
-  }, [precomputedVideoInfo]);
+  const setPrecomputedVideoInfo = (info: Map<string, SourceVideoInfo>) => {
+    precomputedVideoInfoRef.current = info;
+    setPrecomputedVideoInfoState(info);
+  };
 
-  useEffect(() => {
-    precomputedSourceStatusesRef.current = precomputedSourceStatuses;
-  }, [precomputedSourceStatuses]);
+  const setPrecomputedSourceStatuses = (
+    statuses: Map<string, SourceStatus>
+  ) => {
+    precomputedSourceStatusesRef.current = statuses;
+    setPrecomputedSourceStatusesState(statuses);
+  };
 
   useEffect(() => {
     sourceSelectionScoresRef.current = sourceSelectionScores;
@@ -4491,8 +4497,14 @@ function usePlayPageSession() {
       });
 
       if (hlsRecoveryStateRef.current.playbackSessionId === sessionId) {
+        const browserInfo: SourceVideoInfo = {
+          ...testResult,
+          speedSource: 'browser',
+          speedUpdatedAt: Date.now(),
+          speedPending: false,
+        };
         const nextVideoInfo = new Map(precomputedVideoInfoRef.current);
-        nextVideoInfo.set(sourceKey, testResult);
+        nextVideoInfo.set(sourceKey, browserInfo);
         setPrecomputedVideoInfo(nextVideoInfo);
 
         const nextStatuses = new Map(precomputedSourceStatusesRef.current);
@@ -4502,7 +4514,13 @@ function usePlayPageSession() {
             reason: '本机后台测速通过',
             playbackMode: 'direct',
             domain,
-            measured: testResult,
+            measured: browserInfo,
+            rankScore:
+              nextStatuses.get(sourceKey)?.rankScore ??
+              previousStatus?.rankScore,
+            rankingSource:
+              nextStatuses.get(sourceKey)?.rankingSource ??
+              previousStatus?.rankingSource,
             fromMemory: true,
             localConfidence: 'medium',
           })
@@ -4649,12 +4667,11 @@ function usePlayPageSession() {
         source.episodes
       ),
     }));
-    const statusMap = new Map<string, SourceStatus>();
-    const videoInfoMap = new Map<string, SourceVideoInfo>();
+    const initialStatuses = new Map<string, SourceStatus>();
 
     sourceEntries.forEach(({ source, sourceKey, rememberedStatus }) => {
       if (!source.episodes || source.episodes.length === 0) {
-        statusMap.set(
+        initialStatuses.set(
           sourceKey,
           createSourceStatus('unavailable', {
             reason: '该播放源没有可用剧集',
@@ -4664,15 +4681,19 @@ function usePlayPageSession() {
       }
 
       if (rememberedStatus) {
-        statusMap.set(sourceKey, rememberedStatus);
+        initialStatuses.set(sourceKey, rememberedStatus);
       }
     });
 
-    const commitSelectionState = () => {
-      setPrecomputedSourceStatuses(new Map(statusMap));
-      setPrecomputedVideoInfo(new Map(videoInfoMap));
-      return updateSourceSelectionScores(sources, statusMap, videoInfoMap);
-    };
+    setPrecomputedSourceStatuses(initialStatuses);
+    setPrecomputedVideoInfo(new Map());
+
+    const scoreCurrentSelection = () =>
+      updateSourceSelectionScores(
+        sources,
+        precomputedSourceStatusesRef.current,
+        precomputedVideoInfoRef.current
+      );
 
     const applyPreferenceResults = (
       preferenceData: Awaited<
@@ -4682,6 +4703,8 @@ function usePlayPageSession() {
       if (!preferenceStillCurrent()) {
         return;
       }
+      const statusMap = new Map(precomputedSourceStatusesRef.current);
+      const videoInfoMap = new Map(precomputedVideoInfoRef.current);
       preferenceData.results.forEach((result) => {
         const existingStatus = statusMap.get(result.sourceKey);
         const measured = buildVideoInfoFromPreferenceResult(result);
@@ -4689,7 +4712,11 @@ function usePlayPageSession() {
           existingStatus?.kind === 'unavailable' &&
           result.kind !== 'unavailable';
 
-        if (existingStatus?.fromMemory && !canRescueFromMemory) {
+        if (
+          existingStatus &&
+          (isBrowserSourceMeasurement(videoInfoMap.get(result.sourceKey)) ||
+            (existingStatus.fromMemory && !canRescueFromMemory))
+        ) {
           statusMap.set(result.sourceKey, {
             ...existingStatus,
             rankScore: result.rankScore,
@@ -4730,7 +4757,9 @@ function usePlayPageSession() {
         );
       });
 
-      commitSelectionState();
+      setPrecomputedSourceStatuses(statusMap);
+      setPrecomputedVideoInfo(videoInfoMap);
+      scoreCurrentSelection();
     };
 
     const requestSources = sourceEntries.map(({ source, sourceKey }) => {
@@ -4770,7 +4799,7 @@ function usePlayPageSession() {
       });
 
     const isSourceKindUsable = (source: SearchResult): boolean => {
-      const status = statusMap.get(
+      const status = precomputedSourceStatusesRef.current.get(
         getSourceIdentityKey(source.source, source.id)
       );
       return status?.kind === 'direct' || status?.kind === 'playable';
@@ -4781,8 +4810,8 @@ function usePlayPageSession() {
         selectInitialSourceCandidate({
           sources,
           currentEpisodeIndex: currentEpisodeIndexRef.current,
-          statuses: statusMap,
-          measured: videoInfoMap,
+          statuses: precomputedSourceStatusesRef.current,
+          measured: precomputedVideoInfoRef.current,
           sourceSelectionScores: scores,
         })?.source || null
       );
@@ -4802,7 +4831,7 @@ function usePlayPageSession() {
     // 第二阶段：若最优候选仍不可信（无任何 direct/playable 确认，
     // 多见于冷内容按原始顺序命中未探测源），再等待完整结果，最多到扩展预算，
     // 用真实探测数据换取“首源不踩不可用源”。
-    let bestSource = pickBestSource(commitSelectionState());
+    let bestSource = pickBestSource(scoreCurrentSelection());
     if (
       !preferenceSettled &&
       (!bestSource || !isSourceKindUsable(bestSource))
@@ -4831,7 +4860,7 @@ function usePlayPageSession() {
       });
     }
 
-    bestSource = pickBestSource(commitSelectionState());
+    bestSource = pickBestSource(scoreCurrentSelection());
 
     console.log('播放源优选结果:', {
       selected: bestSource?.source_name,
@@ -7270,21 +7299,19 @@ function usePlayPageSession() {
 
           if (!startupFeedbackSentRef.current) {
             startupFeedbackSentRef.current = true;
-            const currentVideoInfo = precomputedVideoInfoRef.current.get(
+            const measured = precomputedVideoInfoRef.current.get(
               getCurrentSourceKey()
             );
+            const browserInfo = isBrowserSourceMeasurement(measured)
+              ? measured
+              : undefined;
             const startedAt = playbackStartupStartedAtRef.current;
             const startupTimeMs =
               startedAt && startedAt > 0 ? Date.now() - startedAt : undefined;
             rememberCurrentSourcePlaybackQuality({
               mode: 'direct',
               startupTimeMs,
-              browserSpeedLabel:
-                currentVideoInfo &&
-                !currentVideoInfo.hasError &&
-                currentVideoInfo.loadSpeed !== '未知'
-                  ? currentVideoInfo.loadSpeed
-                  : undefined,
+              browserSpeedLabel: browserInfo?.loadSpeed,
               confidence: 'high',
             });
             void reportPlaybackFeedback({
@@ -7297,21 +7324,11 @@ function usePlayPageSession() {
               startupTimeMs,
               switchedToProxy: playbackModeRef.current === 'proxy',
               browserQuality:
-                currentVideoInfo &&
-                !currentVideoInfo.hasError &&
-                currentVideoInfo.quality !== '未知'
-                  ? currentVideoInfo.quality
-                  : undefined,
-              browserPingMs:
-                currentVideoInfo && currentVideoInfo.pingTime > 0
-                  ? currentVideoInfo.pingTime
-                  : undefined,
-              browserSpeedLabel:
-                currentVideoInfo &&
-                !currentVideoInfo.hasError &&
-                currentVideoInfo.loadSpeed !== '未知'
-                  ? currentVideoInfo.loadSpeed
-                  : undefined,
+                browserInfo?.quality === '未知'
+                  ? undefined
+                  : browserInfo?.quality,
+              browserPingMs: browserInfo?.pingTime || undefined,
+              browserSpeedLabel: browserInfo?.loadSpeed,
             });
           }
           // Repeated canplay/playing notifications do not start a new media

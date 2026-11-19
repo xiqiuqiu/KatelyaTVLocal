@@ -14,17 +14,31 @@ type SourcePreferenceVideoInfoInput = Pick<
   | 'updatedAt'
 >;
 
-export function formatSourceSpeedKbps(speedKbps?: number | null): string | null {
-  if (typeof speedKbps !== 'number' || !Number.isFinite(speedKbps)) {
+export function formatSourceSpeedKbps(
+  speedKbps?: number | null
+): string | null {
+  if (
+    typeof speedKbps !== 'number' ||
+    !Number.isFinite(speedKbps) ||
+    speedKbps <= 0
+  ) {
     return null;
   }
 
-  const normalizedSpeed = Math.max(1, speedKbps);
+  const normalizedSpeed = (speedKbps * 1000) / 8 / 1024;
   if (normalizedSpeed >= 1024) {
     return `${(normalizedSpeed / 1024).toFixed(1)} MB/s`;
   }
 
-  return `${normalizedSpeed.toFixed(0)} KB/s`;
+  return `${normalizedSpeed.toFixed(1)} KB/s`;
+}
+
+export function isBrowserSourceMeasurement(
+  info?: SourceVideoInfo | null
+): info is SourceVideoInfo & { speedSource: 'browser' } {
+  return Boolean(
+    info?.speedSource === 'browser' && !info.speedPending && !info.hasError
+  );
 }
 
 export function buildVideoInfoFromPreferenceResult(
@@ -38,7 +52,7 @@ export function buildVideoInfoFromPreferenceResult(
     result.pingTimeMs ?? result.latencyMs ?? result.probeTimeMs ?? 0
   );
   const speedSource =
-    result.speedSource ||
+    (result.speedSource === 'browser' ? 'feedback' : result.speedSource) ||
     (result.speedLabel
       ? 'feedback'
       : formattedBackendSpeed

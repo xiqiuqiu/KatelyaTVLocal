@@ -7,7 +7,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { buildSourceAvailabilityList } from '@/lib/source-availability/index';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
-import { buildVideoInfoFromPreferenceResult } from '@/lib/source-preference-video-info';
+import {
+  buildVideoInfoFromPreferenceResult,
+  isBrowserSourceMeasurement,
+} from '@/lib/source-preference-video-info';
 import {
   sortSourcesBySelectionScore,
   SourceSelectionScore,
@@ -52,7 +55,11 @@ function mergeVideoInfoMaps(
     }
 
     // Local browser metrics win over backend (same rule as preference merge).
-    if (value.speedSource === 'browser' && existing.speedSource === 'backend') {
+    if (
+      isBrowserSourceMeasurement(value) &&
+      (!isBrowserSourceMeasurement(existing) ||
+        (value.speedUpdatedAt ?? 0) >= (existing.speedUpdatedAt ?? 0))
+    ) {
       next.set(key, value);
     }
   });
@@ -96,15 +103,22 @@ function mergeStatusMaps(
     return next;
   }
 
-  // Same gate as the deleted precomputedSourceStatuses mirror effect:
-  // parent fills only when local has no stronger live result yet.
   precomputed.forEach((status, key) => {
     const previous = next.get(key);
+    const parentMeasurement = status.measured;
+    const localMeasurement = previous?.measured;
+    const newerBrowserStatus =
+      isBrowserSourceMeasurement(parentMeasurement) &&
+      (!isBrowserSourceMeasurement(localMeasurement) ||
+        (parentMeasurement.speedUpdatedAt ?? 0) >
+          (localMeasurement.speedUpdatedAt ?? 0));
     if (
-      !previous ||
-      previous.kind === 'idle' ||
-      previous.kind === 'probing' ||
-      previous.fromMemory
+      newerBrowserStatus ||
+      (!isBrowserSourceMeasurement(localMeasurement) &&
+        (!previous ||
+          previous.kind === 'idle' ||
+          previous.kind === 'probing' ||
+          previous.fromMemory))
     ) {
       next.set(key, status);
     }
@@ -771,10 +785,7 @@ function useEpisodeSelectorState({
           }
 
           const previous = next.get(result.sourceKey);
-          if (
-            previous?.speedSource === 'browser' &&
-            measured.speedSource === 'backend'
-          ) {
+          if (isBrowserSourceMeasurement(previous)) {
             return;
           }
 
@@ -801,6 +812,9 @@ function useEpisodeSelectorState({
             !localStatus.fromMemory
               ? localStatus
               : precomputedStatus || localStatus;
+          if (isBrowserSourceMeasurement(previousStatus?.measured)) {
+            return;
+          }
           const measured = buildVideoInfoFromPreferenceResult(result);
           if (
             !canReplaceSourceStatus(previousStatus) &&

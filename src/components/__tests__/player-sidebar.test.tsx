@@ -507,7 +507,7 @@ describe('EpisodeSelector playback sidebar controls', () => {
       },
     ];
 
-    render(
+    const { rerender } = render(
       <EpisodeSelector
         totalEpisodes={1}
         value={1}
@@ -518,8 +518,35 @@ describe('EpisodeSelector playback sidebar controls', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('后端 2.4 MB/s · 280ms')).toBeInTheDocument();
+      expect(screen.getByText('后端 299.1 KB/s · 280ms')).toBeInTheDocument();
     });
+
+    const browserInfo = {
+      quality: '720p',
+      loadSpeed: '500.0 KB/s',
+      pingTime: 45,
+      speedSource: 'browser' as const,
+      speedUpdatedAt: 1710000001000,
+    };
+    rerender(
+      <EpisodeSelector
+        totalEpisodes={1}
+        value={1}
+        currentSource='source-a'
+        currentId='a'
+        availableSources={availableSources}
+        precomputedVideoInfo={new Map([['source-b-b', browserInfo]])}
+        precomputedSourceStatuses={
+          new Map([['source-b-b', { kind: 'direct', measured: browserInfo }]])
+        }
+      />
+    );
+    expect(
+      await screen.findByText('本机 500.0 KB/s · 45ms')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('后端 299.1 KB/s · 280ms')
+    ).not.toBeInTheDocument();
   });
 
   it('unlocks an unavailable source when backend preference reports playable metrics', async () => {

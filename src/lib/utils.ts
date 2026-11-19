@@ -2,6 +2,7 @@
 
 import Hls from 'hls.js';
 
+import { formatSourceSpeedKbps } from './source-preference-video-info';
 import {
   SourceDomainPreference,
   SourcePlaybackMode,
@@ -423,7 +424,7 @@ export function getRememberedSourceStatusForSource(
       quality: '未知',
       loadSpeed: speedLabel,
       pingTime: preference.startupTimeMs || 0,
-      speedSource: preference.browserSpeedLabel ? 'browser' : 'feedback',
+      speedSource: 'feedback',
       speedUpdatedAt: preference.updatedAt,
       speedPending: speedLabel === '未知',
     },
@@ -881,16 +882,8 @@ export async function getVideoResolutionFromM3u8(
           const size = data.payload.byteLength || 0;
 
           if (loadTime > 0 && size > 0) {
-            const speedKBps = size / 1024 / (loadTime / 1000);
-
-            // 立即计算速度，无需等待更多分片
-            const avgSpeedKBps = speedKBps;
-
-            if (avgSpeedKBps >= 1024) {
-              actualLoadSpeed = `${(avgSpeedKBps / 1024).toFixed(1)} MB/s`;
-            } else {
-              actualLoadSpeed = `${avgSpeedKBps.toFixed(1)} KB/s`;
-            }
+            actualLoadSpeed =
+              formatSourceSpeedKbps((size * 8) / loadTime) || '未知';
             hasSpeedCalculated = true;
             checkAndResolve(); // 尝试返回结果
           }
