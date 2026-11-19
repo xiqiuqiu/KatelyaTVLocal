@@ -67,6 +67,31 @@ describe('db.client play records cache', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/playrecords?limit=50');
   });
 
+  it('uses the refreshed recent slice as the next baseline without truncating full history', async () => {
+    const full = { 'qa+1': { save_time: 2 }, 'qa+2': { save_time: 1 } };
+    const fresh = { 'qa+1': { save_time: 3 } };
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(await mockPlayRecordsResponse(full))
+      .mockResolvedValue(await mockPlayRecordsResponse(fresh));
+    const client = loadPlayRecordsClient();
+    await client.getAllPlayRecords();
+    const updates = jest.fn();
+    window.addEventListener('playRecordsUpdated', updates);
+    try {
+      expect(await client.getRecentPlayRecords(1)).toEqual({
+        'qa+1': full['qa+1'],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(await client.getRecentPlayRecords(1)).toEqual(fresh);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(updates).toHaveBeenCalledTimes(1);
+      expect(await client.getAllPlayRecords()).toEqual(full);
+    } finally {
+      window.removeEventListener('playRecordsUpdated', updates);
+    }
+  });
+
   it('does not let stale background refresh overwrite a play record mutation', async () => {
     const initialRecords = {
       'source-a+1': {

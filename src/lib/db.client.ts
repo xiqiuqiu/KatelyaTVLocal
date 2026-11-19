@@ -83,6 +83,10 @@ interface CacheData<T> {
 }
 
 interface UserCacheStore {
+  recentPlayRecords?: CacheData<{
+    limit: number;
+    records: Record<string, PlayRecord>;
+  }>;
   playRecords?: CacheData<Record<string, PlayRecord>>;
   favorites?: CacheData<Record<string, Favorite>>;
   searchHistory?: CacheData<string[]>;
@@ -220,6 +224,32 @@ class HybridCacheManager {
     return null;
   }
 
+  getCachedRecentPlayRecords(limit: number): Record<string, PlayRecord> | null {
+    const username = this.getCurrentUsername();
+    if (!username) return null;
+    const { recentPlayRecords, playRecords } = this.getUserCache(username);
+    if (
+      recentPlayRecords?.data.limit === limit &&
+      this.isCacheValid(recentPlayRecords)
+    ) {
+      return recentPlayRecords.data.records;
+    }
+    return playRecords && this.isCacheValid(playRecords)
+      ? getRecentPlayRecordsFromAll(playRecords.data, limit)
+      : null;
+  }
+
+  cacheRecentPlayRecords(
+    limit: number,
+    records: Record<string, PlayRecord>
+  ): void {
+    const username = this.getCurrentUsername();
+    if (!username) return;
+    const cache = this.getUserCache(username);
+    cache.recentPlayRecords = this.createCacheData({ limit, records });
+    this.saveUserCache(username, cache);
+  }
+
   /**
    * 缓存播放记录
    */
@@ -228,6 +258,7 @@ class HybridCacheManager {
     if (!username) return;
 
     const userCache = this.getUserCache(username);
+    delete userCache.recentPlayRecords;
     userCache.playRecords = this.createCacheData(data);
     this.saveUserCache(username, userCache);
   }
@@ -440,7 +471,7 @@ let favoritesFetchPromise: Promise<Record<string, Favorite>> | null = null;
 let favoritesMutationVersion = 0;
 let playRecordsFetchPromise: Promise<Record<string, PlayRecord>> | null = null;
 const recentPlayRecordsFetchPromises = new Map<
-  number,
+  string,
   Promise<Record<string, PlayRecord>>
 >();
 let playRecordsMutationVersion = 0;
@@ -476,7 +507,8 @@ export function requestPlayRecordsFromApi(): Promise<
 function requestRecentPlayRecordsFromApi(
   limit: number
 ): Promise<Record<string, PlayRecord>> {
-  const existing = recentPlayRecordsFetchPromises.get(limit);
+  const key = JSON.stringify([getRuntimeCurrentUser()?.username, limit]);
+  const existing = recentPlayRecordsFetchPromises.get(key);
   if (existing) {
     return existing;
   }
@@ -484,9 +516,11 @@ function requestRecentPlayRecordsFromApi(
   const request = fetchFromApi<Record<string, PlayRecord>>(
     `/api/playrecords?limit=${encodeURIComponent(String(limit))}`
   ).finally(() => {
-    recentPlayRecordsFetchPromises.delete(limit);
+    if (recentPlayRecordsFetchPromises.get(key) === request) {
+      recentPlayRecordsFetchPromises.delete(key);
+    }
   });
-  recentPlayRecordsFetchPromises.set(limit, request);
+  recentPlayRecordsFetchPromises.set(key, request);
   return request;
 }
 
@@ -534,26 +568,6 @@ function syncPlayRecordsInBackground(
     })
     .catch((err) => {
       console.warn('后台同步播放记录失败:', err);
-    });
-}
-
-function syncRecentPlayRecordsInBackground(
-  limit: number,
-  cachedData: Record<string, PlayRecord>
-): void {
-  const requestVersion = playRecordsMutationVersion;
-
-  requestRecentPlayRecordsFromApi(limit)
-    .then((freshData) => {
-      if (
-        requestVersion === playRecordsMutationVersion &&
-        JSON.stringify(cachedData) !== JSON.stringify(freshData)
-      ) {
-        emitPlayRecordsUpdated(freshData);
-      }
-    })
-    .catch((err) => {
-      console.warn('后台同步最近播放记录失败:', err);
     });
 }
 
@@ -766,16 +780,30 @@ export async function getRecentPlayRecords(
   }
 
   if (STORAGE_TYPE !== 'localstorage') {
-    const cachedData = cacheManager.getCachedPlayRecords();
-
-    if (cachedData) {
-      const recentData = getRecentPlayRecordsFromAll(cachedData, limit);
-      syncRecentPlayRecordsInBackground(limit, recentData);
-      return recentData;
+    const cached = cacheManager.getCachedRecentPlayRecords(limit);
+    const version = playRecordsMutationVersion;
+    const username = getRuntimeCurrentUser()?.username;
+    const refresh = requestRecentPlayRecordsFromApi(limit).then((records) => {
+      if (
+        version === playRecordsMutationVersion &&
+        username === getRuntimeCurrentUser()?.username
+      ) {
+        const previous = cacheManager.getCachedRecentPlayRecords(limit);
+        if (JSON.stringify(previous) !== JSON.stringify(records)) {
+          cacheManager.cacheRecentPlayRecords(limit, records);
+          if (cached) emitPlayRecordsUpdated(records);
+        }
+      }
+      return records;
+    });
+    if (cached) {
+      void refresh.catch((err) =>
+        console.warn('后台同步最近播放记录失败:', err)
+      );
+      return cached;
     }
-
     try {
-      return await requestRecentPlayRecordsFromApi(limit);
+      return await refresh;
     } catch (err) {
       console.error('获取最近播放记录失败:', err);
       return {};
@@ -1345,6 +1373,7 @@ export async function clearAllFavorites(): Promise<void> {
  */
 export function clearUserCache(): void {
   if (STORAGE_TYPE !== 'localstorage') {
+    markPlayRecordsMutated();
     cacheManager.clearUserCache();
   }
 }

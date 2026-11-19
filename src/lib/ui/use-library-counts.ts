@@ -3,10 +3,13 @@
 import { useEffect, useState } from 'react';
 
 import {
+  type Favorite,
+  type PlayRecord,
   getAllFavorites,
   getRecentPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { getRecentPlayRecordsFromAll } from '@/lib/play-record-key';
 import { buildContinueWatchingRecords } from '@/lib/play-records';
 
 export interface LibraryCounts {
@@ -27,35 +30,44 @@ export function useLibraryCounts(): LibraryCounts {
   useEffect(() => {
     let cancelled = false;
 
-    const load = async () => {
-      try {
-        const [favorites, records] = await Promise.all([
-          getAllFavorites(),
-          getRecentPlayRecords(50),
-        ]);
-        if (cancelled) return;
-        setCounts({
-          favorites: Object.keys(favorites).length,
-          // 与「继续观看」/ 历史页一致：按作品分组后再计数
-          history: buildContinueWatchingRecords(records).length,
-        });
-      } catch {
-        /* 取数失败时保持上一次的计数，不阻塞导航 */
-      }
-    };
+    let favoritesUpdated = false;
+    let recordsUpdated = false;
+    const updateFavorites = (favorites: Record<string, Favorite>) =>
+      setCounts((prev) => ({
+        ...prev,
+        favorites: Object.keys(favorites).length,
+      }));
+    const updateHistory = (records: Record<string, PlayRecord>) =>
+      setCounts((prev) => ({
+        ...prev,
+        history: buildContinueWatchingRecords(
+          getRecentPlayRecordsFromAll(records, 50)
+        ).length,
+      }));
+    const unsubscribeFavorites = subscribeToDataUpdates<
+      Record<string, Favorite>
+    >('favoritesUpdated', (favorites) => {
+      favoritesUpdated = true;
+      updateFavorites(favorites);
+    });
+    const unsubscribeRecords = subscribeToDataUpdates<
+      Record<string, PlayRecord>
+    >('playRecordsUpdated', (records) => {
+      recordsUpdated = true;
+      updateHistory(records);
+    });
 
-    void load();
-    const reload = () => {
-      void load();
-    };
-    const unsubscribeFavorites = subscribeToDataUpdates(
-      'favoritesUpdated',
-      reload
-    );
-    const unsubscribeRecords = subscribeToDataUpdates(
-      'playRecordsUpdated',
-      reload
-    );
+    // A mutation can arrive before its initial read finishes.
+    void getAllFavorites()
+      .then((favorites) => {
+        if (!cancelled && !favoritesUpdated) updateFavorites(favorites);
+      })
+      .catch(() => undefined);
+    void getRecentPlayRecords(50)
+      .then((records) => {
+        if (!cancelled && !recordsUpdated) updateHistory(records);
+      })
+      .catch(() => undefined);
 
     return () => {
       cancelled = true;
