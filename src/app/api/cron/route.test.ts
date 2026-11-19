@@ -1,3 +1,8 @@
+import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
+
+import { db } from '@/lib/db';
+import { runLowFrequencySourceRankingCheck } from '@/lib/source-ranking/scheduler';
+
 class MockHeaders {
   private readonly values = new Map<string, string>();
 
@@ -158,6 +163,56 @@ describe('cron route auth', () => {
       'Cron API rejected: unauthorized request'
     );
   });
+
+  it.each([
+    ['?mode=ranking', 0],
+    ['', 1],
+  ])(
+    'runs ranking and applies the maintenance mode for %s',
+    async (query, maintenanceCalls) => {
+      process.env.NEXT_PUBLIC_STORAGE_TYPE = 'd1';
+      const env = {
+        CRON_API_TOKEN: 'secret-token',
+        SOURCE_RANKING_CRON_ENABLED: 'true',
+        DB: {
+          prepare: jest.fn(() => {
+            throw new Error('unexpected SQL');
+          }),
+        },
+      };
+      jest
+        .mocked(getOptionalRequestContext)
+        .mockReturnValueOnce({ env } as unknown as ReturnType<
+          typeof getOptionalRequestContext
+        >);
+      jest
+        .mocked(runLowFrequencySourceRankingCheck)
+        .mockClear()
+        .mockResolvedValueOnce({
+          triggered: true,
+          status: 'completed',
+          sampledRecordCount: 12,
+          taskCount: 6,
+          probeCount: 6,
+          snapshotCount: 6,
+          errorCount: 0,
+        });
+      jest.mocked(db.getAllUsers).mockClear();
+      const response = await GET(
+        new MockRequest(`https://app.example.com/api/cron${query}`, {
+          headers: { 'x-cron-token': 'secret-token' },
+        }) as unknown as Request
+      );
+
+      expect(response.status).toBe(200);
+      expect(runLowFrequencySourceRankingCheck).toHaveBeenCalledWith({
+        env,
+        origin: 'https://app.example.com',
+        triggerType: 'cron',
+      });
+      expect(db.getAllUsers).toHaveBeenCalledTimes(maintenanceCalls);
+    }
+  );
 
   it('does not expose token configuration details in unauthorized responses', async () => {
     process.env.CRON_API_TOKEN = 'secret-token';

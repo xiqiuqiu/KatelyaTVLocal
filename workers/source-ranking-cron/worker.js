@@ -1,7 +1,8 @@
+const MAINTENANCE_CRON = '0 3 * * *';
+
 function buildCronTargetUrl(env) {
-  const rawTarget = typeof env.CRON_TARGET_URL === 'string'
-    ? env.CRON_TARGET_URL.trim()
-    : '';
+  const rawTarget =
+    typeof env.CRON_TARGET_URL === 'string' ? env.CRON_TARGET_URL.trim() : '';
 
   if (!rawTarget) {
     throw new Error('Missing CRON_TARGET_URL');
@@ -27,8 +28,10 @@ function buildCronHeaders(env) {
   return headers;
 }
 
-async function triggerCron(env, triggerType) {
-  const targetUrl = buildCronTargetUrl(env);
+async function triggerCron(env, triggerType, rankingOnly) {
+  const target = new URL(buildCronTargetUrl(env));
+  if (rankingOnly) target.searchParams.set('mode', 'ranking');
+  const targetUrl = target.href;
   const response = await fetch(targetUrl, {
     method: 'GET',
     headers: buildCronHeaders(env),
@@ -44,9 +47,9 @@ async function triggerCron(env, triggerType) {
   };
 }
 
-async function handleManualTrigger(env, triggerType) {
+async function handleManualTrigger(env, triggerType, rankingOnly) {
   try {
-    const result = await triggerCron(env, triggerType);
+    const result = await triggerCron(env, triggerType, rankingOnly);
     return new Response(
       JSON.stringify(
         {
@@ -110,18 +113,24 @@ const worker = {
       );
     }
 
-    return handleManualTrigger(env, 'manual');
+    return handleManualTrigger(
+      env,
+      'manual',
+      url.searchParams.get('mode') === 'ranking'
+    );
   },
 
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(
-      triggerCron(env, 'scheduled').then((result) => {
-        if (!result.ok) {
-          throw new Error(
-            `Cron trigger failed with ${result.status}: ${result.bodyText}`
-          );
+      triggerCron(env, 'scheduled', controller.cron !== MAINTENANCE_CRON).then(
+        (result) => {
+          if (!result.ok) {
+            throw new Error(
+              `Cron trigger failed with ${result.status}: ${result.bodyText}`
+            );
+          }
         }
-      })
+      )
     );
   },
 };

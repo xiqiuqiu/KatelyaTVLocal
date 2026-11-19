@@ -83,10 +83,12 @@ export async function GET(request: NextRequest) {
 
     const sourceRanking = await tryRunSourceRankingCron(request, rankingEnv);
 
-    await Promise.all([
-      refreshRecordAndFavorites(),
-      cleanupPlaybackQuality(rankingEnv).catch(() => undefined),
-    ]);
+    if (new URL(request.url).searchParams.get('mode') !== 'ranking') {
+      await Promise.all([
+        refreshRecordAndFavorites(),
+        cleanupPlaybackQuality(rankingEnv).catch(() => undefined),
+      ]);
+    }
 
     return NextResponse.json({
       success: true,

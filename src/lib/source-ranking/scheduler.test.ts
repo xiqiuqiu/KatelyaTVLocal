@@ -108,57 +108,16 @@ describe('source ranking scheduler', () => {
         year: '2025',
       });
     });
-    const probePlayback = jest.fn(async (episodeUrl: string) => {
-      if (episodeUrl.includes('alpha.example.com/ep2')) {
-        return {
-          kind: 'direct' as const,
-          domain: 'alpha.example.com',
-          reason: '可直连',
-          upstreamStatus: 200,
-          probeTimeMs: 100,
-          resolutionLabel: null,
-          firstSegmentLatencyMs: null,
-          firstSegmentSpeedKbps: null,
-        };
-      }
-
-      if (episodeUrl.includes('alpha.example.com/ep3')) {
-        return {
-          kind: 'proxy' as const,
-          domain: 'alpha.example.com',
-          reason: '需要代理',
-          upstreamStatus: 200,
-          probeTimeMs: 140,
-          resolutionLabel: null,
-          firstSegmentLatencyMs: null,
-          firstSegmentSpeedKbps: null,
-        };
-      }
-
-      if (episodeUrl.includes('beta.example.com')) {
-        return {
-          kind: 'direct' as const,
-          domain: 'beta.example.com',
-          reason: '可直连',
-          upstreamStatus: 200,
-          probeTimeMs: 90,
-          resolutionLabel: null,
-          firstSegmentLatencyMs: null,
-          firstSegmentSpeedKbps: null,
-        };
-      }
-
-      return {
-        kind: 'unavailable' as const,
-        domain: 'alpha.example.com',
-        reason: '不可用',
-        upstreamStatus: 502,
-        probeTimeMs: 320,
-        resolutionLabel: null,
-        firstSegmentLatencyMs: null,
-        firstSegmentSpeedKbps: null,
-      };
-    });
+    const probePlayback = jest.fn(async (episodeUrl: string) => ({
+      kind: 'direct' as const,
+      domain: new URL(episodeUrl).hostname,
+      reason: '可直连',
+      upstreamStatus: 200,
+      probeTimeMs: 100,
+      resolutionLabel: null,
+      firstSegmentLatencyMs: null,
+      firstSegmentSpeedKbps: null,
+    }));
 
     try {
       const result = await runLowFrequencySourceRankingCheck({
@@ -208,8 +167,8 @@ describe('source ranking scheduler', () => {
         status: 'completed',
         runId: 'run-123',
         sampledRecordCount: 2,
-        taskCount: 5,
-        probeCount: 5,
+        taskCount: 2,
+        probeCount: 2,
         snapshotCount: 2,
         errorCount: 0,
       });
@@ -227,10 +186,7 @@ describe('source ranking scheduler', () => {
 
       expect(persistedTasks.map((task) => task.episodeUrl)).toEqual([
         'https://alpha.example.com/ep2.m3u8',
-        'https://alpha.example.com/ep3.m3u8',
-        'https://alpha.example.com/ep1.m3u8',
         'https://beta.example.com/ep1.m3u8',
-        'https://beta.example.com/ep2.m3u8',
       ]);
 
       const runInsert = statements.find((statement) =>
@@ -262,16 +218,16 @@ describe('source ranking scheduler', () => {
         'alpha-video-1',
         'alpha.example.com',
         '24h',
-        30.002000000000002,
+        80,
         35,
         35,
-        66.67,
-        32.7509,
-        66.67,
-        33.33,
-        33.33,
-        33.33,
-        3,
+        100,
+        55.25,
+        100,
+        100,
+        0,
+        0,
+        1,
       ]);
       expect(betaSnapshot?.values.slice(1, 14)).toEqual([
         'beta-video-2',
@@ -286,7 +242,7 @@ describe('source ranking scheduler', () => {
         100,
         0,
         0,
-        2,
+        1,
       ]);
     } finally {
       process.env.USERNAME = originalUsername;
@@ -492,6 +448,7 @@ describe('source ranking scheduler', () => {
       expect(finalized?.values[2]).toBe(result.notes);
       expect(JSON.parse(result.notes ?? '{}')).toMatchObject({
         errorCount: expected.errorCount,
+        attemptedSourceKeys: ['source-first', 'source-bad', 'source-last'],
       });
       expect(result.notes).toContain('source-bad');
       expect(result.notes).toContain('HTTP 503');
@@ -538,7 +495,7 @@ describe('source ranking scheduler', () => {
       persistProbeResult,
     });
 
-    expect(fetchDetail).toHaveBeenCalledTimes(1);
+    expect(fetchDetail).toHaveBeenCalledTimes(2);
     expect(persistProbeResult).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       status: 'completed_with_errors',
@@ -596,7 +553,7 @@ describe('source ranking scheduler', () => {
     });
   });
 
-  it('caps multi-user sampling and total probe tasks', async () => {
+  it('caps each batch and rotates untested and oldest ranked candidates first', async () => {
     const originalUsername = process.env.USERNAME;
     delete process.env.USERNAME;
     const statements: StatementRecord[] = [];
@@ -621,52 +578,67 @@ describe('source ranking scheduler', () => {
     );
 
     try {
-      const result = await runLowFrequencySourceRankingCheck({
-        env: { DB: createFakeDatabase(statements) },
-        origin: 'https://app.example.com',
-        idFactory: () => 'run-budget',
-        now: () => 1710000000000,
-        getUsers: async () =>
-          Array.from({ length: 10 }, (_, index) => `user-${index}`),
-        getPlayRecords: async (userName) => {
-          const userIndex = Number(userName.split('-')[1]);
-          return Object.fromEntries(
-            Array.from({ length: 5 }, (_, index) => [
-              `src${userIndex}-${index}+video-${index}`,
-              createPlayRecord({
-                title: `${userName}-${index}`,
-                source_name: `src${userIndex}-${index}`,
-                save_time: 1000 - index,
-                search_title: `${userName}-${index}`,
-              }),
-            ])
-          );
-        },
-        fetchDetail,
-        probePlayback: async () => ({
-          kind: 'direct',
-          domain: 'media.example.com',
-          reason: '可直连',
-          upstreamStatus: 200,
-          probeTimeMs: 100,
-          resolutionLabel: '1080p',
-          firstSegmentLatencyMs: 120,
-          firstSegmentSpeedKbps: 4000,
-        }),
-        persistProbeResult: async (_env, _runId, task) => {
-          persistedTasks.push(task.sourceKey);
-        },
-      });
+      const runBatch = (
+        ages: Array<{ sourceKey: string; servicedAt: number }>
+      ) =>
+        runLowFrequencySourceRankingCheck({
+          env: {
+            DB: createFakeDatabase(statements, [{}, {}, { results: ages }]),
+          },
+          origin: 'https://app.example.com',
+          idFactory: () => 'run-budget',
+          now: () => 1710000000000,
+          getUsers: async () =>
+            Array.from({ length: 10 }, (_, index) => `user-${index}`),
+          getPlayRecords: async (userName) => {
+            const userIndex = Number(userName.split('-')[1]);
+            return Object.fromEntries(
+              Array.from({ length: 5 }, (_, index) => [
+                `src${userIndex}-${index}+video-${index}`,
+                createPlayRecord({
+                  title: `${userName}-${index}`,
+                  source_name: `src${userIndex}-${index}`,
+                  save_time: 1000 - index,
+                  search_title: `${userName}-${index}`,
+                }),
+              ])
+            );
+          },
+          fetchDetail,
+          probePlayback: async () => ({
+            kind: 'direct',
+            domain: 'media.example.com',
+            reason: '可直连',
+            upstreamStatus: 200,
+            probeTimeMs: 100,
+            resolutionLabel: '1080p',
+            firstSegmentLatencyMs: 120,
+            firstSegmentSpeedKbps: 4000,
+          }),
+          persistProbeResult: async (_env, _runId, task) => {
+            persistedTasks.push(task.sourceKey);
+          },
+        });
 
+      const ages = Array.from({ length: 9 }, (_, index) => ({
+        sourceKey: `src${index}-0-video-0`,
+        servicedAt: 100 + index,
+      }));
+      const visited = (result: { notes?: string }) =>
+        JSON.parse(result.notes ?? '{}').attemptedSourceKeys;
+
+      const result = await runBatch(ages);
       expect(result.sampledRecordCount).toBe(20);
-      expect(result.taskCount).toBe(48);
-      expect(persistedTasks).toHaveLength(48);
-      expect(fetchDetail).toHaveBeenCalledTimes(16);
-      expect(
-        fetchDetail.mock.calls.filter(([options]) =>
-          options.source.startsWith('src0-')
-        )
-      ).toHaveLength(2);
+      expect(result.taskCount).toBe(6);
+      expect(persistedTasks).toHaveLength(6);
+      expect(visited(result)).toEqual([
+        'src9-0-video-0',
+        'src0-1-video-1',
+        'src1-1-video-1',
+        'src2-1-video-1',
+        'src3-1-video-1',
+        'src4-1-video-1',
+      ]);
       expect(
         statements.filter((statement) =>
           statement.sql.includes('DELETE FROM source_probe_results')
@@ -682,6 +654,23 @@ describe('source ranking scheduler', () => {
           statement.sql.includes('DELETE FROM source_probe_runs')
         )
       ).toHaveLength(1);
+      const previousBatch = visited(result) as string[];
+      const next = await runBatch([
+        ...ages,
+        ...previousBatch.map((sourceKey) => ({ sourceKey, servicedAt: 200 })),
+        ...Array.from({ length: 4 }, (_, index) => ({
+          sourceKey: `src${index + 6}-1-video-1`,
+          servicedAt: 300,
+        })),
+      ]);
+      expect(visited(next)).toEqual([
+        'src5-1-video-1',
+        'src0-0-video-0',
+        'src1-0-video-0',
+        'src2-0-video-0',
+        'src3-0-video-0',
+        'src4-0-video-0',
+      ]);
     } finally {
       process.env.USERNAME = originalUsername;
     }

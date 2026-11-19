@@ -115,9 +115,8 @@ export interface LowFrequencySourceRankingOptions {
 const MAX_SAMPLE_CANDIDATES = 48;
 const MAX_SAMPLES_PER_USER = 2;
 const RECENT_PLAY_RECORDS_PER_USER = 50;
-const MAX_TASKS_TOTAL = 48;
-const MAX_TASKS_PER_SOURCE = 3;
-const MAX_EPISODES_PER_DETAIL = 3;
+// shortcut: a fixed batch bounds candidates; use explicit request accounting if redirects still exhaust the budget.
+const PROBE_BATCH_SIZE = 6;
 const DEFAULT_WINDOW_KEY = '24h';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FEEDBACK_SAMPLE_LOOKBACK_MS = 7 * DAY_MS;
@@ -185,10 +184,11 @@ function buildSourceIdentityKey(source: string, id: string): string {
   return `${source}-${id}`;
 }
 
-function buildEpisodeCandidates(
+function selectProbeEpisode(
   episodes: string[],
-  currentEpisodeIndex: number
-): string[] {
+  currentEpisodeIndex: number,
+  seenUrls: Set<string>
+): string | undefined {
   const normalizedCurrentIndex = Math.max(0, currentEpisodeIndex - 1);
   const orderedIndexes = [
     normalizedCurrentIndex,
@@ -198,34 +198,12 @@ function buildEpisodeCandidates(
     1,
     2,
   ];
-  const selected = new Set<string>();
-
-  for (const index of orderedIndexes) {
-    const candidate = episodes[index];
-    if (!candidate || !/^https?:\/\//i.test(candidate)) {
-      continue;
-    }
-
-    selected.add(candidate);
-    if (selected.size >= MAX_EPISODES_PER_DETAIL) {
-      break;
-    }
-  }
-
-  if (selected.size < MAX_EPISODES_PER_DETAIL) {
-    for (const candidate of episodes) {
-      if (!candidate || !/^https?:\/\//i.test(candidate)) {
-        continue;
-      }
-
-      selected.add(candidate);
-      if (selected.size >= MAX_EPISODES_PER_DETAIL) {
-        break;
-      }
-    }
-  }
-
-  return Array.from(selected);
+  const isUsable = (url: string | undefined) =>
+    Boolean(url && /^https?:\/\//i.test(url) && !seenUrls.has(url));
+  return (
+    orderedIndexes.map((index) => episodes[index]).find(isUsable) ||
+    episodes.find(isUsable)
+  );
 }
 
 async function loadRecentPlaySamples(
@@ -383,28 +361,76 @@ function mergeProbeSamples(samples: RecentPlaySample[]): RecentPlaySample[] {
   return merged;
 }
 
+async function pickProbeBatch(
+  database: D1DatabaseLike,
+  samples: RecentPlaySample[],
+  windowKey: string,
+  startedAt: number
+): Promise<RecentPlaySample[]> {
+  if (!samples.length) return [];
+
+  const sampleKey = ({ source, id }: RecentPlaySample) =>
+    buildSourceIdentityKey(source, id);
+  const { results } = await database
+    .prepare(
+      `WITH candidates AS (SELECT value AS source_key FROM json_each(?)),
+       serviced AS (
+         SELECT rank.source_key, rank.updated_at AS serviced_at
+         FROM source_rank_snapshots AS rank
+         JOIN candidates USING (source_key)
+         WHERE rank.window_key = ?
+           AND (
+             rank.unavailable_rate < 100 OR EXISTS (
+               SELECT 1
+               FROM source_probe_results AS probe
+               JOIN source_probe_runs AS run ON run.id = probe.run_id
+               WHERE probe.source_key = rank.source_key
+                 AND rank.updated_at BETWEEN run.started_at AND run.finished_at
+             )
+           )
+         UNION ALL
+         SELECT attempt.value, run.started_at
+         FROM source_probe_runs AS run
+         JOIN json_each(
+           CASE WHEN json_valid(run.notes) THEN run.notes ELSE '{}' END,
+           '$.attemptedSourceKeys'
+         ) AS attempt
+         JOIN candidates ON candidates.source_key = attempt.value
+         WHERE run.started_at >= ? AND run.finished_at IS NOT NULL
+       )
+       SELECT source_key AS sourceKey, MAX(serviced_at) AS servicedAt
+       FROM serviced GROUP BY source_key`
+    )
+    .bind(
+      JSON.stringify(samples.map(sampleKey)),
+      windowKey,
+      startedAt - FEEDBACK_SAMPLE_LOOKBACK_MS
+    )
+    .all<{ sourceKey: string; servicedAt: number }>();
+  const servicedAt = new Map(
+    (results || []).map((row) => [row.sourceKey, row.servicedAt])
+  );
+  return samples
+    .sort(
+      (left, right) =>
+        (servicedAt.get(sampleKey(left)) ?? 0) -
+        (servicedAt.get(sampleKey(right)) ?? 0)
+    )
+    .slice(0, PROBE_BATCH_SIZE);
+}
+
 async function* buildProbeTasksFromRecentPlays(
   samples: RecentPlaySample[],
   fetchDetail: NonNullable<LowFrequencySourceRankingOptions['fetchDetail']>,
-  errors: string[]
+  errors: string[],
+  attemptedSourceKeys: string[]
 ): AsyncGenerator<SampledProbeTask> {
-  let taskCount = 0;
-  const perSourceCount = new Map<string, number>();
-  const seenVideoKeys = new Set<string>();
   const seenEpisodeUrls = new Set<string>();
 
   for (const sample of samples) {
-    if (taskCount >= MAX_TASKS_TOTAL) {
-      break;
-    }
-
-    const videoKey = `${sample.source}+${sample.id}`;
-    if (seenVideoKeys.has(videoKey)) {
-      continue;
-    }
-    seenVideoKeys.add(videoKey);
-
+    const sourceKey = buildSourceIdentityKey(sample.source, sample.id);
     let detail: SearchResult;
+    attemptedSourceKeys.push(sourceKey);
     try {
       detail = await fetchDetail({
         source: sample.source,
@@ -412,7 +438,6 @@ async function* buildProbeTasksFromRecentPlays(
         fallbackTitle: sample.record.search_title || sample.record.title,
       });
     } catch (error) {
-      const sourceKey = buildSourceIdentityKey(sample.source, sample.id);
       const message = error instanceof Error ? error.message : 'unknown error';
       errors.push(
         `${sourceKey}: detail failed - ${message}`
@@ -431,46 +456,22 @@ async function* buildProbeTasksFromRecentPlays(
 
     const normalizedSource = detail.source || sample.source;
     const normalizedId = detail.id || sample.id;
-    const sourceKey = buildSourceIdentityKey(normalizedSource, normalizedId);
-    const currentSourceCount = perSourceCount.get(sourceKey) || 0;
-    if (currentSourceCount >= MAX_TASKS_PER_SOURCE) {
-      continue;
-    }
-
-    const episodeUrls = buildEpisodeCandidates(
+    const episodeUrl = selectProbeEpisode(
       detail.episodes,
-      sample.record.index || 1
+      sample.record.index || 1,
+      seenEpisodeUrls
     );
-    if (episodeUrls.length === 0) {
-      continue;
-    }
-
-    for (const episodeUrl of episodeUrls) {
-      if (taskCount >= MAX_TASKS_TOTAL) {
-        break;
-      }
-
-      if ((perSourceCount.get(sourceKey) || 0) >= MAX_TASKS_PER_SOURCE) {
-        break;
-      }
-
-      if (seenEpisodeUrls.has(episodeUrl)) {
-        continue;
-      }
-      seenEpisodeUrls.add(episodeUrl);
-
-      taskCount += 1;
-      perSourceCount.set(sourceKey, (perSourceCount.get(sourceKey) || 0) + 1);
-      yield {
-        userName: sample.userName,
-        sourceKey,
-        sourceId: normalizedId,
-        sourceName:
-          detail.source_name || sample.record.source_name || normalizedSource,
-        titleSample: detail.title || sample.record.title,
-        episodeUrl,
-      };
-    }
+    if (!episodeUrl) continue;
+    seenEpisodeUrls.add(episodeUrl);
+    yield {
+      userName: sample.userName,
+      sourceKey: buildSourceIdentityKey(normalizedSource, normalizedId),
+      sourceId: normalizedId,
+      sourceName:
+        detail.source_name || sample.record.source_name || normalizedSource,
+      titleSample: detail.title || sample.record.title,
+      episodeUrl,
+    };
   }
 }
 
@@ -675,6 +676,7 @@ export async function runLowFrequencySourceRankingCheck(
   const runId = idFactory();
   const startedAt = now();
   const errors: string[] = [];
+  const attemptedSourceKeys: string[] = [];
   let probeCount = 0;
   let snapshotCount = 0;
   let sampledRecordCount = 0;
@@ -696,13 +698,20 @@ export async function runLowFrequencySourceRankingCheck(
     );
     const samples = mergeProbeSamples([...playSamples, ...feedbackSamples]);
     sampledRecordCount = samples.length;
+    const batch = await pickProbeBatch(
+      database,
+      samples,
+      sampleWindowKey,
+      startedAt
+    );
 
     const buckets = new Map<string, AggregationBucket>();
     // Run each probe before more detail lookups consume the request budget.
     for await (const task of buildProbeTasksFromRecentPlays(
-      samples,
+      batch,
       fetchDetail,
-      errors
+      errors,
+      attemptedSourceKeys
     )) {
       taskCount += 1;
       try {
@@ -745,12 +754,13 @@ export async function runLowFrequencySourceRankingCheck(
           : 'no probe task built from recent play records';
       const notes = JSON.stringify({
         sampledRecordCount,
+        attemptedSourceKeys,
         taskCount,
         probeCount,
         snapshotCount,
         reason,
         errorCount: errors.length,
-        errors: errors.slice(0, 5),
+        errors: errors.slice(0, PROBE_BATCH_SIZE),
       });
 
       await finalizeProbeRun(database, runId, now(), status, notes);
@@ -796,11 +806,12 @@ export async function runLowFrequencySourceRankingCheck(
         : 'completed';
     const notes = JSON.stringify({
       sampledRecordCount,
+      attemptedSourceKeys,
       taskCount,
       probeCount,
       snapshotCount,
       errorCount: errors.length,
-      errors: errors.slice(0, 5),
+      errors: errors.slice(0, PROBE_BATCH_SIZE),
     });
 
     await finalizeProbeRun(database, runId, now(), status, notes);
@@ -823,11 +834,12 @@ export async function runLowFrequencySourceRankingCheck(
         : 'source ranking scheduler failed';
     const notes = JSON.stringify({
       sampledRecordCount,
+      attemptedSourceKeys,
       taskCount,
       probeCount,
       snapshotCount,
       errorCount: errors.length + 1,
-      errors: [...errors, message].slice(0, 5),
+      errors: [...errors.slice(0, PROBE_BATCH_SIZE), message],
     });
 
     await finalizeProbeRun(database, runId, now(), 'failed', notes);
