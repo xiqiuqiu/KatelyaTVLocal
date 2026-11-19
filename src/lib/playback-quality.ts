@@ -13,6 +13,7 @@ export const playbackQualityRecordSchema = z
     roundId: z.number().int().min(1).max(100),
     rootRoundId: z.number().int().min(1).max(100),
     rowKind: z.enum(['round', 'source']),
+    testSession: z.boolean().optional(),
     attemptId: z.number().int().min(0).max(1000),
     seq: z.number().int().min(1).max(PLAYBACK_QUALITY_MAX_SEQ),
     status: z.enum(['pending', 'terminal']),
@@ -76,10 +77,33 @@ export const playbackQualityRecordSchema = z
       });
   });
 
+export const playbackQoeRecordSchema = z
+  .object({
+    rowKind: z.literal('qoe'),
+    sessionId: z.string().regex(/^[\w-]{1,80}$/),
+    testSession: z.boolean(),
+    visit: z.number().int().min(1).max(1000),
+    seq: z.number().int().min(1).max(10000),
+    uninterrupted: z.boolean().nullable(),
+    recovered: z.number().int().min(0).max(10000),
+    failed: z.number().int().min(0).max(10000),
+  })
+  .strict()
+  .refine(
+    (record) =>
+      record.uninterrupted !== null || record.recovered + record.failed > 0
+  );
+
+export type PlaybackQoeRecord = z.infer<typeof playbackQoeRecordSchema>;
+export type PlaybackQualitySample = PlaybackQualityRecord | PlaybackQoeRecord;
+
 export const playbackQualityPayloadSchema = z
   .object({
     schemaVersion: z.literal(1),
-    records: z.array(playbackQualityRecordSchema).min(1).max(4),
+    records: z
+      .array(z.union([playbackQualityRecordSchema, playbackQoeRecordSchema]))
+      .min(1)
+      .max(4),
   })
   .strict();
 

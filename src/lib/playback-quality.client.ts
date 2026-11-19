@@ -1,11 +1,15 @@
-import type { PlaybackQualityRecord } from './playback-quality';
+import type {
+  PlaybackQoeRecord,
+  PlaybackQualityRecord,
+  PlaybackQualitySample,
+} from './playback-quality';
 
 type Outcome = NonNullable<PlaybackQualityRecord['outcome']>;
 type Clock = { start: number; last: number; active: number; endedAt?: number };
 type Sample = { record: PlaybackQualityRecord; clock: Clock };
 type StartInput = Pick<
   PlaybackQualityRecord,
-  'sessionId' | 'contentKey' | 'episodeIndex' | 'platform'
+  'sessionId' | 'contentKey' | 'episodeIndex' | 'platform' | 'testSession'
 > & { pageStartedAt: number; clickedAt?: number | null };
 
 const duration = (value: number) =>
@@ -37,7 +41,7 @@ export function createPlaybackQualityReporter(
   options: { now?: () => number; fetcher?: typeof fetch } = {}
 ) {
   const now = options.now || (() => performance.now());
-  const pending = new Map<string, PlaybackQualityRecord>();
+  const pending = new Map<string, PlaybackQualitySample>();
   let input: StartInput | null = null;
   let round: Sample | null = null;
   let source: Sample | null = null;
@@ -56,8 +60,10 @@ export function createPlaybackQualityReporter(
   let disabled = false;
   let retryAfter = 0;
 
-  const keyOf = (record: PlaybackQualityRecord) =>
-    `${record.sessionId}/${record.roundId}/${record.rowKind}/${record.attemptId}`;
+  const keyOf = (record: PlaybackQualitySample) =>
+    record.rowKind === 'qoe'
+      ? `${record.sessionId}/qoe/${record.visit}`
+      : `${record.sessionId}/${record.roundId}/${record.rowKind}/${record.attemptId}`;
 
   const flush = async (keepalive = false): Promise<void> => {
     if (disabled || now() < retryAfter || (inFlight && !keepalive)) return;
@@ -180,6 +186,7 @@ export function createPlaybackQualityReporter(
         sessionId: input.sessionId,
         roundId,
         rootRoundId,
+        testSession: input.testSession,
         rowKind: 'round',
         attemptId: 0,
         seq: 0,
@@ -350,6 +357,11 @@ export function createPlaybackQualityReporter(
         false
       );
       finishSample(round, outcome, false);
+      void flush(true);
+    },
+    qoe(record: PlaybackQoeRecord) {
+      pending.set(keyOf(record), record);
+      if (pending.size > 64) pending.delete(pending.keys().next().value);
       void flush(true);
     },
     flush,

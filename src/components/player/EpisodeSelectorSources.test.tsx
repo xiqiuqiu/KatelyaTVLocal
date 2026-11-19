@@ -91,3 +91,33 @@ describe('EpisodeSelectorSources progressive discovery', () => {
     }
   );
 });
+
+it('gives current media progress precedence over an unavailable probe only for that line', () => {
+  const props = {
+    sourceSearchLoading: false,
+    sourceSearchError: null,
+    availableSourcesCount: sources.length,
+    sourceAvailabilityList: buildSourceAvailabilityList({
+      sources,
+      currentSourceKey: 'current-1',
+      currentEpisodeIndex: 0,
+      statuses: new Map(
+        sources.map((source) => [`${source.source}-1`, { kind: 'unavailable' }])
+      ),
+    }),
+    onSourceClick: jest.fn(),
+    onSearchMismatchClick: jest.fn(),
+  };
+  const { rerender } = render(<EpisodeSelectorSources {...props} />);
+  const current = screen.getByRole('button', { name: '当前线路 当前源' });
+  const backup = screen.getByRole('button', { name: '切换线路 备用源' });
+  expect(current).toHaveTextContent('不可用');
+
+  rerender(<EpisodeSelectorSources {...props} currentPlaybackVerified />);
+  expect(current).toHaveTextContent('已验证可播');
+  expect(current).not.toHaveTextContent('不可用');
+  expect(backup).toHaveTextContent('不可用');
+
+  rerender(<EpisodeSelectorSources {...props} />);
+  expect(current).toHaveTextContent('不可用');
+});

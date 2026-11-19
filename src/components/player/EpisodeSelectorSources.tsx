@@ -13,6 +13,7 @@ interface EpisodeSelectorSourcesProps {
   availableSourcesCount: number;
   sourceAvailabilityList: SourceAvailabilityItem[];
   videoTitle?: string;
+  currentPlaybackVerified?: boolean;
   onSourceClick: (source: SearchResult) => void;
   onSearchMismatchClick: () => void;
 }
@@ -57,6 +58,7 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
   sourceSearchError,
   sourceAvailabilityList,
   videoTitle,
+  currentPlaybackVerified,
   onSourceClick,
   onSearchMismatchClick,
 }) => {
@@ -129,9 +131,17 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
               const { source, sourceKey } = availability;
               const isCurrentSource = availability.isCurrent;
               const videoInfo = availability.measured;
-              const effectiveSourceStatus = availability.effectiveStatus;
+              const playbackVerified =
+                isCurrentSource && currentPlaybackVerified;
+              const effectiveSourceStatus =
+                playbackVerified &&
+                availability.effectiveStatus?.kind !== 'proxy'
+                  ? { kind: 'playable' as const }
+                  : availability.effectiveStatus;
               const isClickable = availability.manualSwitch.mode !== 'blocked';
-              const statusLabel = effectiveSourceStatus
+              const statusLabel = playbackVerified
+                ? '已验证可播'
+                : effectiveSourceStatus
                 ? getSourceStatusLabel(effectiveSourceStatus)
                 : '待检测';
               const qualityLabel =
@@ -142,11 +152,16 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
                   ? videoInfo.quality
                   : null;
 
-              const statusClassName = getStatusClassName(effectiveSourceStatus);
+              const statusClassName = getStatusClassName(
+                playbackVerified ? { kind: 'direct' } : effectiveSourceStatus
+              );
 
-              const sourceStatusText = availability.episode.exists
-                ? getSourceStatusDescription(effectiveSourceStatus, videoInfo)
-                : availability.manualSwitch.reason;
+              const sourceStatusText =
+                playbackVerified && (!videoInfo || videoInfo.hasError)
+                  ? '播放器已确认当前集可播'
+                  : availability.episode.exists
+                  ? getSourceStatusDescription(effectiveSourceStatus, videoInfo)
+                  : availability.manualSwitch.reason;
 
               return (
                 <button
@@ -211,9 +226,11 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
                         {source.episodes.length} 集
                       </span>
                     )}
-                    <span className={metaChipClass}>
-                      {isClickable ? '可切换' : '不可切换'}
-                    </span>
+                    {!isCurrentSource && (
+                      <span className={metaChipClass}>
+                        {isClickable ? '可切换' : '不可切换'}
+                      </span>
+                    )}
                   </div>
 
                   <p className='mt-2 break-words text-sm font-medium text-[rgb(var(--ui-text-muted))]'>

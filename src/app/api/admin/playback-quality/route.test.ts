@@ -44,6 +44,8 @@ describe('admin playback quality GET', () => {
     admin.mockResolvedValue(true);
     read.mockResolvedValue({
       days: 7,
+      cohort: 'regular',
+      qoe: null,
       timeZone: 'Asia/Taipei',
       groups: [],
       latency: [],
@@ -58,16 +60,33 @@ describe('admin playback quality GET', () => {
   it('returns a no-store summary with explicit timezone', async () => {
     const response = await GET(request('?days=7'));
     expect(response.status).toBe(200);
-    expect(read).toHaveBeenCalledWith({ marker: 'env' }, 7);
+    expect(read).toHaveBeenCalledWith(
+      { marker: 'env' },
+      7,
+      expect.any(Number),
+      false
+    );
     expect(await response.json()).toEqual({
       available: true,
       days: 7,
+      cohort: 'regular',
+      qoe: null,
       timeZone: 'Asia/Taipei',
       groups: [],
       latency: [],
       sources: [],
     });
     expect(response.headers).toEqual({ 'Cache-Control': 'no-store' });
+  });
+  it('selects explicit test sessions separately', async () => {
+    expect((await GET(request('?cohort=test'))).status).toBe(200);
+    expect(read).toHaveBeenCalledWith(
+      { marker: 'env' },
+      7,
+      expect.any(Number),
+      true
+    );
+    expect((await GET(request('?cohort=android'))).status).toBe(400);
   });
   it.each(['0', '31', 'NaN', '1.5'])(
     'rejects unbounded or invalid day range %s',

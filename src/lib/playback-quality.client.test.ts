@@ -17,7 +17,11 @@ function fixture() {
   const sent: PlaybackQualityRecord[] = [];
   const fetcher = jest.fn(async (_url, init) => {
     const payload = playbackQualityPayloadSchema.parse(JSON.parse(init.body));
-    sent.push(...payload.records);
+    sent.push(
+      ...payload.records.filter(
+        (record): record is PlaybackQualityRecord => record.rowKind !== 'qoe'
+      )
+    );
     return { ok: true, status: 200 } as Response;
   });
   const reporter = createPlaybackQualityReporter({

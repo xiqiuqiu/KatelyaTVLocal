@@ -94,6 +94,11 @@ import {
   resolvePlaybackHistoryRecovery,
 } from '@/lib/playback-history-recovery';
 import {
+  createPlaybackQoeObserver,
+  PLAYBACK_INTERRUPTION_MS,
+  playbackQoeMessages,
+} from '@/lib/playback-qoe.client';
+import {
   consumePlaybackPageEntryTime,
   createPlaybackQualityReporter,
   observePlaybackFirstFrame,
@@ -1025,6 +1030,7 @@ function PlayEpisodeColumn({
             session.startupPresentation ? '' : session.currentSource
           }
           currentId={session.startupPresentation ? '' : session.currentId}
+          currentPlaybackVerified={session.currentPlaybackVerified}
           videoTitle={session.searchTitle || session.videoTitle}
           availableSources={session.availableSources}
           sourceSearchLoading={session.sourceSearchLoading}
@@ -1162,6 +1168,8 @@ function usePlayPageSession() {
     if (typeParam) params.set('stype', typeParam);
     if (isTvMode) params.set('tv', '1');
     params.set('from', 'discover');
+    if (searchParams.get('playbackTest') === '1')
+      params.set('playbackTest', '1');
     return `/play?${params.toString()}`;
   })();
 
@@ -1226,6 +1234,24 @@ function usePlayPageSession() {
     })
   );
   const playbackQualityRef = useLazyRef(() => createPlaybackQualityReporter());
+  const playbackQoeRef = useLazyRef(() =>
+    createPlaybackQoeObserver((record, event) => {
+      playbackQualityRef.current.qoe(record);
+      if (playbackDebugEnabledRef.current) {
+        emitPlaybackDebugLog(
+          event,
+          `${record.testSession ? '测试会话 · ' : ''}${
+            playbackQoeMessages[event]
+          }`,
+          { ...record }
+        );
+      }
+    })
+  );
+  const [verifiedPlayback, setVerifiedPlayback] = useState<{
+    sourceKey: string;
+    episodeIndex: number;
+  } | null>(null);
   const qualityFrameCleanupRef = useRef<(() => void) | null>(null);
   const [playerSetupGeneration, setPlayerSetupGeneration] = useState(0);
   const [startupPresentation, setStartupPresentation] = useState<
@@ -1482,6 +1508,7 @@ function usePlayPageSession() {
       type: 'startup.cancel',
       nowMs: performance.now(),
     });
+    playbackQoeRef.current.finish();
     playbackQualityRef.current.finish('failed');
     setErrorKind(kind);
     setError(message);
@@ -2311,8 +2338,10 @@ function usePlayPageSession() {
   useEffect(() => {
     const reporter = playbackAttemptReporterRef.current;
     const quality = playbackQualityRef.current;
+    const qoe = playbackQoeRef.current;
     const onVisibility = () => {
       const hidden = document.visibilityState === 'hidden';
+      if (hidden) qoe.suspend();
       quality.setHidden(hidden);
       dispatchPlaybackSessionEvent({
         type: 'startup.activity',
@@ -2322,7 +2351,10 @@ function usePlayPageSession() {
     };
     const onPageHide = (event: PageTransitionEvent) => {
       if (event.persisted) quality.setHidden(true);
-      else quality.finish('abandoned');
+      else {
+        qoe.finish();
+        quality.finish('abandoned');
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', onPageHide);
@@ -2335,6 +2367,7 @@ function usePlayPageSession() {
       });
       if (startupTimerRef.current != null)
         clearTimeout(startupTimerRef.current);
+      qoe.finish();
       quality.finish('abandoned');
       qualityFrameCleanupRef.current?.();
       const ended = reporter.endAttempt('leave');
@@ -3470,6 +3503,8 @@ function usePlayPageSession() {
     resetProgressiveSourceProbeStability();
     const state = hlsRecoveryStateRef.current;
     state.playbackSessionId += 1;
+    playbackQoeRef.current.resetProgress();
+    setVerifiedPlayback(null);
     state.userPausedAt = 0;
     state.userSeekingAt = 0;
     state.seekBufferGraceUntil = 0;
@@ -3499,6 +3534,7 @@ function usePlayPageSession() {
       playbackSessionStateRef.current.startup?.status !== 'active'
     )
       return;
+    playbackQoeRef.current.suspend();
     playbackQualityRef.current.setPaused(true);
     dispatchPlaybackSessionEvent({
       type: 'startup.activity',
@@ -3767,6 +3803,7 @@ function usePlayPageSession() {
       });
       return;
     }
+    playbackQoeRef.current.suspend();
     dispatchPlaybackSessionEvent({
       type: 'user.seekStarted',
       nowMs: now,
@@ -4352,6 +4389,7 @@ function usePlayPageSession() {
 
   const beginPlaybackAttemptForEntry = (title: string, year: string) => {
     qualityFrameCleanupRef.current?.();
+    playbackQoeRef.current.finish();
     const reporter = playbackAttemptReporterRef.current;
     const dimensions = {
       contentKey: buildWatchProgressContentKey({ title, year }),
@@ -4394,8 +4432,12 @@ function usePlayPageSession() {
     );
     const sessionId = reporter.getSessionId();
     if (!sessionId) return;
+    const testSession =
+      new URLSearchParams(window.location.search).get('playbackTest') === '1';
+    playbackQoeRef.current.start({ sessionId, testSession });
     playbackQualityRef.current.start({
       sessionId,
+      testSession,
       contentKey: dimensions.contentKey,
       episodeIndex: dimensions.episodeIndex,
       platform: getPlaybackProbePlatform(),
@@ -6231,6 +6273,13 @@ function usePlayPageSession() {
             }
           : null
       );
+      if (options.autoRecovery && targetIndex === activeEpisodeIndex) {
+        playbackQoeRef.current.interrupt();
+      } else if (targetIndex !== activeEpisodeIndex) {
+        playbackQoeRef.current.nextEpisode();
+      } else {
+        playbackQoeRef.current.boundary();
+      }
       startHlsPlaybackSession();
       resetHlsRecoveryCounters();
       sourceFallbackAttemptedRef.current = false;
@@ -6384,6 +6433,7 @@ function usePlayPageSession() {
       nowMs: Date.now(),
     });
     if (!preserveFailed) autoRecoveredSourceKeysRef.current = new Set();
+    playbackQoeRef.current.boundary();
     syncPlaybackSessionSources();
     startHlsPlaybackSession();
     resetHlsRecoveryCounters();
@@ -6562,6 +6612,8 @@ function usePlayPageSession() {
     resumeHistory = false
   ) => {
     qualityFrameCleanupRef.current?.();
+    playbackQoeRef.current.nextEpisode();
+    setVerifiedPlayback(null);
     playbackQualityRef.current.startRound('episode', episodeIndex, true);
     dispatchPlaybackSessionEvent({
       type: 'startup.started',
@@ -7568,6 +7620,41 @@ function usePlayPageSession() {
                 hlsRecoveryStateRef.current.playbackSessionId;
               const hlsPlaybackUrl = url;
               const hlsVideo = video;
+              const qoe = playbackQoeRef.current;
+              const observedEpisode = currentEpisodeIndexRef.current;
+              const observedSource = getCurrentSourceKey();
+              const isCurrentMedia = () =>
+                video.hls === hls &&
+                artPlayerRef.current?.video === video &&
+                hlsRecoveryStateRef.current.playbackSessionId ===
+                  hlsSessionId &&
+                sourceChangeAttemptIdRef.current === qualityAttemptId &&
+                playbackAttemptReporterRef.current.getSessionId() ===
+                  qualitySessionId &&
+                currentEpisodeIndexRef.current === observedEpisode &&
+                getCurrentSourceKey() === observedSource;
+              const isObserving = () =>
+                document.visibilityState !== 'hidden' &&
+                playbackSessionStateRef.current.playbackIntent !==
+                  'user-paused' &&
+                !video.paused &&
+                !video.seeking &&
+                !video.ended;
+              let verified = false;
+              let qoeWaitingTimer: ReturnType<typeof setTimeout> | null = null;
+              const clearQoeWaiting = () => {
+                if (qoeWaitingTimer !== null) clearTimeout(qoeWaitingTimer);
+                qoeWaitingTimer = null;
+              };
+              const observeInterruption = () => {
+                clearQoeWaiting();
+                qoe.interrupt();
+                if (verified) {
+                  verified = false;
+                  setVerifiedPlayback(null);
+                }
+              };
+              hls.on(Hls.Events.DESTROYING, clearQoeWaiting);
               const executeRecoveryPlan = (
                 reason: string,
                 action: HlsRecoveryAction
@@ -7710,6 +7797,15 @@ function usePlayPageSession() {
                   );
                   return;
                 }
+
+                if (
+                  fatal &&
+                  isCurrentMedia() &&
+                  isObserving() &&
+                  verified &&
+                  video.readyState < 3
+                )
+                  observeInterruption();
 
                 const isStallDetail =
                   errorDetails === 'bufferStalledError' ||
@@ -7869,6 +7965,22 @@ function usePlayPageSession() {
               removeHlsVideoRecoveryListeners(video);
 
               const handleVideoWaiting = () => {
+                if (
+                  verified &&
+                  isCurrentMedia() &&
+                  isObserving() &&
+                  qoeWaitingTimer === null
+                ) {
+                  qoeWaitingTimer = setTimeout(() => {
+                    if (
+                      isCurrentMedia() &&
+                      isObserving() &&
+                      video.readyState < 3
+                    )
+                      observeInterruption();
+                    else clearQoeWaiting();
+                  }, PLAYBACK_INTERRUPTION_MS);
+                }
                 clearWaitingRecoveryTimer();
                 resetProgressiveSourceProbeStability();
                 if (typeof window === 'undefined') {
@@ -7995,6 +8107,28 @@ function usePlayPageSession() {
               };
 
               const handleVideoTimeupdate = () => {
+                if (isCurrentMedia()) {
+                  if (
+                    isObserving() &&
+                    progressMediaEpochRef.current.ready &&
+                    sourceChangeMediaAttemptRef.current === null &&
+                    resumeTimeRef.current == null
+                  ) {
+                    if (qoe.progress(video.currentTime, video.playbackRate)) {
+                      clearQoeWaiting();
+                      if (!verified) {
+                        verified = true;
+                        setVerifiedPlayback({
+                          sourceKey: observedSource,
+                          episodeIndex: observedEpisode,
+                        });
+                      }
+                    }
+                  } else {
+                    clearQoeWaiting();
+                    qoe.resetProgress();
+                  }
+                }
                 clearWaitingRecoveryTimer();
                 if (
                   dispatchTimeupdateForAdSkip(
@@ -8010,6 +8144,10 @@ function usePlayPageSession() {
               };
 
               const handleVideoSeeking = () => {
+                if (isCurrentMedia()) {
+                  clearQoeWaiting();
+                  qoe.resetProgress();
+                }
                 // Even a browser/system seek makes an older history read stale.
                 // This does not relabel that seek as a user gesture.
                 historyReadSequenceRef.current += 1;
@@ -8573,6 +8711,10 @@ function usePlayPageSession() {
     phase: 'ready' as const,
     ...startupControls,
     adSkipMarkFeedback,
+    currentPlaybackVerified:
+      verifiedPlayback?.sourceKey ===
+        getSourceIdentityKey(currentSource, currentId) &&
+      verifiedPlayback?.episodeIndex === currentEpisodeIndex,
     artPlayerRef,
     artRef,
     currentPlayTimeRef,

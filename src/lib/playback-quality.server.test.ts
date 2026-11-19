@@ -34,7 +34,13 @@ describe('playback quality storage', () => {
       })
       .mockResolvedValueOnce({ results: [] })
       .mockResolvedValueOnce({ results: [] });
-    const statement = { bind: jest.fn().mockReturnThis(), all };
+    const first = jest.fn().mockResolvedValue({
+      observedVisits: 0,
+      uninterruptedVisits: 0,
+      recovered: 0,
+      failed: 0,
+    });
+    const statement = { bind: jest.fn().mockReturnThis(), all, first };
     const db = { prepare: jest.fn(() => statement) };
     const result = await readPlaybackQualitySummary(
       { DB: db },
@@ -45,10 +51,15 @@ describe('playback quality storage', () => {
       firstRoundWithin30Rate: null,
       finalSuccessRate: null,
     });
+    expect(result?.qoe).toMatchObject({
+      uninterruptedRate: null,
+      recoverySuccessRate: null,
+    });
     expect(result?.latency).toEqual([]);
     expect(statement.bind).toHaveBeenNthCalledWith(
       1,
       '2026-10-20',
+      0,
       expect.any(Number),
       expect.any(Number)
     );
@@ -62,6 +73,6 @@ describe('playback quality storage', () => {
       expect.stringContaining('LIMIT 2000')
     );
     expect(statement.bind).toHaveBeenCalledWith(10 * 86_400_000);
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(2);
   });
 });

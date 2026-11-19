@@ -12,6 +12,7 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "src/lib/playback-quality.server.ts").read_text()
 MIGRATION = (ROOT / "migrations/2026-10-26_playback_quality.sql").read_text()
+QOE_MIGRATION = (ROOT / "migrations/2026-11-19_playback_qoe.sql").read_text()
 NOW = int(datetime.datetime(2026, 10, 26, tzinfo=datetime.timezone.utc).timestamp() * 1000)
 DAY = "2026-10-26"
 
@@ -33,7 +34,7 @@ def record(**updates):
         policyVersion="startup-baseline-v1", elapsedMs=0, activeWaitMs=0,
         clickToFrameMs=None, pageToFrameMs=None, sourceToFrameMs=None,
         frameEvidence=None, hadHidden=False, autoplayBlocked=False,
-        promptChoice=None, nextRoundId=None,
+        promptChoice=None, nextRoundId=None, testSession=False,
     )
     value.update(updates)
     return value
@@ -47,6 +48,8 @@ def bindings(value, owner="alice", now=NOW, day=DAY):
             continue
         if token.startswith("record."):
             result.append(value[token[7:]])
+        elif token == "Number(record.testSession ?? false)":
+            result.append(int(value.get("testSession", False)))
         elif token.startswith("Number(record."):
             result.append(int(value[token[14:-1]]))
         else:
@@ -59,6 +62,7 @@ def database(path=":memory:"):
     db.row_factory = sqlite3.Row
     db.executescript(MIGRATION)
     db.executescript(MIGRATION)
+    db.executescript(QOE_MIGRATION)
     return db
 
 
@@ -71,6 +75,32 @@ def upsert(db, value, **kwargs):
 def success(**kwargs):
     return record(seq=3, status="terminal", outcome="frame-ready", elapsedMs=1000,
                   activeWaitMs=1000, pageToFrameMs=1000, frameEvidence="rvfc", **kwargs)
+
+
+def test_qoe_cohorts_and_retries():
+    db = database()
+    upsert(db, success(sessionId="regular"))
+    upsert(db, success(sessionId="test", testSession=True))
+    counts = sql("PLAYBACK_QUALITY_COUNTS_SQL")
+    assert db.execute(counts, (DAY, 0, NOW, NOW)).fetchone()["starts"] == 1
+    assert db.execute(counts, (DAY, 1, NOW, NOW)).fetchone()["starts"] == 1
+
+    def put(session, seq, test, uninterrupted, recovered, failed):
+        values = ("alice", session, 1, seq, test, uninterrupted, recovered, failed,
+                  DAY, NOW, "alice", DAY, 2000, "alice", session, 1)
+        return db.execute(sql("PLAYBACK_QOE_UPSERT_SQL"), values).fetchone()
+
+    assert put("test", 1, 1, 0, 0, 0)
+    assert put("test", 2, 1, 0, 1, 1)
+    assert put("test", 1, 1, 0, 0, 0) is None
+    assert put("test", 3, 0, 0, 1, 1) is None
+    assert put("test", 3, 1, 1, 1, 1) is None
+    assert put("regular", 1, 0, 1, 0, 0)
+    assert put("regular", 2, 0, 1, 0, 1)
+    qoe_counts = sql("PLAYBACK_QOE_COUNTS_SQL")
+    assert tuple(db.execute(qoe_counts, (DAY, 0)).fetchone()) == (1, 1, 0, 1)
+    assert tuple(db.execute(qoe_counts, (DAY, 1)).fetchone()) == (1, 0, 1, 1)
+    db.close()
 
 
 def test_idempotency_and_identity():
@@ -143,21 +173,21 @@ def test_summary():
     budget = record(sessionId="continued", status="terminal", outcome="budget-exhausted", elapsedMs=30000, activeWaitMs=30000)
     assert upsert(db, budget)
     assert upsert(db, success(sessionId="continued", roundId=2, roundReason="continue", hadHidden=True))
-    rows = db.execute(sql("PLAYBACK_QUALITY_COUNTS_SQL"), (DAY, NOW - 86400000, NOW - 86400000)).fetchall()
+    rows = db.execute(sql("PLAYBACK_QUALITY_COUNTS_SQL"), (DAY, 0, NOW - 86400000, NOW - 86400000)).fetchall()
     assert len(rows) == 1
     row = rows[0]
     assert (row["starts"], row["within30"], row["pending"], row["unobserved"], row["successfulChains"]) == (24, 20, 1, 1, 21)
     assert row["completedChains"] == 22
-    latency = db.execute(sql("PLAYBACK_QUALITY_LATENCY_SQL"), (DAY,)).fetchall()
+    latency = db.execute(sql("PLAYBACK_QUALITY_LATENCY_SQL"), (DAY, 0)).fetchall()
     page = next(row for row in latency if row["metric"] == "pageToFrameMs")
     assert (page["samples"], page["p50"], page["p95"]) == (20, 10000, 19000)
-    sources = db.execute(sql("PLAYBACK_QUALITY_SOURCES_SQL"), (DAY,)).fetchall()
+    sources = db.execute(sql("PLAYBACK_QUALITY_SOURCES_SQL"), (DAY, 0)).fetchall()
     assert sources[0]["attempts"] == 20
     db.close()
     empty = database()
-    assert empty.execute(sql("PLAYBACK_QUALITY_LATENCY_SQL"), (DAY,)).fetchall() == []
+    assert empty.execute(sql("PLAYBACK_QUALITY_LATENCY_SQL"), (DAY, 0)).fetchall() == []
     upsert(empty, success())
-    one = next(row for row in empty.execute(sql("PLAYBACK_QUALITY_LATENCY_SQL"), (DAY,)) if row["metric"] == "pageToFrameMs")
+    one = next(row for row in empty.execute(sql("PLAYBACK_QUALITY_LATENCY_SQL"), (DAY, 0)) if row["metric"] == "pageToFrameMs")
     assert (one["samples"], one["p50"], one["p95"]) == (1, 1000, 1000)
     empty.close()
 
@@ -190,7 +220,7 @@ def replay_client_records():
     for value in json.load(sys.stdin):
         upsert(db, value)
     rows = [dict(row) for row in db.execute("SELECT * FROM playback_quality")]
-    groups = [dict(row) for row in db.execute(sql("PLAYBACK_QUALITY_COUNTS_SQL"), (DAY, NOW - 86400000, NOW - 86400000))]
+    groups = [dict(row) for row in db.execute(sql("PLAYBACK_QUALITY_COUNTS_SQL"), (DAY, 0, NOW - 86400000, NOW - 86400000))]
     print(json.dumps(dict(rows=rows, groups=groups)))
     db.close()
 
@@ -199,6 +229,6 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["--replay-stdin"]:
         replay_client_records()
         sys.exit(0)
-    for test in [test_idempotency_and_identity, test_budget_choice_and_day, test_terminal_choice_and_link_protection, test_summary, test_concurrent_quota]:
+    for test in [test_qoe_cohorts_and_retries, test_idempotency_and_identity, test_budget_choice_and_day, test_terminal_choice_and_link_protection, test_summary, test_concurrent_quota]:
         test()
         print(f"PASS {test.__name__}")

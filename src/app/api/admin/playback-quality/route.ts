@@ -9,7 +9,11 @@ export const runtime = 'edge';
 export async function GET(request: NextRequest) {
   if (!(await isAdminRequest(request)))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const days = Number(new URL(request.url).searchParams.get('days') || '7');
+  const params = new URL(request.url).searchParams;
+  const days = Number(params.get('days') || '7');
+  const cohort = params.get('cohort') ?? 'regular';
+  if (cohort !== 'regular' && cohort !== 'test')
+    return NextResponse.json({ error: 'Invalid cohort' }, { status: 400 });
   if (!Number.isInteger(days) || days < 1 || days > 30)
     return NextResponse.json(
       { error: 'days must be between 1 and 30' },
@@ -25,7 +29,12 @@ export async function GET(request: NextRequest) {
     } catch {
       env = process.env as Record<string, unknown>;
     }
-    const summary = await readPlaybackQualitySummary(env, days);
+    const summary = await readPlaybackQualitySummary(
+      env,
+      days,
+      Date.now(),
+      cohort === 'test'
+    );
     if (!summary)
       return NextResponse.json(
         { available: false, reason: 'no-d1' },

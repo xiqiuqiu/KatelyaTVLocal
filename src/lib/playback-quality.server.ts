@@ -1,5 +1,5 @@
 import { getD1Database } from '@/lib/d1';
-import type { PlaybackQualityRecord } from '@/lib/playback-quality';
+import type { PlaybackQualitySample } from '@/lib/playback-quality';
 
 const DAY_MS = 86_400_000;
 const DAILY_ROW_LIMIT = 2000;
@@ -14,9 +14,9 @@ INSERT INTO playback_quality (
   status, outcome, content_key, episode_index, source_key, platform, runtime, entry_kind,
   round_reason, source_reason, release_id, policy_version, elapsed_ms, active_wait_ms,
   click_to_frame_ms, page_to_frame_ms, source_to_frame_ms, frame_evidence,
-  had_hidden, autoplay_blocked, prompt_choice, next_round_id, day_key, received_at, updated_at
+  had_hidden, autoplay_blocked, prompt_choice, next_round_id, day_key, received_at, updated_at, test_session
 )
-SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 WHERE (SELECT COUNT(*) FROM playback_quality WHERE owner = ? AND day_key = ?) < ?
    OR EXISTS (SELECT 1 FROM playback_quality
               WHERE owner = ? AND session_id = ? AND round_id = ? AND row_kind = ? AND attempt_id = ?)
@@ -41,6 +41,7 @@ ON CONFLICT(owner, session_id, round_id, row_kind, attempt_id) DO UPDATE SET
 WHERE excluded.seq > playback_quality.seq
   AND excluded.root_round_id = playback_quality.root_round_id
   AND (playback_quality.row_kind = 'round' OR excluded.episode_index = playback_quality.episode_index)
+  AND excluded.test_session = playback_quality.test_session
   AND excluded.platform = playback_quality.platform
   AND excluded.runtime = playback_quality.runtime
   AND excluded.entry_kind = playback_quality.entry_kind
@@ -69,16 +70,69 @@ WHERE excluded.seq > playback_quality.seq
         AND excluded.frame_evidence IS playback_quality.frame_evidence))
 RETURNING seq`;
 
+export const PLAYBACK_QOE_UPSERT_SQL = `
+INSERT INTO playback_qoe (
+  owner, session_id, visit, seq, test_session, uninterrupted, recovered, failed,
+  day_key, received_at
+)
+SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+WHERE (SELECT COUNT(*) FROM playback_qoe WHERE owner = ? AND day_key = ?) < ?
+   OR EXISTS (SELECT 1 FROM playback_qoe WHERE owner = ? AND session_id = ? AND visit = ?)
+ON CONFLICT(owner, session_id, visit) DO UPDATE SET
+  seq = excluded.seq,
+  uninterrupted = COALESCE(playback_qoe.uninterrupted, excluded.uninterrupted),
+  recovered = excluded.recovered,
+  failed = excluded.failed
+WHERE excluded.seq > playback_qoe.seq
+  AND excluded.test_session = playback_qoe.test_session
+  AND (playback_qoe.uninterrupted IS NULL OR excluded.uninterrupted IS playback_qoe.uninterrupted)
+  AND excluded.recovered >= playback_qoe.recovered
+  AND excluded.failed >= playback_qoe.failed
+RETURNING seq`;
+
 export async function savePlaybackQuality(
   env: Record<string, unknown>,
   owner: string,
-  records: PlaybackQualityRecord[],
+  records: PlaybackQualitySample[],
   now = Date.now()
 ): Promise<'saved' | 'no-d1' | 'quota'> {
   const db = getD1Database(env);
   if (!db) return 'no-d1';
   const dayKey = playbackQualityDayKey(now);
   for (const record of records) {
+    if (record.rowKind === 'qoe') {
+      const result = await db
+        .prepare(PLAYBACK_QOE_UPSERT_SQL)
+        .bind(
+          owner,
+          record.sessionId,
+          record.visit,
+          record.seq,
+          Number(record.testSession),
+          record.uninterrupted === null ? null : Number(record.uninterrupted),
+          record.recovered,
+          record.failed,
+          dayKey,
+          now,
+          owner,
+          dayKey,
+          DAILY_ROW_LIMIT,
+          owner,
+          record.sessionId,
+          record.visit
+        )
+        .first();
+      if (!result) {
+        const existing = await db
+          .prepare(
+            'SELECT 1 FROM playback_qoe WHERE owner = ? AND session_id = ? AND visit = ?'
+          )
+          .bind(owner, record.sessionId, record.visit)
+          .first();
+        if (!existing) return 'quota';
+      }
+      continue;
+    }
     const result = await db
       .prepare(PLAYBACK_QUALITY_UPSERT_SQL)
       .bind(
@@ -114,6 +168,7 @@ export async function savePlaybackQuality(
         dayKey,
         now,
         now,
+        Number(record.testSession ?? false),
         owner,
         dayKey,
         DAILY_ROW_LIMIT,
@@ -147,15 +202,15 @@ export const PLAYBACK_QUALITY_COUNTS_SQL = `
 WITH roots AS (
   SELECT r.*,
     EXISTS (SELECT 1 FROM playback_quality s WHERE s.owner = r.owner
-      AND s.session_id = r.session_id AND s.root_round_id = r.round_id
+      AND s.session_id = r.session_id AND s.root_round_id = r.round_id AND s.test_session = r.test_session
       AND s.row_kind = 'round' AND s.outcome = 'frame-ready') AS chain_success,
     (SELECT s.outcome FROM playback_quality s WHERE s.owner = r.owner
-      AND s.session_id = r.session_id AND s.root_round_id = r.round_id
+      AND s.session_id = r.session_id AND s.root_round_id = r.round_id AND s.test_session = r.test_session
       AND s.row_kind = 'round' ORDER BY s.round_id DESC LIMIT 1) AS latest_outcome,
     (SELECT s.prompt_choice FROM playback_quality s WHERE s.owner = r.owner
-      AND s.session_id = r.session_id AND s.root_round_id = r.round_id
+      AND s.session_id = r.session_id AND s.root_round_id = r.round_id AND s.test_session = r.test_session
       AND s.row_kind = 'round' ORDER BY s.round_id DESC LIMIT 1) AS latest_choice
-  FROM playback_quality r WHERE r.row_kind = 'round' AND r.round_id = r.root_round_id AND r.day_key >= ?
+  FROM playback_quality r WHERE r.row_kind = 'round' AND r.round_id = r.root_round_id AND r.day_key >= ? AND r.test_session = ?
 )
 SELECT day_key AS dayKey, release_id AS releaseId, platform, entry_kind AS entryKind,
   policy_version AS policyVersion, COUNT(*) AS starts,
@@ -180,11 +235,11 @@ export const PLAYBACK_QUALITY_LATENCY_SQL = `
 WITH successes AS (
   SELECT r.day_key, r.release_id, r.platform, r.entry_kind, r.policy_version, s.*
   FROM playback_quality r JOIN playback_quality s ON s.owner = r.owner
-    AND s.session_id = r.session_id AND s.root_round_id = r.round_id AND s.row_kind = 'round'
-  WHERE r.row_kind = 'round' AND r.round_id = r.root_round_id AND r.day_key >= ?
+    AND s.session_id = r.session_id AND s.root_round_id = r.round_id AND s.test_session = r.test_session AND s.row_kind = 'round'
+  WHERE r.row_kind = 'round' AND r.round_id = r.root_round_id AND r.day_key >= ? AND r.test_session = ?
     AND s.outcome = 'frame-ready' AND s.had_hidden = 0 AND s.autoplay_blocked = 0
     AND s.round_id = (SELECT MIN(t.round_id) FROM playback_quality t WHERE t.owner = r.owner
-      AND t.session_id = r.session_id AND t.root_round_id = r.round_id AND t.row_kind = 'round'
+      AND t.session_id = r.session_id AND t.root_round_id = r.round_id AND t.test_session = r.test_session AND t.row_kind = 'round'
       AND t.outcome = 'frame-ready')
 ), samples AS (
   SELECT day_key, release_id, platform, entry_kind, policy_version, frame_evidence,
@@ -206,8 +261,22 @@ FROM ranked GROUP BY day_key, release_id, platform, entry_kind, policy_version, 
 export const PLAYBACK_QUALITY_SOURCES_SQL = `
 SELECT day_key AS dayKey, release_id AS releaseId, platform, policy_version AS policyVersion,
   source_reason AS sourceReason, outcome, COUNT(*) AS attempts
-FROM playback_quality WHERE row_kind = 'source' AND day_key >= ?
+FROM playback_quality WHERE row_kind = 'source' AND day_key >= ? AND test_session = ?
 GROUP BY day_key, release_id, platform, policy_version, source_reason, outcome`;
+
+export const PLAYBACK_QOE_COUNTS_SQL = `
+SELECT COUNT(uninterrupted) AS observedVisits,
+  COALESCE(SUM(uninterrupted), 0) AS uninterruptedVisits,
+  COALESCE(SUM(recovered), 0) AS recovered,
+  COALESCE(SUM(failed), 0) AS failed
+FROM playback_qoe WHERE day_key >= ? AND test_session = ?`;
+
+interface QoeCounts {
+  observedVisits: number;
+  uninterruptedVisits: number;
+  recovered: number;
+  failed: number;
+}
 
 interface CountRow {
   completed: number;
@@ -219,21 +288,35 @@ interface CountRow {
 export async function readPlaybackQualitySummary(
   env: Record<string, unknown>,
   days: number,
-  now = Date.now()
+  now = Date.now(),
+  testSession = false
 ) {
   const db = getD1Database(env);
   if (!db) return null;
   const cutoff = playbackQualityDayKey(now - (days - 1) * DAY_MS);
-  const [counts, latency, sources] = await Promise.all([
+  const cohort = Number(testSession);
+  const [counts, latency, sources, qoeCounts] = await Promise.all([
     db
       .prepare(PLAYBACK_QUALITY_COUNTS_SQL)
-      .bind(cutoff, now - DAY_MS, now - DAY_MS)
+      .bind(cutoff, cohort, now - DAY_MS, now - DAY_MS)
       .all<CountRow>(),
-    db.prepare(PLAYBACK_QUALITY_LATENCY_SQL).bind(cutoff).all(),
-    db.prepare(PLAYBACK_QUALITY_SOURCES_SQL).bind(cutoff).all(),
+    db.prepare(PLAYBACK_QUALITY_LATENCY_SQL).bind(cutoff, cohort).all(),
+    db.prepare(PLAYBACK_QUALITY_SOURCES_SQL).bind(cutoff, cohort).all(),
+    db.prepare(PLAYBACK_QOE_COUNTS_SQL).bind(cutoff, cohort).first<QoeCounts>(),
   ]);
   return {
     days,
+    cohort: testSession ? 'test' : 'regular',
+    qoe: qoeCounts && {
+      ...qoeCounts,
+      uninterruptedRate: qoeCounts.observedVisits
+        ? qoeCounts.uninterruptedVisits / qoeCounts.observedVisits
+        : null,
+      recoverySuccessRate:
+        qoeCounts.recovered + qoeCounts.failed
+          ? qoeCounts.recovered / (qoeCounts.recovered + qoeCounts.failed)
+          : null,
+    },
     timeZone: 'Asia/Taipei',
     groups: (counts.results || []).map((row) => ({
       ...row,
@@ -255,10 +338,14 @@ export async function cleanupPlaybackQuality(
 ): Promise<void> {
   const db = getD1Database(env);
   if (!db) return;
-  await db
-    .prepare(
-      'DELETE FROM playback_quality WHERE rowid IN (SELECT rowid FROM playback_quality WHERE received_at < ? LIMIT 2000)'
+  await Promise.all(
+    ['playback_quality', 'playback_qoe'].map((table) =>
+      db
+        .prepare(
+          `DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE received_at < ? LIMIT 2000)`
+        )
+        .bind(now - 30 * DAY_MS)
+        .run()
     )
-    .bind(now - 30 * DAY_MS)
-    .run();
+  );
 }

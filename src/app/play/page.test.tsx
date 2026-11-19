@@ -11,7 +11,10 @@ import { join } from 'path';
 import type { ReactNode } from 'react';
 
 import { getAllPlayRecords } from '@/lib/db.client';
-import { playbackQualityPayloadSchema } from '@/lib/playback-quality';
+import {
+  type PlaybackQualityRecord,
+  playbackQualityPayloadSchema,
+} from '@/lib/playback-quality';
 import { reducePlaybackSession } from '@/lib/playback-session';
 import { getSourceSwitchResumePlan } from '@/lib/playback-source-switch';
 import type { SearchResult } from '@/lib/types';
@@ -563,7 +566,12 @@ describe('PlayPage source initialization', () => {
         .mocked(global.fetch)
         .mock.calls.flatMap(([url, init]) =>
           url === '/api/playback-quality' && typeof init?.body === 'string'
-            ? playbackQualityPayloadSchema.parse(JSON.parse(init.body)).records
+            ? playbackQualityPayloadSchema
+                .parse(JSON.parse(init.body))
+                .records.filter(
+                  (record): record is PlaybackQualityRecord =>
+                    record.rowKind !== 'qoe'
+                )
             : []
         );
     }
@@ -1585,7 +1593,12 @@ describe('PlayPage source initialization', () => {
       .mocked(global.fetch)
       .mock.calls.flatMap(([url, init]) =>
         url === '/api/playback-quality' && typeof init?.body === 'string'
-          ? playbackQualityPayloadSchema.parse(JSON.parse(init.body)).records
+          ? playbackQualityPayloadSchema
+              .parse(JSON.parse(init.body))
+              .records.filter(
+                (record): record is PlaybackQualityRecord =>
+                  record.rowKind !== 'qoe'
+              )
           : []
       );
     expect(new Set(records.map((record) => record.sessionId)).size).toBe(1);
@@ -1659,7 +1672,12 @@ describe('PlayPage source initialization', () => {
         .mocked(global.fetch)
         .mock.calls.flatMap(([url, init]) =>
           url === '/api/playback-quality' && typeof init?.body === 'string'
-            ? playbackQualityPayloadSchema.parse(JSON.parse(init.body)).records
+            ? playbackQualityPayloadSchema
+                .parse(JSON.parse(init.body))
+                .records.filter(
+                  (record): record is PlaybackQualityRecord =>
+                    record.rowKind !== 'qoe'
+                )
             : []
         );
       expect(records).toContainEqual(
@@ -1707,7 +1725,12 @@ describe('PlayPage source initialization', () => {
         .mocked(global.fetch)
         .mock.calls.flatMap(([url, init]) =>
           url === '/api/playback-quality' && typeof init?.body === 'string'
-            ? playbackQualityPayloadSchema.parse(JSON.parse(init.body)).records
+            ? playbackQualityPayloadSchema
+                .parse(JSON.parse(init.body))
+                .records.filter(
+                  (record): record is PlaybackQualityRecord =>
+                    record.rowKind !== 'qoe'
+                )
             : []
         );
     try {

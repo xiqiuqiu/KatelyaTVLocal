@@ -153,6 +153,7 @@ interface EpisodeSelectorProps {
   onSourceChange?: (source: string, id: string, title: string) => void;
   currentSource?: string;
   currentId?: string;
+  currentPlaybackVerified?: boolean;
   videoTitle?: string;
   videoYear?: string;
   availableSources?: SearchResult[];
@@ -1227,6 +1228,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = (props) => {
           sourceSearchError={sourceSearchError}
           availableSourcesCount={availableSources.length}
           sourceAvailabilityList={sourceAvailabilityList}
+          currentPlaybackVerified={props.currentPlaybackVerified}
           videoTitle={videoTitle}
           onSourceClick={handleSourceClick}
           onSearchMismatchClick={handleSearchMismatchClick}
