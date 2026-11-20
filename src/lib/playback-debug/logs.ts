@@ -44,11 +44,13 @@ export interface PlaybackDebugLogEntry extends PlaybackDebugLogInput {
   createdAt: number;
 }
 
+const DEBUG_LOG_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
 type RuntimeEnv = Record<string, unknown>;
 type D1DatabaseLike = {
   prepare: (query: string) => {
     bind: (...values: unknown[]) => {
-      run?: () => Promise<unknown>;
+      run: () => Promise<{ meta: { changes: number } }>;
       all?: () => Promise<{ results?: unknown[] }>;
     };
   };
@@ -226,9 +228,27 @@ export async function savePlaybackDebugLog(
       normalized.userAgent,
       Date.now()
     )
-    .run?.();
+    .run();
 
   return true;
+}
+
+export async function cleanupPlaybackDebugLogs(
+  env: RuntimeEnv,
+  now = Date.now()
+): Promise<number | null> {
+  const db = getD1(env);
+  if (!db) return null;
+  const result = await db
+    .prepare(
+      `DELETE FROM playback_debug_logs WHERE rowid IN (
+      SELECT rowid FROM playback_debug_logs WHERE created_at < ?
+      ORDER BY created_at ASC LIMIT 2000
+    )`
+    )
+    .bind(now - DEBUG_LOG_RETENTION_MS)
+    .run();
+  return result.meta.changes;
 }
 
 export async function listPlaybackDebugLogs(
@@ -266,10 +286,11 @@ export async function listPlaybackDebugLogs(
         user_agent,
         created_at
       FROM playback_debug_logs
+      WHERE created_at >= ?
       ORDER BY created_at DESC
       LIMIT ?`
     )
-    .bind(limit)
+    .bind(Date.now() - DEBUG_LOG_RETENTION_MS, limit)
     .all?.();
 
   return ((result?.results || []) as Record<string, unknown>[]).map((row) => ({

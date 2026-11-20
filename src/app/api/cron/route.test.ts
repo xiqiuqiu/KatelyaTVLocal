@@ -171,11 +171,14 @@ describe('cron route auth', () => {
     'runs ranking and applies the maintenance mode for %s',
     async (query, maintenanceCalls) => {
       process.env.NEXT_PUBLIC_STORAGE_TYPE = 'd1';
+      const run = jest.fn().mockResolvedValue({ meta: { changes: 7 } });
       const env = {
         CRON_API_TOKEN: 'secret-token',
         SOURCE_RANKING_CRON_ENABLED: 'true',
         DB: {
-          prepare: jest.fn(() => {
+          prepare: jest.fn((sql: string) => {
+            if (sql.includes('DELETE FROM playback_debug_logs'))
+              return { bind: () => ({ run }) };
             throw new Error('unexpected SQL');
           }),
         },
@@ -211,6 +214,10 @@ describe('cron route auth', () => {
         triggerType: 'cron',
       });
       expect(db.getAllUsers).toHaveBeenCalledTimes(maintenanceCalls);
+      expect(run).toHaveBeenCalledTimes(maintenanceCalls);
+      expect(await response.json()).toMatchObject({
+        debugLogsDeleted: maintenanceCalls ? 7 : null,
+      });
     }
   );
 

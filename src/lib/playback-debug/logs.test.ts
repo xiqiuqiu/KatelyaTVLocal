@@ -1,4 +1,5 @@
 import {
+  cleanupPlaybackDebugLogs,
   listPlaybackDebugLogs,
   savePlaybackDebugLog,
 } from '@/lib/playback-debug/logs';
@@ -86,6 +87,17 @@ describe('playback debug logs', () => {
     expect(mock.run).toHaveBeenCalled();
   });
 
+  it('deletes one bounded batch strictly older than seven days', async () => {
+    const mock = createMockD1();
+    mock.run.mockResolvedValue({ meta: { changes: 23 } });
+    const now = 10 * 86400000;
+    expect(await cleanupPlaybackDebugLogs({ DB: mock.db }, now)).toBe(23);
+    expect(mock.prepare.mock.calls[0][0]).toMatch(
+      /WHERE created_at < \?\s+ORDER BY created_at ASC LIMIT 2000/
+    );
+    expect(mock.bind).toHaveBeenCalledWith(3 * 86400000);
+  });
+
   it('returns latest debug logs with parsed details', async () => {
     const mock = createMockD1();
     mock.all.mockResolvedValue({
@@ -123,7 +135,8 @@ describe('playback debug logs', () => {
     expect(selectSql).toMatch(/"current_time"/);
     expect(selectSql).not.toMatch(/(?<!")current_time(?!")/);
     expect(selectSql).toContain('FROM playback_debug_logs');
-    expect(mock.bind).toHaveBeenCalledWith(10);
+    expect(selectSql).toContain('WHERE created_at >= ?');
+    expect(mock.bind).toHaveBeenCalledWith(expect.any(Number), 10);
     expect(logs).toEqual([
       expect.objectContaining({
         id: 'log-1',

@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { parsePlayRecordKey } from '@/lib/play-record-key';
+import { cleanupPlaybackDebugLogs } from '@/lib/playback-debug/logs';
 import { cleanupPlaybackQuality } from '@/lib/playback-quality.server';
 import {
   isAuthorizedCronRequest,
@@ -83,8 +84,10 @@ export async function GET(request: NextRequest) {
 
     const sourceRanking = await tryRunSourceRankingCron(request, rankingEnv);
 
+    let debugLogsDeleted: number | null = null;
     if (new URL(request.url).searchParams.get('mode') !== 'ranking') {
-      await Promise.all([
+      [debugLogsDeleted] = await Promise.all([
+        cleanupPlaybackDebugLogs(rankingEnv),
         refreshRecordAndFavorites(),
         cleanupPlaybackQuality(rankingEnv).catch(() => undefined),
       ]);
@@ -95,6 +98,7 @@ export async function GET(request: NextRequest) {
       message: 'Cron job executed successfully',
       timestamp: new Date().toISOString(),
       sourceRanking,
+      debugLogsDeleted,
     });
   } catch (error) {
     console.error('Cron job failed:', error);

@@ -2499,7 +2499,7 @@ const PlaybackDebugLogs = ({ onExpandDashboard }: DashboardViewProps) => {
             记录管理员播放调试日志
           </label>
           <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-            最近 100
+            近 7 天最多 100
             条管理员日志，包含所有会话分组。关闭详细日志后仍统计播放质量。
           </p>
         </div>
