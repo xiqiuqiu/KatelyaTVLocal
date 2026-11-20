@@ -4,6 +4,14 @@ import type { readPlaybackDashboard } from '@/lib/playback-quality.server';
 
 type Summary = NonNullable<Awaited<ReturnType<typeof readPlaybackDashboard>>>;
 
+const startupLabels = {
+  started: '成功起播',
+  failed: '起播失败',
+  waiting: '等待首帧',
+  ended: '起播已结束',
+  unconfirmed: '未确认首帧',
+};
+
 export default function PlaybackQualityMetrics() {
   const [days, setDays] = useState('7');
   const [cohort, setCohort] = useState('regular');
@@ -181,7 +189,7 @@ export default function PlaybackQualityMetrics() {
                         · 第 {visit.episodeIndex + 1} 集
                       </td>
                       <td className='p-2'>
-                        {visit.started ? '成功起播' : '尚未确认首帧'}
+                        {startupLabels[visit.startupStatus]}
                       </td>
                       <td className='p-2'>{visit.sourceKey || '—'}</td>
                     </tr>

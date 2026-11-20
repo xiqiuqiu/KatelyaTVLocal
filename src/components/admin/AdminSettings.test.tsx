@@ -211,18 +211,19 @@ it('separates cohorts and distinguishes missing samples, zero success and unavai
           : {
               available: true,
               playback: {
-                total: 1,
+                total: 4,
                 successful: 1,
-                visits: [
-                  {
+                visits: ['11:36:25', '11:36:34', '11:38:29', '11:38:35'].map(
+                  (time, i) => ({
                     owner: test ? '测试账号' : '普通账号',
-                    startedAt: 1730000000000,
-                    contentKey: '影片::2024',
+                    startedAt: Date.parse(`2026-11-20T${time}+08:00`),
+                    contentKey: '克拉克森的农场第五季::2026',
                     episodeIndex: 0,
-                    sourceKey: '示例线路',
-                    started: 1,
-                  },
-                ],
+                    sourceKey: i === 3 ? 'zy360-98570' : null,
+                    started: Number(i === 3),
+                    startupStatus: i === 3 ? 'started' : 'failed',
+                  })
+                ),
               },
               banner: test
                 ? { impressions: 10, clicks: 5, watched: 1 }
@@ -257,10 +258,15 @@ it('separates cohorts and distinguishes missing samples, zero success and unavai
     <AdminSettings groupId='diagnostics' initialSection='playbackDebug' />
   );
   expect(await screen.findAllByText('暂无样本')).toHaveLength(4);
+  for (const time of ['11:36:25', '11:36:34', '11:38:29']) {
+    expect(
+      screen.getByRole('row', { name: new RegExp(time + '.*起播失败') })
+    ).toBeVisible();
+  }
   expect(
-    screen.getByRole('row', { name: /普通账号.*影片.*成功起播/ })
+    screen.getByRole('row', { name: /11:38:35.*成功起播.*zy360-98570/ })
   ).toBeVisible();
-  expect(screen.getByText('成功起播 1 次 / 共 1 次播放')).toBeVisible();
+  expect(screen.getByText('成功起播 1 次 / 共 4 次播放')).toBeVisible();
   expect(
     (fetch as jest.Mock).mock.calls.some(([url]) =>
       url.includes('/playback-debug')

@@ -345,7 +345,8 @@ async function readQualityMetrics(
 
 // A continuation or source retry belongs to the original playback start.
 export const PLAYBACK_DASHBOARD_VISITS_SQL = `
-SELECT r.owner, r.received_at AS startedAt, COALESCE(s.content_key,r.content_key) AS contentKey,
+WITH recent AS (
+SELECT r.owner, r.session_id, r.round_id, r.test_session, r.rowid AS rootRow, r.received_at AS startedAt, COALESCE(s.content_key,r.content_key) AS contentKey,
   COALESCE(s.episode_index,r.episode_index) AS episodeIndex, s.source_key AS sourceKey,
   (s.rowid IS NOT NULL) AS started, COUNT(*) OVER () AS total,
   COUNT(s.rowid) OVER () AS successful
@@ -357,7 +358,19 @@ LEFT JOIN playback_quality s ON s.rowid = (
   ORDER BY a.round_id LIMIT 1
 )
 WHERE r.day_key >= ? AND r.test_session=? AND r.row_kind='round' AND r.round_id=r.root_round_id
-ORDER BY r.received_at DESC,r.rowid DESC LIMIT 30`;
+ORDER BY r.received_at DESC,r.rowid DESC LIMIT 30
+)
+SELECT recent.*, CASE WHEN started THEN 'started' ELSE (
+  SELECT CASE
+    WHEN a.status='pending' AND a.updated_at >= ?3 THEN 'waiting'
+    WHEN a.outcome='failed' THEN 'failed'
+    WHEN a.outcome IN ('abandoned','user-intervened') OR a.prompt_choice='leave' THEN 'ended'
+    ELSE 'unconfirmed' END
+  FROM playback_quality a
+  WHERE a.owner=recent.owner AND a.session_id=recent.session_id AND a.root_round_id=recent.round_id
+    AND a.row_kind='round' AND a.test_session=recent.test_session
+  ORDER BY a.round_id DESC LIMIT 1
+) END AS startupStatus FROM recent ORDER BY startedAt DESC,rootRow DESC`;
 
 interface DashboardVisit {
   owner: string;
@@ -366,6 +379,7 @@ interface DashboardVisit {
   episodeIndex: number;
   sourceKey: string | null;
   started: number;
+  startupStatus: 'started' | 'waiting' | 'failed' | 'ended' | 'unconfirmed';
 }
 
 export async function readPlaybackDashboard(
@@ -382,7 +396,7 @@ export async function readPlaybackDashboard(
     readQualityMetrics(db, cutoff, cohort),
     db
       .prepare(PLAYBACK_DASHBOARD_VISITS_SQL)
-      .bind(cutoff, cohort)
+      .bind(cutoff, cohort, now - DAY_MS)
       .all<DashboardVisit & { total: number; successful: number }>(),
   ]);
   const visits = rows.results ?? [];
@@ -399,6 +413,7 @@ export async function readPlaybackDashboard(
           episodeIndex,
           sourceKey,
           started,
+          startupStatus,
         }) => ({
           owner,
           startedAt,
@@ -406,6 +421,7 @@ export async function readPlaybackDashboard(
           episodeIndex,
           sourceKey,
           started,
+          startupStatus,
         })
       ),
     },
