@@ -22,6 +22,7 @@ interface ApiSearchItem {
 interface SearchFromApiOptions {
   debugContext?: AiFindDebugContext;
   maxSearchPages?: number;
+  redirect?: RequestRedirect;
 }
 
 function parsePlayUrlGroups(value?: string | null): string[][] {
@@ -95,7 +96,11 @@ function normalizeSearchFromApiOptions(
     return {};
   }
 
-  if ('maxSearchPages' in options || 'debugContext' in options) {
+  if (
+    'maxSearchPages' in options ||
+    'debugContext' in options ||
+    'redirect' in options
+  ) {
     return options as SearchFromApiOptions;
   }
 
@@ -112,7 +117,7 @@ export async function searchFromApi(
   query = normalizeSourceQuery(query);
   if (!query) return [];
   const startedAt = Date.now();
-  const { debugContext, maxSearchPages } =
+  const { debugContext, maxSearchPages, redirect } =
     normalizeSearchFromApiOptions(options);
 
   logAiFindDebug({
@@ -136,6 +141,7 @@ export async function searchFromApi(
     const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     const response = await fetch(apiUrl, {
+      redirect,
       headers: API_CONFIG.search.headers,
       signal: controller.signal,
     });
@@ -211,6 +217,7 @@ export async function searchFromApi(
             );
 
             const pageResponse = await fetch(pageUrl, {
+              redirect,
               headers: API_CONFIG.search.headers,
               signal: pageController.signal,
             });
@@ -325,10 +332,11 @@ const M3U8_PATTERN = /(https?:\/\/[^"'\s#$<>]+?\.m3u8(?:\?[^"'\s#$<>]*)?)/g;
 
 export async function getDetailFromApi(
   apiSite: ApiSite,
-  id: string
+  id: string,
+  redirect?: RequestRedirect
 ): Promise<SearchResult> {
   if (apiSite.detail) {
-    return handleSpecialSourceDetail(id, apiSite);
+    return handleSpecialSourceDetail(id, apiSite, redirect);
   }
 
   const detailUrl = `${apiSite.api}${API_CONFIG.detail.path}${id}`;
@@ -337,6 +345,7 @@ export async function getDetailFromApi(
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   const response = await fetch(detailUrl, {
+    redirect,
     headers: API_CONFIG.detail.headers,
     signal: controller.signal,
   });
@@ -389,7 +398,8 @@ export async function getDetailFromApi(
 
 async function handleSpecialSourceDetail(
   id: string,
-  apiSite: ApiSite
+  apiSite: ApiSite,
+  redirect?: RequestRedirect
 ): Promise<SearchResult> {
   const detailUrl = `${apiSite.detail}/index.php/vod/detail/id/${id}.html`;
 
@@ -397,6 +407,7 @@ async function handleSpecialSourceDetail(
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   const response = await fetch(detailUrl, {
+    redirect,
     headers: API_CONFIG.detail.headers,
     signal: controller.signal,
   });

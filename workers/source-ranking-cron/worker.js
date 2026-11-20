@@ -28,9 +28,9 @@ function buildCronHeaders(env) {
   return headers;
 }
 
-async function triggerCron(env, triggerType, rankingOnly) {
+async function triggerCron(env, triggerType, mode) {
   const target = new URL(buildCronTargetUrl(env));
-  if (rankingOnly) target.searchParams.set('mode', 'ranking');
+  if (mode) target.searchParams.set('mode', mode);
   const targetUrl = target.href;
   const response = await fetch(targetUrl, {
     method: 'GET',
@@ -47,9 +47,13 @@ async function triggerCron(env, triggerType, rankingOnly) {
   };
 }
 
-async function handleManualTrigger(env, triggerType, rankingOnly) {
+async function handleManualTrigger(env, triggerType, mode) {
   try {
-    const result = await triggerCron(env, triggerType, rankingOnly);
+    const result = await triggerCron(
+      env,
+      triggerType,
+      mode === 'ranking' || mode === 'maintenance' ? mode : null
+    );
     return new Response(
       JSON.stringify(
         {
@@ -113,24 +117,29 @@ const worker = {
       );
     }
 
-    return handleManualTrigger(
-      env,
-      'manual',
-      url.searchParams.get('mode') === 'ranking'
-    );
+    return handleManualTrigger(env, 'manual', url.searchParams.get('mode'));
   },
 
   async scheduled(controller, env, ctx) {
+    // Separate Pages invocations give probing and maintenance independent subrequest budgets.
+    const modes =
+      controller.cron === MAINTENANCE_CRON
+        ? ['ranking', 'maintenance']
+        : ['ranking'];
     ctx.waitUntil(
-      triggerCron(env, 'scheduled', controller.cron !== MAINTENANCE_CRON).then(
-        (result) => {
-          if (!result.ok) {
-            throw new Error(
-              `Cron trigger failed with ${result.status}: ${result.bodyText}`
-            );
+      (async () => {
+        let failure;
+        for (const mode of modes) {
+          try {
+            const result = await triggerCron(env, 'scheduled', mode);
+            if (!result.ok)
+              throw new Error(`Cron ${mode} failed with ${result.status}`);
+          } catch (error) {
+            failure = error;
           }
         }
-      )
+        if (failure) throw failure;
+      })()
     );
   },
 };

@@ -1,6 +1,9 @@
 export interface D1PreparedStatementLike {
   bind: (...values: unknown[]) => D1PreparedStatementLike;
-  all: <T = unknown>() => Promise<{ results?: T[] }>;
+  all: <T = unknown>() => Promise<{
+    results?: T[];
+    meta?: { rows_read?: number; rows_written?: number; changes?: number };
+  }>;
   first: <T = unknown>() => Promise<T | null>;
   run: () => Promise<{ meta?: { changes?: number } } | unknown>;
 }

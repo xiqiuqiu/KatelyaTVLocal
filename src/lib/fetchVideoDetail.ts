@@ -7,6 +7,7 @@ interface FetchVideoDetailOptions {
   source: string;
   id: string;
   fallbackTitle?: string;
+  redirect?: RequestRedirect;
 }
 
 function isHttpEpisode(url: string): boolean {
@@ -18,6 +19,7 @@ export async function fetchVideoDetail({
   source,
   id,
   fallbackTitle = '',
+  redirect,
 }: FetchVideoDetailOptions): Promise<SearchResult> {
   const config = await getConfig();
   const apiSites = getAvailableApiSitesFromConfig(config);
@@ -28,7 +30,7 @@ export async function fetchVideoDetail({
   let detail: SearchResult | undefined;
   let detailError: unknown;
   try {
-    detail = await getDetailFromApi(apiSite, id);
+    detail = await getDetailFromApi(apiSite, id, redirect);
     if (detail?.episodes.some(isHttpEpisode)) return detail;
   } catch (error) {
     detailError = error;
@@ -36,6 +38,7 @@ export async function fetchVideoDetail({
   if (fallbackTitle.trim()) {
     const searchData = await searchFromApi(apiSite, fallbackTitle.trim(), {
       maxSearchPages: 1,
+      redirect,
     }).catch(() => []);
     const exactMatch = searchData.find(
       (item) =>

@@ -33,7 +33,8 @@ describe('fetchVideoDetail', () => {
     await expect(fetchVideoDetail(request)).resolves.toBe(detail);
     expect(getDetailFromApi).toHaveBeenCalledWith(
       expect.objectContaining({ key: 'line' }),
-      '123'
+      '123',
+      undefined
     );
     expect(searchFromApi).not.toHaveBeenCalled();
   });
@@ -62,6 +63,24 @@ describe('fetchVideoDetail', () => {
       );
     }
   );
+
+  it('bounds a refresh to one detail and one search without following redirects', async () => {
+    jest.mocked(getDetailFromApi).mockRejectedValue(new Error('redirect'));
+    jest.mocked(searchFromApi).mockResolvedValue([detail]);
+    await expect(
+      fetchVideoDetail({ ...request, redirect: 'error' })
+    ).resolves.toBe(detail);
+    expect(getDetailFromApi).toHaveBeenCalledWith(
+      expect.anything(),
+      '123',
+      'error'
+    );
+    expect(searchFromApi).toHaveBeenCalledWith(
+      expect.anything(),
+      request.fallbackTitle,
+      { maxSearchPages: 1, redirect: 'error' }
+    );
+  });
 
   it('keeps the detail error when the fallback only finds another resource', async () => {
     const error = new Error('detail failed');

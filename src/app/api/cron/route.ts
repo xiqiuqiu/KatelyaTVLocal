@@ -3,8 +3,10 @@
 import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextRequest, NextResponse } from 'next/server';
 
+import { getD1Database } from '@/lib/d1';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
+import { refreshD1Library } from '@/lib/library-refresh';
 import { parsePlayRecordKey } from '@/lib/play-record-key';
 import { cleanupPlaybackDebugLogs } from '@/lib/playback-debug/logs';
 import { cleanupPlaybackQuality } from '@/lib/playback-quality.server';
@@ -82,13 +84,18 @@ export async function GET(request: NextRequest) {
   try {
     console.log('Cron job triggered:', new Date().toISOString());
 
-    const sourceRanking = await tryRunSourceRankingCron(request, rankingEnv);
+    const mode = new URL(request.url).searchParams.get('mode');
+    const sourceRanking =
+      mode === 'maintenance'
+        ? { attempted: false, reason: 'maintenance only' }
+        : await tryRunSourceRankingCron(request, rankingEnv);
+    let libraryRefresh = null;
 
     let debugLogsDeleted: number | null = null;
-    if (new URL(request.url).searchParams.get('mode') !== 'ranking') {
-      [debugLogsDeleted] = await Promise.all([
+    if (mode !== 'ranking') {
+      [debugLogsDeleted, libraryRefresh] = await Promise.all([
         cleanupPlaybackDebugLogs(rankingEnv),
-        refreshRecordAndFavorites(),
+        refreshLibrary(rankingEnv),
         cleanupPlaybackQuality(rankingEnv).catch(() => undefined),
       ]);
     }
@@ -99,6 +106,7 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
       sourceRanking,
       debugLogsDeleted,
+      libraryRefresh,
     });
   } catch (error) {
     console.error('Cron job failed:', error);
@@ -159,6 +167,16 @@ async function tryRunSourceRankingCron(
       reason: error instanceof Error ? error.message : 'Unknown error',
     };
   }
+}
+
+async function refreshLibrary(env: RuntimeSource) {
+  if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'd1') {
+    const database = getD1Database(env);
+    if (!database) throw new Error('D1 binding missing for library refresh');
+    return refreshD1Library(database, fetchVideoDetail);
+  }
+  await refreshRecordAndFavorites();
+  return null;
 }
 
 async function refreshRecordAndFavorites() {

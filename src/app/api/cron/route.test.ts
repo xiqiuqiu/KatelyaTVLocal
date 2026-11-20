@@ -1,6 +1,6 @@
 import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 
-import { db } from '@/lib/db';
+import { refreshD1Library } from '@/lib/library-refresh';
 import { runLowFrequencySourceRankingCheck } from '@/lib/source-ranking/scheduler';
 
 class MockHeaders {
@@ -71,15 +71,7 @@ jest.mock(
   { virtual: true }
 );
 
-jest.mock('@/lib/db', () => ({
-  db: {
-    getAllUsers: jest.fn().mockResolvedValue([]),
-    getRecentPlayRecords: jest.fn(),
-    savePlayRecord: jest.fn(),
-    getAllFavorites: jest.fn(),
-    saveFavorite: jest.fn(),
-  },
-}));
+jest.mock('@/lib/library-refresh', () => ({ refreshD1Library: jest.fn() }));
 
 jest.mock('@/lib/fetchVideoDetail', () => ({
   fetchVideoDetail: jest.fn(),
@@ -167,6 +159,7 @@ describe('cron route auth', () => {
   it.each([
     ['?mode=ranking', 0],
     ['', 1],
+    ['?mode=maintenance', 1],
   ])(
     'runs ranking and applies the maintenance mode for %s',
     async (query, maintenanceCalls) => {
@@ -200,7 +193,7 @@ describe('cron route auth', () => {
           snapshotCount: 6,
           errorCount: 0,
         });
-      jest.mocked(db.getAllUsers).mockClear();
+      jest.mocked(refreshD1Library).mockClear();
       const response = await GET(
         new MockRequest(`https://app.example.com/api/cron${query}`, {
           headers: { 'x-cron-token': 'secret-token' },
@@ -208,12 +201,15 @@ describe('cron route auth', () => {
       );
 
       expect(response.status).toBe(200);
-      expect(runLowFrequencySourceRankingCheck).toHaveBeenCalledWith({
-        env,
-        origin: 'https://app.example.com',
-        triggerType: 'cron',
-      });
-      expect(db.getAllUsers).toHaveBeenCalledTimes(maintenanceCalls);
+      if (query.includes('maintenance'))
+        expect(runLowFrequencySourceRankingCheck).not.toHaveBeenCalled();
+      else
+        expect(runLowFrequencySourceRankingCheck).toHaveBeenCalledWith({
+          env,
+          origin: 'https://app.example.com',
+          triggerType: 'cron',
+        });
+      expect(refreshD1Library).toHaveBeenCalledTimes(maintenanceCalls);
       expect(run).toHaveBeenCalledTimes(maintenanceCalls);
       expect(await response.json()).toMatchObject({
         debugLogsDeleted: maintenanceCalls ? 7 : null,
