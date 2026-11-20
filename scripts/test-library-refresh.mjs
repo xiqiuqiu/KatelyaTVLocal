@@ -20,7 +20,8 @@ const { refreshD1Library } = await import(
 );
 const mf = new Miniflare({
   modules: true,
-  script: 'export default {fetch(){return new Response()}}',
+  script:
+    "export default {fetch(req){return new Response(new Request('https://example.invalid',{redirect:new URL(req.url).searchParams.get('redirect')}).redirect)}}",
   d1Databases: ['DB'],
 });
 try {
@@ -114,7 +115,13 @@ try {
     reads = writes = 0;
     const seen = [];
     const result = await refreshD1Library(metered, async ({ id, redirect }) => {
-      assert.equal(redirect, 'error');
+      assert.equal(redirect, 'manual');
+      if (round === 0 && !seen.length) {
+        const checked = await mf.dispatchFetch(
+          'http://local/?redirect=' + redirect
+        );
+        assert.equal(await checked.text(), redirect);
+      }
       seen.push(id);
       if (round === 0 && id === 'H1')
         assert.equal(

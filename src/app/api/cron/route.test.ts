@@ -217,6 +217,25 @@ describe('cron route auth', () => {
     }
   );
 
+  it('retries library refresh without repeating probes or retention deletes', async () => {
+    process.env.NEXT_PUBLIC_STORAGE_TYPE = 'd1';
+    const prepare = jest.fn();
+    jest.mocked(getOptionalRequestContext).mockReturnValueOnce({
+      env: { CRON_API_TOKEN: 'secret-token', DB: { prepare } },
+    } as unknown as ReturnType<typeof getOptionalRequestContext>);
+    jest.mocked(refreshD1Library).mockClear();
+    jest.mocked(runLowFrequencySourceRankingCheck).mockClear();
+    const response = await GET(
+      new MockRequest('https://app.example.com/api/cron?mode=library', {
+        headers: { 'x-cron-token': 'secret-token' },
+      }) as unknown as Request
+    );
+    expect(response.status).toBe(200);
+    expect(refreshD1Library).toHaveBeenCalledTimes(1);
+    expect(runLowFrequencySourceRankingCheck).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
   it('does not expose token configuration details in unauthorized responses', async () => {
     process.env.CRON_API_TOKEN = 'secret-token';
 

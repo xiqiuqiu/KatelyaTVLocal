@@ -52,7 +52,7 @@ async function handleManualTrigger(env, triggerType, mode) {
     const result = await triggerCron(
       env,
       triggerType,
-      mode === 'ranking' || mode === 'maintenance' ? mode : null
+      ['ranking', 'maintenance', 'library'].includes(mode) ? mode : null
     );
     return new Response(
       JSON.stringify(

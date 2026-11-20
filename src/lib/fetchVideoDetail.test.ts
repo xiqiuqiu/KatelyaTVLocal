@@ -68,17 +68,17 @@ describe('fetchVideoDetail', () => {
     jest.mocked(getDetailFromApi).mockRejectedValue(new Error('redirect'));
     jest.mocked(searchFromApi).mockResolvedValue([detail]);
     await expect(
-      fetchVideoDetail({ ...request, redirect: 'error' })
+      fetchVideoDetail({ ...request, redirect: 'manual' })
     ).resolves.toBe(detail);
     expect(getDetailFromApi).toHaveBeenCalledWith(
       expect.anything(),
       '123',
-      'error'
+      'manual'
     );
     expect(searchFromApi).toHaveBeenCalledWith(
       expect.anything(),
       request.fallbackTitle,
-      { maxSearchPages: 1, redirect: 'error' }
+      { maxSearchPages: 1, redirect: 'manual' }
     );
   });
 

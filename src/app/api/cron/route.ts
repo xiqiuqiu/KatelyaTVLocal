@@ -85,6 +85,12 @@ export async function GET(request: NextRequest) {
     console.log('Cron job triggered:', new Date().toISOString());
 
     const mode = new URL(request.url).searchParams.get('mode');
+    // Retry metadata lookups without repeating retention deletes or source probing.
+    if (mode === 'library')
+      return NextResponse.json({
+        success: true,
+        libraryRefresh: await refreshLibrary(rankingEnv),
+      });
     const sourceRanking =
       mode === 'maintenance'
         ? { attempted: false, reason: 'maintenance only' }

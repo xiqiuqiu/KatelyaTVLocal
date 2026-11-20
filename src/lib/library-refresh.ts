@@ -82,7 +82,11 @@ export async function refreshD1Library(
     const key = JSON.stringify([route.source, route.id]);
     let found = cache.get(key);
     if (!found) {
-      found = detail({ ...route, fallbackTitle: row.title, redirect: 'error' });
+      found = detail({
+        ...route,
+        fallbackTitle: row.title,
+        redirect: 'manual',
+      });
       cache.set(key, found);
     }
     const result = await found.catch(() => null);
