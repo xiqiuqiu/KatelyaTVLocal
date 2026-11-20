@@ -2401,7 +2401,14 @@ type DashboardViewProps = {
   onExpandDashboard?: (button: HTMLButtonElement) => void;
 };
 
-const PlaybackDebugLogs = ({ onExpandDashboard }: DashboardViewProps) => {
+const PlaybackQualityDashboard = ({
+  onExpandDashboard,
+  enabled,
+  onEnabledChange,
+}: DashboardViewProps & {
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+}) => {
   const [data, setData] = useState<PlaybackDebugLogResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -2410,17 +2417,16 @@ const PlaybackDebugLogs = ({ onExpandDashboard }: DashboardViewProps) => {
   const [saving, setSaving] = useState(false);
 
   async function toggleDebug() {
-    if (!data) return;
     setSaving(true);
     try {
-      const enabled = !data.enabled;
+      const nextEnabled = !enabled;
       const response = await fetch('/api/admin/playback-debug', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify({ enabled: nextEnabled }),
       });
       if (!response.ok) throw new Error('保存调试开关失败');
-      setData({ ...data, enabled });
+      onEnabledChange(nextEnabled);
     } catch (err) {
       showError(err instanceof Error ? err.message : '保存调试开关失败');
     } finally {
@@ -2443,17 +2449,15 @@ const PlaybackDebugLogs = ({ onExpandDashboard }: DashboardViewProps) => {
             : `读取失败: ${response.status}`
         );
       }
-      setData(payload as PlaybackDebugLogResponse);
+      const result = payload as PlaybackDebugLogResponse;
+      setData(result);
+      onEnabledChange(result.enabled);
     } catch (err) {
       setError(err instanceof Error ? err.message : '读取播放调试日志失败');
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    void fetchLogs();
-  }, [fetchLogs]);
+  }, [onEnabledChange]);
 
   const logs = data?.logs || [];
 
@@ -2464,7 +2468,7 @@ const PlaybackDebugLogs = ({ onExpandDashboard }: DashboardViewProps) => {
 
     try {
       setCopying(true);
-      const text = formatPlaybackDebugLogsForExport(logs, data?.enabled);
+      const text = formatPlaybackDebugLogsForExport(logs, enabled);
       await navigator.clipboard.writeText(text);
       showSuccess(`已复制 ${logs.length} 条播放调试日志`);
     } catch (err) {
@@ -2486,142 +2490,148 @@ const PlaybackDebugLogs = ({ onExpandDashboard }: DashboardViewProps) => {
         </button>
       )}
       <PlaybackQualityMetrics />
-      <h4 className='font-semibold'>播放调试日志</h4>
-      <div className='flex flex-wrap items-center justify-between gap-3'>
-        <div>
-          <label className='flex items-center gap-2 text-sm'>
-            <input
-              type='checkbox'
-              checked={Boolean(data?.enabled)}
-              disabled={!data || loading || saving}
-              onChange={() => void toggleDebug()}
-            />
-            记录管理员播放调试日志
-          </label>
-          <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
-            近 7 天最多 100
-            条管理员日志，包含所有会话分组。关闭详细日志后仍统计播放质量。
-          </p>
+      <details className='space-y-3'>
+        <summary className='cursor-pointer font-semibold'>
+          播放调试日志（采集{enabled ? '已开启' : '已关闭'}）
+        </summary>
+        <div className='flex flex-wrap items-center justify-between gap-3'>
+          <div>
+            <label className='flex items-center gap-2 text-sm'>
+              <input
+                type='checkbox'
+                checked={enabled}
+                disabled={loading || saving}
+                onChange={() => void toggleDebug()}
+              />
+              记录管理员播放调试日志
+            </label>
+            <p className='mt-1 text-xs text-[rgb(var(--ui-text-muted))]'>
+              近 7 天最多 100
+              条管理员日志，包含所有会话分组。关闭详细日志后仍统计播放质量。
+            </p>
+          </div>
+          <div className='flex flex-wrap items-center gap-2'>
+            <button
+              type='button'
+              onClick={() => void handleCopyLogs()}
+              disabled={loading || copying || logs.length === 0}
+              className='rounded-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-4 py-2 text-sm font-medium text-[rgb(var(--ui-text))] transition-colors hover:bg-[rgb(var(--ui-surface))] disabled:cursor-not-allowed disabled:opacity-50'
+            >
+              {copying ? '复制中…' : '复制日志'}
+            </button>
+            <button
+              type='button'
+              onClick={() => void fetchLogs()}
+              disabled={loading || saving}
+              className='ui-secondary-button ui-admin-compact'
+            >
+              {loading ? '读取中…' : data ? '刷新日志' : '读取最近日志'}
+            </button>
+          </div>
         </div>
-        <div className='flex flex-wrap items-center gap-2'>
-          <button
-            type='button'
-            onClick={() => void handleCopyLogs()}
-            disabled={loading || copying || logs.length === 0}
-            className='rounded-md border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] px-4 py-2 text-sm font-medium text-[rgb(var(--ui-text))] transition-colors hover:bg-[rgb(var(--ui-surface))] disabled:cursor-not-allowed disabled:opacity-50'
+
+        {error && (
+          <div className='rounded-lg border border-[rgb(var(--ui-critical))] bg-[rgb(var(--ui-critical)/0.1)] p-3 text-sm text-[rgb(var(--ui-critical))]'>
+            {error}
+          </div>
+        )}
+
+        {data && !error && !loading && logs.length === 0 && (
+          <div className='rounded-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] p-6 text-center text-sm text-[rgb(var(--ui-text-muted))]'>
+            暂无播放调试日志
+          </div>
+        )}
+
+        {logs.length > 0 && (
+          <div
+            className='ui-admin-table-region overflow-x-auto rounded-lg border border-[rgb(var(--ui-border))]'
+            role='region'
+            aria-label='管理数据表格，可横向滚动'
+            tabIndex={0}
           >
-            {copying ? '复制中…' : '复制日志'}
-          </button>
-          <button
-            type='button'
-            onClick={() => void fetchLogs()}
-            disabled={loading || saving}
-            className='ui-secondary-button ui-admin-compact'
-          >
-            {loading ? '读取中…' : '刷新日志'}
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className='rounded-lg border border-[rgb(var(--ui-critical))] bg-[rgb(var(--ui-critical)/0.1)] p-3 text-sm text-[rgb(var(--ui-critical))]'>
-          {error}
-        </div>
-      )}
-
-      {data && !error && !loading && logs.length === 0 && (
-        <div className='rounded-lg border border-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))] p-6 text-center text-sm text-[rgb(var(--ui-text-muted))]'>
-          暂无播放调试日志
-        </div>
-      )}
-
-      {logs.length > 0 && (
-        <div
-          className='ui-admin-table-region overflow-x-auto rounded-lg border border-[rgb(var(--ui-border))]'
-          role='region'
-          aria-label='管理数据表格，可横向滚动'
-          tabIndex={0}
-        >
-          <table className='min-w-full divide-y divide-[rgb(var(--ui-border))] text-sm'>
-            <thead className='bg-[rgb(var(--ui-surface))]'>
-              <tr>
-                <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
-                  时间
-                </th>
-                <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
-                  事件
-                </th>
-                <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
-                  播放位置
-                </th>
-                <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
-                  影片/来源
-                </th>
-                <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
-                  策略
-                </th>
-                <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
-                  详情
-                </th>
-              </tr>
-            </thead>
-            <tbody className='divide-y divide-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))]'>
-              {logs.map((log) => (
-                <tr key={log.id}>
-                  <td className='whitespace-nowrap px-3 py-2 text-[rgb(var(--ui-text))]'>
-                    {formatCreatedAt(log.createdAt)}
-                  </td>
-                  <td className='whitespace-nowrap px-3 py-2 font-medium text-[rgb(var(--ui-text))]'>
-                    {Object.prototype.hasOwnProperty.call(
-                      playbackQoeMessages,
-                      log.eventType
-                    )
-                      ? playbackQoeMessages[
-                          log.eventType as keyof typeof playbackQoeMessages
-                        ]
-                      : log.eventType}
-                    <div className='text-xs font-normal'>
-                      {debugCohortLabel(log.details)}
-                    </div>
-                  </td>
-                  <td className='whitespace-nowrap px-3 py-2 text-[rgb(var(--ui-text))]'>
-                    {formatDebugTime(log.currentTime)}
-                  </td>
-                  <td className='min-w-[180px] px-3 py-2 text-[rgb(var(--ui-text))]'>
-                    <div>{log.title || '-'}</div>
-                    <div className='text-xs text-[rgb(var(--ui-text-muted))]'>
-                      {log.sourceKey || log.playbackDomain || '-'}
-                    </div>
-                  </td>
-                  <td className='min-w-[180px] px-3 py-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-                    <div>运行时：{log.runtime || '-'}</div>
-                    <div>过滤：{log.playlistFilter || '-'}</div>
-                    <div>分片：{log.segmentMode || '-'}</div>
-                  </td>
-                  <td className='max-w-[360px] px-3 py-2 text-xs text-[rgb(var(--ui-text-muted))]'>
-                    <details>
-                      <summary tabIndex={0} className='cursor-pointer'>
-                        查看完整日志
-                      </summary>
-                      <pre className='mt-2 whitespace-pre-wrap break-all'>
-                        {JSON.stringify(log, null, 2)}
-                      </pre>
-                    </details>
-                    <div className='break-all'>
-                      <div className='line-clamp-3'>
-                        {stringifyDebugDetails(log.details) || '-'}
-                      </div>
-                      {log.userAgent && (
-                        <div className='mt-1 line-clamp-2'>{log.userAgent}</div>
-                      )}
-                    </div>
-                  </td>
+            <table className='min-w-full divide-y divide-[rgb(var(--ui-border))] text-sm'>
+              <thead className='bg-[rgb(var(--ui-surface))]'>
+                <tr>
+                  <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
+                    时间
+                  </th>
+                  <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
+                    事件
+                  </th>
+                  <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
+                    播放位置
+                  </th>
+                  <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
+                    影片/来源
+                  </th>
+                  <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
+                    策略
+                  </th>
+                  <th className='px-3 py-2 text-left font-medium text-[rgb(var(--ui-text-muted))]'>
+                    详情
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody className='divide-y divide-[rgb(var(--ui-border))] bg-[rgb(var(--ui-surface))]'>
+                {logs.map((log) => (
+                  <tr key={log.id}>
+                    <td className='whitespace-nowrap px-3 py-2 text-[rgb(var(--ui-text))]'>
+                      {formatCreatedAt(log.createdAt)}
+                    </td>
+                    <td className='whitespace-nowrap px-3 py-2 font-medium text-[rgb(var(--ui-text))]'>
+                      {Object.prototype.hasOwnProperty.call(
+                        playbackQoeMessages,
+                        log.eventType
+                      )
+                        ? playbackQoeMessages[
+                            log.eventType as keyof typeof playbackQoeMessages
+                          ]
+                        : log.eventType}
+                      <div className='text-xs font-normal'>
+                        {debugCohortLabel(log.details)}
+                      </div>
+                    </td>
+                    <td className='whitespace-nowrap px-3 py-2 text-[rgb(var(--ui-text))]'>
+                      {formatDebugTime(log.currentTime)}
+                    </td>
+                    <td className='min-w-[180px] px-3 py-2 text-[rgb(var(--ui-text))]'>
+                      <div>{log.title || '-'}</div>
+                      <div className='text-xs text-[rgb(var(--ui-text-muted))]'>
+                        {log.sourceKey || log.playbackDomain || '-'}
+                      </div>
+                    </td>
+                    <td className='min-w-[180px] px-3 py-2 text-xs text-[rgb(var(--ui-text-muted))]'>
+                      <div>运行时：{log.runtime || '-'}</div>
+                      <div>过滤：{log.playlistFilter || '-'}</div>
+                      <div>分片：{log.segmentMode || '-'}</div>
+                    </td>
+                    <td className='max-w-[360px] px-3 py-2 text-xs text-[rgb(var(--ui-text-muted))]'>
+                      <details>
+                        <summary tabIndex={0} className='cursor-pointer'>
+                          查看完整日志
+                        </summary>
+                        <pre className='mt-2 whitespace-pre-wrap break-all'>
+                          {JSON.stringify(log, null, 2)}
+                        </pre>
+                      </details>
+                      <div className='break-all'>
+                        <div className='line-clamp-3'>
+                          {stringifyDebugDetails(log.details) || '-'}
+                        </div>
+                        {log.userAgent && (
+                          <div className='mt-1 line-clamp-2'>
+                            {log.userAgent}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </details>
     </div>
   );
 };
@@ -2778,7 +2788,24 @@ export function AdminSettings({
       content: <AiUsageMonitor />,
     },
     playbackDebug: {
-      content: <PlaybackDebugLogs onExpandDashboard={onExpandDashboard} />,
+      content: (
+        <PlaybackQualityDashboard
+          onExpandDashboard={onExpandDashboard}
+          enabled={Boolean(config?.SiteConfig.PlaybackDebugEnabled)}
+          onEnabledChange={(enabled) =>
+            setConfig(
+              (current) =>
+                current && {
+                  ...current,
+                  SiteConfig: {
+                    ...current.SiteConfig,
+                    PlaybackDebugEnabled: enabled,
+                  },
+                }
+            )
+          }
+        />
+      ),
     },
   };
 

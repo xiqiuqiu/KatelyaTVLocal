@@ -195,6 +195,18 @@ def test_summary():
     row = rows[0]
     assert (row["starts"], row["within30"], row["pending"], row["unobserved"], row["successfulChains"]) == (24, 20, 1, 1, 21)
     assert row["completedChains"] == 22
+    assert upsert(db, success(sessionId="test-only", testSession=True), owner="qa")
+    visits_sql = sql("PLAYBACK_DASHBOARD_VISITS_SQL")
+    visits = db.execute(visits_sql, (DAY, 0)).fetchall()
+    assert len(visits) == 24 and all(r["owner"] == "alice" for r in visits)
+    assert sum(r["started"] for r in visits) == visits[0]["successful"] == 21
+    assert visits[0]["total"] == 24
+    assert [r["owner"] for r in db.execute(visits_sql, (DAY, 1))] == ["qa"]
+    for index in range(10):
+        upsert(db, record(sessionId=f"later-{index}"), now=NOW+index+1)
+    recent = db.execute(visits_sql, (DAY, 0)).fetchall()
+    assert len(recent) == 30 and recent[0]["startedAt"] == NOW+10
+    assert recent[0]["total"] == 34 and recent[0]["successful"] == 21
     latency = db.execute(sql("PLAYBACK_QUALITY_LATENCY_SQL"), (DAY, 0)).fetchall()
     page = next(row for row in latency if row["metric"] == "pageToFrameMs")
     assert (page["samples"], page["p50"], page["p95"]) == (20, 10000, 19000)

@@ -1,3 +1,4 @@
+import type { D1DatabaseLike } from '@/lib/d1';
 import { getD1Database } from '@/lib/d1';
 import type { PlaybackQualitySample } from '@/lib/playback-quality';
 
@@ -315,23 +316,12 @@ interface CountRow {
   successfulChains: number;
 }
 
-export async function readPlaybackQualitySummary(
-  env: Record<string, unknown>,
-  days: number,
-  now = Date.now(),
-  testSession = false
+async function readQualityMetrics(
+  db: D1DatabaseLike,
+  cutoff: string,
+  cohort: number
 ) {
-  const db = getD1Database(env);
-  if (!db) return null;
-  const cutoff = playbackQualityDayKey(now - (days - 1) * DAY_MS);
-  const cohort = Number(testSession);
-  const [counts, latency, sources, qoeCounts, banner] = await Promise.all([
-    db
-      .prepare(PLAYBACK_QUALITY_COUNTS_SQL)
-      .bind(cutoff, cohort, now - DAY_MS, now - DAY_MS)
-      .all<CountRow>(),
-    db.prepare(PLAYBACK_QUALITY_LATENCY_SQL).bind(cutoff, cohort).all(),
-    db.prepare(PLAYBACK_QUALITY_SOURCES_SQL).bind(cutoff, cohort).all(),
+  const [qoeCounts, banner] = await Promise.all([
     db.prepare(PLAYBACK_QOE_COUNTS_SQL).bind(cutoff, cohort).first<QoeCounts>(),
     db
       .prepare(HOME_BANNER_COUNTS_SQL)
@@ -340,8 +330,6 @@ export async function readPlaybackQualitySummary(
   ]);
   return {
     banner,
-    days,
-    cohort: testSession ? 'test' : 'regular',
     qoe: qoeCounts && {
       ...qoeCounts,
       uninterruptedRate: qoeCounts.observedVisits
@@ -352,6 +340,101 @@ export async function readPlaybackQualitySummary(
           ? qoeCounts.recovered / (qoeCounts.recovered + qoeCounts.failed)
           : null,
     },
+  };
+}
+
+// A continuation or source retry belongs to the original playback start.
+export const PLAYBACK_DASHBOARD_VISITS_SQL = `
+SELECT r.owner, r.received_at AS startedAt, COALESCE(s.content_key,r.content_key) AS contentKey,
+  COALESCE(s.episode_index,r.episode_index) AS episodeIndex, s.source_key AS sourceKey,
+  (s.rowid IS NOT NULL) AS started, COUNT(*) OVER () AS total,
+  COUNT(s.rowid) OVER () AS successful
+FROM playback_quality r
+LEFT JOIN playback_quality s ON s.rowid = (
+  SELECT a.rowid FROM playback_quality a
+  WHERE a.owner=r.owner AND a.session_id=r.session_id AND a.root_round_id=r.round_id
+    AND a.row_kind='round' AND a.test_session=r.test_session AND a.outcome='frame-ready'
+  ORDER BY a.round_id LIMIT 1
+)
+WHERE r.day_key >= ? AND r.test_session=? AND r.row_kind='round' AND r.round_id=r.root_round_id
+ORDER BY r.received_at DESC,r.rowid DESC LIMIT 30`;
+
+interface DashboardVisit {
+  owner: string;
+  startedAt: number;
+  contentKey: string | null;
+  episodeIndex: number;
+  sourceKey: string | null;
+  started: number;
+}
+
+export async function readPlaybackDashboard(
+  env: Record<string, unknown>,
+  days: number,
+  now: number,
+  testSession: boolean
+) {
+  const db = getD1Database(env);
+  if (!db) return null;
+  const cutoff = playbackQualityDayKey(now - (days - 1) * DAY_MS);
+  const cohort = Number(testSession);
+  const [metrics, rows] = await Promise.all([
+    readQualityMetrics(db, cutoff, cohort),
+    db
+      .prepare(PLAYBACK_DASHBOARD_VISITS_SQL)
+      .bind(cutoff, cohort)
+      .all<DashboardVisit & { total: number; successful: number }>(),
+  ]);
+  const visits = rows.results ?? [];
+  return {
+    ...metrics,
+    playback: {
+      total: visits[0]?.total ?? 0,
+      successful: visits[0]?.successful ?? 0,
+      visits: visits.map(
+        ({
+          owner,
+          startedAt,
+          contentKey,
+          episodeIndex,
+          sourceKey,
+          started,
+        }) => ({
+          owner,
+          startedAt,
+          contentKey,
+          episodeIndex,
+          sourceKey,
+          started,
+        })
+      ),
+    },
+  };
+}
+
+export async function readPlaybackQualitySummary(
+  env: Record<string, unknown>,
+  days: number,
+  now = Date.now(),
+  testSession = false
+) {
+  const db = getD1Database(env);
+  if (!db) return null;
+  const cutoff = playbackQualityDayKey(now - (days - 1) * DAY_MS);
+  const cohort = Number(testSession);
+  const [counts, latency, sources, metrics] = await Promise.all([
+    db
+      .prepare(PLAYBACK_QUALITY_COUNTS_SQL)
+      .bind(cutoff, cohort, now - DAY_MS, now - DAY_MS)
+      .all<CountRow>(),
+    db.prepare(PLAYBACK_QUALITY_LATENCY_SQL).bind(cutoff, cohort).all(),
+    db.prepare(PLAYBACK_QUALITY_SOURCES_SQL).bind(cutoff, cohort).all(),
+    readQualityMetrics(db, cutoff, cohort),
+  ]);
+  return {
+    ...metrics,
+    days,
+    cohort: testSession ? 'test' : 'regular',
     timeZone: 'Asia/Taipei',
     groups: (counts.results || []).map((row) => ({
       ...row,

@@ -210,6 +210,20 @@ it('separates cohorts and distinguishes missing samples, zero success and unavai
           ? { available: false }
           : {
               available: true,
+              playback: {
+                total: 1,
+                successful: 1,
+                visits: [
+                  {
+                    owner: test ? '测试账号' : '普通账号',
+                    startedAt: 1730000000000,
+                    contentKey: '影片::2024',
+                    episodeIndex: 0,
+                    sourceKey: '示例线路',
+                    started: 1,
+                  },
+                ],
+              },
               banner: test
                 ? { impressions: 10, clicks: 5, watched: 1 }
                 : { impressions: 0, clicks: 0, watched: 0 },
@@ -244,8 +258,14 @@ it('separates cohorts and distinguishes missing samples, zero success and unavai
   );
   expect(await screen.findAllByText('暂无样本')).toHaveLength(4);
   expect(
-    screen.getByRole('row', { name: /故障恢复成功.*测试会话/ })
+    screen.getByRole('row', { name: /普通账号.*影片.*成功起播/ })
   ).toBeVisible();
+  expect(screen.getByText('成功起播 1 次 / 共 1 次播放')).toBeVisible();
+  expect(
+    (fetch as jest.Mock).mock.calls.some(([url]) =>
+      url.includes('/playback-debug')
+    )
+  ).toBe(false);
   fireEvent.change(screen.getByLabelText(/会话分组/), {
     target: { value: 'test' },
   });
@@ -259,6 +279,16 @@ it('separates cohorts and distinguishes missing samples, zero success and unavai
   });
   expect(await screen.findByText('播放质量统计暂不可用')).toBeVisible();
   expect(screen.queryByText('75%')).toBeNull();
+  fireEvent.click(screen.getByText(/播放调试日志（采集/));
+  expect(
+    (fetch as jest.Mock).mock.calls.some(([url]) =>
+      url.includes('/playback-debug')
+    )
+  ).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '读取最近日志' }));
+  expect(
+    await screen.findByRole('row', { name: /故障恢复成功.*测试会话/ })
+  ).toBeVisible();
   const toggle = screen.getByLabelText('记录管理员播放调试日志');
   fireEvent.click(toggle);
   await waitFor(() => expect(toggle).toBeChecked());

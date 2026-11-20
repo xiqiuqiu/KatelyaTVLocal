@@ -2,7 +2,10 @@ import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { isAdminRequest } from '@/lib/admin-auth';
-import { readPlaybackQualitySummary } from '@/lib/playback-quality.server';
+import {
+  readPlaybackDashboard,
+  readPlaybackQualitySummary,
+} from '@/lib/playback-quality.server';
 
 export const runtime = 'edge';
 
@@ -29,12 +32,11 @@ export async function GET(request: NextRequest) {
     } catch {
       env = process.env as Record<string, unknown>;
     }
-    const summary = await readPlaybackQualitySummary(
-      env,
-      days,
-      Date.now(),
-      cohort === 'test'
-    );
+    const read =
+      params.get('view') === 'dashboard'
+        ? readPlaybackDashboard
+        : readPlaybackQualitySummary;
+    const summary = await read(env, days, Date.now(), cohort === 'test');
     if (!summary)
       return NextResponse.json(
         { available: false, reason: 'no-d1' },
