@@ -210,6 +210,9 @@ it('separates cohorts and distinguishes missing samples, zero success and unavai
           ? { available: false }
           : {
               available: true,
+              banner: test
+                ? { impressions: 10, clicks: 5, watched: 1 }
+                : { impressions: 0, clicks: 0, watched: 0 },
               qoe: {
                 observedVisits: test ? 4 : 0,
                 uninterruptedVisits: test ? 3 : 0,
@@ -239,7 +242,7 @@ it('separates cohorts and distinguishes missing samples, zero success and unavai
   render(
     <AdminSettings groupId='diagnostics' initialSection='playbackDebug' />
   );
-  expect(await screen.findAllByText('暂无样本')).toHaveLength(2);
+  expect(await screen.findAllByText('暂无样本')).toHaveLength(4);
   expect(
     screen.getByRole('row', { name: /故障恢复成功.*测试会话/ })
   ).toBeVisible();
@@ -247,6 +250,8 @@ it('separates cohorts and distinguishes missing samples, zero success and unavai
     target: { value: 'test' },
   });
   expect(await screen.findByText('75%')).toBeVisible();
+  expect(screen.getByText('50%')).toBeVisible();
+  expect(screen.getByText('20%')).toBeVisible();
   expect(screen.getByText('0%')).toBeVisible();
   expect(screen.getByText(/3 \/ 4/)).toBeVisible();
   fireEvent.change(screen.getByLabelText(/统计周期/), {

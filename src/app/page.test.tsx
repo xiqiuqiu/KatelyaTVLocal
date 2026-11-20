@@ -146,7 +146,7 @@ describe('Home page composition', () => {
       within(hero).getByRole('link', { name: /立即播放/i })
     ).toHaveAttribute(
       'href',
-      '/play?title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024&stype=movie'
+      '/play?title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024&stype=movie&from=home-banner'
     );
 
     const continueHeading = await screen.findByRole('heading', {
@@ -206,7 +206,7 @@ describe('Home page composition', () => {
       within(hero).getByRole('link', { name: /立即播放/i })
     ).toHaveAttribute(
       'href',
-      '/play?title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024&stype=movie&tv=1'
+      '/play?title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024&stype=movie&from=home-banner&tv=1'
     );
     expect(
       screen.queryByRole('navigation', { name: '影片分类' })

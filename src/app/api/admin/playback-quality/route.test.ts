@@ -45,6 +45,7 @@ describe('admin playback quality GET', () => {
     read.mockResolvedValue({
       days: 7,
       cohort: 'regular',
+      banner: null,
       qoe: null,
       timeZone: 'Asia/Taipei',
       groups: [],
@@ -70,6 +71,7 @@ describe('admin playback quality GET', () => {
       available: true,
       days: 7,
       cohort: 'regular',
+      banner: null,
       qoe: null,
       timeZone: 'Asia/Taipei',
       groups: [],

@@ -95,13 +95,32 @@ export const playbackQoeRecordSchema = z
   );
 
 export type PlaybackQoeRecord = z.infer<typeof playbackQoeRecordSchema>;
-export type PlaybackQualitySample = PlaybackQualityRecord | PlaybackQoeRecord;
+const bannerVisitSchema = z
+  .object({
+    rowKind: z.literal('banner'),
+    sessionId: z.string().uuid(),
+    startedAt: z.number().int().positive().max(8640000000000000),
+    testSession: z.boolean(),
+    seq: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  })
+  .strict();
+export type BannerVisit = z.infer<typeof bannerVisitSchema>;
+export type PlaybackQualitySample =
+  | PlaybackQualityRecord
+  | PlaybackQoeRecord
+  | BannerVisit;
 
 export const playbackQualityPayloadSchema = z
   .object({
     schemaVersion: z.literal(1),
     records: z
-      .array(z.union([playbackQualityRecordSchema, playbackQoeRecordSchema]))
+      .array(
+        z.union([
+          playbackQualityRecordSchema,
+          playbackQoeRecordSchema,
+          bannerVisitSchema,
+        ])
+      )
       .min(1)
       .max(4),
   })

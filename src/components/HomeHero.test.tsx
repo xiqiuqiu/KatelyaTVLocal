@@ -239,17 +239,81 @@ describe('HomeHero playback preparation', () => {
     const link = screen.getByRole('link', { name: /立即播放/i });
     expect(link).toHaveAttribute(
       'href',
-      '/play?title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024&stype=movie'
+      '/play?title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024&stype=movie&from=home-banner'
     );
 
     fireEvent.click(link);
 
     expect(mockStartPlaybackPreparation).toHaveBeenCalledWith(
       expect.objectContaining({
-        href: '/play?title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024&stype=movie',
+        href: '/play?title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024&stype=movie&from=home-banner',
         title: '庆余年',
         poster: 'https://img.example/hero.jpg',
       })
     );
   });
+});
+
+it('reports a visible Banner and its click once per visit even as slides rotate', async () => {
+  const oldObserver = window.IntersectionObserver;
+  const uuid = Object.getOwnPropertyDescriptor(window.crypto, 'randomUUID');
+  Object.defineProperty(window.crypto, 'randomUUID', {
+    configurable: true,
+    value: () => 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+  });
+  let observeVisibility: (ratio: number) => void = () => {
+    throw Error('Banner observer missing');
+  };
+  window.IntersectionObserver = jest.fn().mockImplementation((callback) => {
+    observeVisibility = (ratio) =>
+      callback([{ isIntersecting: ratio > 0, intersectionRatio: ratio }]);
+    return { observe: jest.fn(), disconnect: jest.fn() };
+  });
+  jest.useFakeTimers();
+  try {
+    const fetchMock = mockTmdbResponse({ enabled: false, items: [] });
+    const { unmount } = render(
+      <HomeHero
+        testSession
+        recommendations={[
+          recommendation,
+          {
+            ...recommendation,
+            item: { ...recommendation.item, id: 'other', title: '另一部影片' },
+          },
+        ]}
+      />
+    );
+    await screen.findByRole('heading', { name: recommendation.item.title });
+    const records = () =>
+      fetchMock.mock.calls
+        .filter(([url]) => url === '/api/playback-quality')
+        .flatMap(([, opts]) => JSON.parse(opts.body).records);
+    act(() => observeVisibility(0));
+    expect(records()).toHaveLength(0);
+    await act(async () => observeVisibility(1));
+    act(() => jest.advanceTimersByTime(9000));
+    expect(screen.getByRole('heading', { name: '另一部影片' })).toBeVisible();
+    expect(records().map((r) => r.seq)).toEqual([1]);
+    const link = screen.getByRole('link', { name: '立即播放' });
+    expect(link).toHaveAttribute(
+      'href',
+      expect.stringContaining('playbackTest=1')
+    );
+    await act(async () => {
+      fireEvent.click(link);
+      fireEvent.click(link);
+    });
+    expect(records().map((r) => [r.seq, r.testSession])).toEqual([
+      [1, true],
+      [2, true],
+    ]);
+    expect(records()[0].sessionId).toBe(records()[1].sessionId);
+    unmount();
+  } finally {
+    window.IntersectionObserver = oldObserver;
+    if (uuid) Object.defineProperty(window.crypto, 'randomUUID', uuid);
+    else Reflect.deleteProperty(window.crypto, 'randomUUID');
+    jest.useRealTimers();
+  }
 });

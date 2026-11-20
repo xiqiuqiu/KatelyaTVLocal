@@ -83,3 +83,20 @@ it('does not credit a seek jump or censor user interruption as a recovery failur
   jest.advanceTimersByTime(31_000);
   expect(publish).toHaveBeenCalledTimes(1);
 });
+
+it('credits an attributed title once after five actual minutes across interruptions and episodes', () => {
+  const watched = jest.fn();
+  const { qoe, play } = setup(true);
+  qoe.start({ sessionId: 'clicked', testSession: true }, watched);
+  play(120);
+  qoe.interrupt();
+  jest.advanceTimersByTime(60_000);
+  play(30);
+  qoe.suspend();
+  jest.advanceTimersByTime(600_000);
+  qoe.nextEpisode();
+  play(149);
+  expect(watched).not.toHaveBeenCalled();
+  play(101);
+  expect(watched).toHaveBeenCalledTimes(1);
+});

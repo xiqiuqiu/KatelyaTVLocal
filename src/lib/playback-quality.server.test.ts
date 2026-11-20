@@ -73,6 +73,6 @@ describe('playback quality storage', () => {
       expect.stringContaining('LIMIT 2000')
     );
     expect(statement.bind).toHaveBeenCalledWith(10 * 86_400_000);
-    expect(run).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledTimes(3);
   });
 });

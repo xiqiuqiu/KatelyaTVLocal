@@ -1,4 +1,5 @@
 import type {
+  BannerVisit,
   PlaybackQoeRecord,
   PlaybackQualityRecord,
   PlaybackQualitySample,
@@ -61,7 +62,9 @@ export function createPlaybackQualityReporter(
   let retryAfter = 0;
 
   const keyOf = (record: PlaybackQualitySample) =>
-    record.rowKind === 'qoe'
+    record.rowKind === 'banner'
+      ? record.sessionId
+      : record.rowKind === 'qoe'
       ? `${record.sessionId}/qoe/${record.visit}`
       : `${record.sessionId}/${record.roundId}/${record.rowKind}/${record.attemptId}`;
 
@@ -359,7 +362,7 @@ export function createPlaybackQualityReporter(
       finishSample(round, outcome, false);
       void flush(true);
     },
-    qoe(record: PlaybackQoeRecord) {
+    visit(record: PlaybackQoeRecord | BannerVisit) {
       pending.set(keyOf(record), record);
       if (pending.size > 64) pending.delete(pending.keys().next().value);
       void flush(true);

@@ -343,12 +343,14 @@ function HomeCatalog({
   hotVarietyShows,
   loading,
   tvMode,
+  testSession,
 }: {
   hotMovies: DoubanItem[];
   hotTvShows: DoubanItem[];
   hotVarietyShows: DoubanItem[];
   loading: boolean;
   tvMode: boolean;
+  testSession: boolean;
 }) {
   // 侧栏从 768px 起出现，分类入口只在更窄的屏幕由首页承担
   const isDesktop = useMediaQuery('(min-width: 768px)');
@@ -385,6 +387,8 @@ function HomeCatalog({
   return (
     <div className='ui-home-content ui-home-catalog'>
       <HomeHero
+        key={String(testSession)}
+        testSession={testSession}
         // 热榜与本地信号都就绪后才渲染，避免推荐列表变化导致首屏重排两次
         loading={loading || signals.loading}
         recommendations={heroRecommendations}
@@ -579,6 +583,7 @@ function HomeClient() {
   return (
     <PageLayout activePath='/' tvMode={tvMode}>
       <HomeCatalog
+        testSession={searchParams.get('playbackTest') === '1'}
         hotMovies={hotMovies}
         hotTvShows={hotTvShows}
         hotVarietyShows={hotVarietyShows}

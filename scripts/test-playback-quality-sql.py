@@ -63,6 +63,7 @@ def database(path=":memory:"):
     db.executescript(MIGRATION)
     db.executescript(MIGRATION)
     db.executescript(QOE_MIGRATION)
+    db.executescript((ROOT / "migrations/2026-11-20_home_banner_visits.sql").read_text())
     return db
 
 
@@ -75,6 +76,22 @@ def upsert(db, value, **kwargs):
 def success(**kwargs):
     return record(seq=3, status="terminal", outcome="frame-ready", elapsedMs=1000,
                   activeWaitMs=1000, pageToFrameMs=1000, frameEvidence="rvfc", **kwargs)
+
+
+def test_banner_funnel():
+    db = database()
+    def advance(session, stage, cohort=0, day=DAY):
+        return db.execute(sql("HOME_BANNER_UPSERT_SQL"), (day, cohort, "alice", session, stage)).rowcount
+    for session in range(500):
+        assert advance(str(session), 1) == 1
+    assert advance("over quota", 1) == 0
+    assert advance("0", 3) == 1
+    assert advance("0", 2) == advance("0", 3) == 0
+    assert advance("0", 2, cohort=1) == 1
+    assert advance("0", 3, day="2026-10-25") == 1
+    for cohort, expected in [(0, (500, 1, 1)), (1, (1, 1, 0))]:
+        assert tuple(db.execute(sql("HOME_BANNER_COUNTS_SQL"), (DAY, cohort)).fetchone()) == expected
+    db.close()
 
 
 def test_qoe_cohorts_and_retries():
@@ -229,6 +246,6 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["--replay-stdin"]:
         replay_client_records()
         sys.exit(0)
-    for test in [test_qoe_cohorts_and_retries, test_idempotency_and_identity, test_budget_choice_and_day, test_terminal_choice_and_link_protection, test_summary, test_concurrent_quota]:
+    for test in [test_banner_funnel, test_qoe_cohorts_and_retries, test_idempotency_and_identity, test_budget_choice_and_day, test_terminal_choice_and_link_protection, test_summary, test_concurrent_quota]:
         test()
         print(f"PASS {test.__name__}")

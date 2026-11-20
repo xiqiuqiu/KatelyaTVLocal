@@ -59,6 +59,7 @@ import {
   resolveRememberedPlayhead,
   shouldTriggerHlsWaitingRecovery,
 } from '@/lib/hls-recovery';
+import { takeBannerClick } from '@/lib/home-banner.client';
 import { stopVideoElementLoading } from '@/lib/media-cleanup';
 import {
   buildPlayIdentityKey,
@@ -1236,7 +1237,7 @@ function usePlayPageSession() {
   const playbackQualityRef = useLazyRef(() => createPlaybackQualityReporter());
   const playbackQoeRef = useLazyRef(() =>
     createPlaybackQoeObserver((record, event) => {
-      playbackQualityRef.current.qoe(record);
+      playbackQualityRef.current.visit(record);
       if (playbackDebugEnabledRef.current) {
         emitPlaybackDebugLog(
           event,
@@ -4434,7 +4435,13 @@ function usePlayPageSession() {
     if (!sessionId) return;
     const testSession =
       new URLSearchParams(window.location.search).get('playbackTest') === '1';
-    playbackQoeRef.current.start({ sessionId, testSession });
+    const bannerClick = takeBannerClick(new URL(window.location.href));
+    playbackQoeRef.current.start(
+      { sessionId, testSession },
+      bannerClick
+        ? () => playbackQualityRef.current.visit({ ...bannerClick, seq: 3 })
+        : undefined
+    );
     playbackQualityRef.current.start({
       sessionId,
       testSession,

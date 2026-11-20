@@ -90,6 +90,21 @@ WHERE excluded.seq > playback_qoe.seq
   AND excluded.failed >= playback_qoe.failed
 RETURNING seq`;
 
+// Each stage implies its predecessors, including when keepalive requests arrive out of order.
+export const HOME_BANNER_UPSERT_SQL = `
+INSERT INTO home_banner_visits(day_key, test_session, owner, session_id, stage)
+SELECT ?1, ?2, ?3, ?4, ?5
+WHERE EXISTS (SELECT 1 FROM home_banner_visits
+  WHERE day_key=?1 AND test_session=?2 AND owner=?3 AND session_id=?4)
+OR NOT EXISTS (SELECT 1 FROM home_banner_visits WHERE day_key=?1 AND test_session=?2 LIMIT 1 OFFSET 499)
+ON CONFLICT(day_key, test_session, owner, session_id) DO UPDATE SET stage=excluded.stage
+WHERE excluded.stage > home_banner_visits.stage`;
+
+export const HOME_BANNER_COUNTS_SQL = `
+SELECT COUNT(*) AS impressions, COUNT(CASE WHEN stage >= 2 THEN 1 END) AS clicks,
+  COUNT(CASE WHEN stage = 3 THEN 1 END) AS watched
+FROM home_banner_visits WHERE day_key >= ? AND test_session = ?`;
+
 export async function savePlaybackQuality(
   env: Record<string, unknown>,
   owner: string,
@@ -100,6 +115,21 @@ export async function savePlaybackQuality(
   if (!db) return 'no-d1';
   const dayKey = playbackQualityDayKey(now);
   for (const record of records) {
+    if (record.rowKind === 'banner') {
+      if (record.startedAt < now - DAY_MS || record.startedAt > now + 300_000)
+        continue;
+      await db
+        .prepare(HOME_BANNER_UPSERT_SQL)
+        .bind(
+          playbackQualityDayKey(record.startedAt),
+          Number(record.testSession),
+          owner,
+          record.sessionId,
+          record.seq
+        )
+        .run();
+      continue;
+    }
     if (record.rowKind === 'qoe') {
       const result = await db
         .prepare(PLAYBACK_QOE_UPSERT_SQL)
@@ -295,7 +325,7 @@ export async function readPlaybackQualitySummary(
   if (!db) return null;
   const cutoff = playbackQualityDayKey(now - (days - 1) * DAY_MS);
   const cohort = Number(testSession);
-  const [counts, latency, sources, qoeCounts] = await Promise.all([
+  const [counts, latency, sources, qoeCounts, banner] = await Promise.all([
     db
       .prepare(PLAYBACK_QUALITY_COUNTS_SQL)
       .bind(cutoff, cohort, now - DAY_MS, now - DAY_MS)
@@ -303,8 +333,13 @@ export async function readPlaybackQualitySummary(
     db.prepare(PLAYBACK_QUALITY_LATENCY_SQL).bind(cutoff, cohort).all(),
     db.prepare(PLAYBACK_QUALITY_SOURCES_SQL).bind(cutoff, cohort).all(),
     db.prepare(PLAYBACK_QOE_COUNTS_SQL).bind(cutoff, cohort).first<QoeCounts>(),
+    db
+      .prepare(HOME_BANNER_COUNTS_SQL)
+      .bind(cutoff, cohort)
+      .first<{ impressions: number; clicks: number; watched: number }>(),
   ]);
   return {
+    banner,
     days,
     cohort: testSession ? 'test' : 'regular',
     qoe: qoeCounts && {
@@ -338,14 +373,21 @@ export async function cleanupPlaybackQuality(
 ): Promise<void> {
   const db = getD1Database(env);
   if (!db) return;
-  await Promise.all(
-    ['playback_quality', 'playback_qoe'].map((table) =>
+  await Promise.all([
+    db
+      .prepare(
+        `DELETE FROM home_banner_visits WHERE (day_key,test_session,owner,session_id) IN
+      (SELECT day_key,test_session,owner,session_id FROM home_banner_visits WHERE day_key < ? LIMIT 2000)`
+      )
+      .bind(playbackQualityDayKey(now - 29 * DAY_MS))
+      .run(),
+    ...['playback_quality', 'playback_qoe'].map((table) =>
       db
         .prepare(
           `DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE received_at < ? LIMIT 2000)`
         )
         .bind(now - 30 * DAY_MS)
         .run()
-    )
-  );
+    ),
+  ]);
 }

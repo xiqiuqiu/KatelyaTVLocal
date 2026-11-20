@@ -12,12 +12,15 @@ import {
   useState,
 } from 'react';
 
+import { rememberBannerClick } from '@/lib/home-banner.client';
 import { buildHomeHeroPlayHref } from '@/lib/home-hero';
 import {
   type HomeRecommendation,
   type HomeRecommendationType,
   getHomeRecommendationKey,
 } from '@/lib/home-recommendations';
+import type { BannerVisit } from '@/lib/playback-quality';
+import { createPlaybackQualityReporter } from '@/lib/playback-quality.client';
 import { buildTmdbImageUrl } from '@/lib/tmdb/matching';
 import { buildTvModeHref } from '@/lib/tv-interaction';
 import { processImageUrl } from '@/lib/utils';
@@ -41,6 +44,7 @@ interface HomeHeroProps {
   recommendations: HomeRecommendation[];
   loading?: boolean;
   tvMode?: boolean;
+  testSession?: boolean;
 }
 
 function HomeHeroSkeleton() {
@@ -65,6 +69,7 @@ export default function HomeHero({
   recommendations,
   loading = false,
   tvMode = false,
+  testSession = false,
 }: HomeHeroProps) {
   const surfaceRef = useRef<HTMLElement>(null);
   const playbackPreparation = usePlaybackPreparation();
@@ -78,6 +83,60 @@ export default function HomeHero({
   const count = recommendations.length;
   const safeIndex = count > 0 ? Math.min(activeIndex, count - 1) : 0;
   const active = count > 0 ? recommendations[safeIndex] : null;
+  const visit = useRef<BannerVisit | null>(null);
+  const [metrics] = useState(() => createPlaybackQualityReporter());
+  const ready = !loading && !tmdb.pending && count > 0;
+  const recordStage = useCallback(
+    (seq: 1 | 2) => {
+      if (!visit.current) {
+        if (!globalThis.crypto?.randomUUID) return;
+        visit.current = {
+          rowKind: 'banner',
+          sessionId: crypto.randomUUID(),
+          startedAt: Date.now(),
+          testSession,
+          seq,
+        };
+      } else {
+        if (visit.current.seq >= seq) return visit.current;
+        visit.current = { ...visit.current, seq };
+      }
+      metrics.visit(visit.current);
+      return visit.current;
+    },
+    [metrics, testSession]
+  );
+
+  useEffect(() => {
+    const node = surfaceRef.current;
+    if (
+      !ready ||
+      !node ||
+      visit.current ||
+      typeof IntersectionObserver === 'undefined'
+    )
+      return;
+    let visible = false;
+    const report = () => {
+      if (visible && document.visibilityState === 'visible') {
+        recordStage(1);
+        observer.disconnect();
+      }
+    };
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        visible = entry.isIntersecting && entry.intersectionRatio >= 0.1;
+        report();
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(node);
+    document.addEventListener('visibilitychange', report);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', report);
+    };
+  }, [ready, recordStage]);
   const listKey = useMemo(
     () => recommendations.map(getHomeRecommendationKey).join('|'),
     [recommendations]
@@ -154,7 +213,10 @@ export default function HomeHero({
         activeEnrichment.runtime ? `${activeEnrichment.runtime} 分钟` : '',
       ].filter(Boolean)
     : [];
-  const href = buildHomeHeroPlayHref(item, type);
+  const href =
+    buildHomeHeroPlayHref(item, type) +
+    '&from=home-banner' +
+    (testSession ? '&playbackTest=1' : '');
   const playHref = tvMode ? buildTvModeHref(href, true) : href;
   const metadata = [item.year, MEDIA_TYPE_LABEL[type]]
     .filter(Boolean)
@@ -162,6 +224,8 @@ export default function HomeHero({
   const playbackCardKey = `hero:douban:${item.id || item.title}`;
 
   const handlePlay = (event: MouseEvent<HTMLAnchorElement>) => {
+    const clicked = recordStage(2);
+    if (clicked) rememberBannerClick(clicked, playHref);
     if (!playbackPreparation.active) return;
     event.preventDefault();
     const rect = surfaceRef.current?.getBoundingClientRect();

@@ -21,6 +21,8 @@ export function createPlaybackQoeObserver(
 ) {
   let session: Pick<PlaybackQoeRecord, 'sessionId' | 'testSession'> | null =
     null;
+  let onBannerWatched: (() => void) | undefined;
+  let bannerWatchMs = 0;
   let visit = 0;
   let seq = 0;
   let watchedMs = 0;
@@ -81,9 +83,11 @@ export function createPlaybackQoeObserver(
   };
 
   return {
-    start(input: NonNullable<typeof session>) {
+    start(input: NonNullable<typeof session>, onWatched?: () => void) {
       settleRecovery(false);
       session = input;
+      onBannerWatched = onWatched;
+      bannerWatchMs = 0;
       visit = 0;
       nextEpisode();
     },
@@ -122,6 +126,13 @@ export function createPlaybackQoeObserver(
       if (advanced <= 0) return false;
       hasPlayed = true;
       const playedMs = Math.min(elapsed, advanced);
+      if (onBannerWatched) {
+        bannerWatchMs += playedMs;
+        if (bannerWatchMs >= WATCH_WINDOW_MS) {
+          onBannerWatched();
+          onBannerWatched = undefined;
+        }
+      }
       if (uninterrupted === null) {
         watchedMs += playedMs;
         if (watchedMs >= WATCH_WINDOW_MS) {

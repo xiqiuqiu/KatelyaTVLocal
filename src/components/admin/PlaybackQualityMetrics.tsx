@@ -2,21 +2,24 @@ import { useEffect, useState } from 'react';
 
 import type { readPlaybackQualitySummary } from '@/lib/playback-quality.server';
 
-type Qoe = NonNullable<
+type Summary = NonNullable<
   Awaited<ReturnType<typeof readPlaybackQualitySummary>>
->['qoe'];
+>;
 
 export default function PlaybackQualityMetrics() {
   const [days, setDays] = useState('7');
   const [cohort, setCohort] = useState('regular');
   const [refresh, setRefresh] = useState(0);
-  const [qoe, setQoe] = useState<Qoe>(null);
+  const [stats, setStats] = useState<Pick<Summary, 'qoe' | 'banner'> | null>(
+    null
+  );
+  const { qoe, banner } = stats ?? {};
   const [message, setMessage] = useState('正在读取统计…');
 
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
-      setQoe(null);
+      setStats(null);
       setMessage('正在读取统计…');
       try {
         const response = await fetch(
@@ -28,7 +31,7 @@ export default function PlaybackQualityMetrics() {
         if (controller.signal.aborted) return;
         if (!payload.available || !payload.qoe)
           throw new Error('播放质量统计暂不可用');
-        setQoe(payload.qoe);
+        setStats(payload);
         setMessage('');
       } catch (err) {
         if (!controller.signal.aborted)
@@ -91,6 +94,22 @@ export default function PlaybackQualityMetrics() {
                 qoe.recovered + qoe.failed
               }`,
             },
+            ...(banner
+              ? [
+                  {
+                    name: 'Banner 点击率',
+                    rate: banner.impressions
+                      ? banner.clicks / banner.impressions
+                      : null,
+                    detail: `点击 / 可见首页访问：${banner.clicks} / ${banner.impressions}`,
+                  },
+                  {
+                    name: '点击后看满 5 分钟率',
+                    rate: banner.clicks ? banner.watched / banner.clicks : null,
+                    detail: `所点作品前台累计满 5 分钟 / 点击：${banner.watched} / ${banner.clicks}`,
+                  },
+                ]
+              : []),
           ].map(({ name, rate, detail }) => (
             <div
               key={name}
