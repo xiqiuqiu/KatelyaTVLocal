@@ -2,10 +2,10 @@ import type { DoubanItem } from '@/lib/types';
 
 export type HomeRecommendationType = 'movie' | 'tv' | 'show';
 
-/** 用来做本地打分的个人信号，只需标题与集数，不涉及任何网络请求。 */
+/** 用来做本地打分的个人信号，使用作品信息，不涉及任何网络请求。 */
 export interface HomeRecommendationSignal {
   title: string;
-  episodes?: number;
+  year?: string;
   category?: HomeRecommendationType | '';
 }
 
@@ -45,27 +45,13 @@ function parseRate(rate: string | undefined): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-function inferSignalType(
-  signal: HomeRecommendationSignal
-): HomeRecommendationType {
-  if (
-    signal.category === 'movie' ||
-    signal.category === 'tv' ||
-    signal.category === 'show'
-  ) {
-    return signal.category;
-  }
-  return (signal.episodes ?? 0) > 1 ? 'tv' : 'movie';
-}
-
 function describeReason(input: {
   type: HomeRecommendationType;
   rate: number;
   affinity: number;
-  hasSignals: boolean;
 }): string {
   const label = TYPE_LABELS[input.type];
-  const familiar = input.hasSignals && input.affinity >= 0.5;
+  const familiar = input.affinity >= 0.5;
 
   // 评分已经在标题行单独显示，这里只说「为什么排在你面前」
   if (familiar) return `你常看${label} · 优先推荐`;
@@ -76,7 +62,7 @@ function describeReason(input: {
 /**
  * 首屏推荐：从豆瓣热榜里挑 3–5 张，顺序按「评分 + 个人类型偏好」排。
  *
- * - 纯本地计算：只用播放历史与收藏的标题/集数，不发任何请求
+ * - 纯本地计算：只用播放历史与收藏的作品信息，不发任何请求
  * - 已经看过或收藏过的片不再推荐
  * - 同类型最多 3 张，保证首屏有变化
  * - 候选不足时按评分顺序补位；完全没数据时返回空数组
@@ -95,10 +81,11 @@ export function buildHomeRecommendations(
     tv: 0,
     show: 0,
   };
-  for (const signal of signals) {
-    typeCounts[inferSignalType(signal)] += 1;
-  }
-  const hasSignals = signals.length > 0;
+  // 同名作品可能分属不同类型。只用年份相容、类型一致的榜单记录作证。
+  const catalog = new Map<
+    string,
+    { year: string; type: HomeRecommendationType }[]
+  >();
 
   const pool: Array<{
     item: DoubanItem;
@@ -107,8 +94,14 @@ export function buildHomeRecommendations(
   }> = [];
   const push = (items: DoubanItem[], type: HomeRecommendationType) => {
     items.forEach((item, index) => {
+      const title = normalizeTitle(item.title);
+      if (seen.has(title)) {
+        const entries = catalog.get(title) ?? [];
+        entries.push({ year: item.year, type });
+        catalog.set(title, entries);
+        return;
+      }
       if (!item.poster?.trim()) return;
-      if (seen.has(normalizeTitle(item.title))) return;
       pool.push({ item, type, order: index });
     });
   };
@@ -116,16 +109,38 @@ export function buildHomeRecommendations(
   push(input.tvShows ?? [], 'tv');
   push(input.varietyShows ?? [], 'show');
 
+  const classified = new Map<string, Set<HomeRecommendationType>>();
+  for (const signal of signals) {
+    const title = normalizeTitle(signal.title);
+    if (!title) continue;
+    const types = classified.get(title) ?? new Set<HomeRecommendationType>();
+    if (signal.category) {
+      types.add(signal.category);
+    } else {
+      for (const match of catalog.get(title) ?? []) {
+        if (!signal.year || !match.year || signal.year === match.year) {
+          types.add(match.type);
+        }
+      }
+    }
+    classified.set(title, types);
+  }
+  let classifiedCount = 0;
+  classified.forEach((types) => {
+    if (types.size !== 1) return;
+    const [type] = Array.from(types);
+    typeCounts[type] += 1;
+    classifiedCount += 1;
+  });
+
   const scored = pool.map((candidate) => {
     const rate = parseRate(candidate.item.rate);
-    const affinity = hasSignals
-      ? typeCounts[candidate.type] / signals.length
-      : 0;
+    // 加三个中性样本：一部作品最多加 1 分，三部同类才称为「常看」。
+    const affinity = typeCounts[candidate.type] / (classifiedCount + 3);
     return {
       ...candidate,
       rate,
       affinity,
-      // 评分是主项，个人偏好最多加权 4 分，不会盖过 9 分以上的好片
       score: Number((rate + affinity * 4).toFixed(3)),
     };
   });
@@ -164,7 +179,6 @@ export function buildHomeRecommendations(
       type: candidate.type,
       rate: candidate.rate,
       affinity: candidate.affinity,
-      hasSignals,
     }),
     score: candidate.score,
   }));

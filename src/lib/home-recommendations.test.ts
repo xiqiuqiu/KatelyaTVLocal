@@ -32,9 +32,9 @@ describe('buildHomeRecommendations', () => {
       movies: [movie('1', '热门电影', '8.4')],
       tvShows: [movie('2', '热门剧集', '8.4')],
       playRecords: [
-        { title: '已看剧集 A', episodes: 24 },
-        { title: '已看剧集 B', episodes: 12 },
-        { title: '已看剧集 C', episodes: 36 },
+        { title: '已看剧集 A', category: 'tv' },
+        { title: '已看剧集 B', category: 'tv' },
+        { title: '已看剧集 C', category: 'tv' },
       ],
     });
 
@@ -43,12 +43,46 @@ describe('buildHomeRecommendations', () => {
     expect(result[1].reason).toBe('本周电影热榜');
   });
 
+  it('classifies a multi-episode show from the catalog and counts it once', () => {
+    const history = { title: '已看综艺', year: '2026', episodes: 12 };
+    const result = buildHomeRecommendations({
+      movies: [movie('1', '电影', '9.4')],
+      tvShows: [movie('2', '剧集', '6.0')],
+      varietyShows: [
+        movie('3', history.title, '8.0'),
+        movie('4', '新综艺', '8.0'),
+      ],
+      playRecords: [history, { ...history, title: '榜外作品' }],
+      favorites: [history],
+    });
+    expect(result.map(({ type, score }) => [type, score])).toEqual([
+      ['movie', 9.4],
+      ['show', 9],
+      ['tv', 6],
+    ]);
+    expect(result[1].reason).not.toContain('常看');
+  });
+
+  it('ignores ambiguous or mismatched catalog titles', () => {
+    const result = buildHomeRecommendations({
+      movies: [movie('1', '电影', '8.2')],
+      tvShows: [
+        movie('2', '同名', '9'),
+        movie('3', '旧版', '9'),
+        movie('4', '剧集', '8'),
+      ],
+      varietyShows: [movie('5', '同名', '9')],
+      playRecords: [{ title: '同名' }, { title: '旧版', year: '1999' }],
+    });
+    expect(result.map(({ score }) => score)).toEqual([8.2, 8]);
+  });
+
   it('never recommends what the viewer already watched or favorited', () => {
     const result = buildHomeRecommendations({
       movies: [movie('1', '看过了', '9.5'), movie('2', '没看过', '7.0')],
       tvShows: [movie('3', '收藏过', '9.0')],
-      playRecords: [{ title: '看过了', episodes: 1 }],
-      favorites: [{ title: '收藏过', episodes: 24 }],
+      playRecords: [{ title: '看过了', category: 'movie' }],
+      favorites: [{ title: '收藏过', category: 'tv' }],
     });
 
     expect(result.map((entry) => entry.item.title)).toEqual(['没看过']);

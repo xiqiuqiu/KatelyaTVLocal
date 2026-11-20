@@ -29,7 +29,7 @@ function toRecordSignals(
 ): HomeRecommendationSignal[] {
   return Object.values(records).map((record) => ({
     title: record.title || record.search_title || '',
-    episodes: record.total_episodes,
+    year: record.year,
   }));
 }
 
@@ -38,7 +38,7 @@ function toFavoriteSignals(
 ): HomeRecommendationSignal[] {
   return Object.values(favorites).map((favorite) => ({
     title: favorite.title || favorite.search_title || '',
-    episodes: favorite.total_episodes,
+    year: favorite.year,
   }));
 }
 
