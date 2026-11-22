@@ -3274,6 +3274,92 @@ describe('PlayPage automatic source-switch resume', () => {
     );
   });
 
+  it('switches sources when playback freezes and timeupdate stops', async () => {
+    const playback = await setupStarvationPlayback();
+    playback.player.currentTime = 30;
+    playback.player.video.currentTime = 30;
+    playback.player.video.paused = false;
+    playback.player.video.seeking = false;
+    playback.player.video.ended = false;
+    const waiting = playback.player.video.addEventListener?.mock.calls
+      .filter(([event]) => event === 'waiting')
+      .at(-1)?.[1];
+    expect(waiting).toEqual(expect.any(Function));
+    const startedAt = Date.now();
+    act(() => {
+      waiting();
+      playback.player.video.addEventListener?.mock.calls
+        .filter(([event]) => event === 'timeupdate')
+        .at(-1)?.[1]?.();
+    });
+    await act(async () => {
+      for (let elapsed = 1_000; elapsed <= 8_000; elapsed += 1_000) {
+        if (elapsed === 2_000) {
+          playback.player.currentTime = 30.1;
+          playback.player.video.currentTime = 30.1;
+          playback.player.video.addEventListener?.mock.calls
+            .filter(([event]) => event === 'timeupdate')
+            .at(-1)?.[1]?.();
+        }
+        jest.setSystemTime(startedAt + elapsed);
+        jest.advanceTimersByTime(1_000);
+      }
+      await Promise.resolve();
+    });
+    expect(playback.getSwitches()).toEqual([
+      expect.objectContaining({ sourceKey: 'new-2' }),
+    ]);
+  });
+
+  it('keeps watching a stall that starts inside the post-switch settle window', async () => {
+    await settleWithSources();
+    await switchToFreshHlsSource();
+    const player = mockArtPlayerInstance;
+    if (!player) throw new Error('player was not created');
+    player.video.paused = false;
+    player.video.seeking = false;
+    player.video.ended = false;
+    player.currentTime = 115;
+    player.video.currentTime = 115;
+    const waiting = player.video.addEventListener?.mock.calls
+      .filter(([event]) => event === 'waiting')
+      .at(-1)?.[1];
+    expect(waiting).toEqual(expect.any(Function));
+    // Manifest finalize is a fake-timer microtask. If it runs after waiting
+    // is armed, it clears the stall watcher before the settle window ends.
+    await act(async () => {
+      jest.runAllTicks();
+      await Promise.resolve();
+    });
+    const reduceMock = jest.mocked(reducePlaybackSession);
+    reduceMock.mockClear();
+    const switches = () =>
+      reduceMock.mock.results.flatMap((result) =>
+        result.type === 'return'
+          ? result.value.effects.filter(
+              (effect) => effect.type === 'switchSource'
+            )
+          : []
+      );
+    act(() => waiting());
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
+    expect(switches()).toEqual([]);
+    await act(async () => {
+      for (let elapsed = 2_000; elapsed <= 12_000; elapsed += 1_000) {
+        jest.advanceTimersByTime(1_000);
+      }
+      await Promise.resolve();
+    });
+    expect(switches()).toEqual([
+      expect.objectContaining({ sourceKey: 'old-1' }),
+    ]);
+    expect(reduceMock.mock.calls.map(([, event]) => event.type)).not.toContain(
+      'timer.sourceChangeTimeout'
+    );
+  });
+
   it('does not carry waits across a user pause without progress callbacks', async () => {
     const playback = await setupStarvationPlayback();
     for (let index = 0; index < 2; index += 1) {
