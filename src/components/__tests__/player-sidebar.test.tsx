@@ -261,7 +261,7 @@ describe('EpisodeSelector playback sidebar controls', () => {
       new Error('unauthorized')
     );
     mockedProbeSourcePlayback.mockResolvedValue({
-      kind: 'proxy',
+      kind: 'direct',
       reason: 'fallback probe',
       domain: 'example.com',
     });
@@ -306,7 +306,7 @@ describe('EpisodeSelector playback sidebar controls', () => {
       new Error('unauthorized')
     );
     mockedProbeSourcePlayback.mockResolvedValue({
-      kind: 'proxy',
+      kind: 'direct',
       reason: 'fallback probe',
       domain: 'example.com',
     });
@@ -370,7 +370,7 @@ describe('EpisodeSelector playback sidebar controls', () => {
       confidence: 'medium',
     });
     mockedProbeSourcePlayback.mockResolvedValue({
-      kind: 'proxy',
+      kind: 'direct',
       reason: 'fallback probe',
       domain: 'example.com',
     });

@@ -1,5 +1,4 @@
 import {
-  buildHlsProxyUrl,
   createPlayableSourceStatus,
   getRememberedSourceStatus,
   getRememberedSourceStatusForSource,
@@ -63,6 +62,23 @@ describe('source status behavior', () => {
 
     expect(status?.kind).toBe('unavailable');
     expect(status?.reason).toBe('上游响应失败: 503');
+  });
+
+  it('ignores legacy source-specific and domain playback preferences', () => {
+    const legacy = { mode: 'proxy', failCount: 0, updatedAt: Date.now() };
+    localStorage.setItem(
+      'sourceDomainPreferences',
+      JSON.stringify({ 'media.example.com': legacy })
+    );
+    localStorage.setItem(
+      'sourcePlaybackQualityPreferences',
+      JSON.stringify({ 'slow-1@@media.example.com': legacy })
+    );
+    expect(
+      getRememberedSourceStatusForSource('slow-1', [
+        'https://media.example.com/1.m3u8',
+      ])
+    ).toBeNull();
   });
 
   it('keeps source-specific playback failures from affecting another source on the same domain', () => {
@@ -187,11 +203,6 @@ describe('source status behavior', () => {
       })
     ).toBe('推荐·直连');
     expect(
-      getSourceStatusLabel({
-        kind: 'proxy',
-      })
-    ).toBe('备用·需代理');
-    expect(
       getSourceStatusDescription({
         kind: 'unavailable',
         reason: '服务端探测失败: 403',
@@ -218,15 +229,23 @@ describe('source status behavior', () => {
     );
   });
 
-  it('falls back to the local probe endpoint when the external probe fails', async () => {
-    window.RUNTIME_CONFIG = {
-      SOURCE_PROBE: 'https://worker.example.com/api/source-probe?url=',
-    };
+  it.each(['network error', 'legacy response'])(
+    'falls back to the local probe endpoint after %s',
+    async (failure) => {
+      window.RUNTIME_CONFIG = {
+        SOURCE_PROBE: 'https://worker.example.com/api/source-probe?url=',
+      };
 
-    global.fetch = jest
-      .fn()
-      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
-      .mockResolvedValueOnce({
+      const fetchMock = jest.fn();
+      if (failure === 'legacy response') {
+        fetchMock.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ kind: 'proxy' }),
+        });
+      } else {
+        fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      }
+      global.fetch = fetchMock.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           kind: 'direct',
@@ -235,47 +254,20 @@ describe('source status behavior', () => {
         }),
       } as Response);
 
-    const result = await probeSourcePlayback(
-      'https://media.example.com/20250508/demo/index.m3u8'
-    );
+      const result = await probeSourcePlayback(
+        'https://media.example.com/20250508/demo/index.m3u8'
+      );
 
-    expect(global.fetch).toHaveBeenCalledTimes(2);
-    expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
-      'https://worker.example.com/api/source-probe?url=https%3A%2F%2Fmedia.example.com%2F20250508%2Fdemo%2Findex.m3u8'
-    );
-    expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe(
-      '/api/source-probe?url=https%3A%2F%2Fmedia.example.com%2F20250508%2Fdemo%2Findex.m3u8'
-    );
-    expect(result.kind).toBe('direct');
-  });
-
-  it('can build an HLS proxy URL that keeps media segments direct', () => {
-    window.RUNTIME_CONFIG = {
-      HLS_PROXY: '/api/hls-proxy?url=',
-    };
-
-    expect(
-      buildHlsProxyUrl('https://media.example.com/show/index.m3u8', {
-        mediaSegmentMode: 'direct',
-      })
-    ).toBe(
-      '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8&segmentMode=direct'
-    );
-  });
-
-  it('can build an HLS proxy URL with ad filtering disabled', () => {
-    window.RUNTIME_CONFIG = {
-      HLS_PROXY: '/api/hls-proxy?url=',
-    };
-
-    expect(
-      buildHlsProxyUrl('https://media.example.com/show/index.m3u8', {
-        filterAds: false,
-      })
-    ).toBe(
-      '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8&filterAds=0'
-    );
-  });
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
+        'https://worker.example.com/api/source-probe?url=https%3A%2F%2Fmedia.example.com%2F20250508%2Fdemo%2Findex.m3u8'
+      );
+      expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe(
+        '/api/source-probe?url=https%3A%2F%2Fmedia.example.com%2F20250508%2Fdemo%2Findex.m3u8'
+      );
+      expect(result.kind).toBe('direct');
+    }
+  );
 
   it('adds bounded card image options to proxied image URLs', () => {
     window.RUNTIME_CONFIG = {

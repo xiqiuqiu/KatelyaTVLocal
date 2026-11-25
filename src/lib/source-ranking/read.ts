@@ -1,5 +1,8 @@
 import { formatSourceSpeedKbps } from '@/lib/source-preference-video-info';
-import { SourcePreferenceResult } from '@/lib/types';
+import {
+  SOURCE_CORS_BLOCKED_REASON,
+  SourcePreferenceResult,
+} from '@/lib/types';
 
 interface D1QueryResult<T> {
   results?: T[];
@@ -31,7 +34,7 @@ interface SourceRankSnapshotRow {
 interface SourceProbeRow {
   sourceKey: string;
   domain: string | null;
-  kind: 'direct' | 'proxy' | 'unavailable';
+  kind: string;
   reason: string | null;
   probeTimeMs: number | null;
   resolutionLabel: string | null;
@@ -45,7 +48,6 @@ interface PlaybackFeedbackRow {
   playbackDomain: string | null;
   startupSuccess: number;
   startupTimeMs: number | null;
-  switchedToProxy: number;
   browserQuality: string | null;
   browserPingMs: number | null;
   browserSpeedLabel: string | null;
@@ -114,10 +116,6 @@ function getFeedbackRankAdjustment(rows: PlaybackFeedbackRow[]): number {
         }
       }
 
-      if (row.switchedToProxy) {
-        next -= 4;
-      }
-
       return next;
     }, 0);
 
@@ -138,16 +136,9 @@ function getFreshnessRankAdjustment(updatedAt: number, now: number): number {
 
 function inferKindFromSnapshot(
   snapshot: SourceRankSnapshotRow
-): SourcePreferenceResult['kind'] {
-  if (snapshot.unavailableRate >= 100) {
-    return 'unavailable';
-  }
-
-  if (snapshot.directRate >= snapshot.proxyRate) {
-    return 'direct';
-  }
-
-  return 'proxy';
+): SourcePreferenceResult['kind'] | null {
+  if (snapshot.unavailableRate >= 100) return 'unavailable';
+  return snapshot.proxyRate === 0 && snapshot.directRate > 0 ? 'direct' : null;
 }
 
 function getDefaultReason(
@@ -157,8 +148,6 @@ function getDefaultReason(
   switch (kind) {
     case 'direct':
       return `近期成功率 ${snapshot.successRate.toFixed(0)}%，优先直连`;
-    case 'proxy':
-      return `近期成功率 ${snapshot.successRate.toFixed(0)}%，更适合代理`;
     case 'unavailable':
     default:
       return `近期不可用率 ${snapshot.unavailableRate.toFixed(0)}%`;
@@ -168,11 +157,7 @@ function getDefaultReason(
 function inferKindFromFeedback(
   feedback: PlaybackFeedbackRow
 ): SourcePreferenceResult['kind'] {
-  if (!feedback.startupSuccess) {
-    return 'unavailable';
-  }
-
-  return feedback.switchedToProxy ? 'proxy' : 'direct';
+  return feedback.startupSuccess ? 'direct' : 'unavailable';
 }
 
 function getFeedbackOnlyReason(feedback: PlaybackFeedbackRow): string {
@@ -180,9 +165,7 @@ function getFeedbackOnlyReason(feedback: PlaybackFeedbackRow): string {
     return feedback.sessionError || '近期本机播放失败';
   }
 
-  return feedback.switchedToProxy
-    ? '近期本机播放成功，更适合代理'
-    : '近期本机播放成功，优先直连';
+  return '近期本机播放成功，优先直连';
 }
 
 export async function readLatestSourceRanks(
@@ -266,7 +249,6 @@ export async function readLatestSourceRanks(
              playback_domain AS playbackDomain,
              startup_success AS startupSuccess,
              startup_time_ms AS startupTimeMs,
-             switched_to_proxy AS switchedToProxy,
              browser_quality AS browserQuality,
              browser_ping_ms AS browserPingMs,
              browser_speed_label AS browserSpeedLabel,
@@ -275,6 +257,8 @@ export async function readLatestSourceRanks(
            FROM playback_feedback_events
            WHERE source_key IN (${placeholders})
              AND recorded_at >= ?
+             AND playback_mode = 'direct'
+             AND switched_to_proxy = 0
            ORDER BY recorded_at DESC`
         )
         .bind(...sourceKeys, cutoffTime)
@@ -303,10 +287,13 @@ export async function readLatestSourceRanks(
       seenKeys.add(row.sourceKey);
       return true;
     })
-    .map((snapshot) => {
+    .map((snapshot): SourcePreferenceResult | null => {
       const probe = latestProbeByKey.get(snapshot.sourceKey);
       const feedback = latestFeedbackByKey.get(snapshot.sourceKey);
-      const kind = probe?.kind || inferKindFromSnapshot(snapshot);
+      const kind = probe?.kind ?? inferKindFromSnapshot(snapshot);
+      if (kind !== 'direct' && kind !== 'unavailable') {
+        return null;
+      }
       const backendSpeed = formatSourceSpeedKbps(probe?.firstSegmentSpeedKbps);
       const feedbackSpeed = feedback?.browserSpeedLabel;
       const speedLabel = backendSpeed || feedbackSpeed || null;
@@ -359,12 +346,30 @@ export async function readLatestSourceRanks(
             freshnessAdjustment
           ).toFixed(2)
         ),
-      } satisfies SourcePreferenceResult;
-    });
+      };
+    })
+    .filter((result): result is SourcePreferenceResult => result !== null);
 
   const feedbackOnlyResults = sourceKeys
     .filter((sourceKey) => !seenKeys.has(sourceKey))
     .map((sourceKey): SourcePreferenceResult | null => {
+      const probe = latestProbeByKey.get(sourceKey);
+      if (
+        probe?.kind === 'unavailable' &&
+        probe.reason === SOURCE_CORS_BLOCKED_REASON
+      ) {
+        return {
+          sourceKey,
+          kind: 'unavailable',
+          reason: probe.reason,
+          domain: probe.domain,
+          updatedAt: probe.measuredAt,
+          rankingSource: 'd1',
+        };
+      }
+      if (probe && probe.kind !== 'direct' && probe.kind !== 'unavailable') {
+        return null;
+      }
       const latestFeedback = latestAnyFeedbackByKey.get(sourceKey);
       if (!latestFeedback) {
         return null;

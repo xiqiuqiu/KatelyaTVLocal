@@ -50,7 +50,7 @@ function loadSources({
     createSource('current', '1'),
     createSource('short', '2', ['ep-1.m3u8']),
     createSource('bad', '3'),
-    createSource('proxy', '4'),
+    createSource('spare', '4'),
     createSource('direct', '5'),
   ];
   const initial = createInitialPlaybackSessionState();
@@ -325,11 +325,11 @@ describe('Playback Session automatic recovery', () => {
     return loadSources({
       sourceStatuses: new Map<string, SourceStatus>([
         ['bad-3', { kind: 'unavailable' }],
-        ['proxy-4', { kind: 'proxy' }],
+        ['spare-4', { kind: 'unavailable' }],
         ['direct-5', { kind: 'direct' }],
       ]),
       sourceScores: new Map([
-        ['proxy-4', { score: 99 }],
+        ['spare-4', { score: 99 }],
         ['direct-5', { score: 10 }],
       ]),
       ...overrides,
@@ -628,7 +628,7 @@ describe('Playback Session automatic recovery', () => {
     const state = loadSources({
       sourceStatuses: new Map<string, SourceStatus>([
         ['bad-3', { kind: 'unavailable' }],
-        ['proxy-4', { kind: 'unavailable' }],
+        ['spare-4', { kind: 'unavailable' }],
         ['direct-5', { kind: 'unavailable' }],
       ]),
       sourceScores: new Map([['short-2', { score: 999 }]]),
@@ -651,7 +651,7 @@ describe('Playback Session automatic recovery', () => {
     const state = loadSources({
       sourceStatuses: new Map<string, SourceStatus>([
         ['bad-3', { kind: 'unavailable' }],
-        ['proxy-4', { kind: 'proxy' }],
+        ['spare-4', { kind: 'unavailable' }],
         [
           'direct-5',
           {
@@ -700,7 +700,7 @@ describe('Playback Session automatic recovery', () => {
       recoveredSourceKeys: new Set(['direct-5']),
       sourceStatuses: new Map<string, SourceStatus>([
         ['bad-3', { kind: 'unavailable' }],
-        ['proxy-4', { kind: 'unavailable' }],
+        ['spare-4', { kind: 'unavailable' }],
         ['direct-5', { kind: 'direct' }],
       ]),
       sourceScores: new Map([['direct-5', { score: 999 }]]),
@@ -722,11 +722,11 @@ describe('Playback Session automatic recovery', () => {
       loadSources({
         sourceStatuses: new Map<string, SourceStatus>([
           ['direct-5', { kind: 'direct' }],
-          ['proxy-4', { kind: 'direct' }],
+          ['spare-4', { kind: 'direct' }],
         ]),
         sourceScores: new Map([
           ['direct-5', { score: 10 }],
-          ['proxy-4', { score: 5 }],
+          ['spare-4', { score: 5 }],
         ]),
       }),
       {
@@ -766,7 +766,7 @@ describe('Playback Session automatic recovery', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: 'switchSource',
-          sourceKey: 'proxy-4',
+          sourceKey: 'spare-4',
         }),
       ])
     );
@@ -827,7 +827,7 @@ describe('Playback Session automatic recovery', () => {
       loadSources({
         sourceStatuses: new Map<string, SourceStatus>([
           ['bad-3', { kind: 'unavailable' }],
-          ['proxy-4', { kind: 'proxy' }],
+          ['spare-4', { kind: 'unavailable' }],
           ['direct-5', { kind: 'direct' }],
         ]),
         sourceScores: new Map([['direct-5', { score: 20 }]]),
@@ -870,7 +870,7 @@ describe('Playback Session automatic recovery', () => {
       loadSources({
         sourceStatuses: new Map<string, SourceStatus>([
           ['bad-3', { kind: 'unavailable' }],
-          ['proxy-4', { kind: 'unavailable' }],
+          ['spare-4', { kind: 'unavailable' }],
           ['direct-5', { kind: 'direct' }],
         ]),
       }),

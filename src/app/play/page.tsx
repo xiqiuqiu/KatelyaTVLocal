@@ -181,6 +181,7 @@ import {
 import {
   PlaybackFeedbackInput,
   SearchResult,
+  SOURCE_CORS_BLOCKED_REASON,
   SourcePlaybackMode,
   SourceStatus,
   SourceVideoInfo,
@@ -190,7 +191,6 @@ import {
   readBooleanPreference,
 } from '@/lib/ui/preferences';
 import {
-  buildHlsProxyUrl,
   createPlayableSourceStatus,
   createSourceStatus,
   getRememberedSourceStatusForSource,
@@ -4113,7 +4113,6 @@ function usePlayPageSession() {
       playbackMode: playbackModeRef.current,
       startupSuccess: false,
       startupTimeMs,
-      switchedToProxy: playbackModeRef.current === 'proxy',
       sessionError,
     });
   };
@@ -4754,18 +4753,6 @@ function usePlayPageSession() {
     const preferenceStillCurrent = () =>
       preferenceGeneration === sourcePreferenceGenerationRef.current &&
       !options.signal?.aborted;
-    if (sources.length === 1) {
-      const source = sources[0];
-      const rememberedStatus = getRememberedSourceStatusForSource(
-        getSourceIdentityKey(source.source, source.id),
-        source.episodes
-      );
-      setPrecomputedSourceStatuses(new Map());
-      setPrecomputedVideoInfo(new Map());
-      updateSourceSelectionScores(sources, new Map(), new Map());
-      return rememberedStatus?.kind === 'proxy' ? null : source;
-    }
-
     const startedAt = Date.now();
     const sourceEntries = sources.map((source, originalIndex) => ({
       source,
@@ -4824,7 +4811,9 @@ function usePlayPageSession() {
         if (
           existingStatus &&
           (isBrowserSourceMeasurement(videoInfoMap.get(result.sourceKey)) ||
-            (existingStatus.fromMemory && !canRescueFromMemory))
+            (existingStatus.fromMemory &&
+              !canRescueFromMemory &&
+              result.reason !== SOURCE_CORS_BLOCKED_REASON))
         ) {
           statusMap.set(result.sourceKey, {
             ...existingStatus,
@@ -5019,25 +5008,8 @@ function usePlayPageSession() {
     lastLoadedAnalyzerAdSkipSignatureRef.current = null;
     void loadMergedAdSkipWindows([]);
 
-    const rememberedStatus = detailData
-      ? getRememberedSourceStatusForSource(
-          getSourceIdentityKey(detailData.source, detailData.id),
-          detailData.episodes
-        )
-      : null;
-    const proxyUrl = buildHlsProxyUrl(directUrl);
-    const adFilteringProxyUrl = buildHlsProxyUrl(directUrl, {
-      mediaSegmentMode: 'direct',
-    });
-    const rememberedPlaybackMode =
-      rememberedStatus?.kind === 'proxy'
-        ? 'proxy'
-        : rememberedStatus?.playbackMode || null;
     const playbackPolicy = resolveHlsPlaybackPolicy({
       directUrl,
-      proxyUrl,
-      adFilteringProxyUrl,
-      rememberedPlaybackMode,
       appleCapabilities: getApplePlaybackCapabilities(),
     });
 
@@ -7447,7 +7419,6 @@ function usePlayPageSession() {
               playbackMode: playbackModeRef.current,
               startupSuccess: true,
               startupTimeMs,
-              switchedToProxy: playbackModeRef.current === 'proxy',
               browserQuality:
                 browserInfo?.quality === '未知'
                   ? undefined
@@ -8308,7 +8279,6 @@ function usePlayPageSession() {
                   | undefined;
                 const directUrl = originalVideoUrlRef.current;
                 const playbackUrl = videoUrlRef.current;
-                const proxyUrl = buildHlsProxyUrl(directUrl);
 
                 castStatusRef.current = 'connecting';
                 updateCastControlElement(
@@ -8328,7 +8298,6 @@ function usePlayPageSession() {
                     }`.trim(),
                     poster: detailRef.current?.poster || videoCover,
                     directUrl,
-                    proxyUrl,
                     playbackUrl,
                   },
                   onNotice: (message) => showPlayerNotice(this, message),
@@ -8622,7 +8591,6 @@ function usePlayPageSession() {
                 playbackMode: playbackModeRef.current,
                 startupSuccess: false,
                 startupTimeMs,
-                switchedToProxy: playbackModeRef.current === 'proxy',
                 sessionError,
               });
             }

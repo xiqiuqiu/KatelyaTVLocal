@@ -22,7 +22,7 @@ describe('source preference client batching', () => {
             .reverse(),
           results: body.sources.map((source, index) => ({
             sourceKey: source.sourceKey,
-            kind: index % 2 === 0 ? 'direct' : 'proxy',
+            kind: index % 2 === 0 ? 'direct' : 'unavailable',
             reason: 'batched',
             probeTimeMs: 100 + index,
             rankingSource: 'live',

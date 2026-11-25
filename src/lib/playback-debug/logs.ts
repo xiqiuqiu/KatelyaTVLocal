@@ -7,12 +7,10 @@ import {
 export type PlaybackDebugRuntime = 'hlsjs' | string;
 export type PlaybackDebugPlaylistFilter =
   | 'client-filter'
-  | 'proxy-filter'
   | 'ios-skip'
   | 'client-observe'
-  | 'proxy-observe'
   | string;
-export type PlaybackDebugSegmentMode = 'direct' | 'proxy' | string;
+export type PlaybackDebugSegmentMode = 'direct' | string;
 export type PlaybackDebugRecoveryProfile = 'hlsjs' | string;
 
 export interface PlaybackDebugLogInput {

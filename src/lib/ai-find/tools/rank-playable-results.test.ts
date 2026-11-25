@@ -38,7 +38,7 @@ describe('rank playable results', () => {
     jest.clearAllMocks();
   });
 
-  it('sorts direct results ahead of proxy and missing-playback sources', async () => {
+  it('sorts direct results ahead of unavailable and missing-playback sources', async () => {
     mockedProbeSourcePlaybackWithCache.mockImplementation(async (targetUrl) => {
       if (targetUrl.includes('beta')) {
         return {
@@ -50,8 +50,8 @@ describe('rank playable results', () => {
       }
 
       return {
-        kind: 'proxy',
-        reason: '需要代理',
+        kind: 'unavailable',
+        reason: '上游不可达',
         probeTimeMs: 240,
         cacheState: 'miss',
       };
@@ -99,8 +99,8 @@ describe('rank playable results', () => {
       }
 
       return {
-        kind: 'proxy',
-        reason: '需要代理',
+        kind: 'unavailable',
+        reason: '上游不可达',
         probeTimeMs: 180,
         cacheState: 'miss',
       };

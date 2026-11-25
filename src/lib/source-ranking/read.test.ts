@@ -1,6 +1,56 @@
 import { readLatestSourceRanks } from '@/lib/source-ranking/read';
+import { SOURCE_CORS_BLOCKED_REASON } from '@/lib/types';
 
 describe('source ranking read', () => {
+  it('omits legacy probe rows and keeps a CORS block even before a snapshot exists', async () => {
+    const now = 1710000400000;
+    const all = jest
+      .fn()
+      .mockResolvedValueOnce({
+        results: [
+          {
+            sourceKey: 'legacy-with-rank',
+            directRate: 100,
+            proxyRate: 0,
+            unavailableRate: 0,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          { sourceKey: 'legacy-with-rank', kind: 'proxy', measuredAt: now },
+          { sourceKey: 'legacy-feedback-only', kind: 'proxy', measuredAt: now },
+          {
+            sourceKey: 'blocked',
+            kind: 'unavailable',
+            reason: SOURCE_CORS_BLOCKED_REASON,
+            measuredAt: now,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: ['legacy-with-rank', 'legacy-feedback-only', 'blocked'].map(
+          (sourceKey) => ({ sourceKey, startupSuccess: 1, recordedAt: now - 1 })
+        ),
+      });
+    const prepare = jest.fn().mockReturnValue({ bind: () => ({ all }) });
+
+    await expect(
+      readLatestSourceRanks(
+        { DB: { prepare } },
+        ['legacy-with-rank', 'legacy-feedback-only', 'blocked'],
+        '24h',
+        now
+      )
+    ).resolves.toEqual([
+      expect.objectContaining({
+        sourceKey: 'blocked',
+        kind: 'unavailable',
+        reason: SOURCE_CORS_BLOCKED_REASON,
+      }),
+    ]);
+  });
+
   it('reads requested 7-day snapshot rows and merges latest probe plus feedback details', async () => {
     const all = jest
       .fn()
@@ -33,8 +83,8 @@ describe('source ranking read', () => {
           {
             sourceKey: 'alpha',
             domain: 'probe.alpha.example',
-            kind: 'proxy',
-            reason: '最近探测建议代理',
+            kind: 'direct',
+            reason: '已确认直连',
             probeTimeMs: 340,
             resolutionLabel: '1080p',
             firstSegmentLatencyMs: 280,
@@ -50,7 +100,6 @@ describe('source ranking read', () => {
             playbackDomain: 'feedback.alpha.example',
             startupSuccess: 1,
             startupTimeMs: 1200,
-            switchedToProxy: 0,
             browserQuality: '4K',
             browserPingMs: 88,
             browserSpeedLabel: '2.4 MB/s',
@@ -62,7 +111,6 @@ describe('source ranking read', () => {
             playbackDomain: 'feedback.beta.example',
             startupSuccess: 0,
             startupTimeMs: 6200,
-            switchedToProxy: 1,
             browserQuality: null,
             browserPingMs: null,
             browserSpeedLabel: null,
@@ -82,6 +130,12 @@ describe('source ranking read', () => {
     );
 
     expect(prepare).toHaveBeenCalledTimes(3);
+    expect(prepare).toHaveBeenNthCalledWith(
+      3,
+      expect.stringMatching(
+        /playback_mode = 'direct'\s+AND switched_to_proxy = 0/
+      )
+    );
     expect(prepare).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('updated_at >= ?')
@@ -117,8 +171,8 @@ describe('source ranking read', () => {
     expect(results).toEqual([
       {
         sourceKey: 'alpha',
-        kind: 'proxy',
-        reason: '最近探测建议代理',
+        kind: 'direct',
+        reason: '已确认直连',
         domain: 'probe.alpha.example',
         probeTimeMs: 340,
         qualityLabel: '4K',
@@ -132,24 +186,6 @@ describe('source ranking read', () => {
         updatedAt: 1710000300000,
         rankingSource: 'd1',
         rankScore: 99.5,
-      },
-      {
-        sourceKey: 'beta',
-        kind: 'proxy',
-        reason: '近期成功率 72%，更适合代理',
-        domain: 'rank.beta.example',
-        probeTimeMs: undefined,
-        qualityLabel: null,
-        speedLabel: null,
-        speedSource: 'none',
-        speedUpdatedAt: undefined,
-        speedPending: true,
-        pingTimeMs: null,
-        latencyMs: null,
-        speedKbps: null,
-        updatedAt: 1710000350000,
-        rankingSource: 'd1',
-        rankScore: 56.2,
       },
     ]);
   });
@@ -181,7 +217,6 @@ describe('source ranking read', () => {
             playbackDomain: 'fast.example',
             startupSuccess: 1,
             startupTimeMs: 1800,
-            switchedToProxy: 0,
             browserQuality: null,
             browserPingMs: null,
             browserSpeedLabel: null,
@@ -193,7 +228,6 @@ describe('source ranking read', () => {
             playbackDomain: 'bad.example',
             startupSuccess: 0,
             startupTimeMs: 9000,
-            switchedToProxy: 0,
             browserQuality: null,
             browserPingMs: null,
             browserSpeedLabel: null,
@@ -282,7 +316,6 @@ describe('source ranking read', () => {
             playbackDomain: 'feedback.example',
             startupSuccess: 1,
             startupTimeMs: 3200,
-            switchedToProxy: 0,
             browserQuality: null,
             browserPingMs: null,
             browserSpeedLabel: null,
@@ -319,7 +352,6 @@ describe('source ranking read', () => {
       playbackDomain: 'feedback.example',
       startupSuccess: 0,
       startupTimeMs: 9000,
-      switchedToProxy: 1,
       browserQuality: null,
       browserPingMs: null,
       browserSpeedLabel: null,
@@ -331,7 +363,6 @@ describe('source ranking read', () => {
       playbackDomain: 'feedback.example',
       startupSuccess: 1,
       startupTimeMs: 1000,
-      switchedToProxy: 0,
       browserQuality: null,
       browserPingMs: null,
       browserSpeedLabel: null,

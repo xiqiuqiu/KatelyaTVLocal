@@ -318,22 +318,21 @@ For recommended config files, see the download links in the deployment sections 
 | `NEXT_PUBLIC_IMAGE_PROXY`     | Browser-side image proxy URL prefix      | (empty) |
 | `NEXT_PUBLIC_DOUBAN_PROXY`    | Browser-side Douban API proxy URL prefix | (empty) |
 | `NEXT_PUBLIC_SOURCE_PROBE`    | Browser-side source probe proxy          | (empty) |
-| `NEXT_PUBLIC_HLS_PROXY`       | Browser-side HLS stream proxy            | (empty) |
 
 ### Turnstile & Registration Security
 
-| Variable                               | Description                          | Default |
-| -------------------------------------- | ------------------------------------ | ------- |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`       | Cloudflare Turnstile site key        | (empty) |
-| `TURNSTILE_SECRET_KEY`                 | Cloudflare Turnstile secret key      | (empty) |
-| `REGISTER_TURNSTILE_REQUIRED`          | Require Turnstile on registration    | `false` |
-| `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | Require invite code for registration | `false` |
-| `REGISTER_INVITE_REQUIRED`             | Server-side invite requirement       | (empty) |
-| `REGISTER_PASSWORD_MIN_LENGTH`         | Minimum password length              | `6`     |
-| `REGISTER_IP_WINDOW_SECONDS`           | IP rate-limit window (seconds)       | `3600`  |
-| `REGISTER_IP_WINDOW_LIMIT`             | Max registrations per IP per window  | `3`     |
-| `LOGIN_TURNSTILE_REQUIRED`             | Require Turnstile before login       | `false` |
-| `LOGIN_RATE_WINDOW_SECONDS`            | Failed-login rate-limit window       | `900`   |
+| Variable                               | Description                          | Default                  |
+| -------------------------------------- | ------------------------------------ | ------------------------ |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`       | Cloudflare Turnstile site key        | (empty)                  |
+| `TURNSTILE_SECRET_KEY`                 | Cloudflare Turnstile secret key      | (empty)                  |
+| `REGISTER_TURNSTILE_REQUIRED`          | Require Turnstile on registration    | `false`                  |
+| `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | Require invite code for registration | `false`                  |
+| `REGISTER_INVITE_REQUIRED`             | Server-side invite requirement       | (empty)                  |
+| `REGISTER_PASSWORD_MIN_LENGTH`         | Minimum password length              | `6`                      |
+| `REGISTER_IP_WINDOW_SECONDS`           | IP rate-limit window (seconds)       | `3600`                   |
+| `REGISTER_IP_WINDOW_LIMIT`             | Max registrations per IP per window  | `3`                      |
+| `LOGIN_TURNSTILE_REQUIRED`             | Require Turnstile before login       | `false`                  |
+| `LOGIN_RATE_WINDOW_SECONDS`            | Failed-login rate-limit window       | `900`                    |
 | `LOGIN_RATE_WINDOW_LIMIT`              | Failed-login limit per IP + username | `0` (off; use `5` on D1) |
 
 Before setting a nonzero `LOGIN_RATE_WINDOW_LIMIT`, deploy

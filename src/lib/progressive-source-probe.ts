@@ -56,8 +56,6 @@ function getStatusPriority(status?: SourceStatus): number {
     case 'idle':
     case undefined:
       return 1;
-    case 'proxy':
-      return 2;
     case 'probing':
       return 3;
     case 'unavailable':
@@ -87,8 +85,7 @@ export function selectProgressiveSourceProbeCandidates({
         sourceKey !== currentSourceKey &&
         !attemptedSourceKeys.has(sourceKey) &&
         Boolean(source.episodes?.[currentEpisodeIndex]) &&
-        status?.kind !== 'unavailable' &&
-        status?.kind !== 'proxy'
+        status?.kind !== 'unavailable'
       );
     })
     .sort((left, right) => {

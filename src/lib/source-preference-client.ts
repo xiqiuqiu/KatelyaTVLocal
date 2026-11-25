@@ -23,8 +23,6 @@ function getStatusPriority(kind: SourcePreferenceResult['kind']): number {
   switch (kind) {
     case 'direct':
       return 0;
-    case 'proxy':
-      return 1;
     case 'unavailable':
     default:
       return 2;
@@ -91,7 +89,10 @@ export async function fetchSourcePreferencesInBatches(
     const resultMap = new Map<string, SourcePreferenceResult>();
     responses.forEach((response) => {
       response.results.forEach((result) => {
-        if (result.sourceKey) {
+        if (
+          result.sourceKey &&
+          (result.kind === 'direct' || result.kind === 'unavailable')
+        ) {
           resultMap.set(result.sourceKey, result);
         }
       });

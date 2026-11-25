@@ -1,7 +1,6 @@
 export interface SourceScoreInput {
   successRate: number;
   directRate: number;
-  proxyRate: number;
   unavailableRate: number;
   avgSpeedKbps: number | null;
   resolutionLabel: string | null;
@@ -26,8 +25,7 @@ const QUALITY_SCORE_MAP: Record<string, number> = {
 export function scoreSource(input: SourceScoreInput): SourceScoreResult {
   const healthScore =
     input.successRate * 0.5 +
-    input.directRate * 0.3 +
-    input.proxyRate * 0.2 -
+    input.directRate * 0.3 -
     input.unavailableRate * 0.6;
 
   const speedScore =
@@ -36,7 +34,7 @@ export function scoreSource(input: SourceScoreInput): SourceScoreResult {
       : Math.min(100, Math.max(0, input.avgSpeedKbps / 50));
 
   const qualityScore = input.resolutionLabel
-    ? (QUALITY_SCORE_MAP[input.resolutionLabel] ?? 35)
+    ? QUALITY_SCORE_MAP[input.resolutionLabel] ?? 35
     : 35;
 
   const finalScore =

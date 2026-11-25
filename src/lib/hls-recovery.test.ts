@@ -10,9 +10,9 @@ import {
 
 describe('media timeline collapse (鬼谜东宫 iPad)', () => {
   it('detects readyState 0 + null duration as a collapsed timeline', () => {
-    expect(
-      isCollapsedMediaTimeline({ readyState: 0, duration: null })
-    ).toBe(true);
+    expect(isCollapsedMediaTimeline({ readyState: 0, duration: null })).toBe(
+      true
+    );
   });
 
   it('keeps the remembered playhead when live media reports 0', () => {
@@ -72,7 +72,7 @@ describe('getHlsRecoveryPlan', () => {
     });
   });
 
-  it('escalates repeated direct stalls to source switching without proxy playback', () => {
+  it('escalates repeated direct stalls to source switching', () => {
     expect(
       getHlsRecoveryPlan({
         fatal: false,
@@ -110,13 +110,13 @@ describe('getHlsRecoveryPlan', () => {
     });
   });
 
-  it('restarts load before giving up on repeated network errors in proxy mode', () => {
+  it('restarts load before giving up on repeated network errors', () => {
     expect(
       getHlsRecoveryPlan({
         fatal: true,
         errorType: 'networkError',
         errorDetails: 'fragLoadError',
-        playbackMode: 'proxy',
+        playbackMode: 'direct',
         stallCount: 0,
         stallWindowCount: 0,
         networkRecoveryAttempts: 0,
@@ -217,7 +217,7 @@ describe('getHlsRecoveryPlan', () => {
     });
   });
 
-  it('escalates repeated network errors to source switching instead of proxy playback', () => {
+  it('escalates repeated network errors to source switching', () => {
     expect(
       getHlsRecoveryPlan({
         fatal: false,

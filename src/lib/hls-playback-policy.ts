@@ -7,7 +7,7 @@ export type HlsPlaybackRuntime = 'hlsjs';
  * 不再区分桌面/安卓 `client-filter`（物理删分片）与 iOS `ios-skip`。
  */
 export type HlsPlaylistFilterMode = 'skip' | 'none';
-export type HlsSegmentMode = 'direct' | 'proxy';
+export type HlsSegmentMode = 'direct';
 export type HlsRecoveryProfile = 'hlsjs';
 export type PlaybackProbePlatform =
   | 'apple-hlsjs'
@@ -31,9 +31,6 @@ export interface ApplePlaybackCapabilities {
 
 export interface HlsPlaybackPolicyInput {
   directUrl: string;
-  proxyUrl?: string | null;
-  adFilteringProxyUrl?: string | null;
-  rememberedPlaybackMode?: SourcePlaybackMode | null;
   appleCapabilities: ApplePlaybackCapabilities;
 }
 
@@ -45,7 +42,6 @@ export interface HlsPlaybackPolicyResult {
   segmentMode: HlsSegmentMode;
   recoveryProfile: HlsRecoveryProfile;
   reason: HlsPlaybackPolicyReason;
-  forcedProxyForAdFiltering: boolean;
   deviceUnsupported: boolean;
   disableRemotePlayback: boolean;
 }
@@ -101,7 +97,6 @@ export function resolveHlsPlaybackPolicy({
     segmentMode: 'direct',
     recoveryProfile: 'hlsjs',
     reason: deviceUnsupported ? 'device-unsupported' : 'direct-preferred',
-    forcedProxyForAdFiltering: false,
     deviceUnsupported,
     disableRemotePlayback: appleCapabilities.isAppleDevice,
   };

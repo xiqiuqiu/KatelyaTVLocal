@@ -60,7 +60,7 @@ export async function savePlaybackFeedback(
       input.playbackMode,
       input.startupSuccess ? 1 : 0,
       input.startupTimeMs ?? null,
-      input.switchedToProxy ? 1 : 0,
+      0, // switched_to_proxy is NOT NULL and unused
       input.browserQuality || null,
       input.browserPingMs ?? null,
       input.browserSpeedLabel || null,

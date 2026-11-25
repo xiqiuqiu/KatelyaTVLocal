@@ -47,8 +47,6 @@ function getStatusPriority(kind: SourcePreferenceResult['kind']): number {
   switch (kind) {
     case 'direct':
       return 0;
-    case 'proxy':
-      return 1;
     case 'unavailable':
     default:
       return 2;

@@ -1,7 +1,7 @@
 import { probeSourcePlaybackUpstream } from '@/lib/source-preference';
 
 export interface OfflineProbeResult {
-  kind: 'direct' | 'proxy' | 'unavailable';
+  kind: 'direct' | 'unavailable';
   reason?: string;
   domain?: string | null;
   upstreamStatus?: number;

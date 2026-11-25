@@ -4,6 +4,7 @@ import Hls, { type FragLoadingData } from 'hls.js';
 
 import { formatSourceSpeedKbps } from './source-preference-video-info';
 import {
+  SOURCE_CORS_BLOCKED_REASON,
   SourceDomainPreference,
   SourcePlaybackMode,
   SourcePlaybackQualityPreference,
@@ -42,7 +43,13 @@ function readSourceDomainPreferenceMap(): Record<
       string,
       SourceDomainPreference
     >;
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    if (!parsed || typeof parsed !== 'object') return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        ([, preference]) =>
+          preference?.mode === 'direct' || preference?.mode === 'unavailable'
+      )
+    );
   } catch {
     return {};
   }
@@ -70,7 +77,13 @@ function readSourcePlaybackQualityPreferenceMap(): Record<
       string,
       SourcePlaybackQualityPreference
     >;
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    if (!parsed || typeof parsed !== 'object') return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        ([, preference]) =>
+          preference?.mode === 'direct' || preference?.mode === 'unavailable'
+      )
+    );
   } catch {
     return {};
   }
@@ -185,7 +198,13 @@ export function rememberSourceDomainPreference(
   mode: SourcePlaybackMode | 'unavailable',
   error?: string
 ): void {
-  if (!domain || typeof window === 'undefined') return;
+  if (
+    !domain ||
+    typeof window === 'undefined' ||
+    error === SOURCE_CORS_BLOCKED_REASON
+  ) {
+    return;
+  }
 
   const allPreferences = readSourceDomainPreferenceMap();
   const previousPreference = allPreferences[domain];
@@ -226,10 +245,7 @@ export function rememberSourcePlaybackQuality(
 
   allPreferences[key] = {
     mode: update.mode,
-    lastPlayableAt:
-      update.mode === 'direct' || update.mode === 'proxy'
-        ? now
-        : previous?.lastPlayableAt,
+    lastPlayableAt: update.mode === 'direct' ? now : previous?.lastPlayableAt,
     lastFailedAt: update.mode === 'unavailable' ? now : previous?.lastFailedAt,
     startupTimeMs: update.startupTimeMs ?? previous?.startupTimeMs,
     observedSpeedKbps,
@@ -371,10 +387,7 @@ export function getRememberedSourceStatus(
   return createSourceStatus(preference.mode, {
     domain,
     playbackMode: preference.mode,
-    reason:
-      preference.mode === 'proxy'
-        ? '该源近期更适合通过代理播放'
-        : '该源近期可直接播放',
+    reason: '该源近期可直接播放',
     fromMemory: true,
     updatedAt: preference.updatedAt,
   });
@@ -439,8 +452,6 @@ export function getSourceStatusLabel(status: SourceStatus): string {
       return '检测中';
     case 'direct':
       return '推荐·直连';
-    case 'proxy':
-      return '备用·需代理';
     case 'playable':
       return '可尝试';
     case 'unavailable':
@@ -458,14 +469,9 @@ export function getSourceStatusDescription(
     return '正在检测当前线路';
   }
 
-  // Keep badge/description consistent: never advertise speed under an
-  // unavailable/proxy status that the user cannot (or should not) treat as ready.
-  if (
-    videoInfo &&
-    !videoInfo.hasError &&
-    status?.kind !== 'unavailable' &&
-    status?.kind !== 'proxy'
-  ) {
+  // Keep badge/description consistent: never advertise speed for an
+  // unavailable line.
+  if (videoInfo && !videoInfo.hasError && status?.kind !== 'unavailable') {
     const speed = formatSourceVideoInfoSpeed(videoInfo);
     return videoInfo.browserSpeedUnmeasured && videoInfo.pingTime <= 0
       ? speed
@@ -475,8 +481,6 @@ export function getSourceStatusDescription(
   switch (status?.kind) {
     case 'direct':
       return '推荐优先使用，浏览器可直接播放';
-    case 'proxy':
-      return '备用线路，需要代理兜底播放';
     case 'playable':
       return '可尝试播放，失败时可换源';
     case 'unavailable':
@@ -592,7 +596,12 @@ export async function probeSourcePlayback(
         continue;
       }
 
-      if (!payload || !('kind' in payload)) {
+      if (
+        !payload ||
+        typeof payload !== 'object' ||
+        !('kind' in payload) ||
+        (payload.kind !== 'direct' && payload.kind !== 'unavailable')
+      ) {
         lastFailureReason = '服务端探测返回无效结果';
         continue;
       }
@@ -710,46 +719,6 @@ export function getDoubanProxyUrl(): string | null {
   return serverDoubanProxy && serverDoubanProxy.trim()
     ? serverDoubanProxy.trim()
     : null;
-}
-
-/**
- * 获取 HLS 代理 URL 设置
- */
-export function getHlsProxyUrl(): string | null {
-  if (typeof window === 'undefined') return null;
-
-  const serverHlsProxy = (window as any).RUNTIME_CONFIG?.HLS_PROXY;
-  return serverHlsProxy && serverHlsProxy.trim() ? serverHlsProxy.trim() : null;
-}
-
-interface HlsProxyUrlOptions {
-  mediaSegmentMode?: 'proxy' | 'direct';
-  filterAds?: boolean;
-}
-
-/**
- * 处理 HLS URL，如果配置了代理则使用代理
- */
-export function buildHlsProxyUrl(
-  originalUrl: string,
-  options: HlsProxyUrlOptions = {}
-): string | null {
-  if (!originalUrl) return null;
-
-  const proxyUrl = getHlsProxyUrl();
-  if (!proxyUrl) return null;
-
-  let url = `${proxyUrl}${encodeURIComponent(originalUrl)}`;
-
-  if (options.mediaSegmentMode === 'direct') {
-    url = `${url}${url.includes('?') ? '&' : '?'}segmentMode=direct`;
-  }
-
-  if (options.filterAds === false) {
-    url = `${url}${url.includes('?') ? '&' : '?'}filterAds=0`;
-  }
-
-  return url;
 }
 
 /**

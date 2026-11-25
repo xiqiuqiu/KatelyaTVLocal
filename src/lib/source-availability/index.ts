@@ -3,6 +3,7 @@ import {
   SourceSelectionScore,
 } from '../source-selection';
 import type { SearchResult, SourceStatus, SourceVideoInfo } from '../types';
+import { SOURCE_CORS_BLOCKED_REASON } from '../types';
 import { getSourceIdentityKey } from '../utils';
 
 export type ManualSwitchMode = 'switch-now' | 'probe-first' | 'blocked';
@@ -13,7 +14,6 @@ export type AvailabilityKind =
   | 'playable'
   | 'unknown'
   | 'probing'
-  | 'proxy-required'
   | 'unavailable'
   | 'episode-missing';
 
@@ -26,7 +26,6 @@ export type AvailabilityEvidenceKind =
   | 'probe-pending'
   | 'probe-failed-but-tryable'
   | 'episode-missing'
-  | 'proxy-required'
   | 'unknown';
 
 export interface SourceAvailabilityDecision {
@@ -110,6 +109,8 @@ function getEffectiveStatus(
   status: SourceStatus | undefined,
   measured: SourceVideoInfo | undefined
 ): SourceStatus | undefined {
+  if (status?.reason === SOURCE_CORS_BLOCKED_REASON) return status;
+
   if (status?.kind === 'unavailable' && hasBackendPlayableMetrics(measured)) {
     return {
       kind: 'playable',
@@ -161,10 +162,6 @@ function getEvidenceKind(
     return 'probe-pending';
   }
 
-  if (status?.kind === 'proxy') {
-    return 'proxy-required';
-  }
-
   if (status?.kind === 'unavailable') {
     return status.fromMemory ? 'remembered-unavailable' : 'unknown';
   }
@@ -187,8 +184,6 @@ function getAvailabilityKind(
       return 'playable';
     case 'probing':
       return 'probing';
-    case 'proxy':
-      return 'proxy-required';
     case 'unavailable':
       return 'unavailable';
     case 'idle':
@@ -217,8 +212,6 @@ function getManualSwitchDecision(
       return { mode: 'blocked', reason: '当前正在播放此线路' };
     case 'episode-missing':
       return { mode: 'blocked', reason: '当前集不可用' };
-    case 'proxy-required':
-      return { mode: 'blocked', reason: '当前播放路径未启用代理播放' };
     case 'unavailable':
       return {
         mode: 'blocked',
@@ -261,12 +254,6 @@ function getAutoRecoveryDecision(
       return {
         eligible: false,
         reason: '当前集不可用',
-        rank: Number.MAX_SAFE_INTEGER,
-      };
-    case 'proxy-required':
-      return {
-        eligible: false,
-        reason: '当前播放路径未启用代理播放',
         rank: Number.MAX_SAFE_INTEGER,
       };
     case 'unavailable':

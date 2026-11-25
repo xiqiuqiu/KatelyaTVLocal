@@ -60,7 +60,6 @@ interface AggregationBucket {
   sourceName: string;
   sampleCount: number;
   directCount: number;
-  proxyCount: number;
   unavailableCount: number;
   speedSum: number;
   speedCount: number;
@@ -307,8 +306,7 @@ async function loadFeedbackDerivedSamples(
          CASE
            WHEN startup_success = 0 THEN 0
            WHEN startup_time_ms > 5000 THEN 1
-           WHEN switched_to_proxy = 1 THEN 2
-           ELSE 3
+           ELSE 2
          END,
          recorded_at DESC
        LIMIT ?`
@@ -480,7 +478,6 @@ function createAggregationBucket(task: SampledProbeTask): AggregationBucket {
     sourceName: task.sourceName,
     sampleCount: 0,
     directCount: 0,
-    proxyCount: 0,
     unavailableCount: 0,
     speedSum: 0,
     speedCount: 0,
@@ -497,8 +494,6 @@ function appendProbeToBucket(
 
   if (result.kind === 'direct') {
     bucket.directCount += 1;
-  } else if (result.kind === 'proxy') {
-    bucket.proxyCount += 1;
   } else {
     bucket.unavailableCount += 1;
   }
@@ -587,12 +582,8 @@ async function upsertSnapshot(
   windowKey: string,
   updatedAt: number
 ): Promise<void> {
-  const successRate = normalizePercent(
-    bucket.directCount + bucket.proxyCount,
-    bucket.sampleCount
-  );
+  const successRate = normalizePercent(bucket.directCount, bucket.sampleCount);
   const directRate = normalizePercent(bucket.directCount, bucket.sampleCount);
-  const proxyRate = normalizePercent(bucket.proxyCount, bucket.sampleCount);
   const unavailableRate = normalizePercent(
     bucket.unavailableCount,
     bucket.sampleCount
@@ -604,7 +595,6 @@ async function upsertSnapshot(
   const score = scoreSource({
     successRate,
     directRate,
-    proxyRate,
     unavailableRate,
     avgSpeedKbps,
     resolutionLabel,
@@ -628,7 +618,7 @@ async function upsertSnapshot(
       score.finalScore,
       successRate,
       directRate,
-      proxyRate,
+      0, // proxy_rate is NOT NULL and unused
       unavailableRate,
       bucket.sampleCount,
       updatedAt

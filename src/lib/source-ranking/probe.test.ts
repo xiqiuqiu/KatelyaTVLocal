@@ -112,11 +112,13 @@ describe('source ranking offline probe', () => {
     global.fetch = jest
       .fn()
       .mockResolvedValueOnce(playlist(mediaPlaylist))
-      .mockResolvedValueOnce(mockResponse(null, { status: 206 }));
+      .mockResolvedValueOnce(
+        mockResponse(null, { status: 206, headers: cors })
+      );
     await expect(
       probePlaybackForRanking(entryUrl, origin)
     ).resolves.toMatchObject({
-      kind: 'proxy',
+      kind: 'direct',
       firstSegmentLatencyMs: null,
       firstSegmentSpeedKbps: null,
     });
@@ -196,8 +198,8 @@ describe('source ranking offline probe', () => {
         episodeUrl: 'https://media.example.com/video.m3u8',
       },
       {
-        kind: 'proxy',
-        reason: '需要代理',
+        kind: 'direct',
+        reason: '媒体地址可直接访问',
         domain: 'media.example.com',
         upstreamStatus: 403,
         probeTimeMs: 780,
@@ -219,8 +221,8 @@ describe('source ranking offline probe', () => {
       '示例标题',
       'https://media.example.com/video.m3u8',
       'media.example.com',
-      'proxy',
-      '需要代理',
+      'direct',
+      '媒体地址可直接访问',
       403,
       780,
       null,

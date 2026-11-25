@@ -6,17 +6,9 @@ import {
 
 describe('resolveHlsPlaybackPolicy', () => {
   const directUrl = 'https://media.example.com/show/index.m3u8';
-  const proxyUrl =
-    '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8';
-  const adFilteringProxyUrl =
-    '/api/hls-proxy?url=https%3A%2F%2Fmedia.example.com%2Fshow%2Findex.m3u8&segmentMode=direct';
-
   it('uses hls.js through MMS with remote playback disabled on capable Apple devices', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
-      proxyUrl,
-      adFilteringProxyUrl,
-      rememberedPlaybackMode: 'direct',
       appleCapabilities: {
         isAppleDevice: true,
         hasManagedMediaSource: true,
@@ -32,16 +24,12 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.recoveryProfile).toBe('hlsjs');
     expect(result.deviceUnsupported).toBe(false);
     expect(result.disableRemotePlayback).toBe(true);
-    expect(result.forcedProxyForAdFiltering).toBe(false);
     expect(result.reason).toBe('direct-preferred');
   });
 
   it('keeps direct-first playback and unifies Android/desktop hls.js on the seek-based ad skip path', () => {
     const result = resolveHlsPlaybackPolicy({
       directUrl,
-      proxyUrl,
-      adFilteringProxyUrl,
-      rememberedPlaybackMode: 'direct',
       appleCapabilities: {
         isAppleDevice: false,
         hasManagedMediaSource: false,
@@ -57,72 +45,6 @@ describe('resolveHlsPlaybackPolicy', () => {
     expect(result.recoveryProfile).toBe('hlsjs');
     expect(result.deviceUnsupported).toBe(false);
     expect(result.disableRemotePlayback).toBe(false);
-    expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('direct-preferred');
-  });
-
-  it('ignores remembered proxy playback on Android and desktop because proxy playback is not a default recovery path', () => {
-    const result = resolveHlsPlaybackPolicy({
-      directUrl,
-      proxyUrl,
-      adFilteringProxyUrl,
-      rememberedPlaybackMode: 'proxy',
-      appleCapabilities: {
-        isAppleDevice: false,
-        hasManagedMediaSource: false,
-        hlsJsSupported: true,
-      },
-    });
-
-    expect(result.mode).toBe('direct');
-    expect(result.url).toBe(directUrl);
-    expect(result.runtime).toBe('hlsjs');
-    expect(result.playlistFilter).toBe('skip');
-    expect(result.segmentMode).toBe('direct');
-    expect(result.recoveryProfile).toBe('hlsjs');
-    expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('direct-preferred');
-  });
-
-  it('ignores remembered proxy playback on supported Apple devices and keeps hls.js direct playback', () => {
-    const result = resolveHlsPlaybackPolicy({
-      directUrl,
-      proxyUrl,
-      adFilteringProxyUrl,
-      rememberedPlaybackMode: 'proxy',
-      appleCapabilities: {
-        isAppleDevice: true,
-        hasManagedMediaSource: true,
-        hlsJsSupported: true,
-      },
-    });
-
-    expect(result.mode).toBe('direct');
-    expect(result.url).toBe(directUrl);
-    expect(result.runtime).toBe('hlsjs');
-    expect(result.playlistFilter).toBe('skip');
-    expect(result.segmentMode).toBe('direct');
-    expect(result.recoveryProfile).toBe('hlsjs');
-    expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('direct-preferred');
-  });
-
-  it('falls back to direct playback when proxy filtering is unavailable', () => {
-    const result = resolveHlsPlaybackPolicy({
-      directUrl,
-      proxyUrl: null,
-      rememberedPlaybackMode: 'direct',
-      appleCapabilities: {
-        isAppleDevice: true,
-        hasManagedMediaSource: true,
-        hlsJsSupported: true,
-      },
-    });
-
-    expect(result.mode).toBe('direct');
-    expect(result.url).toBe(directUrl);
-    expect(result.playlistFilter).toBe('skip');
-    expect(result.forcedProxyForAdFiltering).toBe(false);
     expect(result.reason).toBe('direct-preferred');
   });
 
@@ -287,27 +209,5 @@ describe('detectPlaybackProbePlatform', () => {
         maxTouchPoints: 0,
       })
     ).toBe('desktop-hlsjs');
-  });
-});
-
-describe('resolveHlsPlaybackPolicy — legacy proxy preference', () => {
-  const directUrl = 'https://media.example.com/show/index.m3u8';
-
-  it('keeps direct when remembered mode is proxy and proxyUrl is null', () => {
-    const result = resolveHlsPlaybackPolicy({
-      directUrl,
-      proxyUrl: null,
-      rememberedPlaybackMode: 'proxy',
-      appleCapabilities: {
-        isAppleDevice: false,
-        hasManagedMediaSource: false,
-        hlsJsSupported: true,
-      },
-    });
-
-    expect(result.mode).toBe('direct');
-    expect(result.url).toBe(directUrl);
-    expect(result.forcedProxyForAdFiltering).toBe(false);
-    expect(result.reason).toBe('direct-preferred');
   });
 });

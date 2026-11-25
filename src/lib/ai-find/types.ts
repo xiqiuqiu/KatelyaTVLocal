@@ -29,7 +29,7 @@ export interface AiFindAggregatedResult {
   type?: string;
   poster?: string;
   items: SearchResult[];
-  playbackHint?: 'direct' | 'proxy' | 'unknown';
+  playbackHint?: 'direct' | 'unknown';
 }
 
 export interface AiFindResultGroup {

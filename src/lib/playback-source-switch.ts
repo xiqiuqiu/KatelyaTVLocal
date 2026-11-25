@@ -36,7 +36,6 @@ type RecoverySourceStatusKind =
   | 'idle'
   | 'probing'
   | 'direct'
-  | 'proxy'
   | 'playable'
   | 'unavailable';
 
@@ -99,7 +98,6 @@ function getRecoverySourcePriority(
   if (statusKind === 'playable') {
     return 1;
   }
-  if (statusKind === 'proxy') return 2;
   if (!statusKind || statusKind === 'idle') {
     return 3;
   }
@@ -434,9 +432,7 @@ export function getSourceSwitchResumePlan({
   }
 
   const isCrossSource = Boolean(
-    currentSourceKey &&
-      targetSourceKey &&
-      currentSourceKey !== targetSourceKey
+    currentSourceKey && targetSourceKey && currentSourceKey !== targetSourceKey
   );
   const escapeMode = isCrossSource ? 'cross-source' : 'same-source';
 
@@ -453,8 +449,7 @@ export function getSourceSwitchResumePlan({
   if (
     existingResumeTime &&
     existingResumeTime > 0 &&
-    currentPlayTime >
-      existingResumeTime + PLAYBACK_RESUME_REWIND_SECONDS
+    currentPlayTime > existingResumeTime + PLAYBACK_RESUME_REWIND_SECONDS
   ) {
     const escape = planStallEscapeResume({
       currentPlayTime,

@@ -31,7 +31,7 @@ function createSource(
 function loadPlayableAlts(): PlaybackSessionState {
   const sources = [
     createSource('current', '1'),
-    createSource('proxy', '4'),
+    createSource('spare', '4'),
     createSource('direct', '5'),
   ];
   return reducePlaybackSession(createInitialPlaybackSessionState(), {
@@ -41,11 +41,11 @@ function loadPlayableAlts(): PlaybackSessionState {
     currentEpisodeIndex: 2,
     contentKey: 'title::2026',
     sourceStatuses: new Map<string, SourceStatus>([
-      ['proxy-4', { kind: 'proxy' }],
+      ['spare-4', { kind: 'unavailable' }],
       ['direct-5', { kind: 'direct' }],
     ]),
     sourceScores: new Map([
-      ['proxy-4', { score: 99 }],
+      ['spare-4', { score: 99 }],
       ['direct-5', { score: 10 }],
     ]),
   }).state;
@@ -189,9 +189,9 @@ describe('Segment-Scaled Escape and Recovery Disclosure (#48)', () => {
       },
     });
 
-    expect(
-      after.effects.some((effect) => effect.type === 'switchSource')
-    ).toBe(true);
+    expect(after.effects.some((effect) => effect.type === 'switchSource')).toBe(
+      true
+    );
     expect(
       after.effects.some(
         (effect) =>

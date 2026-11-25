@@ -318,22 +318,21 @@ KatelyaTV 使用标准 Apple CMS V10 API 格式。在项目根目录创建 `conf
 | `NEXT_PUBLIC_IMAGE_PROXY`     | 浏览器端图片代理 URL 前缀 | （空） |
 | `NEXT_PUBLIC_DOUBAN_PROXY`    | 浏览器端豆瓣 API 代理 URL | （空） |
 | `NEXT_PUBLIC_SOURCE_PROBE`    | 浏览器端源站探测代理      | （空） |
-| `NEXT_PUBLIC_HLS_PROXY`       | 浏览器端 HLS 流代理       | （空） |
 
 ### Turnstile 与注册安全
 
-| 变量                                   | 描述                          | 默认值  |
-| -------------------------------------- | ----------------------------- | ------- |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`       | Cloudflare Turnstile 站点密钥 | （空）  |
-| `TURNSTILE_SECRET_KEY`                 | Cloudflare Turnstile 密钥     | （空）  |
-| `REGISTER_TURNSTILE_REQUIRED`          | 注册时要求 Turnstile 验证     | `false` |
-| `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | 注册需要邀请码                | `false` |
-| `REGISTER_INVITE_REQUIRED`             | 服务端邀请要求                | （空）  |
-| `REGISTER_PASSWORD_MIN_LENGTH`         | 密码最小长度                  | `6`     |
-| `REGISTER_IP_WINDOW_SECONDS`           | IP 速率限制时间窗口（秒）     | `3600`  |
-| `REGISTER_IP_WINDOW_LIMIT`             | 每 IP 每窗口最大注册次数      | `3`     |
-| `LOGIN_TURNSTILE_REQUIRED`             | 登录前要求 Turnstile 验证     | `false` |
-| `LOGIN_RATE_WINDOW_SECONDS`            | 登录失败限流时间窗口（秒）    | `900`   |
+| 变量                                   | 描述                          | 默认值                   |
+| -------------------------------------- | ----------------------------- | ------------------------ |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`       | Cloudflare Turnstile 站点密钥 | （空）                   |
+| `TURNSTILE_SECRET_KEY`                 | Cloudflare Turnstile 密钥     | （空）                   |
+| `REGISTER_TURNSTILE_REQUIRED`          | 注册时要求 Turnstile 验证     | `false`                  |
+| `NEXT_PUBLIC_REGISTER_INVITE_REQUIRED` | 注册需要邀请码                | `false`                  |
+| `REGISTER_INVITE_REQUIRED`             | 服务端邀请要求                | （空）                   |
+| `REGISTER_PASSWORD_MIN_LENGTH`         | 密码最小长度                  | `6`                      |
+| `REGISTER_IP_WINDOW_SECONDS`           | IP 速率限制时间窗口（秒）     | `3600`                   |
+| `REGISTER_IP_WINDOW_LIMIT`             | 每 IP 每窗口最大注册次数      | `3`                      |
+| `LOGIN_TURNSTILE_REQUIRED`             | 登录前要求 Turnstile 验证     | `false`                  |
+| `LOGIN_RATE_WINDOW_SECONDS`            | 登录失败限流时间窗口（秒）    | `900`                    |
 | `LOGIN_RATE_WINDOW_LIMIT`              | 每 IP + 用户名组合的失败上限  | `0`（关闭；D1 建议 `5`） |
 
 启用非零 `LOGIN_RATE_WINDOW_LIMIT` 前，必须先将

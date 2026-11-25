@@ -39,8 +39,6 @@ function getStatusClassName(
   switch (effectiveSourceStatus.kind) {
     case 'direct':
       return 'bg-[rgba(var(--ui-success),0.16)] text-[rgb(var(--ui-success))] ring-1 ring-[rgba(var(--ui-success),0.38)]';
-    case 'proxy':
-      return 'bg-[rgba(var(--ui-accent),0.16)] text-[rgb(var(--ui-accent))] ring-1 ring-[rgba(var(--ui-accent),0.38)]';
     case 'playable':
       return 'bg-[rgba(var(--ui-accent-warm),0.16)] text-[rgb(var(--ui-accent-warm))] ring-1 ring-[rgba(var(--ui-accent-warm),0.38)]';
     case 'unavailable':
@@ -133,11 +131,9 @@ const EpisodeSelectorSources: React.FC<EpisodeSelectorSourcesProps> = ({
               const videoInfo = availability.measured;
               const playbackVerified =
                 isCurrentSource && currentPlaybackVerified;
-              const effectiveSourceStatus =
-                playbackVerified &&
-                availability.effectiveStatus?.kind !== 'proxy'
-                  ? { kind: 'playable' as const }
-                  : availability.effectiveStatus;
+              const effectiveSourceStatus = playbackVerified
+                ? { kind: 'playable' as const }
+                : availability.effectiveStatus;
               const isClickable = availability.manualSwitch.mode !== 'blocked';
               const statusLabel = playbackVerified
                 ? '已验证可播'

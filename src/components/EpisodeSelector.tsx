@@ -17,6 +17,7 @@ import {
 } from '@/lib/source-selection';
 import {
   SearchResult,
+  SOURCE_CORS_BLOCKED_REASON,
   SourcePreferenceRequest,
   SourceStatus,
   SourceVideoInfo,
@@ -324,7 +325,10 @@ function useEpisodeSelectorState({
 
   const getBackendRescuedStatus = useCallback(
     (sourceKey: string, status: SourceStatus | null | undefined) => {
-      if (status?.kind !== 'unavailable') {
+      if (
+        status?.kind !== 'unavailable' ||
+        status.reason === SOURCE_CORS_BLOCKED_REASON
+      ) {
         return null;
       }
 
@@ -433,10 +437,7 @@ function useEpisodeSelectorState({
           ? existingStatus
           : rememberedStatus;
 
-      if (
-        knownStatus?.kind === 'proxy' ||
-        knownStatus?.kind === 'unavailable'
-      ) {
+      if (knownStatus?.kind === 'unavailable') {
         return getBackendRescuedStatus(sourceKey, knownStatus) || knownStatus;
       }
 
@@ -448,21 +449,6 @@ function useEpisodeSelectorState({
               domain: knownStatus.domain || rememberedStatus?.domain || null,
             }
           : await probeSourcePlayback(episodeUrl);
-
-      if (serverProbeResult.kind === 'proxy') {
-        const proxyStatus = createSourceStatus('proxy', {
-          reason: serverProbeResult.reason || '该源需通过代理播放',
-          playbackMode: 'proxy',
-          domain: serverProbeResult.domain || rememberedStatus?.domain || null,
-        });
-        setSourceStatusMap((prev) => new Map(prev).set(sourceKey, proxyStatus));
-        rememberSourceDomainPreference(
-          proxyStatus.domain || null,
-          'proxy',
-          serverProbeResult.reason
-        );
-        return proxyStatus;
-      }
 
       if (serverProbeResult.kind === 'unavailable') {
         const unavailableInfo: SourceVideoInfo = {

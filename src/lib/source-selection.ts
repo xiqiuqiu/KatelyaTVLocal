@@ -69,8 +69,6 @@ function getStatusBaseScore(statusKind?: SourceStatusKind): number {
   switch (statusKind) {
     case 'direct':
       return 80;
-    case 'proxy':
-      return 58;
     case 'playable':
       return 52;
     case 'unavailable':
@@ -90,8 +88,6 @@ function getStatusReason(status?: SourceStatus | null): string {
   switch (status?.kind) {
     case 'direct':
       return '浏览器可直接播放';
-    case 'proxy':
-      return '建议代理播放';
     case 'playable':
       return '可尝试播放';
     case 'unavailable':

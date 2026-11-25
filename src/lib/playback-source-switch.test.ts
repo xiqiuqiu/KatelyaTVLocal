@@ -404,10 +404,10 @@ describe('getNextRecoverySourceCandidate', () => {
       statusKind: 'unavailable' as const,
     },
     {
-      source: 'proxy',
+      source: 'spare',
       id: '4',
       episodes: ['a', 'b', 'c'],
-      statusKind: 'proxy' as const,
+      statusKind: 'unavailable' as const,
     },
     {
       source: 'direct',
@@ -417,7 +417,7 @@ describe('getNextRecoverySourceCandidate', () => {
     },
   ];
 
-  it('chooses a same-episode direct source over proxy and unavailable candidates', () => {
+  it('chooses a same-episode direct source over unavailable candidates', () => {
     expect(
       getNextRecoverySourceCandidate({
         candidates,
@@ -450,13 +450,13 @@ describe('getNextRecoverySourceCandidate', () => {
     ).toBeUndefined();
   });
 
-  it('does not use proxy, unknown, or probing sources for automatic recovery', () => {
+  it('does not use unavailable, unknown, or probing sources for automatic recovery', () => {
     const unknownCandidates = [
       {
-        source: 'proxy',
+        source: 'spare',
         id: '1',
         episodes: ['a', 'b'],
-        statusKind: 'proxy' as const,
+        statusKind: 'unavailable' as const,
       },
       {
         source: 'unknown',
@@ -489,7 +489,7 @@ describe('getNextRecoverySourceCandidate', () => {
         recoveredSourceKeys: new Set<string>(),
         currentEpisodeIndex: 2,
         getCandidateScore: (candidate) => {
-          if (candidate.source === 'proxy') return 99;
+          if (candidate.source === 'spare') return 99;
           if (candidate.source === 'direct') return 10;
           return 0;
         },

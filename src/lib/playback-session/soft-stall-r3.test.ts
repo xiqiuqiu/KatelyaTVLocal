@@ -25,7 +25,7 @@ function loadPlayableAlts() {
     createSource('current', '1'),
     createSource('short', '2', ['ep-1.m3u8']),
     createSource('bad', '3'),
-    createSource('proxy', '4'),
+    createSource('spare', '4'),
     createSource('direct', '5'),
   ];
   return reducePlaybackSession(createInitialPlaybackSessionState(), {
@@ -35,11 +35,11 @@ function loadPlayableAlts() {
     currentEpisodeIndex: 2,
     sourceStatuses: new Map<string, SourceStatus>([
       ['bad-3', { kind: 'unavailable' }],
-      ['proxy-4', { kind: 'proxy' }],
+      ['spare-4', { kind: 'unavailable' }],
       ['direct-5', { kind: 'direct' }],
     ]),
     sourceScores: new Map([
-      ['proxy-4', { score: 99 }],
+      ['spare-4', { score: 99 }],
       ['direct-5', { score: 10 }],
     ]),
   }).state;
@@ -180,7 +180,7 @@ describe('soft-stall → R3 auto source-switch', () => {
     const completed = reducePlaybackSession(started, {
       type: 'sourceChange.completed',
       attemptId: 1,
-      sourceKey: 'proxy-4',
+      sourceKey: 'spare-4',
       nowMs: 10_000,
       automatic: true,
     });
@@ -239,7 +239,9 @@ describe('soft-stall → R3 auto source-switch', () => {
       });
       state = result.state;
 
-      const switchEffect = result.effects.find((e) => e.type === 'switchSource');
+      const switchEffect = result.effects.find(
+        (e) => e.type === 'switchSource'
+      );
       if (switchEffect && switchEffect.type === 'switchSource') {
         switched = true;
         switchResumeTime = switchEffect.resumeTime;
@@ -313,8 +315,14 @@ describe('soft-stall → R3 auto source-switch', () => {
     // Keep pumping the ladder until R3 if the first collapsed waiting only
     // re-enters observe / same-source recovery.
     let next = collapsed;
-    for (let tick = 0; tick < 12 && !next.effects.some((e) => e.type === 'switchSource'); tick += 1) {
-      const sameSource = next.effects.find((e) => e.type === 'sameSourceRecover');
+    for (
+      let tick = 0;
+      tick < 12 && !next.effects.some((e) => e.type === 'switchSource');
+      tick += 1
+    ) {
+      const sameSource = next.effects.find(
+        (e) => e.type === 'sameSourceRecover'
+      );
       if (sameSource && sameSource.type === 'sameSourceRecover') {
         next = reducePlaybackSession(next.state, {
           type: 'recovery.effectSettled',

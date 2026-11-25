@@ -31,10 +31,8 @@ function normalizePreference(value: unknown): RankPreference {
 
 export function getPlaybackHintFromKind(
   kind: string | undefined
-): 'direct' | 'proxy' | 'unknown' {
-  if (kind === 'direct') return 'direct';
-  if (kind === 'proxy') return 'proxy';
-  return 'unknown';
+): 'direct' | 'unknown' {
+  return kind === 'direct' ? 'direct' : 'unknown';
 }
 
 export async function rankPlayableResults({
@@ -118,7 +116,7 @@ export async function rankSearchResultGroupItems({
   prefer?: RankPreference;
 }): Promise<{
   items: SearchResult[];
-  playbackHint: 'direct' | 'proxy' | 'unknown';
+  playbackHint: 'direct' | 'unknown';
 }> {
   const ranking = await rankPlayableResults({
     items: items.map((item) => ({
@@ -159,7 +157,7 @@ export const rankPlayableResultsToolSchema = {
   function: {
     name: 'rank_playable_results',
     description:
-      'Rank KatelyaTV source results so direct playback is preferred over proxy and unavailable sources.',
+      'Rank KatelyaTV source results so direct playback is preferred over unavailable sources.',
     parameters: {
       type: 'object',
       additionalProperties: false,

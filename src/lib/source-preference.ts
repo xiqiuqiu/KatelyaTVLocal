@@ -2,9 +2,13 @@ import {
   fetchWithValidatedRedirects,
   validateProxyTargetUrl,
 } from './proxy-url-policy';
-import { SourceProbeResult, SourceStatusKind } from './types';
+import {
+  SOURCE_CORS_BLOCKED_REASON,
+  SourceProbeResult,
+  SourceStatusKind,
+} from './types';
 
-const SOURCE_PROBE_CACHE_VERSION = 'v2';
+const SOURCE_PROBE_CACHE_VERSION = 'v3';
 const SOURCE_PROBE_POSITIVE_TTL_SECONDS = 10 * 60;
 const SOURCE_PROBE_NEGATIVE_TTL_SECONDS = 2 * 60;
 const SOURCE_PROBE_FETCH_TIMEOUT_MS = 5000;
@@ -93,6 +97,7 @@ function buildAbsoluteUrl(input: string, baseUrl: string): string {
 
 function buildUpstreamHeaders(
   targetUrl: string,
+  origin: string,
   rangeHeader?: string | null
 ): Headers {
   const headers = new Headers();
@@ -106,20 +111,25 @@ function buildUpstreamHeaders(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36'
   );
   headers.set('Referer', new URL(targetUrl).origin);
+  headers.set('Origin', origin);
   headers.set('Accept', '*/*');
 
   return headers;
 }
 
-function isCorsAccessible(response: Response, origin: string): boolean {
-  const allowOrigin = response.headers.get('access-control-allow-origin');
-  if (!allowOrigin) return false;
-  if (allowOrigin === '*') return true;
-
-  return allowOrigin
-    .split(',')
-    .map((value) => value.trim())
-    .includes(origin);
+function isCorsAccessible(
+  response: Response,
+  targetUrl: string,
+  origin: string
+): boolean {
+  const allowedOrigin = response.headers
+    .get('access-control-allow-origin')
+    ?.trim();
+  return (
+    new URL(response.url || targetUrl).origin === origin ||
+    allowedOrigin === '*' ||
+    allowedOrigin === origin
+  );
 }
 
 function getFirstPlaylistTarget(
@@ -188,7 +198,6 @@ async function probeNestedTarget(
   options?: UpstreamProbeOptions
 ): Promise<{
   ok: boolean;
-  corsAccessible: boolean;
   status?: number;
   reason?: string;
   hlsMetrics?: HlsProbeMetrics;
@@ -198,7 +207,6 @@ async function probeNestedTarget(
   const visited = new Set(rootValidation.ok ? [rootValidation.url.href] : []);
   let currentUrl = target.url;
   let resolutionHeight = target.resolutionHeight;
-  let corsAccessible = true;
 
   for (
     let requestCount = 0;
@@ -209,7 +217,6 @@ async function probeNestedTarget(
     if (!validation.ok) {
       return {
         ok: false,
-        corsAccessible: false,
         reason: validation.reason,
       };
     }
@@ -218,7 +225,6 @@ async function probeNestedTarget(
     if (visited.has(currentUrl)) {
       return {
         ok: false,
-        corsAccessible,
         reason: '播放列表存在循环引用',
       };
     }
@@ -227,7 +233,7 @@ async function probeNestedTarget(
     const fetchTarget = (range: string | null) =>
       fetchValidatedProbeTarget(
         currentUrl,
-        { headers: buildUpstreamHeaders(currentUrl, range) },
+        { headers: buildUpstreamHeaders(currentUrl, origin, range) },
         options
       );
     const isPlaylistUrl = isPlaylistResponse(currentUrl, null);
@@ -246,20 +252,26 @@ async function probeNestedTarget(
       response = await fetchTarget('bytes=0-1');
     }
     const ok = response.ok || response.status === 206;
-    corsAccessible = corsAccessible && isCorsAccessible(response, origin);
 
     if (!ok) {
       return {
         ok: false,
-        corsAccessible,
         status: response.status,
         reason: `HLS 播放目标不可达: ${response.status}`,
       };
     }
 
+    if (!isCorsAccessible(response, currentUrl, origin)) {
+      void response.body?.cancel().catch(() => undefined);
+      return {
+        ok: false,
+        status: response.status,
+        reason: SOURCE_CORS_BLOCKED_REASON,
+      };
+    }
+
     if (!isPlaylistResponse(currentUrl, response.headers.get('content-type'))) {
-      if (!options?.measureHls)
-        return { ok: true, corsAccessible, status: response.status };
+      if (!options?.measureHls) return { ok: true, status: response.status };
       const mediaReadyAt = Date.now();
       const measurement = sampleSegment
         ? await measureFirstSegment(
@@ -270,7 +282,6 @@ async function probeNestedTarget(
         : null;
       return {
         ok: true,
-        corsAccessible,
         status: response.status,
         mediaReadyAt,
         hlsMetrics: {
@@ -284,7 +295,6 @@ async function probeNestedTarget(
     if (requestCount === SOURCE_PROBE_MAX_NESTED_REQUESTS - 1) {
       return {
         ok: false,
-        corsAccessible,
         status: response.status,
         reason: '播放列表嵌套超过探测上限',
       };
@@ -297,7 +307,6 @@ async function probeNestedTarget(
     if (!nextTarget) {
       return {
         ok: false,
-        corsAccessible,
         status: response.status,
         reason: '播放列表未包含可探测的媒体对象',
       };
@@ -308,7 +317,6 @@ async function probeNestedTarget(
 
   return {
     ok: false,
-    corsAccessible,
     reason: '播放列表嵌套超过探测上限',
   };
 }
@@ -339,12 +347,10 @@ function getStatusPriority(
   switch (kind) {
     case 'direct':
       return 0;
-    case 'proxy':
-      return 1;
     case 'playable':
-      return 2;
+      return 1;
     case 'unavailable':
-      return 3;
+      return 2;
     default:
       return 4;
   }
@@ -367,7 +373,7 @@ export async function probeSourcePlaybackUpstream(
     const upstreamResponse = await fetchValidatedProbeTarget(
       targetUrl,
       {
-        headers: buildUpstreamHeaders(targetUrl),
+        headers: buildUpstreamHeaders(targetUrl, origin),
       },
       options
     );
@@ -385,18 +391,26 @@ export async function probeSourcePlaybackUpstream(
       };
     }
 
+    if (!isCorsAccessible(upstreamResponse, targetUrl, origin)) {
+      void upstreamResponse.body?.cancel().catch(() => undefined);
+      return {
+        kind: 'unavailable',
+        reason: SOURCE_CORS_BLOCKED_REASON,
+        domain,
+        upstreamStatus: upstreamResponse.status,
+        probeTimeMs,
+      };
+    }
+
     const playlistResponse = isPlaylistResponse(
       targetUrl,
       upstreamResponse.headers.get('content-type')
     );
-    const playlistCorsAccessible = isCorsAccessible(upstreamResponse, origin);
 
     if (!playlistResponse) {
       return {
-        kind: playlistCorsAccessible ? 'direct' : 'proxy',
-        reason: playlistCorsAccessible
-          ? '媒体地址可直接跨域访问'
-          : '媒体地址可拉取，但浏览器跨域受限',
+        kind: 'direct',
+        reason: '媒体地址可直接访问',
         domain,
         upstreamStatus: upstreamResponse.status,
         probeTimeMs,
@@ -434,12 +448,9 @@ export async function probeSourcePlaybackUpstream(
       };
     }
 
-    const canDirect = playlistCorsAccessible && nestedProbe.corsAccessible;
     return {
-      kind: canDirect ? 'direct' : 'proxy',
-      reason: canDirect
-        ? '播放列表和首个媒体片段都支持浏览器直连'
-        : '上游可用，但至少一层缺少浏览器跨域头，建议走代理',
+      kind: 'direct',
+      reason: '播放列表和首个媒体片段可访问',
       domain,
       upstreamStatus: upstreamResponse.status,
       probeTimeMs: (nestedProbe.mediaReadyAt ?? Date.now()) - startedAt,
@@ -472,7 +483,10 @@ export async function readCachedSourceProbe(
     const cachedPayload = (await cachedResponse
       .json()
       .catch(() => null)) as SourceProbeMetrics | null;
-    if (!cachedPayload) {
+    if (
+      cachedPayload?.kind !== 'direct' &&
+      cachedPayload?.kind !== 'unavailable'
+    ) {
       return null;
     }
     return {

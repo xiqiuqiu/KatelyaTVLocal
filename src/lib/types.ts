@@ -183,13 +183,12 @@ export interface SearchResult {
   rate?: string;
 }
 
-export type SourcePlaybackMode = 'direct' | 'proxy';
+export type SourcePlaybackMode = 'direct';
 
 export type SourceStatusKind =
   | 'idle'
   | 'probing'
   | 'direct'
-  | 'proxy'
   | 'playable'
   | 'unavailable';
 
@@ -240,11 +239,13 @@ export interface SourcePlaybackQualityPreference {
 }
 
 export interface SourceProbeResult {
-  kind: 'direct' | 'proxy' | 'unavailable';
+  kind: 'direct' | 'unavailable';
   reason?: string;
   domain?: string | null;
   upstreamStatus?: number;
 }
+
+export const SOURCE_CORS_BLOCKED_REASON = '媒体地址的 CORS 限制阻止浏览器直连';
 
 export interface SourcePreferenceResult extends SourceProbeResult {
   sourceKey: string;
@@ -290,7 +291,6 @@ export interface PlaybackFeedbackInput {
   playbackMode: SourcePlaybackMode;
   startupSuccess: boolean;
   startupTimeMs?: number;
-  switchedToProxy?: boolean;
   browserQuality?: string;
   browserPingMs?: number;
   browserSpeedLabel?: string;
@@ -319,7 +319,6 @@ export interface RuntimeConfig {
   IMAGE_PROXY?: string;
   DOUBAN_PROXY?: string;
   SOURCE_PROBE?: string;
-  HLS_PROXY?: string;
   SOURCE_RANKING_ENABLED?: boolean;
   TURNSTILE_SITE_KEY?: string;
   LOGIN_TURNSTILE_REQUIRED?: boolean;

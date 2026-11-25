@@ -18,7 +18,6 @@ import { ThemeProvider } from '../components/ThemeProvider';
 
 const defaultImageProxy = '/api/image-proxy?url=';
 const defaultSourceProbe = '/api/source-probe?url=';
-const defaultHlsProxy = '/api/hls-proxy?url=';
 
 export async function generateMetadata(): Promise<Metadata> {
   let siteName = process.env.SITE_NAME || 'ReelFind';
@@ -61,7 +60,6 @@ async function loadRootLayoutModel() {
   let doubanProxy = process.env.NEXT_PUBLIC_DOUBAN_PROXY || '';
   const sourceProbe =
     process.env.NEXT_PUBLIC_SOURCE_PROBE || defaultSourceProbe;
-  const hlsProxy = process.env.NEXT_PUBLIC_HLS_PROXY || defaultHlsProxy;
   if (
     process.env.NEXT_PUBLIC_STORAGE_TYPE !== 'd1' &&
     process.env.NEXT_PUBLIC_STORAGE_TYPE !== 'upstash'
@@ -100,7 +98,6 @@ async function loadRootLayoutModel() {
       IMAGE_PROXY: imageProxy,
       DOUBAN_PROXY: doubanProxy,
       SOURCE_PROBE: sourceProbe,
-      HLS_PROXY: hlsProxy,
       SOURCE_RANKING_ENABLED:
         process.env.NEXT_PUBLIC_SOURCE_RANKING_ENABLED === 'true',
       TURNSTILE_SITE_KEY: turnstileSiteKey,

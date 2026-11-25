@@ -12,7 +12,6 @@ export type CastStatus =
 export interface CastMediaCandidate {
   directUrl?: string;
   playbackUrl?: string;
-  proxyUrl?: string | null;
 }
 
 export interface CastMediaInfo extends CastMediaCandidate {
@@ -24,7 +23,7 @@ export interface CastMediaInfo extends CastMediaCandidate {
 export interface CastMediaUrlResult {
   url: string | null;
   reason?: string;
-  source?: 'direct' | 'proxy' | 'playback';
+  source?: 'direct' | 'playback';
 }
 
 export interface CastPlaybackResult {
@@ -81,7 +80,6 @@ export function resolveCastMediaUrl(
     url?: string | null;
   }> = [
     { source: 'direct', url: media.directUrl },
-    { source: 'proxy', url: media.proxyUrl },
     { source: 'playback', url: media.playbackUrl },
   ];
 

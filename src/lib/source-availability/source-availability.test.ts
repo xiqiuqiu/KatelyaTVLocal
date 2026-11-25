@@ -1,4 +1,5 @@
 import type { SearchResult, SourceStatus, SourceVideoInfo } from '@/lib/types';
+import { SOURCE_CORS_BLOCKED_REASON } from '@/lib/types';
 
 import {
   clearAttemptedLedgersOnEpisodeChange,
@@ -93,37 +94,6 @@ describe('buildSourceAvailabilityList', () => {
     });
   });
 
-  it('does not treat proxy-required sources as directly switchable in the first slice', () => {
-    const statuses = new Map<string, SourceStatus>([
-      [
-        'proxy-1',
-        {
-          kind: 'proxy',
-          reason: '上游可用，但浏览器跨域受限',
-          playbackMode: 'proxy',
-        },
-      ],
-    ]);
-
-    const list = buildSourceAvailabilityList({
-      sources: [createSource('proxy', '1')],
-      currentEpisodeIndex: 0,
-      statuses,
-    });
-
-    expect(list[0]).toMatchObject({
-      availabilityKind: 'proxy-required',
-      manualSwitch: {
-        mode: 'blocked',
-        reason: '当前播放路径未启用代理播放',
-      },
-      autoRecovery: {
-        eligible: false,
-        reason: '当前播放路径未启用代理播放',
-      },
-    });
-  });
-
   it('rescues an unavailable source when backend metrics show it is playable', () => {
     const statuses = new Map<string, SourceStatus>([
       [
@@ -167,6 +137,38 @@ describe('buildSourceAvailabilityList', () => {
         reason: '后端测速可用，可尝试播放',
       },
     });
+  });
+
+  it('excludes a CORS-blocked source from startup and recovery despite older backend speed', () => {
+    const inputs = {
+      sources: [createSource('blocked', '1')],
+      currentEpisodeIndex: 0,
+      statuses: new Map<string, SourceStatus>([
+        [
+          'blocked-1',
+          { kind: 'unavailable', reason: SOURCE_CORS_BLOCKED_REASON },
+        ],
+      ]),
+      measured: new Map<string, SourceVideoInfo>([
+        [
+          'blocked-1',
+          {
+            quality: '1080p',
+            loadSpeed: '2 MB/s',
+            pingTime: 50,
+            speedSource: 'backend',
+          },
+        ],
+      ]),
+    };
+
+    expect(selectInitialSourceCandidate(inputs)).toBeNull();
+    expect(
+      selectRecoveryCandidate({
+        ...inputs,
+        allowUnverifiedFallback: true,
+      })
+    ).toBeNull();
   });
 
   it('rescues an unavailable source when browser metrics show it is playable', () => {
@@ -411,25 +413,6 @@ describe('shared eligibility model for manual vs auto', () => {
 });
 
 describe('initial source selection', () => {
-  it('skips a higher-scored proxy-only source for a direct source', () => {
-    const proxy = createSource('proxy', '1');
-    const direct = createSource('direct', '2');
-    const candidate = selectInitialSourceCandidate({
-      sources: [proxy, direct],
-      currentEpisodeIndex: 0,
-      statuses: new Map<string, SourceStatus>([
-        ['proxy-1', { kind: 'proxy', playbackMode: 'proxy' }],
-        ['direct-2', { kind: 'direct', playbackMode: 'direct' }],
-      ]),
-      sourceSelectionScores: new Map([
-        ['proxy-1', createSelectionScore(proxy, 100, 0)],
-        ['direct-2', createSelectionScore(direct, 50, 1)],
-      ]),
-    });
-
-    expect(candidate?.sourceKey).toBe('direct-2');
-  });
-
   it('preserves score order among direct and playable sources', () => {
     const direct = createSource('direct', '1');
     const playable = createSource('playable', '2');
@@ -447,18 +430,6 @@ describe('initial source selection', () => {
     });
 
     expect(candidate?.sourceKey).toBe('playable-2');
-  });
-
-  it('returns no automatic candidate when every source requires proxy', () => {
-    expect(
-      selectInitialSourceCandidate({
-        sources: [createSource('proxy', '1')],
-        currentEpisodeIndex: 0,
-        statuses: new Map<string, SourceStatus>([
-          ['proxy-1', { kind: 'proxy', playbackMode: 'proxy' }],
-        ]),
-      })
-    ).toBeNull();
   });
 });
 

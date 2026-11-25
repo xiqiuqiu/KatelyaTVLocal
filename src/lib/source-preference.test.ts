@@ -119,13 +119,8 @@ describe('cloudflare-first source preference', () => {
     expect(getBrowserProbeBudget(30)).toBe(5);
   });
 
-  it('sorts direct sources ahead of proxy and unavailable results', () => {
+  it('sorts direct sources ahead of unavailable results', () => {
     const sorted = sortSourcePreferenceResults<SourcePreferenceResult>([
-      {
-        sourceKey: 'c',
-        kind: 'proxy',
-        probeTimeMs: 90,
-      },
       {
         sourceKey: 'b',
         kind: 'direct',
@@ -143,10 +138,10 @@ describe('cloudflare-first source preference', () => {
       },
     ]);
 
-    expect(sorted.map((item) => item.sourceKey)).toEqual(['a', 'b', 'c', 'd']);
+    expect(sorted.map((item) => item.sourceKey)).toEqual(['a', 'b', 'd']);
   });
 
-  it('reuses cloudflare cache results before hitting upstream again', async () => {
+  it('ignores pre-CORS cache entries and reuses fresh results', async () => {
     const cacheStore = new Map<string, Response>();
     const cache = {
       match: jest.fn(async (request: Request) => {
@@ -174,6 +169,15 @@ describe('cloudflare-first source preference', () => {
 
     const targetUrl = 'https://media.example.com/video.mp4';
     const origin = 'https://app.example.com';
+    const oldCacheUrl = new URL(
+      'https://source-probe-cache.invalid/edge-prefer'
+    );
+    oldCacheUrl.search = new URLSearchParams({
+      v: 'v2',
+      url: targetUrl,
+      origin,
+    }).toString();
+    cacheStore.set(oldCacheUrl.href, new Response('{"kind":"proxy"}'));
 
     const first = await probeSourcePlaybackWithCache(targetUrl, origin);
     const second = await probeSourcePlaybackWithCache(targetUrl, origin);
@@ -458,27 +462,38 @@ describe('cloudflare-first source preference', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
-    it('requires CORS on every playlist and media layer for direct playback', async () => {
-      global.fetch = jest
-        .fn()
-        .mockResolvedValueOnce(hlsResponse('#EXTM3U\nvariant.m3u8'))
-        .mockResolvedValueOnce(
-          hlsResponse('#EXTM3U\nsegment.ts', { cors: false })
-        )
-        .mockResolvedValueOnce(
-          new MockResponse('', {
-            status: 206,
-            headers: { 'access-control-allow-origin': '*' },
-          })
+    it.each([0, 1, 2])(
+      'rejects a reachable playlist when layer %i lacks CORS headers',
+      async (blockedLayer) => {
+        global.fetch = jest
+          .fn()
+          .mockResolvedValueOnce(
+            hlsResponse('#EXTM3U\nvariant.m3u8', { cors: blockedLayer !== 0 })
+          )
+          .mockResolvedValueOnce(
+            hlsResponse('#EXTM3U\nsegment.ts', { cors: blockedLayer !== 1 })
+          )
+          .mockResolvedValueOnce(
+            new MockResponse('', {
+              status: 206,
+              headers:
+                blockedLayer === 2
+                  ? {}
+                  : { 'access-control-allow-origin': '*' },
+            })
+          );
+
+        const result = await probeSourcePlaybackWithCache(
+          'https://media.example.com/master-cors.m3u8',
+          'https://app.example.com'
         );
 
-      const result = await probeSourcePlaybackWithCache(
-        'https://media.example.com/master-cors.m3u8',
-        'https://app.example.com'
-      );
-
-      expect(result.kind).toBe('proxy');
-    });
+        expect(result).toMatchObject({
+          kind: 'unavailable',
+          reason: expect.stringContaining('CORS'),
+        });
+      }
+    );
 
     it('stops cyclic playlists without refetching the same target', async () => {
       global.fetch = jest

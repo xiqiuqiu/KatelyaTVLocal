@@ -187,8 +187,8 @@ describe('source preference route', () => {
       },
     ]);
     mockedProbeSourcePlaybackWithCache.mockResolvedValue({
-      kind: 'proxy',
-      reason: '需要代理',
+      kind: 'direct',
+      reason: '可直连',
       domain: 'beta.example',
       probeTimeMs: 260,
       cacheState: 'miss',
@@ -250,7 +250,7 @@ describe('source preference route', () => {
       }),
       expect.objectContaining({
         sourceKey: 'beta',
-        kind: 'proxy',
+        kind: 'direct',
         rankingSource: 'live',
         probeTimeMs: 260,
       }),
@@ -351,8 +351,8 @@ describe('source preference route', () => {
         : null
     );
     mockedProbeSourcePlaybackWithCache.mockResolvedValue({
-      kind: 'proxy',
-      reason: '需要代理',
+      kind: 'direct',
+      reason: '可直连',
       cacheState: 'miss',
     });
     const sources = [

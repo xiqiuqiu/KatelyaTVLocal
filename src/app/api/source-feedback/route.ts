@@ -18,10 +18,9 @@ const playbackFeedbackSchema = z
       .optional(),
     playbackDomain: z.string().trim().max(255).nullable().optional(),
     title: z.string().trim().max(256).optional(),
-    playbackMode: z.enum(['direct', 'proxy']),
+    playbackMode: z.literal('direct'),
     startupSuccess: z.boolean(),
     startupTimeMs: z.number().finite().min(0).max(600_000).optional(),
-    switchedToProxy: z.boolean().optional(),
     browserQuality: z.string().trim().max(64).optional(),
     browserPingMs: z.number().finite().min(0).max(600_000).optional(),
     browserSpeedLabel: z.string().trim().max(64).optional(),
@@ -82,7 +81,10 @@ export async function POST(request: Request) {
   try {
     const saved = await savePlaybackFeedback(
       rankingEnv || (process.env as unknown as RuntimeSource),
-      payload
+      {
+        ...payload,
+        playbackMode: 'direct',
+      }
     );
     return NextResponse.json({ saved }, { status: saved ? 200 : 202 });
   } catch {

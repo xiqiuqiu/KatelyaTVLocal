@@ -10,7 +10,6 @@ describe('cast media url resolver', () => {
   it('prefers the original public media url', () => {
     const result = resolveCastMediaUrl({
       directUrl: 'https://media.example.com/video/index.m3u8',
-      proxyUrl: 'https://proxy.example.com/hls?url=encoded',
       playbackUrl: 'blob:http://localhost:3000/local',
     });
 
@@ -20,16 +19,15 @@ describe('cast media url resolver', () => {
     });
   });
 
-  it('falls back to a public proxy url when direct url cannot be cast', () => {
+  it('falls back to the current playback url when the direct url cannot be cast', () => {
     const result = resolveCastMediaUrl({
       directUrl: 'blob:http://localhost:3000/local',
-      proxyUrl: 'https://app.example.com/api/hls-proxy?url=encoded',
-      playbackUrl: 'http://127.0.0.1:3000/api/hls-proxy?url=encoded',
+      playbackUrl: 'https://media.example.com/video/index.m3u8',
     });
 
     expect(result).toEqual({
-      url: 'https://app.example.com/api/hls-proxy?url=encoded',
-      source: 'proxy',
+      url: 'https://media.example.com/video/index.m3u8',
+      source: 'playback',
     });
   });
 
@@ -45,7 +43,6 @@ describe('cast media url resolver', () => {
   it('returns a clear reason when no url can be cast', () => {
     const result = resolveCastMediaUrl({
       directUrl: 'blob:http://localhost:3000/video',
-      proxyUrl: 'http://127.0.0.1:3000/api/hls-proxy?url=encoded',
       playbackUrl: '',
     });
 
