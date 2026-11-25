@@ -29,6 +29,7 @@ const SOURCE_PREFERENCE_CONCURRENCY = 6;
  * cache.match + 上游 fetch + cache.put，再加嵌套分片。同一请求只实时探测前 6 条。
  */
 const MAX_LIVE_PROBES_PER_REQUEST = 6;
+const MAX_RANKED_AVAILABILITY_CHECKS = 2;
 const FRESH_PROBE_METRICS_LIMIT = 8;
 const FRESH_PROBE_METRICS_CONCURRENCY = 2;
 const FRESH_PROBE_SPEED_TTL_MS = 6 * 60 * 60 * 1000;
@@ -47,6 +48,8 @@ function getStatusPriority(kind: SourcePreferenceResult['kind']): number {
   switch (kind) {
     case 'direct':
       return 0;
+    case 'unknown':
+      return 1;
     case 'unavailable':
     default:
       return 2;
@@ -192,7 +195,8 @@ async function probeSourcesLive(
         } else {
           const probedUpstream = await probeSourcePlaybackWithCache(
             source.episodeUrl,
-            origin
+            origin,
+            { skipCacheRead: true }
           );
           probeResult = {
             sourceKey: source.sourceKey,
@@ -200,14 +204,16 @@ async function probeSourcesLive(
             rankingSource: 'live',
           };
         }
-      } catch (error) {
-        probeResult = {
-          sourceKey: source.sourceKey,
-          kind: 'unavailable',
-          reason: error instanceof Error ? error.message : '探测失败',
-          rankingSource: 'live',
-        };
+      } catch {
+        // A platform or transport failure has no verdict about this episode.
       }
+      if (
+        probeResult &&
+        (isPlatformProbeFailure(probeResult) ||
+          (probeResult.kind === 'unavailable' &&
+            probeResult.upstreamStatus == null))
+      )
+        probeResult = null;
       resolveProbe(probeResult);
       return probeResult;
     }
@@ -254,6 +260,7 @@ function hasFreshSpeedMetric(
 async function probeFreshMetricsForVisibleSources({
   sources,
   existingResults,
+  rankedByKey,
   env,
   origin,
   now,
@@ -261,6 +268,7 @@ async function probeFreshMetricsForVisibleSources({
 }: {
   sources: SourcePreferenceRequest['sources'];
   existingResults: Map<string, SourcePreferenceResult>;
+  rankedByKey: Map<string, SourcePreferenceResult>;
   env: RuntimeSource | undefined;
   origin: string;
   now: number;
@@ -280,7 +288,8 @@ async function probeFreshMetricsForVisibleSources({
       (source) =>
         Boolean(source.sourceKey) &&
         Boolean(source.episodeUrl) &&
-        !hasFreshSpeedMetric(existingResults.get(source.sourceKey), now)
+        !hasFreshSpeedMetric(existingResults.get(source.sourceKey), now) &&
+        !hasFreshSpeedMetric(rankedByKey.get(source.sourceKey), now)
     )
     .slice(0, Math.min(FRESH_PROBE_METRICS_LIMIT, remainingProbeBudget));
 
@@ -293,7 +302,10 @@ async function probeFreshMetricsForVisibleSources({
           source.episodeUrl as string,
           origin
         );
-        if (isPlatformProbeFailure(result)) {
+        if (
+          isPlatformProbeFailure(result) ||
+          (result.kind === 'unavailable' && result.upstreamStatus == null)
+        ) {
           return null;
         }
         const measuredAt = Date.now();
@@ -392,35 +404,60 @@ export async function POST(request: Request) {
     .filter(Boolean);
   const rankedResults =
     runtime.enabled && runtime.hasD1
-      ? await readLatestSourceRanks(rankingEnv, validSourceKeys)
+      ? await readLatestSourceRanks(rankingEnv, validSourceKeys).catch(() => [])
       : [];
 
-  const rankedKeys = new Set(rankedResults.map((result) => result.sourceKey));
+  const rankedByKey = new Map(
+    rankedResults.map((result) => [result.sourceKey, result])
+  );
   const missingSources = payload.sources.filter(
-    (source) => source.sourceKey && !rankedKeys.has(source.sourceKey)
+    (source) => source.sourceKey && !rankedByKey.has(source.sourceKey)
+  );
+  const rankedCandidateUrls = new Set<string>();
+  if (payload.checkRankedAvailability !== false) {
+    for (const source of payload.sources
+      .filter(
+        (source) => source.episodeUrl && rankedByKey.has(source.sourceKey)
+      )
+      .sort(
+        (a, b) =>
+          (rankedByKey.get(b.sourceKey)?.rankScore ?? 0) -
+          (rankedByKey.get(a.sourceKey)?.rankScore ?? 0)
+      )) {
+      if (source.episodeUrl) rankedCandidateUrls.add(source.episodeUrl);
+      if (rankedCandidateUrls.size >= MAX_RANKED_AVAILABILITY_CHECKS) break;
+    }
+  }
+  const rankedCandidates = payload.sources.filter(
+    (source) =>
+      source.episodeUrl &&
+      rankedCandidateUrls.has(source.episodeUrl) &&
+      rankedByKey.has(source.sourceKey)
   );
   const allowLiveProbeFallback =
     payload.allowLiveProbeFallback ?? runtime.fallbackToLive;
-  const shouldFallbackToLive =
-    allowLiveProbeFallback &&
-    (rankedResults.length === 0 || missingSources.length > 0);
-  const liveProbe = shouldFallbackToLive
-    ? await probeSourcesLive(
-        rankedResults.length > 0 ? missingSources : payload.sources,
-        origin
-      )
+  const liveProbe = allowLiveProbeFallback
+    ? await probeSourcesLive([...rankedCandidates, ...missingSources], origin)
     : { results: [], upstreamProbes: 0 };
   const liveResults = liveProbe.results;
 
   const resultMap = new Map<string, SourcePreferenceResult>();
   rankedResults.forEach((result) => {
     if (result.sourceKey) {
-      resultMap.set(result.sourceKey, result);
+      // D1 ranks describe historical samples. They carry no episode + Origin proof.
+      resultMap.set(result.sourceKey, {
+        ...result,
+        kind: 'unknown',
+        reason: undefined,
+      });
     }
   });
   liveResults.forEach((result) => {
     if (result.sourceKey) {
-      resultMap.set(result.sourceKey, result);
+      resultMap.set(result.sourceKey, {
+        ...result,
+        rankScore: rankedByKey.get(result.sourceKey)?.rankScore,
+      });
     }
   });
 
@@ -428,6 +465,7 @@ export async function POST(request: Request) {
     const freshMetricResults = await probeFreshMetricsForVisibleSources({
       sources: payload.sources,
       existingResults: resultMap,
+      rankedByKey,
       env: rankingEnv,
       origin,
       now: Date.now(),

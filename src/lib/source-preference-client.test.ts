@@ -49,6 +49,12 @@ describe('source preference client batching', () => {
         (request) => (request as { sources: unknown[] }).sources.length
       )
     ).toEqual([6, 6, 6, 6, 6, 6, 6, 3]);
+    expect(requests[0]).not.toHaveProperty('checkRankedAvailability');
+    requests
+      .slice(1)
+      .forEach((request) =>
+        expect(request).toHaveProperty('checkRankedAvailability', false)
+      );
     expect(response.results).toHaveLength(45);
     expect(response.orderedSourceKeys).toEqual(
       response.results.map((result) => result.sourceKey)

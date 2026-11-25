@@ -4,6 +4,7 @@ import {
 } from './proxy-url-policy';
 import {
   SOURCE_CORS_BLOCKED_REASON,
+  SourcePreferenceResult,
   SourceProbeResult,
   SourceStatusKind,
 } from './types';
@@ -42,6 +43,7 @@ export interface SourcePreferenceProbeResult extends SourceProbeMetrics {
 
 export interface SourceProbeOptions {
   timeoutMs?: number;
+  skipCacheRead?: boolean;
 }
 
 function normalizeProbeTimeoutMs(timeoutMs?: number): number {
@@ -342,7 +344,7 @@ function buildProbeCacheRequest(targetUrl: string, origin: string): Request {
 }
 
 function getStatusPriority(
-  kind: SourceStatusKind | SourceProbeResult['kind']
+  kind: SourceStatusKind | SourcePreferenceResult['kind']
 ): number {
   switch (kind) {
     case 'direct':
@@ -504,7 +506,9 @@ export async function probeSourcePlaybackWithCache(
   origin: string,
   options?: SourceProbeOptions
 ): Promise<SourceProbeMetrics> {
-  const cached = await readCachedSourceProbe(targetUrl, origin);
+  const cached = options?.skipCacheRead
+    ? null
+    : await readCachedSourceProbe(targetUrl, origin);
   if (cached) {
     return cached;
   }
@@ -549,7 +553,7 @@ export function getBrowserProbeBudget(totalCandidates: number): number {
 }
 
 export function sortSourcePreferenceResults<
-  T extends SourcePreferenceProbeResult
+  T extends Pick<SourcePreferenceResult, 'kind' | 'sourceKey' | 'probeTimeMs'>
 >(results: T[]): T[] {
   return [...results].sort((a, b) => {
     const priorityGap = getStatusPriority(a.kind) - getStatusPriority(b.kind);

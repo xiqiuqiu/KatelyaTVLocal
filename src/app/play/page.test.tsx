@@ -1245,7 +1245,7 @@ describe('PlayPage source initialization', () => {
           rememberSourcePlaybackQuality(
             'detail-source-detail-id',
             'example.com',
-            { mode: 'unavailable' }
+            { mode: 'unavailable', episodeUrl: requested().episodes[1] }
           );
         }
         const search = deferred<Response>();
@@ -2748,6 +2748,7 @@ describe('PlayPage failed history recovery controls', () => {
   it('starts history on an alternate for the same episode when the saved route is known to have failed', async () => {
     rememberSourcePlaybackQuality('bfzy-149697', 'bad.example', {
       mode: 'unavailable',
+      episodeUrl: 'https://bad.example/15.m3u8',
       lastError: 'manifestLoadError',
     });
     window.localStorage.setItem('enableOptimization', 'false');

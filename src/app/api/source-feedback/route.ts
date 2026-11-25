@@ -19,6 +19,7 @@ const playbackFeedbackSchema = z
     playbackDomain: z.string().trim().max(255).nullable().optional(),
     title: z.string().trim().max(256).optional(),
     playbackMode: z.literal('direct'),
+    testSession: z.boolean().optional(),
     startupSuccess: z.boolean(),
     startupTimeMs: z.number().finite().min(0).max(600_000).optional(),
     browserQuality: z.string().trim().max(64).optional(),
@@ -61,7 +62,10 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const payload = parsedPayload.data;
+  const { testSession, ...payload } = parsedPayload.data;
+  if (testSession) {
+    return NextResponse.json({ saved: false, skipped: true }, { status: 202 });
+  }
 
   const rankingEnv = resolveSourceRankingEnv();
   const runtimeState = getSourceRankingRuntime(

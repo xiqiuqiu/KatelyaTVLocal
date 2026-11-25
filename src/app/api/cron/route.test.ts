@@ -157,17 +157,18 @@ describe('cron route auth', () => {
   });
 
   it.each([
-    ['?mode=ranking', 0],
-    ['', 1],
-    ['?mode=maintenance', 1],
+    ['?mode=ranking', 0, 'https://play.example.com'],
+    ['', 1, undefined],
+    ['?mode=maintenance', 1, undefined],
   ])(
     'runs ranking and applies the maintenance mode for %s',
-    async (query, maintenanceCalls) => {
+    async (query, maintenanceCalls, playbackOrigin) => {
       process.env.NEXT_PUBLIC_STORAGE_TYPE = 'd1';
       const run = jest.fn().mockResolvedValue({ meta: { changes: 7 } });
       const env = {
         CRON_API_TOKEN: 'secret-token',
         SOURCE_RANKING_CRON_ENABLED: 'true',
+        SOURCE_RANKING_PLAYBACK_ORIGIN: playbackOrigin,
         DB: {
           prepare: jest.fn((sql: string) => {
             if (sql.includes('DELETE FROM playback_debug_logs'))
@@ -206,7 +207,7 @@ describe('cron route auth', () => {
       else
         expect(runLowFrequencySourceRankingCheck).toHaveBeenCalledWith({
           env,
-          origin: 'https://app.example.com',
+          origin: playbackOrigin ?? 'https://app.example.com',
           triggerType: 'cron',
         });
       expect(refreshD1Library).toHaveBeenCalledTimes(maintenanceCalls);

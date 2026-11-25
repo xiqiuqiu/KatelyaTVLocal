@@ -149,6 +149,31 @@ describe('source feedback route', () => {
     expect(mockedSavePlaybackFeedback).not.toHaveBeenCalled();
   });
 
+  it('does not send test-session feedback to the shared ranking database', async () => {
+    mockedGetSourceRankingRuntime.mockReturnValue({
+      enabled: true,
+      hasD1: true,
+      fallbackToLive: true,
+    });
+    const response = await POST(
+      new Request('https://app.example.com/api/source-feedback', {
+        method: 'POST',
+        body: JSON.stringify({
+          sourceKey: 'alpha',
+          playbackMode: 'direct',
+          startupSuccess: true,
+          testSession: true,
+        }),
+      })
+    );
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({
+      saved: false,
+      skipped: true,
+    });
+    expect(mockedSavePlaybackFeedback).not.toHaveBeenCalled();
+  });
+
   it.each([
     [{ sourceKey: 'alpha', playbackMode: 'invalid', startupSuccess: true }],
     [{ sourceKey: 'alpha', playbackMode: 'direct' }],

@@ -147,9 +147,18 @@ async function tryRunSourceRankingCron(
   }
 
   try {
+    const configuredOrigin = rankingEnv.SOURCE_RANKING_PLAYBACK_ORIGIN;
+    const playbackUrl = new URL(
+      typeof configuredOrigin === 'string' && configuredOrigin.trim()
+        ? configuredOrigin.trim()
+        : request.url
+    );
+    if (!['http:', 'https:'].includes(playbackUrl.protocol)) {
+      throw new Error('SOURCE_RANKING_PLAYBACK_ORIGIN must use HTTP or HTTPS');
+    }
     const result = await runLowFrequencySourceRankingCheck({
       env: rankingEnv as SourceRankingSchedulerEnvLike,
-      origin: new URL(request.url).origin,
+      origin: playbackUrl.origin,
       triggerType: 'cron',
     });
 

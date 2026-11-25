@@ -227,6 +227,7 @@ export interface SourceDomainPreference {
 
 export interface SourcePlaybackQualityPreference {
   mode: SourcePlaybackMode | 'unavailable';
+  episodeUrl?: string;
   lastPlayableAt?: number;
   lastFailedAt?: number;
   startupTimeMs?: number;
@@ -247,8 +248,11 @@ export interface SourceProbeResult {
 
 export const SOURCE_CORS_BLOCKED_REASON = '媒体地址的 CORS 限制阻止浏览器直连';
 
-export interface SourcePreferenceResult extends SourceProbeResult {
+export interface SourcePreferenceResult
+  extends Omit<SourceProbeResult, 'kind'> {
   sourceKey: string;
+  /** Historical ranking or an inconclusive check does not verify this episode. */
+  kind: SourceProbeResult['kind'] | 'unknown';
   probeTimeMs?: number;
   cacheState?: 'hit' | 'miss';
   qualityLabel?: string | null;
@@ -266,6 +270,7 @@ export interface SourcePreferenceResult extends SourceProbeResult {
 
 export interface SourcePreferenceRequest {
   allowLiveProbeFallback?: boolean;
+  checkRankedAvailability?: boolean;
   includeFreshProbeMetrics?: boolean;
   sources: Array<{
     sourceKey: string;

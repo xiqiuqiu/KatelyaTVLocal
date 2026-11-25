@@ -10,6 +10,7 @@ import {
 } from '@/lib/source-ranking/probe';
 import { readLatestSourceRanks } from '@/lib/source-ranking/read';
 import { getSourceRankingRuntime } from '@/lib/source-ranking/runtime';
+import { SOURCE_CORS_BLOCKED_REASON } from '@/lib/types';
 
 type IncomingRequestCfProperties = Record<string, unknown>;
 type ExecutionContext = Record<string, unknown>;
@@ -174,7 +175,7 @@ describe('source preference route', () => {
     jest.clearAllMocks();
   });
 
-  it('keeps d1-ranked sources and probes only uncovered live sources when fallback is allowed', async () => {
+  it('retains the rank but uses the current episode probe to decide availability', async () => {
     mockedReadLatestSourceRanks.mockResolvedValue([
       {
         sourceKey: 'alpha',
@@ -186,13 +187,19 @@ describe('source preference route', () => {
         rankingSource: 'd1',
       },
     ]);
-    mockedProbeSourcePlaybackWithCache.mockResolvedValue({
-      kind: 'direct',
-      reason: '可直连',
-      domain: 'beta.example',
-      probeTimeMs: 260,
-      cacheState: 'miss',
-    });
+    mockedProbeSourcePlaybackWithCache
+      .mockResolvedValueOnce({
+        kind: 'unavailable',
+        reason: SOURCE_CORS_BLOCKED_REASON,
+        upstreamStatus: 200,
+      })
+      .mockResolvedValueOnce({
+        kind: 'direct',
+        reason: '可直连',
+        domain: 'beta.example',
+        probeTimeMs: 260,
+        cacheState: 'miss',
+      });
 
     const response = await POST(
       new Request('https://app.example.com/api/source-preference', {
@@ -225,10 +232,16 @@ describe('source preference route', () => {
       expect.any(Object),
       ['alpha', 'beta', 'gamma']
     );
-    expect(mockedProbeSourcePlaybackWithCache).toHaveBeenCalledTimes(1);
+    expect(mockedProbeSourcePlaybackWithCache).toHaveBeenCalledTimes(2);
+    expect(mockedProbeSourcePlaybackWithCache).toHaveBeenCalledWith(
+      'https://alpha.example/1.m3u8',
+      'https://app.example.com',
+      { skipCacheRead: true }
+    );
     expect(mockedProbeSourcePlaybackWithCache).toHaveBeenCalledWith(
       'https://beta.example/1.m3u8',
-      'https://app.example.com'
+      'https://app.example.com',
+      { skipCacheRead: true }
     );
 
     const payload = (await response.json()) as {
@@ -240,19 +253,20 @@ describe('source preference route', () => {
 
     expect(payload.rankingSource).toBe('mixed');
     expect(payload.confidence).toBe('medium');
-    expect(payload.orderedSourceKeys).toEqual(['alpha', 'beta', 'gamma']);
+    expect(payload.orderedSourceKeys).toEqual(['beta', 'alpha', 'gamma']);
     expect(payload.results).toEqual([
-      expect.objectContaining({
-        sourceKey: 'alpha',
-        kind: 'direct',
-        rankingSource: 'd1',
-        rankScore: 93,
-      }),
       expect.objectContaining({
         sourceKey: 'beta',
         kind: 'direct',
         rankingSource: 'live',
         probeTimeMs: 260,
+      }),
+      expect.objectContaining({
+        sourceKey: 'alpha',
+        kind: 'unavailable',
+        reason: SOURCE_CORS_BLOCKED_REASON,
+        rankingSource: 'live',
+        rankScore: 93,
       }),
       expect.objectContaining({
         sourceKey: 'gamma',
@@ -261,6 +275,44 @@ describe('source preference route', () => {
         reason: '该播放源没有可用剧集',
       }),
     ]);
+  });
+
+  it('checks only two ranked URLs and treats an exhausted probe as unknown', async () => {
+    const sources = ['first', 'second', 'third'].map((sourceKey) => ({
+      sourceKey,
+      episodeUrl: `https://media.example.com/${sourceKey}/new.m3u8`,
+    }));
+    mockedReadLatestSourceRanks.mockResolvedValue(
+      sources.map(({ sourceKey }, index) => ({
+        sourceKey,
+        kind: 'unavailable',
+        rankScore: 90 - index,
+        rankingSource: 'd1',
+      }))
+    );
+    mockedProbeSourcePlaybackWithCache
+      .mockResolvedValueOnce({
+        kind: 'unavailable',
+        reason: 'Too many subrequests',
+      })
+      .mockResolvedValueOnce({ kind: 'direct' });
+
+    const response = await POST(
+      new Request('https://app.example.com/api/source-preference', {
+        method: 'POST',
+        body: JSON.stringify({ sources }),
+      })
+    );
+
+    expect(mockedProbeSourcePlaybackWithCache).toHaveBeenCalledTimes(2);
+    expect(mockedPersistOfflineProbeResult).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      results: [
+        { sourceKey: 'second', kind: 'direct', rankScore: 89 },
+        { sourceKey: 'first', kind: 'unknown', rankScore: 90 },
+        { sourceKey: 'third', kind: 'unknown', rankScore: 88 },
+      ],
+    });
   });
 
   it('live-probes at most six distinct episode urls', async () => {
@@ -475,7 +527,7 @@ describe('source preference route', () => {
     expect(payload.results).toEqual([
       expect.objectContaining({
         sourceKey: 'alpha',
-        kind: 'direct',
+        kind: 'unknown',
         rankingSource: 'd1',
         rankScore: 88,
       }),

@@ -12,7 +12,7 @@ type SourcePreferenceVideoInfoInput = Pick<
   | 'speedKbps'
   | 'probeTimeMs'
   | 'updatedAt'
->;
+> & { kind?: SourcePreferenceResult['kind'] };
 
 export function formatSourceSpeedKbps(
   speedKbps?: number | null
@@ -44,6 +44,8 @@ export function isBrowserSourceMeasurement(
 export function buildVideoInfoFromPreferenceResult(
   result: SourcePreferenceVideoInfoInput
 ): SourceVideoInfo | null {
+  if (result.kind === 'unknown' || result.kind === 'unavailable') return null;
+
   const quality = result.qualityLabel || '未知';
   const formattedBackendSpeed = formatSourceSpeedKbps(result.speedKbps);
   const loadSpeed =

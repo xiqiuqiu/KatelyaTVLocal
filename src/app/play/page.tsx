@@ -198,7 +198,6 @@ import {
   getSourceIdentityKey,
   getVideoResolutionFromM3u8,
   markBrowserSpeedUnmeasured,
-  rememberSourceDomainPreference,
   rememberSourcePlaybackQuality,
   SourceSpeedProbeTimeoutError,
 } from '@/lib/utils';
@@ -1202,7 +1201,7 @@ function usePlayPageSession() {
     needPreferRef.current = needPrefer;
   }, [needPrefer]);
   // 集数相关
-  const [currentEpisodeIndex, setCurrentEpisodeIndex] = useState(0);
+  const [currentEpisodeIndex, setCurrentEpisodeIndexState] = useState(0);
   const [videoPlaybackUi, dispatchVideoPlaybackUi] = useReducer(
     reduceVideoPlaybackUi,
     initialVideoPlaybackUiState
@@ -1557,7 +1556,7 @@ function usePlayPageSession() {
 
   // 用于记录是否需要在播放器 ready 后跳转到指定进度
   const resumeTimeRef = useRef<number | null>(null);
-  /** Bumped when a new title init replaces an in-flight source preference. */
+  /** Invalidates in-flight preferences when their title or episode changes. */
   const sourcePreferenceGenerationRef = useRef(0);
   /**
    * Owns the batched preference request. Separate from the init effect's
@@ -2317,6 +2316,34 @@ function usePlayPageSession() {
     setPrecomputedSourceStatusesState(statuses);
   };
 
+  const setCurrentEpisodeIndex = (index: number) => {
+    if (index !== currentEpisodeIndexRef.current) {
+      sourcePreferenceGenerationRef.current += 1;
+      sourcePreferenceAbortRef.current?.abort();
+      const ranks = new Map<string, SourceStatus>();
+      precomputedSourceStatusesRef.current.forEach((status, key) => {
+        if (status.rankScore != null) {
+          ranks.set(
+            key,
+            createSourceStatus('idle', {
+              rankScore: status.rankScore,
+              rankingSource: status.rankingSource,
+            })
+          );
+        }
+      });
+      setPrecomputedSourceStatuses(ranks);
+      setPrecomputedVideoInfo(new Map());
+      updateSourceSelectionScores(
+        availableSourcesRef.current,
+        ranks,
+        new Map(),
+        index
+      );
+    }
+    setCurrentEpisodeIndexState(index);
+  };
+
   useEffect(() => {
     sourceSelectionScoresRef.current = sourceSelectionScores;
   }, [sourceSelectionScores]);
@@ -2522,16 +2549,31 @@ function usePlayPageSession() {
     return true;
   };
 
-  const buildPlaybackSessionSourceStatuses = (sources: SearchResult[]) => {
-    const statuses = new Map(precomputedSourceStatusesRef.current);
+  const buildPlaybackSessionSourceStatuses = (
+    sources: SearchResult[],
+    episodeIndex = currentEpisodeIndexRef.current
+  ) => {
+    const statuses = new Map(
+      episodeIndex === currentEpisodeIndexRef.current
+        ? precomputedSourceStatusesRef.current
+        : []
+    );
     sources.forEach((source) => {
       const sourceKey = getSourceIdentityKey(source.source, source.id);
       const rememberedStatus = getRememberedSourceStatusForSource(
         sourceKey,
-        source.episodes || []
+        source.episodes || [],
+        episodeIndex
       );
+      const cached = statuses.get(sourceKey);
       const status = resolveSourceStatusEvidence(
-        statuses.get(sourceKey),
+        cached?.kind === 'idle' && rememberedStatus
+          ? {
+              ...rememberedStatus,
+              rankScore: cached.rankScore,
+              rankingSource: cached.rankingSource,
+            }
+          : cached,
         rememberedStatus
       );
       if (status) {
@@ -3245,13 +3287,14 @@ function usePlayPageSession() {
   const updateSourceSelectionScores = (
     sources: SearchResult[],
     statuses: Map<string, SourceStatus>,
-    measured: Map<string, SourceVideoInfo>
+    measured: Map<string, SourceVideoInfo>,
+    episodeIndex = currentEpisodeIndexRef.current
   ) => {
     const nextScores = buildSourceSelectionScores({
       sources,
       statuses,
       measured,
-      currentEpisodeIndex: currentEpisodeIndexRef.current,
+      currentEpisodeIndex: episodeIndex,
       getSourceKey: (source) => getSourceIdentityKey(source.source, source.id),
     });
     sourceSelectionScoresRef.current = nextScores;
@@ -4054,7 +4097,12 @@ function usePlayPageSession() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(input),
+        body: JSON.stringify({
+          ...input,
+          testSession:
+            new URLSearchParams(window.location.search).get('playbackTest') ===
+            '1',
+        }),
       });
     } catch (error) {
       console.warn('播放反馈上报失败', error);
@@ -4471,7 +4519,10 @@ function usePlayPageSession() {
     rememberSourcePlaybackQuality(
       getCurrentSourceKey(),
       getCurrentPlaybackDomain(),
-      input
+      {
+        ...input,
+        episodeUrl: detailRef.current?.episodes[currentEpisodeIndexRef.current],
+      }
     );
   };
 
@@ -4482,6 +4533,9 @@ function usePlayPageSession() {
     const sessionId = hlsState.playbackSessionId;
     const foregroundSourceKey = getCurrentSourceKey();
     const episodeIndex = currentEpisodeIndexRef.current;
+    const isSameProbeEpisode = () =>
+      currentEpisodeIndexRef.current === episodeIndex &&
+      progressMediaEpochRef.current.episodeIndex === episodeIndex;
     const shouldStart = shouldStartProgressiveSourceProbe({
       now,
       stablePlaybackStartedAt: progressiveSourceProbeStableStartedAtRef.current,
@@ -4520,7 +4574,7 @@ function usePlayPageSession() {
 
     const sourceKey = getSourceIdentityKey(candidate.source, candidate.id);
     const episodeUrl = candidate.episodes[episodeIndex];
-    const domain = getSourceDomainFromEpisodes(candidate.episodes);
+    const domain = getSourceDomainFromEpisodes([episodeUrl]);
     const previousStatus =
       precomputedSourceStatusesRef.current.get(sourceKey) ?? null;
     progressiveSourceProbeAttemptedKeysRef.current.add(sourceKey);
@@ -4579,7 +4633,10 @@ function usePlayPageSession() {
         },
       });
 
-      if (hlsRecoveryStateRef.current.playbackSessionId === sessionId) {
+      if (
+        hlsRecoveryStateRef.current.playbackSessionId === sessionId &&
+        isSameProbeEpisode()
+      ) {
         const nextVideoInfo = new Map(precomputedVideoInfoRef.current);
         const previousInfo = nextVideoInfo.get(sourceKey);
         const browserInfo =
@@ -4616,6 +4673,7 @@ function usePlayPageSession() {
         );
         rememberSourcePlaybackQuality(sourceKey, domain, {
           mode: 'direct',
+          episodeUrl,
           browserSpeedLabel: isBrowserSourceMeasurement(testResult)
             ? testResult.loadSpeed
             : undefined,
@@ -4633,7 +4691,10 @@ function usePlayPageSession() {
         );
       }
     } catch (error) {
-      if (hlsRecoveryStateRef.current.playbackSessionId === sessionId) {
+      if (
+        hlsRecoveryStateRef.current.playbackSessionId === sessionId &&
+        isSameProbeEpisode()
+      ) {
         const reason = error instanceof Error ? error.message : '后台测速失败';
         const nextStatuses = new Map(precomputedSourceStatusesRef.current);
         if (error instanceof SourceSpeedProbeTimeoutError) {
@@ -4642,7 +4703,11 @@ function usePlayPageSession() {
             (latestStatus && latestStatus.kind !== 'probing'
               ? latestStatus
               : previousStatus) ||
-            getRememberedSourceStatusForSource(sourceKey, candidate.episodes) ||
+            getRememberedSourceStatusForSource(
+              sourceKey,
+              candidate.episodes,
+              episodeIndex
+            ) ||
             createSourceStatus('idle', { domain });
           const nextVideoInfo = new Map(precomputedVideoInfoRef.current);
           nextVideoInfo.set(
@@ -4683,6 +4748,7 @@ function usePlayPageSession() {
         );
         rememberSourcePlaybackQuality(sourceKey, domain, {
           mode: 'unavailable',
+          episodeUrl,
           lastError: reason,
           confidence: 'low',
         });
@@ -4699,10 +4765,16 @@ function usePlayPageSession() {
       }
     } finally {
       progressiveSourceProbeInFlightRef.current = false;
-      if (hlsRecoveryStateRef.current.playbackSessionId !== sessionId) {
+      if (
+        hlsRecoveryStateRef.current.playbackSessionId !== sessionId ||
+        !isSameProbeEpisode()
+      ) {
         progressiveSourceProbeAttemptedKeysRef.current.delete(sourceKey);
         const restoredStatuses = new Map(precomputedSourceStatusesRef.current);
-        if (restoredStatuses.get(sourceKey)?.kind === 'probing') {
+        if (
+          isSameProbeEpisode() &&
+          restoredStatuses.get(sourceKey)?.kind === 'probing'
+        ) {
           if (previousStatus) {
             restoredStatuses.set(sourceKey, previousStatus);
           } else {
@@ -4747,42 +4819,34 @@ function usePlayPageSession() {
   // 播放源优选函数
   const preferBestSource = async (
     sources: SearchResult[],
-    options: { signal?: AbortSignal } = {}
+    options: { signal?: AbortSignal; background?: boolean } = {}
   ): Promise<SearchResult | null> => {
     const preferenceGeneration = ++sourcePreferenceGenerationRef.current;
+    const episodeIndex = currentEpisodeIndexRef.current;
     const preferenceStillCurrent = () =>
       preferenceGeneration === sourcePreferenceGenerationRef.current &&
+      episodeIndex === currentEpisodeIndexRef.current &&
       !options.signal?.aborted;
     const startedAt = Date.now();
-    const sourceEntries = sources.map((source, originalIndex) => ({
-      source,
-      originalIndex,
-      sourceKey: getSourceIdentityKey(source.source, source.id),
-      rememberedStatus: getRememberedSourceStatusForSource(
-        getSourceIdentityKey(source.source, source.id),
-        source.episodes
-      ),
-    }));
-    const initialStatuses = new Map<string, SourceStatus>();
-
-    sourceEntries.forEach(({ source, sourceKey, rememberedStatus }) => {
-      if (!source.episodes || source.episodes.length === 0) {
-        initialStatuses.set(
-          sourceKey,
-          createSourceStatus('unavailable', {
-            reason: '该播放源没有可用剧集',
-          })
-        );
-        return;
-      }
-
-      if (rememberedStatus) {
+    const sourceEntries = sources
+      .filter((source) => source.episodes?.[episodeIndex])
+      .map((source) => ({
+        source,
+        sourceKey: getSourceIdentityKey(source.source, source.id),
+        rememberedStatus: getRememberedSourceStatusForSource(
+          getSourceIdentityKey(source.source, source.id),
+          source.episodes,
+          episodeIndex
+        ),
+      }));
+    const initialStatuses = new Map(precomputedSourceStatusesRef.current);
+    sourceEntries.forEach(({ sourceKey, rememberedStatus }) => {
+      if (rememberedStatus && !initialStatuses.has(sourceKey)) {
         initialStatuses.set(sourceKey, rememberedStatus);
       }
     });
 
     setPrecomputedSourceStatuses(initialStatuses);
-    setPrecomputedVideoInfo(new Map());
 
     const scoreCurrentSelection = () =>
       updateSourceSelectionScores(
@@ -4790,6 +4854,34 @@ function usePlayPageSession() {
         precomputedSourceStatusesRef.current,
         precomputedVideoInfoRef.current
       );
+
+    const pickBestSource = (onlyConfirmed = false) =>
+      selectInitialSourceCandidate({
+        sources: onlyConfirmed
+          ? sources.filter((source) => {
+              const status = precomputedSourceStatusesRef.current.get(
+                getSourceIdentityKey(source.source, source.id)
+              );
+              return status?.kind === 'direct' || status?.kind === 'playable';
+            })
+          : sources,
+        currentEpisodeIndex: episodeIndex,
+        statuses: precomputedSourceStatusesRef.current,
+        measured: precomputedVideoInfoRef.current,
+        sourceSelectionScores: scoreCurrentSelection(),
+      })?.source || null;
+
+    if (sourceEntries.length <= 1) return pickBestSource();
+
+    const requestSources = sourceEntries.map(({ source, sourceKey }) => ({
+      sourceKey,
+      episodeUrl: source.episodes[episodeIndex],
+    }));
+    const requestedUrls = new Map(
+      requestSources.map(({ sourceKey, episodeUrl }) => [sourceKey, episodeUrl])
+    );
+    let finishExtendedWait: (() => void) | undefined;
+    const appliedResults = new Set<string>();
 
     const applyPreferenceResults = (
       preferenceData: Awaited<
@@ -4801,17 +4893,43 @@ function usePlayPageSession() {
       }
       const statusMap = new Map(precomputedSourceStatusesRef.current);
       const videoInfoMap = new Map(precomputedVideoInfoRef.current);
+      const latestUrls = new Map(
+        availableSourcesRef.current.map((source) => [
+          getSourceIdentityKey(source.source, source.id),
+          source.episodes?.[episodeIndex],
+        ])
+      );
       preferenceData.results.forEach((result) => {
+        if (
+          appliedResults.has(result.sourceKey) ||
+          !requestedUrls.has(result.sourceKey) ||
+          (latestUrls.has(result.sourceKey) &&
+            latestUrls.get(result.sourceKey) !==
+              requestedUrls.get(result.sourceKey))
+        ) {
+          return;
+        }
+        appliedResults.add(result.sourceKey);
         const existingStatus = statusMap.get(result.sourceKey);
+        if (result.kind === 'unknown') {
+          statusMap.set(result.sourceKey, {
+            ...(existingStatus || createSourceStatus('idle')),
+            rankScore: result.rankScore,
+            rankingSource: result.rankingSource,
+          });
+          return;
+        }
         const measured = buildVideoInfoFromPreferenceResult(result);
         const canRescueFromMemory =
           existingStatus?.kind === 'unavailable' &&
-          result.kind !== 'unavailable';
+          existingStatus.fromMemory &&
+          result.kind === 'direct';
 
         if (
           existingStatus &&
           (isBrowserSourceMeasurement(videoInfoMap.get(result.sourceKey)) ||
             (existingStatus.fromMemory &&
+              existingStatus.kind !== 'idle' &&
               !canRescueFromMemory &&
               result.reason !== SOURCE_CORS_BLOCKED_REASON))
         ) {
@@ -4853,42 +4971,31 @@ function usePlayPageSession() {
               ? markBrowserSpeedUnmeasured(measured)
               : measured
           );
+        } else if (result.kind === 'unavailable') {
+          videoInfoMap.delete(result.sourceKey);
         }
-        rememberSourceDomainPreference(
-          result.domain || null,
-          result.kind,
-          result.reason
-        );
       });
 
       setPrecomputedSourceStatuses(statusMap);
       setPrecomputedVideoInfo(videoInfoMap);
       scoreCurrentSelection();
+      if (
+        finishExtendedWait &&
+        sourceEntries.some(({ sourceKey }) => {
+          const kind = statusMap.get(sourceKey)?.kind;
+          return kind === 'direct' || kind === 'playable';
+        })
+      ) {
+        finishExtendedWait();
+      }
     };
 
-    const requestSources = sourceEntries.map(({ source, sourceKey }) => {
-      const episodeIndex = Math.max(
-        0,
-        Math.min(
-          currentEpisodeIndexRef.current,
-          Math.max(0, (source.episodes?.length || 1) - 1)
-        )
-      );
-      return {
-        sourceKey,
-        episodeUrl: source.episodes?.[episodeIndex] || null,
-      };
-    });
-
-    // 不再硬编码关闭实时探测：冷内容（D1 无该 source-id 数据）交给后端按
-    // SOURCE_RANKING_FALLBACK_TO_LIVE 决定是否实时探测兜底，避免仅凭原始顺序敲定首源。
+    // Each batch updates evidence once. After selecting a line, only these
+    // updates continue, without restarting the player.
     const preferencePromise = fetchSourcePreferencesInBatches(requestSources, {
       signal: options.signal,
-      onBatch: (data) => {
-        if (preferenceStillCurrent()) {
-          applyPreferenceResults(data);
-        }
-      },
+      background: options.background,
+      onBatch: applyPreferenceResults,
     });
     let preferenceSettled = false;
     const settledPromise = preferencePromise
@@ -4898,77 +5005,49 @@ function usePlayPageSession() {
       })
       .catch((error) => {
         preferenceSettled = true;
-        console.warn('线路优选读取失败，继续使用本地状态', error);
+        if (preferenceStillCurrent()) {
+          console.warn('线路优选读取失败，继续使用本地状态', error);
+        }
         return null;
       });
 
-    const isSourceKindUsable = (source: SearchResult): boolean => {
-      const status = precomputedSourceStatusesRef.current.get(
-        getSourceIdentityKey(source.source, source.id)
-      );
-      return status?.kind === 'direct' || status?.kind === 'playable';
-    };
+    if (options.background) return null;
 
-    const pickBestSource = (scores: Map<string, SourceSelectionScore>) => {
-      return (
-        selectInitialSourceCandidate({
-          sources,
-          currentEpisodeIndex: currentEpisodeIndexRef.current,
-          statuses: precomputedSourceStatusesRef.current,
-          measured: precomputedVideoInfoRef.current,
-          sourceSelectionScores: scores,
-        })?.source || null
-      );
-    };
-
-    // 第一阶段：快速预算内拿到结果就用，命中热内容时保持秒开体验。
-    const fastData = await Promise.race([
+    await Promise.race([
       settledPromise,
       new Promise<null>((resolve) =>
         window.setTimeout(resolve, SOURCE_PREFERENCE_FAST_BUDGET_MS, null)
       ),
     ]);
-    if (fastData && preferenceStillCurrent()) {
-      applyPreferenceResults(fastData);
-    }
-
-    // 第二阶段：若最优候选仍不可信（无任何 direct/playable 确认，
-    // 多见于冷内容按原始顺序命中未探测源），再等待完整结果，最多到扩展预算，
-    // 用真实探测数据换取“首源不踩不可用源”。
-    let bestSource = pickBestSource(scoreCurrentSelection());
-    if (
-      !preferenceSettled &&
-      (!bestSource || !isSourceKindUsable(bestSource))
-    ) {
-      const extendedData = await Promise.race([
+    if (!preferenceStillCurrent()) return null;
+    let confirmed = pickBestSource(true);
+    if (!preferenceSettled && !confirmed) {
+      await Promise.race([
         settledPromise,
+        new Promise<void>((resolve) => {
+          finishExtendedWait = resolve;
+        }),
         new Promise<null>((resolve) =>
           window.setTimeout(
             resolve,
-            SOURCE_PREFERENCE_MAX_BUDGET_MS - SOURCE_PREFERENCE_FAST_BUDGET_MS,
+            Math.max(
+              0,
+              SOURCE_PREFERENCE_MAX_BUDGET_MS - (Date.now() - startedAt)
+            ),
             null
           )
         ),
       ]);
-      if (extendedData && preferenceStillCurrent()) {
-        applyPreferenceResults(extendedData);
-      }
+      finishExtendedWait = undefined;
+      if (!preferenceStillCurrent()) return null;
+      confirmed = pickBestSource(true);
     }
 
-    // 若扩展预算内仍未落地，继续后台补齐（只刷新角标/评分）。
-    if (!preferenceSettled) {
-      void settledPromise.then((data) => {
-        if (data && preferenceStillCurrent()) {
-          applyPreferenceResults(data);
-        }
-      });
-    }
-
-    bestSource = pickBestSource(scoreCurrentSelection());
+    const bestSource = confirmed || pickBestSource();
 
     console.log('播放源优选结果:', {
       selected: bestSource?.source_name,
-      trustworthy: bestSource ? isSourceKindUsable(bestSource) : false,
+      trustworthy: Boolean(confirmed),
       waitedMs: Date.now() - startedAt,
       preferenceSettled,
       progressiveProbe: true,
@@ -5085,7 +5164,8 @@ function usePlayPageSession() {
     ) {
       const remembered = getRememberedSourceStatusForSource(
         target.sourceKey,
-        target.source.episodes || []
+        target.source.episodes || [],
+        currentEpisodeIndexRef.current
       );
       if (remembered?.kind !== 'unavailable') {
         if (target.resumeTime != null) {
@@ -5842,9 +5922,11 @@ function usePlayPageSession() {
               !target ||
               (urlFromPlayRecord &&
                 (!target.episodes[requestedEpisode] ||
-                  buildPlaybackSessionSourceStatuses([target]).get(
-                    getSourceIdentityKey(target.source, target.id)
-                  )?.kind === 'unavailable'))
+                  buildPlaybackSessionSourceStatuses(
+                    [target],
+                    requestedEpisode
+                  ).get(getSourceIdentityKey(target.source, target.id))
+                    ?.kind === 'unavailable'))
             ) {
               await searchPromise;
             }
@@ -5895,10 +5977,10 @@ function usePlayPageSession() {
                 title: urlSearchTitle || urlTitle,
                 year: urlYear,
               }),
-              sourceStatuses: buildPlaybackSessionSourceStatuses([
-                ...searchResults,
-                ...detailResults,
-              ]),
+              sourceStatuses: buildPlaybackSessionSourceStatuses(
+                [...searchResults, ...detailResults],
+                urlEpisodeIndex ?? (historyRecord?.index ?? 1) - 1
+              ),
             });
 
             if (!recovery.detail) {
@@ -6114,6 +6196,7 @@ function usePlayPageSession() {
             ) {
               void preferBestSource(merged, {
                 signal: preferenceController.signal,
+                background: true,
               }).catch((error) => {
                 console.warn('后台线路优选失败', error);
               });
@@ -6191,10 +6274,20 @@ function usePlayPageSession() {
         return false;
       }
 
-      const rememberedStatus = getRememberedSourceStatusForSource(
-        getSourceIdentityKey(newDetail.source, newDetail.id),
-        newDetail.episodes
-      );
+      const activeEpisodeIndex = currentEpisodeIndexRef.current;
+      const targetIndex = getSourceSwitchTargetEpisodeIndex({
+        currentEpisodeIndex: activeEpisodeIndex,
+        episodeCount: newDetail.episodes?.length || 0,
+        requireCurrentEpisode: Boolean(options.autoRecovery),
+      });
+      const rememberedStatus =
+        targetIndex == null
+          ? null
+          : getRememberedSourceStatusForSource(
+              getSourceIdentityKey(newDetail.source, newDetail.id),
+              newDetail.episodes,
+              targetIndex
+            );
       if (rememberedStatus?.kind === 'unavailable') {
         dispatchVideoPlaybackUi({ type: 'loading.end' });
         const message = rememberedStatus.reason || '该播放源当前不可用';
@@ -6212,14 +6305,6 @@ function usePlayPageSession() {
         }
         return false;
       }
-
-      // 尝试跳转到当前正在播放的集数
-      const activeEpisodeIndex = currentEpisodeIndexRef.current;
-      const targetIndex = getSourceSwitchTargetEpisodeIndex({
-        currentEpisodeIndex: activeEpisodeIndex,
-        episodeCount: newDetail.episodes?.length || 0,
-        requireCurrentEpisode: Boolean(options.autoRecovery),
-      });
 
       if (targetIndex === null) {
         dispatchVideoPlaybackUi({ type: 'loading.end' });

@@ -224,6 +224,7 @@ export function rememberSourcePlaybackQuality(
   domain: string | null,
   update: {
     mode: SourcePlaybackMode | 'unavailable';
+    episodeUrl?: string;
     startupTimeMs?: number;
     observedSpeedKbps?: number;
     browserSpeedLabel?: string;
@@ -236,7 +237,9 @@ export function rememberSourcePlaybackQuality(
   if (!key || typeof window === 'undefined') return;
 
   const allPreferences = readSourcePlaybackQualityPreferenceMap();
-  const previous = allPreferences[key];
+  const stored = allPreferences[key];
+  const previous =
+    stored?.episodeUrl === update.episodeUrl ? stored : undefined;
   const now = Date.now();
   const observedSpeedKbps =
     update.observedSpeedKbps ??
@@ -245,6 +248,7 @@ export function rememberSourcePlaybackQuality(
 
   allPreferences[key] = {
     mode: update.mode,
+    episodeUrl: update.episodeUrl,
     lastPlayableAt: update.mode === 'direct' ? now : previous?.lastPlayableAt,
     lastFailedAt: update.mode === 'unavailable' ? now : previous?.lastFailedAt,
     startupTimeMs: update.startupTimeMs ?? previous?.startupTimeMs,
@@ -395,14 +399,31 @@ export function getRememberedSourceStatus(
 
 export function getRememberedSourceStatusForSource(
   sourceKey: string,
-  episodes: string[]
+  episodes: string[],
+  episodeIndex = 0
 ): SourceStatus | null {
-  const domain = getSourceDomainFromEpisodes(episodes);
+  const episodeUrl = episodes?.[episodeIndex];
+  if (!episodeUrl) return null;
+  const domain = extractSourceDomain(episodeUrl);
   const preference = getSourcePlaybackQualityPreference(sourceKey, domain);
 
-  if (!preference) {
-    return getRememberedSourceStatus(episodes);
-  }
+  // Older source/domain memories can influence order, but did not verify this URL.
+  const rememberedOrder = () => {
+    if (
+      preference?.mode !== 'direct' &&
+      getSourceDomainPreference(domain)?.mode !== 'direct'
+    ) {
+      return null;
+    }
+    return createSourceStatus('idle', {
+      domain,
+      fromMemory: true,
+      localConfidence: preference?.confidence,
+      reason: '本机近期有播放记录，当前集待检测',
+    });
+  };
+  if (!preference || preference.episodeUrl !== episodeUrl)
+    return rememberedOrder();
 
   if (preference.mode === 'unavailable') {
     if (
@@ -410,7 +431,7 @@ export function getRememberedSourceStatusForSource(
       isTransientBrowserProbeError(preference.lastError)
     ) {
       clearSourcePlaybackQualityPreference(sourceKey, domain);
-      return getRememberedSourceStatus(episodes);
+      return rememberedOrder();
     }
 
     return createSourceStatus('unavailable', {

@@ -3,7 +3,13 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useRouter } from 'next/navigation';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { buildSourceAvailabilityList } from '@/lib/source-availability/index';
 import { fetchSourcePreferencesInBatches } from '@/lib/source-preference-client';
@@ -30,7 +36,6 @@ import {
   getVideoResolutionFromM3u8,
   markBrowserSpeedUnmeasured,
   probeSourcePlayback,
-  rememberSourceDomainPreference,
   rememberSourcePlaybackQuality,
   SourceSpeedProbeTimeoutError,
 } from '@/lib/utils';
@@ -219,6 +224,25 @@ function useEpisodeSelectorState({
   const sourceStatusMapRef = useRef<Map<string, SourceStatus>>(new Map());
   const sourcePreferenceProbeKeyRef = useRef<string>('');
   const sourcePreferenceFreshProbeKeyRef = useRef<string>('');
+  const episodeGenerationRef = useRef(0);
+  const episodeScope = JSON.stringify(
+    availableSources.map(({ source, id, episodes }) => [
+      source,
+      id,
+      episodes?.[value - 1],
+    ])
+  );
+
+  useLayoutEffect(() => {
+    sourcePreferenceProbeKeyRef.current = '';
+    sourcePreferenceFreshProbeKeyRef.current = '';
+    setVideoInfoMap(new Map());
+    setSourceStatusMap(new Map());
+    setAttemptedSources(new Set());
+    return () => {
+      episodeGenerationRef.current += 1;
+    };
+  }, [episodeScope, value]);
 
   // Keep refs aligned with merged display maps for async probe callbacks.
   useEffect(() => {
@@ -355,8 +379,7 @@ function useEpisodeSelectorState({
       result: Awaited<
         ReturnType<typeof fetchSourcePreferencesInBatches>
       >['results'][number]
-    ) =>
-      previousStatus?.kind === 'unavailable' && result.kind !== 'unavailable',
+    ) => previousStatus?.kind === 'unavailable' && result.kind === 'direct',
     []
   );
 
@@ -370,7 +393,8 @@ function useEpisodeSelectorState({
     ) => {
       const commonOptions = {
         reason: result.reason,
-        playbackMode: result.kind === 'unavailable' ? undefined : result.kind,
+        playbackMode:
+          result.kind === 'direct' ? ('direct' as const) : undefined,
         domain: result.domain || previousStatus?.domain || null,
         measured: measured || undefined,
         updatedAt: result.updatedAt,
@@ -380,7 +404,7 @@ function useEpisodeSelectorState({
 
       if (
         previousStatus?.kind === 'unavailable' &&
-        result.kind !== 'unavailable' &&
+        result.kind === 'direct' &&
         !hasBackendRescueMetrics(measured)
       ) {
         return createPlayableSourceStatus({
@@ -389,18 +413,23 @@ function useEpisodeSelectorState({
         });
       }
 
-      return createSourceStatus(result.kind, commonOptions);
+      return createSourceStatus(
+        result.kind === 'unknown' ? 'idle' : result.kind,
+        commonOptions
+      );
     },
     [hasBackendRescueMetrics]
   );
 
   const probeSourceDirectPlayback = useCallback(
     async (source: SearchResult) => {
+      const generation = episodeGenerationRef.current;
       const sourceKey = getSourceIdentityKey(source.source, source.id);
       const existingStatus = sourceStatusMapRef.current.get(sourceKey);
       const rememberedStatus = getRememberedSourceStatusForSource(
         sourceKey,
-        source.episodes
+        source.episodes,
+        Math.max(0, value - 1)
       );
 
       if (existingStatus?.kind === 'probing') {
@@ -450,6 +479,9 @@ function useEpisodeSelectorState({
             }
           : await probeSourcePlayback(episodeUrl);
 
+      if (generation !== episodeGenerationRef.current)
+        return createSourceStatus('idle');
+
       if (serverProbeResult.kind === 'unavailable') {
         const unavailableInfo: SourceVideoInfo = {
           quality: '错误',
@@ -470,16 +502,12 @@ function useEpisodeSelectorState({
         setSourceStatusMap((prev) =>
           new Map(prev).set(sourceKey, unavailableStatus)
         );
-        rememberSourceDomainPreference(
-          unavailableStatus.domain || null,
-          'unavailable',
-          serverProbeResult.reason
-        );
         rememberSourcePlaybackQuality(
           sourceKey,
           unavailableStatus.domain || null,
           {
             mode: 'unavailable',
+            episodeUrl,
             lastError: serverProbeResult.reason || '服务端探测失败',
             confidence: 'medium',
           }
@@ -504,6 +532,8 @@ function useEpisodeSelectorState({
 
       try {
         const result = await getVideoResolutionFromM3u8(episodeUrl);
+        if (generation !== episodeGenerationRef.current)
+          return createSourceStatus('idle');
         const existing = videoInfoMapRef.current.get(sourceKey);
         const browserInfo =
           result.browserSpeedUnmeasured && existing?.speedSource === 'backend'
@@ -520,9 +550,9 @@ function useEpisodeSelectorState({
         setSourceStatusMap((prev) =>
           new Map(prev).set(sourceKey, directStatus)
         );
-        rememberSourceDomainPreference(directStatus.domain || null, 'direct');
         rememberSourcePlaybackQuality(sourceKey, directStatus.domain || null, {
           mode: 'direct',
+          episodeUrl,
           browserSpeedLabel: isBrowserSourceMeasurement(result)
             ? result.loadSpeed
             : undefined,
@@ -530,6 +560,8 @@ function useEpisodeSelectorState({
         });
         return directStatus;
       } catch (error) {
+        if (generation !== episodeGenerationRef.current)
+          return createSourceStatus('idle');
         if (error instanceof SourceSpeedProbeTimeoutError) {
           const latestStatus = sourceStatusMapRef.current.get(sourceKey);
           const status =
@@ -582,6 +614,7 @@ function useEpisodeSelectorState({
           playableStatus.domain || null,
           {
             mode: 'unavailable',
+            episodeUrl,
             lastError: failureReason,
             confidence: 'low',
           }
@@ -594,6 +627,7 @@ function useEpisodeSelectorState({
 
   const handleSourceCardClick = useCallback(
     async (source: SearchResult) => {
+      const generation = episodeGenerationRef.current;
       const sourceKey = getSourceIdentityKey(source.source, source.id);
       const currentEpisodeIndex = Math.max(0, value - 1);
       let status = sourceStatusMapRef.current.get(sourceKey);
@@ -607,6 +641,7 @@ function useEpisodeSelectorState({
 
       if (availability.manualSwitch.mode === 'probe-first') {
         status = await probeSourceDirectPlayback(source);
+        if (generation !== episodeGenerationRef.current) return;
         availability = buildSourceAvailabilityList({
           sources: [source],
           currentSourceKey,
@@ -634,7 +669,8 @@ function useEpisodeSelectorState({
         const previousStatus = prev.get(sourceKey);
         const rememberedStatus = getRememberedSourceStatusForSource(
           sourceKey,
-          source.episodes
+          source.episodes,
+          Math.max(0, value - 1)
         );
         const isCurrentSource =
           source.source?.toString() === currentSource?.toString() &&
@@ -666,7 +702,7 @@ function useEpisodeSelectorState({
 
       return next;
     });
-  }, [availableSources, currentId, currentSource]);
+  }, [availableSources, currentId, currentSource, value]);
 
   useEffect(() => {
     if (activeTab !== 'sources' || availableSources.length === 0) {
@@ -689,14 +725,9 @@ function useEpisodeSelectorState({
     const toPreferenceRequestSource = (
       source: SearchResult
     ): SourcePreferenceRequest['sources'][number] => {
-      const probeEpisodeIndex = Math.max(
-        0,
-        Math.min(value - 1, Math.max(0, source.episodes.length - 1))
-      );
-
       return {
         sourceKey: getSourceIdentityKey(source.source, source.id),
-        episodeUrl: source.episodes?.[probeEpisodeIndex] || null,
+        episodeUrl: source.episodes?.[value - 1] || null,
         sourceName: source.source_name,
         titleSample: source.title,
       };
@@ -712,6 +743,9 @@ function useEpisodeSelectorState({
     sourcePreferenceProbeKeyRef.current = requestKey;
 
     let cancelled = false;
+    const generation = episodeGenerationRef.current;
+    const stillCurrent = () =>
+      !cancelled && generation === episodeGenerationRef.current;
 
     const probeFallbackSources = async (targetSourceKeys?: Set<string>) => {
       const fallbackSources = targetSourceKeys
@@ -723,7 +757,7 @@ function useEpisodeSelectorState({
       let currentIndex = 0;
 
       const runWorker = async () => {
-        while (!cancelled && currentIndex < fallbackSources.length) {
+        while (stillCurrent() && currentIndex < fallbackSources.length) {
           const source = fallbackSources[currentIndex];
           currentIndex += 1;
           const sourceKey = getSourceIdentityKey(source.source, source.id);
@@ -732,11 +766,7 @@ function useEpisodeSelectorState({
             continue;
           }
 
-          const probeEpisodeIndex = Math.max(
-            0,
-            Math.min(value - 1, Math.max(0, source.episodes.length - 1))
-          );
-          const episodeUrl = source.episodes?.[probeEpisodeIndex];
+          const episodeUrl = source.episodes?.[value - 1];
 
           if (!episodeUrl) {
             setSourceStatusMap((prev) => {
@@ -756,7 +786,7 @@ function useEpisodeSelectorState({
           }
 
           const probeResult = await probeSourcePlayback(episodeUrl);
-          if (cancelled) {
+          if (!stillCurrent()) {
             return;
           }
 
@@ -836,6 +866,16 @@ function useEpisodeSelectorState({
             !localStatus.fromMemory
               ? localStatus
               : precomputedStatus || localStatus;
+          if (result.kind === 'unknown') {
+            next.set(result.sourceKey, {
+              ...(previousStatus?.kind === 'probing'
+                ? createSourceStatus('idle')
+                : previousStatus || createSourceStatus('idle')),
+              rankScore: result.rankScore,
+              rankingSource: result.rankingSource,
+            });
+            return;
+          }
           if (isBrowserSourceMeasurement(previousStatus?.measured)) {
             return;
           }
@@ -959,7 +999,7 @@ function useEpisodeSelectorState({
             includeFreshProbeMetrics: true,
           }
         );
-        if (!cancelled) {
+        if (stillCurrent()) {
           mergePreferenceResults(preferenceData.results);
 
           const returnedSourceKeys = new Set(
@@ -995,17 +1035,18 @@ function useEpisodeSelectorState({
               includeFreshProbeMetrics: true,
             })
               .then((retryPreferenceData) => {
-                if (!cancelled) {
+                if (stillCurrent()) {
                   mergePreferenceResults(retryPreferenceData.results);
                 }
               })
               .catch(() => {
-                sourcePreferenceFreshProbeKeyRef.current = '';
+                if (stillCurrent())
+                  sourcePreferenceFreshProbeKeyRef.current = '';
               });
           }
         }
       } catch {
-        sourcePreferenceFreshProbeKeyRef.current = '';
+        if (stillCurrent()) sourcePreferenceFreshProbeKeyRef.current = '';
       }
     };
 
@@ -1013,7 +1054,7 @@ function useEpisodeSelectorState({
       allowLiveProbeFallback: true,
     })
       .then((preferenceData) => {
-        if (cancelled) {
+        if (!stillCurrent()) {
           return;
         }
 
@@ -1033,6 +1074,7 @@ function useEpisodeSelectorState({
         void requestFreshMetricsForVisibleSources(preferenceData.results);
       })
       .catch(() => {
+        if (!stillCurrent()) return;
         sourcePreferenceProbeKeyRef.current = '';
         void probeFallbackSources();
       });

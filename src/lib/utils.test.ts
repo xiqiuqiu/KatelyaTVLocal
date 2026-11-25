@@ -84,6 +84,7 @@ describe('source status behavior', () => {
   it('keeps source-specific playback failures from affecting another source on the same domain', () => {
     rememberSourcePlaybackQuality('slow-1', 'media.example.com', {
       mode: 'unavailable',
+      episodeUrl: 'https://media.example.com/20250508/demo/index.m3u8',
       lastError: 'manifestLoadError',
     });
 
@@ -102,6 +103,7 @@ describe('source status behavior', () => {
   it('restores source-specific successful playback memory with measured speed', () => {
     rememberSourcePlaybackQuality('fast-2', 'media.example.com', {
       mode: 'direct',
+      episodeUrl: 'https://media.example.com/20250508/demo/index.m3u8',
       startupTimeMs: 1200,
       browserSpeedLabel: '2.5 MB/s',
       confidence: 'high',
@@ -117,9 +119,31 @@ describe('source status behavior', () => {
     expect(status?.reason).toBe('本机近期播放流畅');
   });
 
+  it('uses playback memory for another episode on the same CDN only as a ranking hint', () => {
+    const episodes = [
+      'https://media.example.com/1.m3u8',
+      'https://media.example.com/2.m3u8',
+      'https://other.example.com/3.m3u8',
+    ];
+    rememberSourcePlaybackQuality('fast-2', 'media.example.com', {
+      mode: 'direct',
+      episodeUrl: episodes[0],
+    });
+    expect(
+      getRememberedSourceStatusForSource('fast-2', episodes, 0)?.kind
+    ).toBe('direct');
+    expect(
+      getRememberedSourceStatusForSource('fast-2', episodes, 1)
+    ).toMatchObject({ kind: 'idle', fromMemory: true });
+    expect(
+      getRememberedSourceStatusForSource('fast-2', episodes, 2)
+    ).toBeNull();
+  });
+
   it('clears source-specific unavailable memory for transient browser probe errors', () => {
     rememberSourcePlaybackQuality('slow-1', 'media.example.com', {
       mode: 'unavailable',
+      episodeUrl: 'https://media.example.com/20250508/demo/index.m3u8',
       lastError: 'Timeout loading video metadata',
     });
 
@@ -136,6 +160,7 @@ describe('source status behavior', () => {
   it('clears source-specific unavailable memory for aborted browser probes', () => {
     rememberSourcePlaybackQuality('slow-1', 'media.example.com', {
       mode: 'unavailable',
+      episodeUrl: 'https://media.example.com/20250508/demo/index.m3u8',
       lastError: 'The operation was aborted',
       confidence: 'medium',
     });
@@ -153,6 +178,7 @@ describe('source status behavior', () => {
   it('does not restore low-confidence browser speed-test failures as unavailable', () => {
     rememberSourcePlaybackQuality('slow-1', 'media.example.com', {
       mode: 'unavailable',
+      episodeUrl: 'https://media.example.com/20250508/demo/index.m3u8',
       lastError: 'metadata probe failed',
       confidence: 'low',
     });

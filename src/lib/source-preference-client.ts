@@ -15,6 +15,7 @@ interface FetchSourcePreferencesOptions {
   batchSize?: number;
   endpoint?: string;
   signal?: AbortSignal;
+  background?: boolean;
   /** Called with the merged results so far after each successful batch. */
   onBatch?: (response: SourcePreferenceResponse) => void;
 }
@@ -23,6 +24,8 @@ function getStatusPriority(kind: SourcePreferenceResult['kind']): number {
   switch (kind) {
     case 'direct':
       return 0;
+    case 'unknown':
+      return 1;
     case 'unavailable':
     default:
       return 2;
@@ -91,7 +94,9 @@ export async function fetchSourcePreferencesInBatches(
       response.results.forEach((result) => {
         if (
           result.sourceKey &&
-          (result.kind === 'direct' || result.kind === 'unavailable')
+          (result.kind === 'direct' ||
+            result.kind === 'unknown' ||
+            result.kind === 'unavailable')
         ) {
           resultMap.set(result.sourceKey, result);
         }
@@ -124,9 +129,13 @@ export async function fetchSourcePreferencesInBatches(
           'Content-Type': 'application/json',
         },
         cache: 'no-store',
+        ...(options.background ? { priority: 'low' } : {}),
         signal: options.signal,
         body: JSON.stringify({
           sources: batch,
+          ...(start > 0 && options.allowLiveProbeFallback !== false
+            ? { checkRankedAvailability: false }
+            : {}),
           ...(options.allowLiveProbeFallback === undefined
             ? {}
             : { allowLiveProbeFallback: options.allowLiveProbeFallback }),
