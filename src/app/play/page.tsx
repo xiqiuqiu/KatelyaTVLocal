@@ -19,6 +19,7 @@ import {
   type PersistedAdSkipWindow,
   mergeAdSkipWindowsForLoad,
 } from '@/lib/ad-skip-window';
+import { getRuntimeCurrentUser } from '@/lib/auth';
 import type { CastStatus } from '@/lib/cast';
 import { castControlIcon, requestCastPlayback } from '@/lib/cast';
 import {
@@ -163,6 +164,10 @@ import {
   isBrowserSourceMeasurement,
 } from '@/lib/source-preference-video-info';
 import { buildSourceSearchUrl, SOURCE_DATA_VERSION } from '@/lib/source-query';
+import {
+  SOURCE_RANKING_EXPERIMENT_POLICIES,
+  sourceRankingExperimentPolicy,
+} from '@/lib/source-ranking/experiment';
 import {
   buildSourceSelectionScores,
   SourceSelectionScore,
@@ -4819,7 +4824,11 @@ function usePlayPageSession() {
   // 播放源优选函数
   const preferBestSource = async (
     sources: SearchResult[],
-    options: { signal?: AbortSignal; background?: boolean } = {}
+    options: {
+      signal?: AbortSignal;
+      background?: boolean;
+      initial?: boolean;
+    } = {}
   ): Promise<SearchResult | null> => {
     const preferenceGeneration = ++sourcePreferenceGenerationRef.current;
     const episodeIndex = currentEpisodeIndexRef.current;
@@ -4848,6 +4857,16 @@ function usePlayPageSession() {
 
     setPrecomputedSourceStatuses(initialStatuses);
 
+    const username = getRuntimeCurrentUser()?.username;
+    const experiment =
+      options.initial &&
+      sourceEntries.length > 1 &&
+      window.RUNTIME_CONFIG?.SOURCE_RANKING_EXPERIMENT_ENABLED &&
+      window.RUNTIME_CONFIG?.SOURCE_RANKING_ENABLED &&
+      username
+        ? sourceRankingExperimentPolicy(username)
+        : null;
+
     const scoreCurrentSelection = () =>
       updateSourceSelectionScores(
         sources,
@@ -4868,7 +4887,18 @@ function usePlayPageSession() {
         currentEpisodeIndex: episodeIndex,
         statuses: precomputedSourceStatusesRef.current,
         measured: precomputedVideoInfoRef.current,
-        sourceSelectionScores: scoreCurrentSelection(),
+        sourceSelectionScores:
+          experiment === SOURCE_RANKING_EXPERIMENT_POLICIES.control
+            ? buildSourceSelectionScores({
+                sources,
+                statuses: precomputedSourceStatusesRef.current,
+                measured: precomputedVideoInfoRef.current,
+                currentEpisodeIndex: episodeIndex,
+                includeHistoricalRank: false,
+                getSourceKey: (source) =>
+                  getSourceIdentityKey(source.source, source.id),
+              })
+            : scoreCurrentSelection(),
       })?.source || null;
 
     if (sourceEntries.length <= 1) return pickBestSource();
@@ -4915,6 +4945,7 @@ function usePlayPageSession() {
           statusMap.set(result.sourceKey, {
             ...(existingStatus || createSourceStatus('idle')),
             rankScore: result.rankScore,
+            rankScoreWithoutCron: result.rankScoreWithoutCron,
             rankingSource: result.rankingSource,
           });
           return;
@@ -4936,6 +4967,7 @@ function usePlayPageSession() {
           statusMap.set(result.sourceKey, {
             ...existingStatus,
             rankScore: result.rankScore,
+            rankScoreWithoutCron: result.rankScoreWithoutCron,
             rankingSource: result.rankingSource,
             updatedAt: Math.max(
               existingStatus.updatedAt || 0,
@@ -4953,6 +4985,7 @@ function usePlayPageSession() {
           updatedAt: result.updatedAt,
           rankingSource: result.rankingSource,
           rankScore: result.rankScore,
+          rankScoreWithoutCron: result.rankScoreWithoutCron,
         };
         const nextStatus =
           canRescueFromMemory && (!measured || measured.speedPending)
@@ -5044,6 +5077,12 @@ function usePlayPageSession() {
     }
 
     const bestSource = confirmed || pickBestSource();
+    if (bestSource && experiment) {
+      playbackQualityRef.current.markInitialSourceRanking(
+        getSourceIdentityKey(bestSource.source, bestSource.id),
+        experiment
+      );
+    }
 
     console.log('播放源优选结果:', {
       selected: bestSource?.source_name,
@@ -6056,6 +6095,7 @@ function usePlayPageSession() {
               ),
               {
                 signal: preferenceController.signal,
+                initial: !options.retry && !urlFromPlayRecord,
               }
             );
             if (cancelled) return;

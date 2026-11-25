@@ -1,3 +1,4 @@
+import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import type { Metadata, Viewport } from 'next';
 import { cookies } from 'next/headers';
 
@@ -88,6 +89,16 @@ async function loadRootLayoutModel() {
         role: currentSession.role,
       }
     : null;
+  let rankingExperiment = process.env.SOURCE_RANKING_EXPERIMENT_ENABLED;
+  try {
+    const env = getOptionalRequestContext()?.env as
+      | Record<string, string | undefined>
+      | undefined;
+    rankingExperiment =
+      env?.SOURCE_RANKING_EXPERIMENT_ENABLED ?? rankingExperiment;
+  } catch {
+    // Node deployments use process.env.
+  }
 
   return {
     siteName,
@@ -100,6 +111,7 @@ async function loadRootLayoutModel() {
       SOURCE_PROBE: sourceProbe,
       SOURCE_RANKING_ENABLED:
         process.env.NEXT_PUBLIC_SOURCE_RANKING_ENABLED === 'true',
+      SOURCE_RANKING_EXPERIMENT_ENABLED: rankingExperiment === 'true',
       TURNSTILE_SITE_KEY: turnstileSiteKey,
       LOGIN_TURNSTILE_REQUIRED: process.env.LOGIN_TURNSTILE_REQUIRED === 'true',
       REGISTER_INVITE_REQUIRED: registerInviteRequired,

@@ -5,6 +5,7 @@ import { isAdminRequest } from '@/lib/admin-auth';
 import {
   readPlaybackDashboard,
   readPlaybackQualitySummary,
+  readSourceRankingExperiment,
 } from '@/lib/playback-quality.server';
 
 export const runtime = 'edge';
@@ -32,8 +33,11 @@ export async function GET(request: NextRequest) {
     } catch {
       env = process.env as Record<string, unknown>;
     }
+    const view = params.get('view');
     const read =
-      params.get('view') === 'dashboard'
+      view === 'ranking-experiment'
+        ? readSourceRankingExperiment
+        : view === 'dashboard'
         ? readPlaybackDashboard
         : readPlaybackQualitySummary;
     const summary = await read(env, days, Date.now(), cohort === 'test');

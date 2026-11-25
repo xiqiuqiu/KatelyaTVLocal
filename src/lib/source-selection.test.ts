@@ -56,6 +56,43 @@ describe('calculateMeasuredSourceScore', () => {
 });
 
 describe('buildSourceSelectionScores', () => {
+  it('only removes the historical rank contribution in the control group', () => {
+    const sources = [
+      createSource('original', '1'),
+      createSource('ranked', '2'),
+    ];
+    const input = {
+      sources,
+      statuses: new Map<string, SourceStatus>([
+        ['original-1', { kind: 'direct', reason: 'direct', rankScore: 20 }],
+        [
+          'ranked-2',
+          {
+            kind: 'direct',
+            reason: 'direct',
+            rankScore: 90,
+            rankScoreWithoutCron: 0,
+          },
+        ],
+      ]),
+      currentEpisodeIndex: 0,
+    };
+    const ranked = buildSourceSelectionScores(input);
+    const control = buildSourceSelectionScores({
+      ...input,
+      includeHistoricalRank: false,
+    });
+    expect(sortSourcesBySelectionScore(sources, ranked)[0]).toBe(sources[1]);
+    expect(sortSourcesBySelectionScore(sources, control)[0]).toBe(sources[0]);
+    expect(control.get('ranked-2')).toMatchObject({
+      score: 80,
+      statusKind: 'direct',
+    });
+    expect(control.get('original-1')?.score).toBe(
+      ranked.get('original-1')?.score
+    );
+  });
+
   it('combines D1 rank status and measured quality for first-play selection', () => {
     const sources = [createSource('slow', '1'), createSource('fast', '2')];
     const statuses = new Map<string, SourceStatus>([

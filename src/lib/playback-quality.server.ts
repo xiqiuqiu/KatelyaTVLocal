@@ -1,6 +1,10 @@
 import type { D1DatabaseLike } from '@/lib/d1';
 import { getD1Database } from '@/lib/d1';
 import type { PlaybackQualitySample } from '@/lib/playback-quality';
+import {
+  type SourceRankingExperimentPolicy,
+  SOURCE_RANKING_EXPERIMENT_POLICIES,
+} from '@/lib/source-ranking/experiment';
 
 const DAY_MS = 86_400_000;
 const DAILY_ROW_LIMIT = 2000;
@@ -301,6 +305,70 @@ SELECT COUNT(uninterrupted) AS observedVisits,
   COALESCE(SUM(recovered), 0) AS recovered,
   COALESCE(SUM(failed), 0) AS failed
 FROM playback_qoe WHERE day_key >= ? AND test_session = ?`;
+
+// Only the first automatically selected source carries an experiment policy.
+export const SOURCE_RANKING_EXPERIMENT_SQL = `
+WITH starts AS (
+  SELECT s.owner, s.policy_version, s.outcome,
+    (s.outcome IN ('frame-ready', 'source-timeout', 'network-error', 'media-error', 'failed')
+      OR (s.outcome = 'cancelled' AND r.outcome IN ('budget-exhausted', 'failed'))) AS decided,
+    CASE WHEN r.outcome = 'frame-ready' AND r.had_hidden = 0 AND r.autoplay_blocked = 0
+      THEN r.click_to_frame_ms END AS click_ms,
+    q.uninterrupted, COALESCE(q.recovered, 0) AS recovered, COALESCE(q.failed, 0) AS failed
+  FROM playback_quality s
+  LEFT JOIN playback_quality r ON r.owner = s.owner AND r.session_id = s.session_id
+    AND r.round_id = s.round_id AND r.row_kind = 'round' AND r.attempt_id = 0
+    AND r.test_session = s.test_session
+  LEFT JOIN playback_qoe q ON q.owner = s.owner AND q.session_id = s.session_id
+    AND q.visit = 1 AND q.test_session = s.test_session
+  WHERE s.day_key >= ? AND s.test_session = ? AND s.policy_version IN (?, ?)
+    AND s.row_kind = 'source' AND s.source_reason = 'initial' AND s.round_id = 1 AND s.root_round_id = 1
+), ranked AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY policy_version ORDER BY click_ms IS NULL, click_ms) AS rn,
+    COUNT(click_ms) OVER (PARTITION BY policy_version) AS click_samples
+  FROM starts
+)
+SELECT policy_version AS policyVersion, COUNT(*) AS starts, COUNT(DISTINCT owner) AS accounts,
+  COUNT(CASE WHEN decided THEN 1 END) AS decidedStarts,
+  COUNT(CASE WHEN outcome = 'frame-ready' THEN 1 END) AS firstSourceSuccesses,
+  MAX(click_samples) AS clickSamples,
+  MAX(CASE WHEN rn = (click_samples * 95 + 99) / 100 THEN click_ms END) AS clickP95Ms,
+  COUNT(uninterrupted) AS observedVisits, COUNT(CASE WHEN uninterrupted = 1 THEN 1 END) AS uninterruptedVisits,
+  SUM(recovered) AS recovered, SUM(failed) AS failed
+FROM ranked GROUP BY policy_version`;
+
+export async function readSourceRankingExperiment(
+  env: Record<string, unknown>,
+  days: number,
+  now: number,
+  testSession: boolean
+) {
+  const db = getD1Database(env);
+  if (!db) return null;
+  const cutoff = playbackQualityDayKey(now - (days - 1) * DAY_MS);
+  const { results } = await db
+    .prepare(SOURCE_RANKING_EXPERIMENT_SQL)
+    .bind(
+      cutoff,
+      Number(testSession),
+      SOURCE_RANKING_EXPERIMENT_POLICIES.control,
+      SOURCE_RANKING_EXPERIMENT_POLICIES.ranking
+    )
+    .all<{
+      policyVersion: SourceRankingExperimentPolicy;
+      starts: number;
+      accounts: number;
+      decidedStarts: number;
+      firstSourceSuccesses: number;
+      clickSamples: number;
+      clickP95Ms: number | null;
+      observedVisits: number;
+      uninterruptedVisits: number;
+      recovered: number;
+      failed: number;
+    }>();
+  return { experiment: results ?? [] };
+}
 
 interface QoeCounts {
   observedVisits: number;

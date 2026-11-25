@@ -186,6 +186,7 @@ describe('source ranking read', () => {
         updatedAt: 1710000300000,
         rankingSource: 'd1',
         rankScore: 99.5,
+        rankScoreWithoutCron: 58,
       },
     ]);
   });

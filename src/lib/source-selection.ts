@@ -19,6 +19,7 @@ interface BuildSourceSelectionScoresInput {
   statuses?: Map<string, SourceStatus>;
   measured?: Map<string, SourceVideoInfo>;
   currentEpisodeIndex: number;
+  includeHistoricalRank?: boolean;
   getSourceKey?: (source: SearchResult) => string;
 }
 
@@ -153,6 +154,7 @@ export function buildSourceSelectionScores({
   statuses = new Map(),
   measured = new Map(),
   currentEpisodeIndex,
+  includeHistoricalRank = true,
   getSourceKey = (source) => `${source.source}-${source.id}`,
 }: BuildSourceSelectionScoresInput): Map<string, SourceSelectionScore> {
   const measuredValues = Array.from(measured.values()).filter(
@@ -171,8 +173,11 @@ export function buildSourceSelectionScores({
       currentEpisodeIndex < source.episodes.length;
 
     let score = getStatusBaseScore(status?.kind);
-    if (typeof status?.rankScore === 'number') {
-      score += Math.max(-50, Math.min(100, status.rankScore)) * 0.35;
+    const rankScore = includeHistoricalRank
+      ? status?.rankScore
+      : status?.rankScoreWithoutCron ?? status?.rankScore;
+    if (typeof rankScore === 'number') {
+      score += Math.max(-50, Math.min(100, rankScore)) * 0.35;
     }
     if (status?.fromMemory) {
       score += status.localConfidence === 'low' ? 25 : 55;

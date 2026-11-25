@@ -622,6 +622,13 @@ function useVideoCardModel({
     }
 
     if (!href) return;
+    if (
+      new URLSearchParams(window.location.search).get('playbackTest') === '1'
+    ) {
+      const target = new URL(href, window.location.origin);
+      target.searchParams.set('playbackTest', '1');
+      href = target.pathname + target.search + target.hash;
+    }
     if (tvMode) href = buildTvModeHref(href, true);
 
     setIsOpening(true);

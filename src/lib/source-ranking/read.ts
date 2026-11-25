@@ -304,6 +304,7 @@ export async function readLatestSourceRanks(
         snapshot.updatedAt,
         now
       );
+      const latestFeedback = latestAnyFeedbackByKey.get(snapshot.sourceKey);
 
       return {
         sourceKey: snapshot.sourceKey,
@@ -346,6 +347,15 @@ export async function readLatestSourceRanks(
             freshnessAdjustment
           ).toFixed(2)
         ),
+        rankScoreWithoutCron: latestFeedback
+          ? Number(
+              (
+                FEEDBACK_ONLY_BASE_RANK_SCORE +
+                feedbackAdjustment +
+                getFreshnessRankAdjustment(latestFeedback.recordedAt, now)
+              ).toFixed(2)
+            )
+          : 0,
       };
     })
     .filter((result): result is SourcePreferenceResult => result !== null);

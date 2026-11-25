@@ -120,6 +120,45 @@ def test_qoe_cohorts_and_retries():
     db.close()
 
 
+def test_ranking_experiment():
+    db = database()
+    control = "startup-budget-v1:cron-rank-off"
+    ranking = "startup-budget-v1:cron-rank-on"
+
+    def put(session, policy, outcome, click=None, test=False, hidden=False):
+        upsert(db, record(sessionId=session, rowKind="source", attemptId=1,
+                          sourceKey="first", sourceReason="initial", policyVersion=policy,
+                          testSession=test, outcome=outcome, status="terminal" if outcome else "pending"))
+        if click is not None:
+            upsert(db, success(sessionId=session, clickToFrameMs=click,
+                               testSession=test, hadHidden=hidden))
+
+    put("fast", control, "frame-ready", 1000)
+    put("fallback", control, "network-error", 3000)
+    put("hidden", control, "frame-ready", 9000, hidden=True)
+    put("left", control, "cancelled")
+    put("waiting", control, None)
+    put("ranking", ranking, "frame-ready", 2000)
+    put("test", ranking, "media-error", test=True)
+    put("legacy", "startup-budget-v1", "frame-ready", 500)
+    db.execute(sql("PLAYBACK_QOE_UPSERT_SQL"),
+               ("alice", "fallback", 1, 1, 0, 0, 1, 1, DAY, NOW,
+                "alice", DAY, 2000, "alice", "fallback", 1))
+    db.execute(sql("PLAYBACK_QOE_UPSERT_SQL"),
+               ("alice", "fallback", 2, 1, 0, 1, 3, 0, DAY, NOW,
+                "alice", DAY, 2000, "alice", "fallback", 2))
+    query = sql("SOURCE_RANKING_EXPERIMENT_SQL")
+    rows = {row["policyVersion"]: row for row in db.execute(query, (DAY, 0, control, ranking))}
+    a = rows[control]
+    assert (a["starts"], a["accounts"], a["decidedStarts"], a["firstSourceSuccesses"]) == (5, 1, 3, 2)
+    assert (a["clickSamples"], a["clickP95Ms"]) == (2, 3000)
+    assert (a["observedVisits"], a["uninterruptedVisits"], a["recovered"], a["failed"]) == (1, 0, 1, 1)
+    assert rows[ranking]["firstSourceSuccesses"] == 1 and rows[ranking]["clickP95Ms"] == 2000
+    test_rows = list(db.execute(query, (DAY, 1, control, ranking)))
+    assert len(test_rows) == 1 and test_rows[0]["firstSourceSuccesses"] == 0 and test_rows[0]["clickP95Ms"] is None
+    db.close()
+
+
 def test_idempotency_and_identity():
     db = database()
     assert upsert(db, record())
@@ -262,6 +301,6 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["--replay-stdin"]:
         replay_client_records()
         sys.exit(0)
-    for test in [test_banner_funnel, test_qoe_cohorts_and_retries, test_idempotency_and_identity, test_budget_choice_and_day, test_terminal_choice_and_link_protection, test_summary, test_concurrent_quota]:
+    for test in [test_banner_funnel, test_qoe_cohorts_and_retries, test_ranking_experiment, test_idempotency_and_identity, test_budget_choice_and_day, test_terminal_choice_and_link_protection, test_summary, test_concurrent_quota]:
         test()
         print(f"PASS {test.__name__}")

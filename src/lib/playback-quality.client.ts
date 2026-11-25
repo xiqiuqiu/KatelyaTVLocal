@@ -4,6 +4,7 @@ import type {
   PlaybackQualityRecord,
   PlaybackQualitySample,
 } from './playback-quality';
+import type { SourceRankingExperimentPolicy } from './source-ranking/experiment';
 
 type Outcome = NonNullable<PlaybackQualityRecord['outcome']>;
 type Clock = { start: number; last: number; active: number; endedAt?: number };
@@ -46,6 +47,10 @@ export function createPlaybackQualityReporter(
   let input: StartInput | null = null;
   let round: Sample | null = null;
   let source: Sample | null = null;
+  let rankedSource: {
+    key: string;
+    policy: SourceRankingExperimentPolicy;
+  } | null = null;
   let roundId = 0;
   let rootRoundId = 0;
   let rootEntryKind: PlaybackQualityRecord['entryKind'] = 'direct';
@@ -228,11 +233,20 @@ export function createPlaybackQualityReporter(
       rootRoundId = 0;
       round = null;
       source = null;
+      rankedSource = null;
       startRound('initial', next.episodeIndex);
     },
     isPending: () => round?.record.status === 'pending',
     canRetry: () => Boolean(round && round.record.outcome !== 'frame-ready'),
     startRound,
+    markInitialSourceRanking(
+      key: string,
+      policy: SourceRankingExperimentPolicy
+    ) {
+      if (roundId === 1 && round?.record.status === 'pending' && !source) {
+        rankedSource = { key, policy };
+      }
+    },
     beginSource(attempt: {
       attemptId: number;
       sourceKey: string;
@@ -257,6 +271,13 @@ export function createPlaybackQualityReporter(
         record: {
           ...round.record,
           rowKind: 'source',
+          policyVersion:
+            roundId === 1 &&
+            !source &&
+            attempt.reason === 'initial' &&
+            rankedSource?.key === attempt.sourceKey
+              ? rankedSource.policy
+              : round.record.policyVersion,
           attemptId: attempt.attemptId,
           sourceKey: attempt.sourceKey.slice(0, 512),
           sourceReason:

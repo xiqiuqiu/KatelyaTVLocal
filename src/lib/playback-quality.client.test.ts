@@ -7,6 +7,7 @@ import {
   createPlaybackQualityReporter,
   observePlaybackFirstFrame,
 } from './playback-quality.client';
+import { SOURCE_RANKING_EXPERIMENT_POLICIES } from './source-ranking/experiment';
 
 const settle = async () => {
   for (let index = 0; index < 12; index += 1) await Promise.resolve();
@@ -70,6 +71,44 @@ function persist(records: PlaybackQualityRecord[]) {
 }
 
 describe('startup quality observations', () => {
+  it('persists the experiment only on the initial selected source, including its terminal update', async () => {
+    const f = fixture();
+    f.start();
+    f.reporter.markInitialSourceRanking(
+      'source-1',
+      SOURCE_RANKING_EXPERIMENT_POLICIES.control
+    );
+    f.source();
+    await settle();
+    f.at(600);
+    f.reporter.sourceFailed('network-error');
+    f.source(2);
+    f.at(1500);
+    f.reporter.frame(2, 'rvfc');
+    await settle();
+    const saved = persist(f.sent);
+    expect(
+      saved.rows.filter(
+        (row: { policy_version: string }) =>
+          row.policy_version === SOURCE_RANKING_EXPERIMENT_POLICIES.control
+      )
+    ).toEqual([
+      expect.objectContaining({
+        row_kind: 'source',
+        attempt_id: 1,
+        outcome: 'network-error',
+      }),
+    ]);
+    expect(saved.rows).toContainEqual(
+      expect.objectContaining({
+        row_kind: 'source',
+        attempt_id: 2,
+        outcome: 'frame-ready',
+        policy_version: 'startup-budget-v1',
+      })
+    );
+  });
+
   it.each(['continue', 'manual', 'leave'] as const)(
     'persists a delayed %s choice and subsequent outcome through the real SQL',
     async (choice) => {

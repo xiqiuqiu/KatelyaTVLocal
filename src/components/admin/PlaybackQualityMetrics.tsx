@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
 
-import type { readPlaybackDashboard } from '@/lib/playback-quality.server';
+import type {
+  readPlaybackDashboard,
+  readSourceRankingExperiment,
+} from '@/lib/playback-quality.server';
+import { SOURCE_RANKING_EXPERIMENT_POLICIES } from '@/lib/source-ranking/experiment';
 
 type Summary = NonNullable<Awaited<ReturnType<typeof readPlaybackDashboard>>>;
+type ExperimentRow = NonNullable<
+  Awaited<ReturnType<typeof readSourceRankingExperiment>>
+>['experiment'][number];
 
 const startupLabels = {
   started: '成功起播',
@@ -12,11 +19,140 @@ const startupLabels = {
   unconfirmed: '未确认首帧',
 };
 
+function formatSampleRate(count: number, total: number) {
+  if (!total) return '暂无样本';
+  const rate = (count / total).toLocaleString('zh-CN', {
+    style: 'percent',
+    maximumFractionDigits: 1,
+  });
+  return `${rate}（${count} / ${total}）`;
+}
+
+function SourceRankingComparison({
+  days,
+  cohort,
+}: {
+  days: string;
+  cohort: string;
+}) {
+  const [rows, setRows] = useState<ExperimentRow[] | 'unavailable' | null>(
+    null
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(
+      `/api/admin/playback-quality?days=${days}&cohort=${cohort}&view=ranking-experiment`,
+      { signal: controller.signal, cache: 'no-store' }
+    )
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!controller.signal.aborted)
+          setRows(
+            payload?.available && Array.isArray(payload.experiment)
+              ? payload.experiment
+              : 'unavailable'
+          );
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setRows('unavailable');
+      });
+    return () => controller.abort();
+  }, [days, cohort]);
+
+  if (rows === 'unavailable') return <p role='status'>线路排名对比暂不可用</p>;
+  if (!rows) return <p role='status'>正在读取线路排名对比…</p>;
+  if (rows.length === 0) return <p role='status'>暂无线路排名对比样本</p>;
+
+  return (
+    <>
+      <p className='text-xs text-[rgb(var(--ui-text-muted))]'>
+        按账号固定分组，仅统计有多条候选的首次自动选线。首条线路成功率按已判定结果计算，点击耗时仅计同一轮已确认首帧的前台点击样本。
+      </p>
+      <div
+        className='overflow-x-auto'
+        role='region'
+        aria-label='线路排名对比'
+        tabIndex={0}
+      >
+        <table className='w-full text-left text-sm'>
+          <thead>
+            <tr>
+              {[
+                '组别',
+                '账号 / 起播',
+                '首条线路成功率',
+                '点击到首帧 P95',
+                '无中断播放率',
+                '故障恢复成功率',
+              ].map((label) => (
+                <th className='p-2' key={label} scope='col'>
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              {
+                name: '对照组 · 不使用 Cron 排名',
+                policy: SOURCE_RANKING_EXPERIMENT_POLICIES.control,
+              },
+              {
+                name: '实验组 · 使用 Cron 排名',
+                policy: SOURCE_RANKING_EXPERIMENT_POLICIES.ranking,
+              },
+            ].map(({ name, policy }) => {
+              const row = rows.find((item) => item.policyVersion === policy);
+              return (
+                <tr key={policy}>
+                  <th className='p-2 font-medium' scope='row'>
+                    {name}
+                  </th>
+                  <td className='p-2'>
+                    {row?.accounts ?? 0} / {row?.starts ?? 0}
+                  </td>
+                  <td className='p-2'>
+                    {formatSampleRate(
+                      row?.firstSourceSuccesses ?? 0,
+                      row?.decidedStarts ?? 0
+                    )}
+                  </td>
+                  <td className='p-2'>
+                    {row && row.clickP95Ms !== null
+                      ? `${(row.clickP95Ms / 1000).toFixed(2)} 秒（${
+                          row.clickSamples
+                        }）`
+                      : '暂无样本'}
+                  </td>
+                  <td className='p-2'>
+                    {formatSampleRate(
+                      row?.uninterruptedVisits ?? 0,
+                      row?.observedVisits ?? 0
+                    )}
+                  </td>
+                  <td className='p-2'>
+                    {formatSampleRate(
+                      row?.recovered ?? 0,
+                      (row?.recovered ?? 0) + (row?.failed ?? 0)
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 export default function PlaybackQualityMetrics() {
   const [days, setDays] = useState('7');
   const [cohort, setCohort] = useState('regular');
   const [refresh, setRefresh] = useState(0);
   const [stats, setStats] = useState<Summary | null>(null);
+  const [showRanking, setShowRanking] = useState(false);
   const { qoe, banner, playback } = stats ?? {};
   const [message, setMessage] = useState('正在读取统计…');
 
@@ -135,6 +271,23 @@ export default function PlaybackQualityMetrics() {
           ))}
         </div>
       )}
+      <section className='space-y-2' aria-label='Cron 线路排名实验'>
+        <button
+          className='ui-secondary-button ui-admin-compact'
+          type='button'
+          aria-expanded={showRanking}
+          onClick={() => setShowRanking((shown) => !shown)}
+        >
+          {showRanking ? '收起线路排名对比' : '查看线路排名对比'}
+        </button>
+        {showRanking && (
+          <SourceRankingComparison
+            key={`${days}/${cohort}/${refresh}`}
+            days={days}
+            cohort={cohort}
+          />
+        )}
+      </section>
       {playback && (
         <section aria-label='用户播放记录' className='space-y-2'>
           <h4 className='font-semibold'>用户播放记录</h4>

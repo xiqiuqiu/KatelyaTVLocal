@@ -86,6 +86,7 @@ describe('VideoCard favorites store integration', () => {
   afterEach(() => {
     __resetFavoritesStoreForTests();
     jest.clearAllMocks();
+    window.history.replaceState(null, '', '/');
   });
 
   it('expands result sources without navigating and preserves the selected source playback route', async () => {
@@ -173,29 +174,36 @@ describe('VideoCard favorites store integration', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('starts the shared preparation transition with the resolved play link', () => {
-    render(
-      <VideoCard
-        id='video-1'
-        source='source-a'
-        title='庆余年'
-        poster='https://img.example/poster.jpg'
-        year='2024'
-        from='search'
-      />
-    );
+  it.each(['', '?playbackTest=1'])(
+    'starts the shared preparation transition and preserves test mode (%s)',
+    (search) => {
+      window.history.replaceState(null, '', `/search${search}`);
+      render(
+        <VideoCard
+          id='video-1'
+          source='source-a'
+          title='庆余年'
+          poster='https://img.example/poster.jpg'
+          year='2024'
+          from='search'
+        />
+      );
 
-    fireEvent.click(screen.getByRole('button', { name: '打开 庆余年 海报' }));
+      fireEvent.click(screen.getByRole('button', { name: '打开 庆余年 海报' }));
 
-    expect(mockPlaybackPreparationStart).toHaveBeenCalledWith(
-      expect.objectContaining({
-        href: '/play?source=source-a&id=video-1&title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024',
-        title: '庆余年',
-        poster: 'https://img.example/poster.jpg',
-      })
-    );
-    expect(push).not.toHaveBeenCalled();
-  });
+      expect(mockPlaybackPreparationStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          href: `/play?source=source-a&id=video-1&title=%E5%BA%86%E4%BD%99%E5%B9%B4&year=2024${search.replace(
+            '?',
+            '&'
+          )}`,
+          title: '庆余年',
+          poster: 'https://img.example/poster.jpg',
+        })
+      );
+      expect(push).not.toHaveBeenCalled();
+    }
+  );
 
   it('does not subscribe for aggregate search cards without a heart action', async () => {
     const items: SearchResult[] = [

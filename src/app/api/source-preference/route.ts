@@ -352,6 +352,7 @@ async function probeFreshMetricsForVisibleSources({
           updatedAt: Math.max(existing?.updatedAt || 0, measuredAt),
           rankingSource: existing?.rankingSource || 'd1',
           rankScore: existing?.rankScore,
+          rankScoreWithoutCron: existing?.rankScoreWithoutCron,
         };
       } catch {
         return null;
@@ -454,9 +455,11 @@ export async function POST(request: Request) {
   });
   liveResults.forEach((result) => {
     if (result.sourceKey) {
+      const ranked = rankedByKey.get(result.sourceKey);
       resultMap.set(result.sourceKey, {
         ...result,
-        rankScore: rankedByKey.get(result.sourceKey)?.rankScore,
+        rankScore: ranked?.rankScore,
+        rankScoreWithoutCron: ranked?.rankScoreWithoutCron,
       });
     }
   });

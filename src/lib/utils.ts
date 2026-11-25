@@ -324,6 +324,7 @@ export function createSourceStatus(
     fromMemory?: boolean;
     rankingSource?: 'd1' | 'live';
     rankScore?: number;
+    rankScoreWithoutCron?: number;
     localConfidence?: 'low' | 'medium' | 'high';
   } = {}
 ): SourceStatus {
@@ -337,6 +338,7 @@ export function createSourceStatus(
     fromMemory: options.fromMemory,
     rankingSource: options.rankingSource,
     rankScore: options.rankScore,
+    rankScoreWithoutCron: options.rankScoreWithoutCron,
     localConfidence: options.localConfidence,
   };
 }
@@ -351,6 +353,7 @@ export function createPlayableSourceStatus(
     fromMemory?: boolean;
     rankingSource?: 'd1' | 'live';
     rankScore?: number;
+    rankScoreWithoutCron?: number;
     localConfidence?: 'low' | 'medium' | 'high';
   } = {}
 ): SourceStatus {
@@ -363,6 +366,7 @@ export function createPlayableSourceStatus(
     fromMemory: options.fromMemory,
     rankingSource: options.rankingSource,
     rankScore: options.rankScore,
+    rankScoreWithoutCron: options.rankScoreWithoutCron,
     localConfidence: options.localConfidence,
   });
 }

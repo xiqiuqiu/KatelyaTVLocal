@@ -215,6 +215,7 @@ export interface SourceStatus {
   fromMemory?: boolean;
   rankingSource?: 'd1' | 'live';
   rankScore?: number;
+  rankScoreWithoutCron?: number;
   localConfidence?: 'low' | 'medium' | 'high';
 }
 
@@ -266,6 +267,7 @@ export interface SourcePreferenceResult
   updatedAt?: number;
   rankingSource?: 'd1' | 'live';
   rankScore?: number;
+  rankScoreWithoutCron?: number;
 }
 
 export interface SourcePreferenceRequest {
@@ -325,6 +327,7 @@ export interface RuntimeConfig {
   DOUBAN_PROXY?: string;
   SOURCE_PROBE?: string;
   SOURCE_RANKING_ENABLED?: boolean;
+  SOURCE_RANKING_EXPERIMENT_ENABLED?: boolean;
   TURNSTILE_SITE_KEY?: string;
   LOGIN_TURNSTILE_REQUIRED?: boolean;
   REGISTER_INVITE_REQUIRED?: boolean;
