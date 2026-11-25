@@ -8065,6 +8065,8 @@ function usePlayPageSession() {
                 // a nudge can move the playhead without playback actually resuming.
                 let progressAnchorMs = startedAt;
                 let progressAnchorPlayhead = video.currentTime || 0;
+                const isSourceRecoveryInFlight = () =>
+                  playbackSessionStateRef.current.recoveryInFlight === 'R3';
                 const watchStall = () => {
                   waitingRecoveryTimerRef.current = window.setTimeout(() => {
                     waitingRecoveryTimerRef.current = null;
@@ -8188,7 +8190,7 @@ function usePlayPageSession() {
                     }
                     if (
                       reportPlaybackStarvation(video) ||
-                      playbackSessionStateRef.current.recoveryInFlight === 'R3'
+                      isSourceRecoveryInFlight()
                     ) {
                       return;
                     }
@@ -8200,10 +8202,7 @@ function usePlayPageSession() {
                         'waitingTimeout',
                         false
                       );
-                      if (
-                        playbackSessionStateRef.current.recoveryInFlight ===
-                        'R3'
-                      ) {
+                      if (isSourceRecoveryInFlight()) {
                         return;
                       }
                       const afterPlayhead = video.currentTime || 0;

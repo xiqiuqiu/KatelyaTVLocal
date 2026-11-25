@@ -55,6 +55,7 @@ let mockArtPlayerInstance:
         currentTime: number;
         duration: number;
         paused: boolean;
+        ended?: boolean;
         seeking?: boolean;
         playbackRate?: number;
         addEventListener?: jest.Mock;
