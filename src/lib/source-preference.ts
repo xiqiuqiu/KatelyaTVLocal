@@ -44,6 +44,8 @@ export interface SourcePreferenceProbeResult extends SourceProbeMetrics {
 export interface SourceProbeOptions {
   timeoutMs?: number;
   skipCacheRead?: boolean;
+  signal?: AbortSignal;
+  waitUntil?: (work: Promise<void>) => void;
 }
 
 function normalizeProbeTimeoutMs(timeoutMs?: number): number {
@@ -64,15 +66,19 @@ async function fetchValidatedProbeTarget(
     throw new Error(validation.reason);
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    normalizeProbeTimeoutMs(options?.timeoutMs)
-  );
+  const controller = options?.signal ? null : new AbortController();
+  const signal = options?.signal ?? controller?.signal;
+  const timeoutId = controller
+    ? setTimeout(
+        () => controller.abort(),
+        normalizeProbeTimeoutMs(options?.timeoutMs)
+      )
+    : undefined;
   try {
+    if (signal?.aborted) throw new Error('探测已取消');
     return await fetchWithValidatedRedirects(
       validation.url.href,
-      { ...init, redirect: 'manual', signal: controller.signal },
+      { ...init, redirect: 'manual', signal },
       { maxRedirects: 2 }
     );
   } finally {
@@ -256,6 +262,7 @@ async function probeNestedTarget(
     const ok = response.ok || response.status === 206;
 
     if (!ok) {
+      void response.body?.cancel().catch(() => undefined);
       return {
         ok: false,
         status: response.status,
@@ -273,7 +280,10 @@ async function probeNestedTarget(
     }
 
     if (!isPlaylistResponse(currentUrl, response.headers.get('content-type'))) {
-      if (!options?.measureHls) return { ok: true, status: response.status };
+      if (!options?.measureHls) {
+        void response.body?.cancel().catch(() => undefined);
+        return { ok: true, status: response.status };
+      }
       const mediaReadyAt = Date.now();
       const measurement = sampleSegment
         ? await measureFirstSegment(
@@ -295,6 +305,7 @@ async function probeNestedTarget(
     }
 
     if (requestCount === SOURCE_PROBE_MAX_NESTED_REQUESTS - 1) {
+      void response.body?.cancel().catch(() => undefined);
       return {
         ok: false,
         status: response.status,
@@ -384,6 +395,7 @@ export async function probeSourcePlaybackUpstream(
     const domain = new URL(targetUrl).hostname.toLowerCase();
 
     if (!upstreamResponse.ok && upstreamResponse.status !== 206) {
+      void upstreamResponse.body?.cancel().catch(() => undefined);
       return {
         kind: 'unavailable',
         reason: `上游响应失败: ${upstreamResponse.status}`,
@@ -410,6 +422,7 @@ export async function probeSourcePlaybackUpstream(
     );
 
     if (!playlistResponse) {
+      void upstreamResponse.body?.cancel().catch(() => undefined);
       return {
         kind: 'direct',
         reason: '媒体地址可直接访问',
@@ -521,18 +534,22 @@ export async function probeSourcePlaybackWithCache(
     options
   );
 
-  if (cache) {
+  if (cache && !options?.signal?.aborted) {
     const ttl = getProbeCacheTtl(freshResult);
     try {
-      await cache.put(
-        cacheRequest,
-        new Response(JSON.stringify(freshResult), {
-          headers: {
-            'content-type': 'application/json; charset=utf-8',
-            'cache-control': `public, max-age=${ttl}`,
-          },
-        })
-      );
+      const write = cache
+        .put(
+          cacheRequest,
+          new Response(JSON.stringify(freshResult), {
+            headers: {
+              'content-type': 'application/json; charset=utf-8',
+              'cache-control': `public, max-age=${ttl}`,
+            },
+          })
+        )
+        .catch(() => undefined);
+      if (options?.waitUntil) options.waitUntil(write);
+      else await write;
     } catch {
       // 写缓存失败仍返回这次探测结果。
     }

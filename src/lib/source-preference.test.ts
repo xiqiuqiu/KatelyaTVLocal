@@ -119,6 +119,71 @@ describe('cloudflare-first source preference', () => {
     expect(getBrowserProbeBudget(30)).toBe(5);
   });
 
+  it('cancels response body work without caching an unavailable result', async () => {
+    const controller = new AbortController();
+    const response = hlsResponse('');
+    let beginRead: () => void = () => undefined;
+    const reading = new Promise<void>((resolve) => {
+      beginRead = resolve;
+    });
+    const put = jest.fn();
+    (global as { caches?: unknown }).caches = { default: { put } };
+    global.fetch = jest.fn(async (_url, init) => {
+      const signal = init?.signal;
+      jest.spyOn(response, 'text').mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            signal?.addEventListener(
+              'abort',
+              () => reject(new Error('aborted')),
+              { once: true }
+            );
+            beginRead();
+          })
+      );
+      return response as unknown as Response;
+    });
+    const pending = probeSourcePlaybackWithCache(
+      'https://origin.example/video.m3u8',
+      'https://app.example',
+      { skipCacheRead: true, signal: controller.signal }
+    );
+    await reading;
+    controller.abort();
+
+    expect(await pending).toMatchObject({
+      kind: 'unavailable',
+      reason: 'aborted',
+    });
+    expect(put).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands completed cache writes to the request context without holding a verified result', async () => {
+    const controller = new AbortController();
+    const response = new MockResponse('', {
+      headers: {
+        'access-control-allow-origin': '*',
+        'content-type': 'video/mp4',
+      },
+    });
+    const cacheWrite = new Promise<void>(() => undefined);
+    const put = jest.fn(() => cacheWrite);
+    (global as { caches?: unknown }).caches = { default: { put } };
+    global.fetch = jest.fn(async () => response as unknown as Response);
+    const waitUntil = jest.fn();
+
+    const result = await probeSourcePlaybackWithCache(
+      'https://origin.example/video.mp4',
+      'https://app.example',
+      { skipCacheRead: true, signal: controller.signal, waitUntil }
+    );
+
+    expect(result.kind).toBe('direct');
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
   it('sorts direct sources ahead of unavailable results', () => {
     const sorted = sortSourcePreferenceResults<SourcePreferenceResult>([
       {

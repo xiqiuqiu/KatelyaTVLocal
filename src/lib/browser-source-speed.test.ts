@@ -125,6 +125,24 @@ it('returns playable metadata without a speed when there is only one valid sampl
   });
 });
 
+it('stops a background measurement when the foreground playback needs the connection', async () => {
+  const controller = new AbortController();
+  const measurement = getVideoResolutionFromM3u8(stream, {
+    background: true,
+    signal: controller.signal,
+  });
+  startFragment(0);
+  const rejected = expect(measurement).rejects.toMatchObject({
+    name: 'AbortError',
+  });
+  controller.abort();
+  // Even a late HLS callback must not establish a successful sample.
+  mockVideo.dispatchEvent(new Event('loadedmetadata'));
+  jest.advanceTimersByTime(8000);
+  await rejected;
+  expect(mockDestroy).toHaveBeenCalledTimes(1);
+});
+
 it('reports the timeout separately and can show it alongside known backend speed', async () => {
   const measurement = getVideoResolutionFromM3u8(stream, { timeoutMs: 1800 });
   const result = expect(measurement).rejects.toBeInstanceOf(

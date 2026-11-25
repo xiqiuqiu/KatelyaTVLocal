@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { addCorsHeaders, handleOptionsRequest } from '@/lib/cors';
 import {
+  type SourceProbeOptions,
   probeSourcePlaybackWithCache,
   readCachedSourceProbe,
 } from '@/lib/source-preference';
@@ -30,6 +31,8 @@ const SOURCE_PREFERENCE_CONCURRENCY = 6;
  */
 const MAX_LIVE_PROBES_PER_REQUEST = 6;
 const MAX_RANKED_AVAILABILITY_CHECKS = 2;
+// Leave 200 ms for request/response overhead within the page's 3 s budget.
+const STARTUP_PROBE_DEADLINE_MS = 2800;
 const FRESH_PROBE_METRICS_LIMIT = 8;
 const FRESH_PROBE_METRICS_CONCURRENCY = 2;
 const FRESH_PROBE_SPEED_TTL_MS = 6 * 60 * 60 * 1000;
@@ -84,7 +87,8 @@ function sortMergedSourcePreferenceResults(
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
-  mapper: (item: T) => Promise<R>
+  mapper: (item: T) => Promise<R>,
+  signal?: AbortSignal
 ): Promise<R[]> {
   if (items.length === 0) return [];
 
@@ -92,7 +96,7 @@ async function mapWithConcurrency<T, R>(
   let currentIndex = 0;
 
   const runWorker = async () => {
-    while (currentIndex < items.length) {
+    while (currentIndex < items.length && !signal?.aborted) {
       const nextIndex = currentIndex;
       currentIndex += 1;
       results[nextIndex] = await mapper(items[nextIndex]);
@@ -105,10 +109,28 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-function resolveSourceRankingEnv(): RuntimeSource | undefined {
+async function untilProbeAborts<T>(
+  work: Promise<T>,
+  signal: AbortSignal | undefined,
+  fallback: T
+): Promise<T> {
+  if (!signal) return work;
+  if (signal.aborted) return fallback;
+  let onAbort: () => void = () => undefined;
+  const aborted = new Promise<T>((resolve) => {
+    onAbort = () => resolve(fallback);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
   try {
-    const requestContext = getOptionalRequestContext();
-    return requestContext?.env as RuntimeSource | undefined;
+    return await Promise.race([work, aborted]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
+function getSourceRankingContext() {
+  try {
+    return getOptionalRequestContext();
   } catch {
     return undefined;
   }
@@ -120,7 +142,8 @@ export async function OPTIONS() {
 
 async function probeSourcesLive(
   sources: SourcePreferenceRequest['sources'],
-  origin: string
+  origin: string,
+  startup?: Pick<SourceProbeOptions, 'signal' | 'waitUntil'>
 ): Promise<{
   results: SourcePreferenceResult[];
   upstreamProbes: number;
@@ -129,97 +152,125 @@ async function probeSourcesLive(
     string,
     Promise<SourcePreferenceResult | null>
   >();
+  const completed: SourcePreferenceResult[] = [];
+  let foundDirect: (() => void) | undefined;
+  const firstDirect =
+    startup &&
+    new Promise<void>((resolve) => {
+      foundDirect = resolve;
+    });
   let upstreamProbes = 0;
-  const probed = await mapWithConcurrency(
+  const probe = async (
+    source: SourcePreferenceRequest['sources'][number]
+  ): Promise<SourcePreferenceResult | null> => {
+    if (!source?.sourceKey) {
+      return {
+        sourceKey: '',
+        kind: 'unavailable',
+        reason: '缺少播放源标识',
+        rankingSource: 'live',
+      };
+    }
+
+    if (!source.episodeUrl) {
+      return {
+        sourceKey: source.sourceKey,
+        kind: 'unavailable',
+        reason: '该播放源没有可用剧集',
+        rankingSource: 'live',
+      };
+    }
+
+    const shared = probedByEpisodeUrl.get(source.episodeUrl);
+    if (shared) {
+      const sharedResult = await shared;
+      return sharedResult
+        ? { ...sharedResult, sourceKey: source.sourceKey }
+        : null;
+    }
+
+    let resolveProbe: (result: SourcePreferenceResult | null) => void = () =>
+      undefined;
+    const probePromise = new Promise<SourcePreferenceResult | null>(
+      (resolve) => {
+        resolveProbe = resolve;
+      }
+    );
+    probedByEpisodeUrl.set(source.episodeUrl, probePromise);
+
+    const reserveUpstreamProbe = () => {
+      if (upstreamProbes >= MAX_LIVE_PROBES_PER_REQUEST) {
+        return false;
+      }
+      upstreamProbes += 1;
+      return true;
+    };
+    const upstreamProbeReserved = reserveUpstreamProbe();
+
+    let probeResult: SourcePreferenceResult | null = null;
+    try {
+      const cached = await readCachedSourceProbe(source.episodeUrl, origin);
+      if (startup?.signal?.aborted) {
+        probeResult = null;
+      } else if (cached) {
+        if (upstreamProbeReserved) {
+          upstreamProbes -= 1;
+        }
+        probeResult = {
+          sourceKey: source.sourceKey,
+          ...cached,
+          rankingSource: 'live',
+        };
+      } else if (!upstreamProbeReserved) {
+        probeResult = null;
+      } else {
+        const probedUpstream = await probeSourcePlaybackWithCache(
+          source.episodeUrl,
+          origin,
+          { skipCacheRead: true, ...startup }
+        );
+        probeResult = {
+          sourceKey: source.sourceKey,
+          ...probedUpstream,
+          rankingSource: 'live',
+        };
+      }
+    } catch {
+      // A platform or transport failure has no verdict about this episode.
+    }
+    if (
+      probeResult &&
+      (isPlatformProbeFailure(probeResult) ||
+        (probeResult.kind === 'unavailable' &&
+          probeResult.upstreamStatus == null))
+    )
+      probeResult = null;
+    resolveProbe(probeResult);
+    return probeResult;
+  };
+  const probed = mapWithConcurrency(
     sources,
     SOURCE_PREFERENCE_CONCURRENCY,
-    async (source): Promise<SourcePreferenceResult | null> => {
-      if (!source?.sourceKey) {
-        return {
-          sourceKey: '',
-          kind: 'unavailable',
-          reason: '缺少播放源标识',
-          rankingSource: 'live',
-        };
+    async (source) => {
+      const result = await probe(source);
+      if (startup && !startup.signal?.aborted && result) {
+        completed.push(result);
+        if (result.kind === 'direct') foundDirect?.();
       }
-
-      if (!source.episodeUrl) {
-        return {
-          sourceKey: source.sourceKey,
-          kind: 'unavailable',
-          reason: '该播放源没有可用剧集',
-          rankingSource: 'live',
-        };
-      }
-
-      const shared = probedByEpisodeUrl.get(source.episodeUrl);
-      if (shared) {
-        const sharedResult = await shared;
-        return sharedResult
-          ? { ...sharedResult, sourceKey: source.sourceKey }
-          : null;
-      }
-
-      let resolveProbe: (result: SourcePreferenceResult | null) => void = () =>
-        undefined;
-      const probePromise = new Promise<SourcePreferenceResult | null>(
-        (resolve) => {
-          resolveProbe = resolve;
-        }
-      );
-      probedByEpisodeUrl.set(source.episodeUrl, probePromise);
-
-      const reserveUpstreamProbe = () => {
-        if (upstreamProbes >= MAX_LIVE_PROBES_PER_REQUEST) {
-          return false;
-        }
-        upstreamProbes += 1;
-        return true;
-      };
-      const upstreamProbeReserved = reserveUpstreamProbe();
-
-      let probeResult: SourcePreferenceResult | null = null;
-      try {
-        const cached = await readCachedSourceProbe(source.episodeUrl, origin);
-        if (cached) {
-          if (upstreamProbeReserved) {
-            upstreamProbes -= 1;
-          }
-          probeResult = {
-            sourceKey: source.sourceKey,
-            ...cached,
-            rankingSource: 'live',
-          };
-        } else if (!upstreamProbeReserved) {
-          probeResult = null;
-        } else {
-          const probedUpstream = await probeSourcePlaybackWithCache(
-            source.episodeUrl,
-            origin,
-            { skipCacheRead: true }
-          );
-          probeResult = {
-            sourceKey: source.sourceKey,
-            ...probedUpstream,
-            rankingSource: 'live',
-          };
-        }
-      } catch {
-        // A platform or transport failure has no verdict about this episode.
-      }
-      if (
-        probeResult &&
-        (isPlatformProbeFailure(probeResult) ||
-          (probeResult.kind === 'unavailable' &&
-            probeResult.upstreamStatus == null))
-      )
-        probeResult = null;
-      resolveProbe(probeResult);
-      return probeResult;
-    }
+      return result;
+    },
+    startup?.signal
   );
+  if (startup && firstDirect) {
+    await untilProbeAborts(
+      Promise.race([probed.then(() => undefined), firstDirect]),
+      startup.signal,
+      undefined
+    );
+    return { results: completed.slice(), upstreamProbes };
+  }
   return {
-    results: probed.filter(
+    results: (await probed).filter(
       (result): result is SourcePreferenceResult => result !== null
     ),
     upstreamProbes,
@@ -396,7 +447,42 @@ export async function POST(request: Request) {
 
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || requestUrl.origin;
-  const rankingEnv = resolveSourceRankingEnv();
+  const startup =
+    payload.startupProbe === true && !payload.includeFreshProbeMetrics
+      ? new AbortController()
+      : undefined;
+  const abortStartup = () => startup?.abort();
+  const timer = startup
+    ? setTimeout(abortStartup, STARTUP_PROBE_DEADLINE_MS)
+    : undefined;
+  if (startup) {
+    if (request.signal?.aborted) abortStartup();
+    else
+      request.signal?.addEventListener('abort', abortStartup, { once: true });
+  }
+  try {
+    const responseBody = await buildSourcePreferenceResponse(
+      payload,
+      origin,
+      startup
+    );
+    return addCorsHeaders(NextResponse.json(responseBody, { status: 200 }));
+  } finally {
+    if (startup) {
+      clearTimeout(timer);
+      request.signal?.removeEventListener('abort', abortStartup);
+      abortStartup();
+    }
+  }
+}
+
+async function buildSourcePreferenceResponse(
+  payload: SourcePreferenceRequest,
+  origin: string,
+  startup: AbortController | undefined
+): Promise<SourcePreferenceResponse> {
+  const context = getSourceRankingContext();
+  const rankingEnv = context?.env as RuntimeSource | undefined;
   const runtime = getSourceRankingRuntime(
     rankingEnv || (process.env as unknown as RuntimeSource)
   );
@@ -404,8 +490,12 @@ export async function POST(request: Request) {
     .map((source) => source.sourceKey)
     .filter(Boolean);
   const rankedResults =
-    runtime.enabled && runtime.hasD1
-      ? await readLatestSourceRanks(rankingEnv, validSourceKeys).catch(() => [])
+    runtime.enabled && runtime.hasD1 && !startup?.signal.aborted
+      ? await untilProbeAborts(
+          readLatestSourceRanks(rankingEnv, validSourceKeys).catch(() => []),
+          startup?.signal,
+          []
+        )
       : [];
 
   const rankedByKey = new Map(
@@ -437,9 +527,17 @@ export async function POST(request: Request) {
   );
   const allowLiveProbeFallback =
     payload.allowLiveProbeFallback ?? runtime.fallbackToLive;
-  const liveProbe = allowLiveProbeFallback
-    ? await probeSourcesLive([...rankedCandidates, ...missingSources], origin)
-    : { results: [], upstreamProbes: 0 };
+  const liveProbe =
+    allowLiveProbeFallback && !startup?.signal.aborted
+      ? await probeSourcesLive(
+          [...rankedCandidates, ...missingSources],
+          origin,
+          startup && {
+            signal: startup.signal,
+            waitUntil: (work) => context?.ctx?.waitUntil?.(work),
+          }
+        )
+      : { results: [], upstreamProbes: 0 };
   const liveResults = liveProbe.results;
 
   const resultMap = new Map<string, SourcePreferenceResult>();
@@ -496,14 +594,11 @@ export async function POST(request: Request) {
       ? 'd1'
       : 'live';
 
-  const responseBody: SourcePreferenceResponse = {
+  return {
     orderedSourceKeys: orderedResults.map((result) => result.sourceKey),
     results: orderedResults,
     generatedAt: Date.now(),
     rankingSource,
     confidence: rankedResults.length > 0 ? 'medium' : 'low',
   };
-
-  const response = NextResponse.json(responseBody, { status: 200 });
-  return addCorsHeaders(response);
 }

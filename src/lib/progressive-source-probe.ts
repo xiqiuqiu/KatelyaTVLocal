@@ -1,4 +1,5 @@
 import { SearchResult, SourceStatus } from '@/lib/types';
+import { extractSourceDomain } from '@/lib/utils';
 
 export interface ProgressiveSourceProbeStartInput {
   now: number;
@@ -10,6 +11,7 @@ export interface ProgressiveSourceProbeStartInput {
   isVideoLoading: boolean;
   isRecoveryActive: boolean;
   inFlight: boolean;
+  foregroundReady: boolean;
 }
 
 export interface ProgressiveSourceProbeCandidateInput {
@@ -35,7 +37,11 @@ export function shouldStartProgressiveSourceProbe(
     return false;
   }
 
-  if (input.isVideoLoading || input.isRecoveryActive) {
+  if (
+    input.isVideoLoading ||
+    input.isRecoveryActive ||
+    !input.foregroundReady
+  ) {
     return false;
   }
 
@@ -76,6 +82,16 @@ export function selectProgressiveSourceProbeCandidates({
 }: ProgressiveSourceProbeCandidateInput): SearchResult[] {
   if (limit <= 0) return [];
 
+  const episodeHost = (source?: SearchResult) =>
+    extractSourceDomain(source?.episodes?.[currentEpisodeIndex] || '');
+  const currentHost = episodeHost(
+    sources.find((source) => getSourceKey(source) === currentSourceKey)
+  );
+  const isAlternateHost = (source: SearchResult) => {
+    const host = episodeHost(source);
+    return Boolean(currentHost && host && host !== currentHost);
+  };
+
   return [...sources]
     .filter((source) => {
       const sourceKey = getSourceKey(source);
@@ -89,6 +105,10 @@ export function selectProgressiveSourceProbeCandidates({
       );
     })
     .sort((left, right) => {
+      const hostGap =
+        Number(isAlternateHost(right)) - Number(isAlternateHost(left));
+      if (hostGap !== 0) return hostGap;
+
       const leftKey = getSourceKey(left);
       const rightKey = getSourceKey(right);
       const priorityGap =

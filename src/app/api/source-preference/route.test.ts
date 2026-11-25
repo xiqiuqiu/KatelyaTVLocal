@@ -173,7 +173,202 @@ describe('source preference route', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    jest.useRealTimers();
   });
+
+  it('returns the verified startup source while a slower ranked source is still probing', async () => {
+    jest.useFakeTimers();
+    mockedReadLatestSourceRanks.mockResolvedValue([
+      { sourceKey: 'slow', kind: 'direct', rankScore: 99, rankingSource: 'd1' },
+    ]);
+    mockedReadCachedSourceProbe.mockResolvedValue(null);
+    let slowSignal: AbortSignal | undefined;
+    mockedProbeSourcePlaybackWithCache.mockImplementation(
+      (url, _origin, options) => {
+        if (url.includes('/slow')) {
+          slowSignal = options?.signal;
+          return new Promise((resolve) => {
+            setTimeout(
+              () => resolve({ kind: 'unavailable', upstreamStatus: 403 }),
+              4000
+            );
+          });
+        }
+        return Promise.resolve({ kind: 'direct', upstreamStatus: 200 });
+      }
+    );
+    let result: MockResponse | undefined;
+    const pending = POST(
+      new Request('https://app.example.com/api/source-preference', {
+        method: 'POST',
+        body: JSON.stringify({
+          startupProbe: true,
+          sources: [
+            {
+              sourceKey: 'slow',
+              episodeUrl: 'https://media.example.com/slow.m3u8',
+            },
+            {
+              sourceKey: 'fast',
+              episodeUrl: 'https://media.example.com/fast.m3u8',
+            },
+            {
+              sourceKey: 'alias',
+              episodeUrl: 'https://media.example.com/fast.m3u8',
+            },
+          ],
+        }),
+      })
+    ).then((response) => {
+      result = response;
+    });
+    for (let index = 0; index < 40; index++) await Promise.resolve();
+
+    expect(result).toBeDefined();
+    await pending;
+    expect(await result?.json()).toMatchObject({
+      results: [
+        { sourceKey: 'alias', kind: 'direct' },
+        { sourceKey: 'fast', kind: 'direct' },
+        { sourceKey: 'slow', kind: 'unknown', rankScore: 99 },
+      ],
+    });
+    expect(slowSignal?.aborted).toBe(true);
+    expect(mockedProbeSourcePlaybackWithCache).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps probing when only a slower source can confirm direct playback', async () => {
+    jest.useFakeTimers();
+    mockedReadLatestSourceRanks.mockResolvedValue([
+      {
+        sourceKey: 'blocked',
+        kind: 'direct',
+        rankScore: 99,
+        rankingSource: 'd1',
+      },
+    ]);
+    mockedReadCachedSourceProbe.mockResolvedValue(null);
+    mockedProbeSourcePlaybackWithCache.mockImplementation(
+      (url) =>
+        new Promise((resolve) => {
+          const blocked = url.endsWith('/blocked.m3u8');
+          setTimeout(
+            () =>
+              resolve(
+                blocked
+                  ? { kind: 'unavailable', upstreamStatus: 403 }
+                  : { kind: 'direct', upstreamStatus: 200 }
+              ),
+            blocked ? 2000 : 2200
+          );
+        })
+    );
+
+    const pending = POST(
+      new Request('https://app.example.com/api/source-preference', {
+        method: 'POST',
+        body: JSON.stringify({
+          startupProbe: true,
+          sources: ['blocked', 'playable'].map((sourceKey) => ({
+            sourceKey,
+            episodeUrl: `https://media.example.com/${sourceKey}.m3u8`,
+          })),
+        }),
+      })
+    );
+    for (let index = 0; index < 40; index++) await Promise.resolve();
+    jest.advanceTimersByTime(2000);
+    for (let index = 0; index < 40; index++) await Promise.resolve();
+    jest.advanceTimersByTime(200);
+    expect(await (await pending).json()).toMatchObject({
+      orderedSourceKeys: ['playable', 'blocked'],
+      results: [
+        { sourceKey: 'playable', kind: 'direct' },
+        { sourceKey: 'blocked', kind: 'unavailable', rankScore: 99 },
+      ],
+    });
+  });
+
+  it.each(['ranking', 'cache', 'upstream'])(
+    'returns unknown or no verdict when %s misses the startup deadline',
+    async (stalledStep) => {
+      jest.useFakeTimers();
+      const noResponse = new Promise<never>(() => undefined);
+      mockedReadLatestSourceRanks.mockImplementation(() =>
+        stalledStep === 'ranking'
+          ? noResponse
+          : Promise.resolve([
+              {
+                sourceKey: 'slow',
+                kind: 'direct',
+                rankScore: 99,
+                rankingSource: 'd1',
+              },
+            ])
+      );
+      mockedReadCachedSourceProbe.mockImplementation((url) =>
+        stalledStep === 'cache' && url.includes('/slow')
+          ? noResponse
+          : Promise.resolve(null)
+      );
+      let slowSignal: AbortSignal | undefined;
+      mockedProbeSourcePlaybackWithCache.mockImplementation(
+        (url, _, options) => {
+          if (url.includes('/slow')) {
+            slowSignal = options?.signal;
+            return noResponse;
+          }
+          return Promise.resolve({ kind: 'unavailable', upstreamStatus: 403 });
+        }
+      );
+      let result: MockResponse | undefined;
+      const pending = POST(
+        new Request('https://app.example.com/api/source-preference', {
+          method: 'POST',
+          body: JSON.stringify({
+            startupProbe: true,
+            sources: [
+              {
+                sourceKey: 'slow',
+                episodeUrl: 'https://media.example.com/slow.m3u8',
+              },
+              {
+                sourceKey: 'failed',
+                episodeUrl: 'https://media.example.com/failed.m3u8',
+              },
+            ],
+          }),
+        })
+      ).then((response) => {
+        result = response;
+      });
+      for (let index = 0; index < 40; index++) await Promise.resolve();
+
+      jest.advanceTimersByTime(2799);
+      expect(result).toBeUndefined();
+      jest.advanceTimersByTime(1);
+      for (let index = 0; index < 40; index++) await Promise.resolve();
+      expect(result).toBeDefined();
+      await pending;
+      expect(await result?.json()).toMatchObject({
+        results:
+          stalledStep === 'ranking'
+            ? []
+            : [
+                { sourceKey: 'slow', kind: 'unknown', rankScore: 99 },
+                {
+                  sourceKey: 'failed',
+                  kind: 'unavailable',
+                  upstreamStatus: 403,
+                },
+              ],
+      });
+      expect(slowSignal?.aborted).toBe(
+        stalledStep === 'upstream' ? true : undefined
+      );
+      expect(mockedPersistOfflineProbeResult).not.toHaveBeenCalled();
+    }
+  );
 
   it('retains the rank but uses the current episode probe to decide availability', async () => {
     mockedReadLatestSourceRanks.mockResolvedValue([

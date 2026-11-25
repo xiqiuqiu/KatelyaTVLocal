@@ -5,6 +5,41 @@ describe('source preference client batching', () => {
     jest.restoreAllMocks();
   });
 
+  it.each([true, false])(
+    'only requests early startup results in the first foreground batch (verified: %s)',
+    async (verified) => {
+      const fetchMock = jest.fn(async (_url: string, init?: RequestInit) => ({
+        ok: true,
+        json: async () => ({
+          orderedSourceKeys: [],
+          results:
+            verified && JSON.parse(String(init?.body)).startupProbe
+              ? [{ sourceKey: 'source-1', kind: 'direct' }]
+              : [],
+        }),
+      }));
+      const sources = [1, 2].map((index) => ({
+        sourceKey: `source-${index}`,
+        episodeUrl: `https://example.com/${index}.m3u8`,
+      }));
+      await fetchSourcePreferencesInBatches(sources, {
+        fetcher: fetchMock as unknown as typeof fetch,
+        batchSize: 1,
+        startupProbe: true,
+      });
+      const [first, second] = fetchMock.mock.calls.map(([, init]) => init);
+      expect(JSON.parse(String(first?.body))).toHaveProperty(
+        'startupProbe',
+        true
+      );
+      expect(JSON.parse(String(second?.body))).not.toHaveProperty(
+        'startupProbe'
+      );
+      if (verified) expect(second).toHaveProperty('priority', 'low');
+      else expect(second).not.toHaveProperty('priority');
+    }
+  );
+
   it('splits large source preference requests and returns a merged order', async () => {
     const requests: unknown[] = [];
     const fetchMock = jest.fn(async (_url: string, init?: RequestInit) => {

@@ -805,10 +805,18 @@ export function getVideoResolutionFromM3u8(
   options: {
     timeoutMs?: number;
     background?: boolean;
+    signal?: AbortSignal;
     extension?: { maxTimeoutMs: number; canContinue: () => boolean };
   } = {}
 ): Promise<SourceVideoInfo> {
   return new Promise((resolve, reject) => {
+    const { signal } = options;
+    const abortError = () =>
+      new DOMException('Speed probe cancelled', 'AbortError');
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
     const video = document.createElement('video');
     video.muted = true;
     video.preload = 'metadata';
@@ -848,6 +856,7 @@ export function getVideoResolutionFromM3u8(
     const cleanup = () => {
       settled = true;
       clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
       hls.destroy();
       video.remove();
     };
@@ -856,6 +865,8 @@ export function getVideoResolutionFromM3u8(
       cleanup();
       reject(error);
     };
+    const onAbort = () => fail(abortError());
+    signal?.addEventListener('abort', onAbort, { once: true });
     const finish = () => {
       if (settled) return;
       const width = video.videoWidth;

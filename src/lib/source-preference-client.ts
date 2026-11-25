@@ -16,6 +16,7 @@ interface FetchSourcePreferencesOptions {
   endpoint?: string;
   signal?: AbortSignal;
   background?: boolean;
+  startupProbe?: boolean;
   /** Called with the merged results so far after each successful batch. */
   onBatch?: (response: SourcePreferenceResponse) => void;
 }
@@ -121,6 +122,11 @@ export async function fetchSourcePreferencesInBatches(
       break;
     }
     const batch = sources.slice(start, start + batchSize);
+    const hasVerifiedCandidate =
+      options.startupProbe &&
+      responses.some((response) =>
+        response.results.some((result) => result.kind === 'direct')
+      );
     let response: Response;
     try {
       response = await fetcher(endpoint, {
@@ -129,10 +135,15 @@ export async function fetchSourcePreferencesInBatches(
           'Content-Type': 'application/json',
         },
         cache: 'no-store',
-        ...(options.background ? { priority: 'low' } : {}),
+        ...(options.background || hasVerifiedCandidate
+          ? { priority: 'low' }
+          : {}),
         signal: options.signal,
         body: JSON.stringify({
           sources: batch,
+          ...(start === 0 && options.startupProbe && !options.background
+            ? { startupProbe: true }
+            : {}),
           ...(start > 0 && options.allowLiveProbeFallback !== false
             ? { checkRankedAvailability: false }
             : {}),

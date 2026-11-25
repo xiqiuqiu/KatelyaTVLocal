@@ -34,6 +34,7 @@ describe('progressive source probe scheduling', () => {
         isVideoLoading: false,
         isRecoveryActive: false,
         inFlight: false,
+        foregroundReady: true,
       })
     ).toBe(true);
 
@@ -48,6 +49,7 @@ describe('progressive source probe scheduling', () => {
         isVideoLoading: false,
         isRecoveryActive: false,
         inFlight: false,
+        foregroundReady: true,
       })
     ).toBe(false);
 
@@ -62,6 +64,7 @@ describe('progressive source probe scheduling', () => {
         isVideoLoading: false,
         isRecoveryActive: false,
         inFlight: false,
+        foregroundReady: true,
       })
     ).toBe(false);
 
@@ -76,6 +79,24 @@ describe('progressive source probe scheduling', () => {
         isVideoLoading: false,
         isRecoveryActive: false,
         inFlight: false,
+        foregroundReady: true,
+      })
+    ).toBe(false);
+  });
+
+  it('defers backup work while the foreground buffer is too low', () => {
+    expect(
+      shouldStartProgressiveSourceProbe({
+        now: 30_000,
+        stablePlaybackStartedAt: 10_000,
+        stablePlaybackDelayMs: 10_000,
+        isPaused: false,
+        isEnded: false,
+        isSeeking: false,
+        isVideoLoading: false,
+        isRecoveryActive: false,
+        inFlight: false,
+        foregroundReady: false,
       })
     ).toBe(false);
   });
@@ -108,6 +129,40 @@ describe('progressive source probe scheduling', () => {
         getSourceKey: (source) => `${source.source}-${source.id}`,
       }).map((source) => `${source.source}-${source.id}`)
     ).toEqual(['fast-2']);
+  });
+
+  it('prepares an alternate media host for this episode before a higher-scoring same-host backup', () => {
+    const current = createSource('current', '1', [
+      'https://old.example.com/1',
+      'https://a.example.com/2',
+    ]);
+    const same = createSource('same', '2', [
+      'https://other.example.com/1',
+      'https://a.example.com/2',
+    ]);
+    const alternate = createSource('alternate', '3', [
+      'https://a.example.com/1',
+      'https://b.example.com/2',
+    ]);
+    const input = {
+      sources: [current, same, alternate],
+      currentSourceKey: 'current-1',
+      attemptedSourceKeys: new Set<string>(),
+      statuses: new Map<string, SourceStatus>([['same-2', { kind: 'direct' }]]),
+      scores: new Map([
+        ['same-2', { score: 98 }],
+        ['alternate-3', { score: 74 }],
+      ]),
+      currentEpisodeIndex: 1,
+      limit: 1,
+    };
+    expect(selectProgressiveSourceProbeCandidates(input)).toEqual([alternate]);
+    expect(
+      selectProgressiveSourceProbeCandidates({
+        ...input,
+        attemptedSourceKeys: new Set(['alternate-3']),
+      })
+    ).toEqual([same]);
   });
 
   it('marks background probe failures as soft unavailable, not verified', () => {

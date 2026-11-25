@@ -271,6 +271,7 @@ export interface SourcePreferenceResult
 }
 
 export interface SourcePreferenceRequest {
+  startupProbe?: boolean;
   allowLiveProbeFallback?: boolean;
   checkRankedAvailability?: boolean;
   includeFreshProbeMetrics?: boolean;

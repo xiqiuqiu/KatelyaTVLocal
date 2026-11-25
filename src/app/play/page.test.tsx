@@ -17,7 +17,7 @@ import {
 } from '@/lib/playback-quality';
 import { reducePlaybackSession } from '@/lib/playback-session';
 import { getSourceSwitchResumePlan } from '@/lib/playback-source-switch';
-import type { SearchResult } from '@/lib/types';
+import type { SearchResult, SourceStatus } from '@/lib/types';
 import { rememberSourcePlaybackQuality } from '@/lib/utils';
 
 import PlayPage from '@/app/play/page';
@@ -36,6 +36,7 @@ type MockSourceChangeHandler = (
 ) => Promise<boolean>;
 let mockSourceChangeHandler: MockSourceChangeHandler | undefined;
 let mockEpisodeChangeHandler: ((episode: number) => void) | undefined;
+let mockSourceStatuses: Map<string, SourceStatus> | undefined;
 let mockArtPlayerInstance:
   | {
       currentTime: number;
@@ -215,12 +216,14 @@ jest.mock('@/components/EpisodeSelector', () => ({
     activeTab,
     onChange,
     currentSource,
+    precomputedSourceStatuses,
     value,
     tvMode,
   }: {
     onChange: (episode: number) => void;
     currentSource: string;
     value: number;
+    precomputedSourceStatuses?: Map<string, SourceStatus>;
     availableSources: SearchResult[];
     onSourceChange: MockSourceChangeHandler;
     activeTab?: 'episodes' | 'sources';
@@ -228,6 +231,7 @@ jest.mock('@/components/EpisodeSelector', () => ({
   }) => {
     mockSourceChangeHandler = onSourceChange;
     mockEpisodeChangeHandler = onChange;
+    mockSourceStatuses = precomputedSourceStatuses;
     return (
       <div
         data-testid='episode-selector-sources'
@@ -3086,6 +3090,71 @@ describe('PlayPage automatic source-switch resume', () => {
       );
     });
   }
+
+  it('clears the background probe status on timeout after a late D1 rank update', async () => {
+    mockHlsSupported = true;
+    const originalFetch = global.fetch;
+    let sendRank: () => void = () => {
+      throw new Error('source preference was not requested');
+    };
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (input.toString() === '/api/source-preference') {
+        return new Promise<Response>((resolve) => {
+          sendRank = () =>
+            resolve({
+              ok: true,
+              json: async () => ({
+                results: [
+                  {
+                    sourceKey: 'new-2',
+                    kind: 'unknown',
+                    rankScore: 91,
+                    rankScoreWithoutCron: 42,
+                    rankingSource: 'd1',
+                  },
+                ],
+                rankingSource: 'd1',
+              }),
+            } as Response);
+        });
+      }
+      return originalFetch(input, init);
+    });
+    await settleWithSources();
+    const video = mockArtPlayerInstance?.video;
+    if (!video) throw new Error('player was not created');
+    Object.defineProperties(video, {
+      readyState: { value: 4 },
+      playbackRate: { value: 1 },
+      buffered: { value: { length: 1, start: () => 0, end: () => 60 } },
+    });
+    await act(async () => {
+      mockArtPlayerEventHandlers.get('video:canplay')?.();
+      mockArtPlayerEventHandlers.get('video:playing')?.();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(10_000);
+    });
+    expect(mockSourceStatuses?.get('new-2')).toMatchObject({ kind: 'probing' });
+    await act(async () => sendRank());
+    expect(mockSourceStatuses?.get('new-2')).toMatchObject({
+      kind: 'probing',
+      rankScore: 91,
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(1800);
+    });
+    expect(mockSourceStatuses?.get('new-2')).toMatchObject({
+      kind: 'idle',
+      rankScore: 91,
+      rankScoreWithoutCron: 42,
+      rankingSource: 'd1',
+    });
+    expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
+      'data-source',
+      'old'
+    );
+  });
 
   async function switchToFreshHlsSource() {
     await act(async () => {

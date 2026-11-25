@@ -247,6 +247,7 @@ const PROGRESSIVE_SOURCE_PROBE_BUFFER_SECONDS = 5;
 const SOURCE_CHANGE_TIMEOUT_MS = 10_000;
 const PROGRESSIVE_SOURCE_PROBE_STABLE_DELAY_MS = 10000;
 const PROGRESSIVE_SOURCE_PROBE_INTERVAL_MS = 20000;
+const PROGRESSIVE_SOURCE_PROBE_MIN_RECHECK_MS = 1000;
 const HLS_MANUAL_INTERACTION_GRACE_MS = 4000;
 const HLS_SEEK_BUFFER_GRACE_MS = 10000;
 const PROGRESSIVE_SOURCE_PROBE_LIMIT = 1;
@@ -1632,7 +1633,7 @@ function usePlayPageSession() {
     reportedAt: number;
   } | null>(null);
   const progressiveSourceProbeTimerRef = useRef<number | null>(null);
-  const progressiveSourceProbeInFlightRef = useRef(false);
+  const progressiveSourceProbeAbortRef = useRef<AbortController | null>(null);
   const progressiveSourceProbeStableStartedAtRef = useRef(0);
   const progressiveSourceProbeAttemptedKeysRef = useLazyRef(
     () => new Set<string>()
@@ -3124,7 +3125,7 @@ function usePlayPageSession() {
     clearWaitingRecoveryTimer();
     clearSourceChangeTimeoutTimer();
     sourceTimeoutHandlerRef.current = null;
-    clearProgressiveSourceProbeTimer();
+    resetProgressiveSourceProbeStability();
     clearEndedAutoAdvanceTimer();
     const resume =
       resumeTimeRef.current ?? getCurrentVideoSnapshot().currentTime;
@@ -3520,6 +3521,7 @@ function usePlayPageSession() {
 
   const resetProgressiveSourceProbeStability = () => {
     clearProgressiveSourceProbeTimer();
+    progressiveSourceProbeAbortRef.current?.abort();
     progressiveSourceProbeStableStartedAtRef.current = 0;
   };
 
@@ -3738,6 +3740,7 @@ function usePlayPageSession() {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
+        resetProgressiveSourceProbeStability();
         const video = artPlayerRef.current?.video as
           | HTMLVideoElement
           | undefined;
@@ -4541,6 +4544,15 @@ function usePlayPageSession() {
     const isSameProbeEpisode = () =>
       currentEpisodeIndexRef.current === episodeIndex &&
       progressMediaEpochRef.current.episodeIndex === episodeIndex;
+    const foregroundReady = () =>
+      Boolean(
+        video &&
+          !document.hidden &&
+          video.readyState >= 3 &&
+          getForwardBufferSecondsFromVideo(video) >=
+            PROGRESSIVE_SOURCE_PROBE_BUFFER_SECONDS *
+              Math.max(1, video.playbackRate)
+      );
     const shouldStart = shouldStartProgressiveSourceProbe({
       now,
       stablePlaybackStartedAt: progressiveSourceProbeStableStartedAtRef.current,
@@ -4553,7 +4565,8 @@ function usePlayPageSession() {
         waitingRecoveryTimerRef.current !== null ||
         hlsState.stallCount > 0 ||
         hlsState.stallWindowCount > 0,
-      inFlight: progressiveSourceProbeInFlightRef.current,
+      inFlight: progressiveSourceProbeAbortRef.current !== null,
+      foregroundReady: foregroundReady(),
     });
 
     if (!shouldStart) {
@@ -4582,18 +4595,60 @@ function usePlayPageSession() {
     const domain = getSourceDomainFromEpisodes([episodeUrl]);
     const previousStatus =
       precomputedSourceStatusesRef.current.get(sourceKey) ?? null;
-    progressiveSourceProbeAttemptedKeysRef.current.add(sourceKey);
-    progressiveSourceProbeInFlightRef.current = true;
+    const attempted = progressiveSourceProbeAttemptedKeysRef.current;
+    attempted.add(sourceKey);
+    const controller = new AbortController();
+    progressiveSourceProbeAbortRef.current = controller;
+    const sameCandidateUrl = () =>
+      availableSourcesRef.current.some(
+        (source) =>
+          getSourceIdentityKey(source.source, source.id) === sourceKey &&
+          source.episodes?.[episodeIndex] === episodeUrl
+      );
+    const isCurrentProbe = () =>
+      !controller.signal.aborted &&
+      artPlayerRef.current?.video === video &&
+      hlsRecoveryStateRef.current.playbackSessionId === sessionId &&
+      getCurrentSourceKey() === foregroundSourceKey &&
+      isSameProbeEpisode() &&
+      sameCandidateUrl();
 
-    const previousStatuses = new Map(precomputedSourceStatusesRef.current);
-    previousStatuses.set(
-      sourceKey,
-      createSourceStatus('probing', {
-        domain,
-        reason: '后台测速中',
-      })
-    );
-    setPrecomputedSourceStatuses(previousStatuses);
+    const probingStatus =
+      previousStatus?.kind === 'direct' || previousStatus?.kind === 'playable'
+        ? null
+        : createSourceStatus('probing', {
+            ...previousStatus,
+            domain,
+            reason: '后台测速中',
+          });
+    const restoreProbeStatus = (latestStatus: SourceStatus | undefined) => {
+      // 排名回包会复制状态对象，仍保留本次探测的原因和时间戳。
+      if (
+        !probingStatus ||
+        latestStatus?.kind !== 'probing' ||
+        latestStatus.reason !== probingStatus.reason ||
+        latestStatus.updatedAt !== probingStatus.updatedAt
+      ) {
+        return null;
+      }
+      return {
+        ...(previousStatus ||
+          getRememberedSourceStatusForSource(
+            sourceKey,
+            candidate.episodes,
+            episodeIndex
+          ) ||
+          createSourceStatus('idle', { domain })),
+        rankScore: latestStatus.rankScore,
+        rankScoreWithoutCron: latestStatus.rankScoreWithoutCron,
+        rankingSource: latestStatus.rankingSource,
+      };
+    };
+    if (probingStatus) {
+      const statuses = new Map(precomputedSourceStatusesRef.current);
+      statuses.set(sourceKey, probingStatus);
+      setPrecomputedSourceStatuses(statuses);
+    }
 
     emitPlaybackDebugLog(
       'progressive-source-probe-start',
@@ -4610,37 +4665,32 @@ function usePlayPageSession() {
       const testResult = await getVideoResolutionFromM3u8(episodeUrl, {
         timeoutMs: SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS,
         background: true,
+        signal: controller.signal,
         extension: {
           maxTimeoutMs: PROGRESSIVE_SOURCE_PROBE_MAX_TIMEOUT_MS,
           canContinue: () => {
             const currentState = hlsRecoveryStateRef.current;
             return Boolean(
               video &&
-                artPlayerRef.current?.video === video &&
-                currentState.playbackSessionId === sessionId &&
-                getCurrentSourceKey() === foregroundSourceKey &&
-                currentEpisodeIndexRef.current === episodeIndex &&
-                !document.hidden &&
+                isCurrentProbe() &&
+                foregroundReady() &&
                 !video.paused &&
                 !video.ended &&
                 !video.seeking &&
-                video.readyState >= 3 &&
                 !currentState.isSeeking &&
                 !isVideoLoadingRef.current &&
                 waitingRecoveryTimerRef.current === null &&
                 currentState.stallCount === 0 &&
-                currentState.stallWindowCount === 0 &&
-                getForwardBufferSecondsFromVideo(video) >=
-                  PROGRESSIVE_SOURCE_PROBE_BUFFER_SECONDS *
-                    Math.max(1, video.playbackRate)
+                currentState.stallWindowCount === 0
             );
           },
         },
       });
 
       if (
-        hlsRecoveryStateRef.current.playbackSessionId === sessionId &&
-        isSameProbeEpisode()
+        isCurrentProbe() &&
+        precomputedSourceStatusesRef.current.get(sourceKey)?.reason !==
+          SOURCE_CORS_BLOCKED_REASON
       ) {
         const nextVideoInfo = new Map(precomputedVideoInfoRef.current);
         const previousInfo = nextVideoInfo.get(sourceKey);
@@ -4696,18 +4746,19 @@ function usePlayPageSession() {
         );
       }
     } catch (error) {
-      if (
-        hlsRecoveryStateRef.current.playbackSessionId === sessionId &&
-        isSameProbeEpisode()
-      ) {
+      if (isCurrentProbe()) {
         const reason = error instanceof Error ? error.message : '后台测速失败';
         const nextStatuses = new Map(precomputedSourceStatusesRef.current);
-        if (error instanceof SourceSpeedProbeTimeoutError) {
-          const latestStatus = nextStatuses.get(sourceKey);
+        const latestStatus = nextStatuses.get(sourceKey);
+        if (latestStatus?.reason === SOURCE_CORS_BLOCKED_REASON) return;
+        if (
+          error instanceof SourceSpeedProbeTimeoutError ||
+          latestStatus?.kind === 'direct' ||
+          latestStatus?.kind === 'playable'
+        ) {
           const status =
-            (latestStatus && latestStatus.kind !== 'probing'
-              ? latestStatus
-              : previousStatus) ||
+            restoreProbeStatus(latestStatus) ||
+            latestStatus ||
             getRememberedSourceStatusForSource(
               sourceKey,
               candidate.episodes,
@@ -4769,25 +4820,22 @@ function usePlayPageSession() {
         );
       }
     } finally {
-      progressiveSourceProbeInFlightRef.current = false;
-      if (
-        hlsRecoveryStateRef.current.playbackSessionId !== sessionId ||
-        !isSameProbeEpisode()
-      ) {
-        progressiveSourceProbeAttemptedKeysRef.current.delete(sourceKey);
-        const restoredStatuses = new Map(precomputedSourceStatusesRef.current);
-        if (
-          isSameProbeEpisode() &&
-          restoredStatuses.get(sourceKey)?.kind === 'probing'
-        ) {
-          if (previousStatus) {
-            restoredStatuses.set(sourceKey, previousStatus);
-          } else {
-            restoredStatuses.delete(sourceKey);
-          }
+      progressiveSourceProbeAbortRef.current = null;
+      if (!isCurrentProbe()) {
+        attempted.delete(sourceKey);
+        const restoredStatus = restoreProbeStatus(
+          precomputedSourceStatusesRef.current.get(sourceKey)
+        );
+        if (restoredStatus) {
+          const restoredStatuses = new Map(
+            precomputedSourceStatusesRef.current
+          );
+          if (isSameProbeEpisode() && sameCandidateUrl()) {
+            restoredStatuses.set(sourceKey, restoredStatus);
+          } else restoredStatuses.delete(sourceKey);
           setPrecomputedSourceStatuses(restoredStatuses);
         }
-      } else if (typeof window !== 'undefined') {
+      } else {
         clearProgressiveSourceProbeTimer();
         progressiveSourceProbeTimerRef.current = window.setTimeout(() => {
           progressiveSourceProbeTimerRef.current = null;
@@ -4806,12 +4854,15 @@ function usePlayPageSession() {
       progressiveSourceProbeStableStartedAtRef.current = Date.now();
     }
 
-    if (progressiveSourceProbeTimerRef.current !== null) {
+    if (
+      progressiveSourceProbeTimerRef.current !== null ||
+      progressiveSourceProbeAbortRef.current !== null
+    ) {
       return;
     }
 
     const delay = Math.max(
-      0,
+      PROGRESSIVE_SOURCE_PROBE_MIN_RECHECK_MS,
       PROGRESSIVE_SOURCE_PROBE_STABLE_DELAY_MS -
         (Date.now() - progressiveSourceProbeStableStartedAtRef.current)
     );
@@ -5028,6 +5079,7 @@ function usePlayPageSession() {
     const preferencePromise = fetchSourcePreferencesInBatches(requestSources, {
       signal: options.signal,
       background: options.background,
+      startupProbe: !options.background,
       onBatch: applyPreferenceResults,
     });
     let preferenceSettled = false;
@@ -8810,7 +8862,7 @@ function usePlayPageSession() {
 
       clearWaitingRecoveryTimer();
       clearSourceChangeTimeoutTimer();
-      clearProgressiveSourceProbeTimer();
+      resetProgressiveSourceProbeStability();
       disposeCurrentPlayer();
     };
   }, []);
