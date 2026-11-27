@@ -60,6 +60,7 @@ import {
   resolveRememberedPlayhead,
   shouldTriggerHlsWaitingRecovery,
 } from '@/lib/hls-recovery';
+import { createHlsResumeFragmentLoader } from '@/lib/hls-resume-fragment-loader';
 import { takeBannerClick } from '@/lib/home-banner.client';
 import { stopVideoElementLoading } from '@/lib/media-cleanup';
 import {
@@ -109,18 +110,19 @@ import { classifySeekingEvent } from '@/lib/playback-seek-intent';
 import {
   type PlaybackSessionEffect,
   type PlaybackSessionState,
+  type StartupResumeProgress,
   type VideoSnapshot,
   applySameSourceRecoverAction,
   createInitialPlaybackSessionState,
   executePlaybackSessionEffects,
   getPlaybackIntentAuthorityMode,
+  getStartupSourceTimeoutMs,
   isPlaybackRecoverySessionAuthorityEnabled,
   isStartupWorkAllowed,
   reducePlaybackSession,
   resolveAdapterAutomaticEffectAllowed,
   resolveAutomaticEffectGate,
   STARTUP_BUDGET_MS,
-  STARTUP_SOURCE_TIMEOUT_MS,
 } from '@/lib/playback-session';
 import {
   clampSourceSwitchResumeTime,
@@ -244,6 +246,9 @@ const SOURCE_PREFERENCE_MAX_BUDGET_MS = 3000;
 const SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS = 1800;
 const PROGRESSIVE_SOURCE_PROBE_MAX_TIMEOUT_MS = 2600;
 const PROGRESSIVE_SOURCE_PROBE_BUFFER_SECONDS = 5;
+const HLS_RESUME_GRACE_PREVIEW_MS = Number(
+  process.env.NEXT_PUBLIC_HLS_RESUME_GRACE_PREVIEW_MS
+);
 const SOURCE_CHANGE_TIMEOUT_MS = 10_000;
 const PROGRESSIVE_SOURCE_PROBE_STABLE_DELAY_MS = 10000;
 const PROGRESSIVE_SOURCE_PROBE_INTERVAL_MS = 20000;
@@ -1568,6 +1573,10 @@ function usePlayPageSession() {
     episodeIndex: number;
     position: number;
   } | null>(null);
+  const resumeStartupProgressRef = useRef<{
+    progress: StartupResumeProgress;
+    isCurrent: () => boolean;
+  } | null>(null);
   /** Invalidates in-flight preferences when their title or episode changes. */
   const sourcePreferenceGenerationRef = useRef(0);
   /**
@@ -2831,6 +2840,11 @@ function usePlayPageSession() {
     });
   };
 
+  const getResumeStartupProgress = () => {
+    const current = resumeStartupProgressRef.current;
+    return current?.isCurrent() ? current.progress : undefined;
+  };
+
   const dispatchPlaybackSessionEvent = (
     event: Parameters<typeof reducePlaybackSession>[1]
   ) => {
@@ -2854,7 +2868,8 @@ function usePlayPageSession() {
     const previousBadPoints = playbackSessionStateRef.current.badPoints;
     const result = reducePlaybackSession(
       playbackSessionStateRef.current,
-      event
+      event,
+      getResumeStartupProgress()
     );
     playbackSessionStateRef.current = result.state;
     if (
@@ -3067,7 +3082,8 @@ function usePlayPageSession() {
           Math.min(
             STARTUP_BUDGET_MS - startup.activeWaitMs,
             startup.sourceClockRunning
-              ? STARTUP_SOURCE_TIMEOUT_MS - startup.sourceWaitMs
+              ? getStartupSourceTimeoutMs(startup, getResumeStartupProgress()) -
+                  startup.sourceWaitMs
               : Infinity
           )
         )
@@ -7709,8 +7725,42 @@ function usePlayPageSession() {
                 initialResume.position === resumeTimeRef.current
                   ? initialResume.position
                   : undefined;
+              const qualityAttemptId = sourceChangeAttemptIdRef.current;
+              const resumeIntentVersion = historyIntentVersionRef.current;
+              const isCurrentResumeAttempt = () =>
+                historyIntentVersionRef.current === resumeIntentVersion &&
+                playbackSessionStateRef.current.startup?.status === 'active' &&
+                isCurrentMedia();
+              const resumeFragmentLoader =
+                startPosition !== undefined &&
+                Number.isSafeInteger(HLS_RESUME_GRACE_PREVIEW_MS) &&
+                HLS_RESUME_GRACE_PREVIEW_MS > 0
+                  ? createHlsResumeFragmentLoader(
+                      Hls.DefaultConfig.loader,
+                      startPosition,
+                      (lastProgressAtMs) => {
+                        if (!isCurrentResumeAttempt()) return;
+                        resumeStartupProgressRef.current =
+                          lastProgressAtMs === null
+                            ? null
+                            : {
+                                progress: {
+                                  attemptId: qualityAttemptId,
+                                  sourceKey: observedSource,
+                                  lastProgressAtMs,
+                                  extraWaitMs: HLS_RESUME_GRACE_PREVIEW_MS,
+                                },
+                                isCurrent: isCurrentResumeAttempt,
+                              };
+                        if (lastProgressAtMs === null) armStartupTimer();
+                      }
+                    )
+                  : undefined;
               const hls = new Hls({
                 ...(startPosition === undefined ? {} : { startPosition }),
+                ...(resumeFragmentLoader
+                  ? { fLoader: resumeFragmentLoader }
+                  : {}),
                 debug: false, // 关闭日志
                 enableWorker: true, // WebWorker 解码，降低主线程压力
                 lowLatencyMode: false, // 点播场景优先稳定性，避免低缓冲导致频繁卡顿
@@ -7733,7 +7783,6 @@ function usePlayPageSession() {
               applyVideoElementPolicy(video);
               video.hls = hls;
               qualityFrameCleanupRef.current?.();
-              const qualityAttemptId = sourceChangeAttemptIdRef.current;
               const qualitySessionId =
                 playbackAttemptReporterRef.current.getSessionId();
               if (playbackQualityRef.current.isPending()) {

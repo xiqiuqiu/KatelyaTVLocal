@@ -6,6 +6,14 @@ import type {
 
 export const STARTUP_BUDGET_MS = 30_000;
 export const STARTUP_SOURCE_TIMEOUT_MS = 10_000;
+const RESUME_FRAGMENT_PROGRESS_FRESH_MS = 1200;
+
+export interface StartupResumeProgress {
+  attemptId: number;
+  sourceKey: string;
+  lastProgressAtMs: number;
+  extraWaitMs: number;
+}
 
 export interface StartupBudgetState {
   status:
@@ -113,7 +121,39 @@ function newRound(
   };
 }
 
-function expire(startup: StartupBudgetState): {
+export function getStartupSourceTimeoutMs(
+  startup: StartupBudgetState,
+  resumeProgress?: StartupResumeProgress
+): number {
+  if (
+    startup.status !== 'active' ||
+    !startup.sourceClockRunning ||
+    startup.hidden ||
+    startup.paused ||
+    startup.autoplayBlocked ||
+    startup.sourceWaitMs < STARTUP_SOURCE_TIMEOUT_MS ||
+    !resumeProgress ||
+    resumeProgress.attemptId !== startup.sourceAttemptId ||
+    resumeProgress.sourceKey !== startup.sourceKey
+  )
+    return STARTUP_SOURCE_TIMEOUT_MS;
+
+  const freshnessRemaining =
+    resumeProgress.lastProgressAtMs +
+    RESUME_FRAGMENT_PROGRESS_FRESH_MS -
+    startup.lastTickMs;
+  if (freshnessRemaining <= 0) return STARTUP_SOURCE_TIMEOUT_MS;
+
+  return Math.min(
+    STARTUP_SOURCE_TIMEOUT_MS + resumeProgress.extraWaitMs,
+    startup.sourceWaitMs + freshnessRemaining
+  );
+}
+
+function expire(
+  startup: StartupBudgetState,
+  resumeProgress?: StartupResumeProgress
+): {
   startup: StartupBudgetState;
   effects: PlaybackSessionEffect[];
 } {
@@ -140,9 +180,10 @@ function expire(startup: StartupBudgetState): {
       ],
     };
   }
+  const sourceTimeoutMs = getStartupSourceTimeoutMs(startup, resumeProgress);
   if (
     startup.sourceClockRunning &&
-    startup.sourceWaitMs >= STARTUP_SOURCE_TIMEOUT_MS &&
+    startup.sourceWaitMs >= sourceTimeoutMs &&
     startup.sourceAttemptId !== null &&
     startup.sourceKey
   ) {
@@ -150,7 +191,7 @@ function expire(startup: StartupBudgetState): {
       startup: {
         ...startup,
         sourceClockRunning: false,
-        sourceWaitMs: STARTUP_SOURCE_TIMEOUT_MS,
+        sourceWaitMs: sourceTimeoutMs,
       },
       effects: [
         {
@@ -167,7 +208,8 @@ function expire(startup: StartupBudgetState): {
 /** All nowMs values here use the same monotonic clock; recovery keeps its wall clock. */
 export function reduceStartupBudget(
   current: StartupBudgetState | null,
-  event: StartupBudgetEvent
+  event: StartupBudgetEvent,
+  resumeProgress?: StartupResumeProgress
 ): { startup: StartupBudgetState | null; effects: PlaybackSessionEffect[] } {
   if (event.type === 'startup.started') {
     const startup = newRound(event.nowMs, Boolean(event.hidden), 'play');
@@ -227,7 +269,7 @@ export function reduceStartupBudget(
         current.autoplayBlocked ||
         current.sourceAttemptId !== event.attemptId
       ) {
-        return expire(startup);
+        return expire(startup, resumeProgress);
       }
       if (startup.activeWaitMs <= STARTUP_BUDGET_MS) {
         return {
@@ -244,7 +286,7 @@ export function reduceStartupBudget(
           effects: [],
         };
       }
-      return expire(startup);
+      return expire(startup, resumeProgress);
     case 'startup.sourceFailed':
       if (startup.activeWaitMs >= STARTUP_BUDGET_MS) return expire(startup);
       if (
@@ -262,7 +304,7 @@ export function reduceStartupBudget(
       }
       return expire(startup);
     case 'startup.activity': {
-      const expired = expire(startup);
+      const expired = expire(startup, resumeProgress);
       return {
         startup: {
           ...expired.startup,
@@ -274,6 +316,6 @@ export function reduceStartupBudget(
       };
     }
     case 'startup.tick':
-      return expire(startup);
+      return expire(startup, resumeProgress);
   }
 }

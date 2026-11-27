@@ -29,6 +29,7 @@ import {
   shouldEvaluateR3AfterLadder,
 } from './recovery';
 import {
+  type StartupResumeProgress,
   isStartupWorkAllowed,
   reduceStartupBudget,
   STARTUP_SOURCE_TIMEOUT_MS,
@@ -748,7 +749,8 @@ function switchTitleScope(
 
 export function reducePlaybackSession(
   state: PlaybackSessionState,
-  event: PlaybackSessionEvent
+  event: PlaybackSessionEvent,
+  resumeProgress?: StartupResumeProgress
 ): PlaybackSessionResult {
   const startupBlocked =
     state.startup &&
@@ -768,7 +770,7 @@ export function reducePlaybackSession(
     case 'startup.sourcesReady':
     case 'startup.cancel':
     case 'startup.sourceFailed': {
-      const result = reduceStartupBudget(state.startup, event);
+      const result = reduceStartupBudget(state.startup, event, resumeProgress);
       const interrupted = state.startup?.interruptedSourceKey;
       const releaseInterrupted =
         event.type === 'startup.retry' &&

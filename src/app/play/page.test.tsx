@@ -3627,13 +3627,14 @@ describe('PlayPage automatic source-switch resume', () => {
     }
     expect(playback.getSwitches()).toEqual([]);
     expect(playback.player.video.currentTime).toBe(22);
-    expect(jest.mocked(reducePlaybackSession).mock.calls).toContainEqual([
-      expect.anything(),
+    expect(
+      jest.mocked(reducePlaybackSession).mock.calls.map(([, event]) => event)
+    ).toContainEqual(
       expect.objectContaining({
         type: 'user.seekStarted',
         confirmedUserGesture: true,
-      }),
-    ]);
+      })
+    );
   });
 
   it('forwards fatal HLS evidence during source-switch settle while suppressing soft errors', async () => {
