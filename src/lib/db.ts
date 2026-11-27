@@ -14,6 +14,10 @@ import {
   PlayRecord,
 } from './types';
 import { UpstashRedisStorage } from './upstash.db';
+import {
+  type WatchProgressContentScope,
+  selectWatchProgressContentRecords,
+} from './watch-progress';
 
 // storage type 常量: 'localstorage' | 'redis' | 'kvrocks' | 'd1' | 'upstash'，默认 'localstorage'
 const STORAGE_TYPE =
@@ -105,6 +109,16 @@ export class DbManager {
     [key: string]: PlayRecord;
   }> {
     return this.storage.getAllPlayRecords(userName);
+  }
+
+  async getPlayRecordsForContent(
+    userName: string,
+    scope: WatchProgressContentScope
+  ): Promise<Record<string, PlayRecord>> {
+    const candidates = this.storage.getPlayRecordContentCandidates
+      ? await this.storage.getPlayRecordContentCandidates(userName, scope)
+      : await this.storage.getAllPlayRecords(userName);
+    return selectWatchProgressContentRecords(candidates, scope);
   }
 
   async getRecentPlayRecords(

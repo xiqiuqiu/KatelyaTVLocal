@@ -35,8 +35,13 @@ export {
   createInitialPlaybackSessionState,
   reducePlaybackSession,
 } from './reducer';
-export type { StartupBudgetEvent, StartupBudgetState } from './startup-budget';
+export type {
+  StartupBudgetEvent,
+  StartupBudgetState,
+  StartupResumeProgress,
+} from './startup-budget';
 export {
+  getStartupSourceTimeoutMs,
   isStartupWorkAllowed,
   STARTUP_BUDGET_MS,
   STARTUP_SOURCE_TIMEOUT_MS,

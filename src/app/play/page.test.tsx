@@ -10,7 +10,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { ReactNode } from 'react';
 
-import { getAllPlayRecords } from '@/lib/db.client';
+import { getPlayRecordsForContent } from '@/lib/db.client';
 import {
   type PlaybackQualityRecord,
   playbackQualityPayloadSchema,
@@ -99,8 +99,9 @@ jest.mock('@/lib/db.client', () => ({
   deleteFavorite: jest.fn(),
   deletePlayRecordByKey: jest.fn(),
   generateStorageKey: (source: string, id: string) => `${source}+${id}`,
-  getAllPlayRecords: jest.fn(),
-  requestPlayRecordsFromApi: jest.fn().mockResolvedValue({}),
+  getAllPlayRecords: jest.fn().mockResolvedValue({}),
+  getPlayRecordsForContent: jest.fn(),
+  requestPlayRecordsForContent: jest.fn().mockResolvedValue({}),
   isFavorited: jest.fn().mockResolvedValue(false),
   saveFavorite: jest.fn(),
   savePlayRecord: jest.fn(),
@@ -396,8 +397,16 @@ jest.mock('artplayer', () => ({
 jest.mock('hls.js', () => {
   class MockHls {
     static DefaultConfig = { loader: class TestHlsLoader {} };
-    static Events = { ERROR: 'error', MANIFEST_PARSED: 'manifestParsed' };
+    static Events = {
+      ERROR: 'error',
+      MANIFEST_PARSED: 'manifestParsed',
+      LEVEL_UPDATED: 'levelUpdated',
+    };
     static isSupported = () => mockHlsSupported;
+
+    constructor(
+      readonly config: { startPosition?: number; fLoader?: unknown }
+    ) {}
 
     attachMedia = jest.fn((media: HTMLVideoElement) => {
       if (mockUseRealMediaAdapter && 'ManagedMediaSource' in window) {
@@ -413,6 +422,7 @@ jest.mock('hls.js', () => {
     loadSource = jest.fn();
     startLoad = jest.fn();
     stopLoad = jest.fn();
+    once = jest.fn();
     on = jest.fn(
       (
         event: string,
@@ -469,9 +479,10 @@ async function settlePlayPage() {
 }
 
 describe('PlayPage source initialization', () => {
-  const mockedGetAllPlayRecords = getAllPlayRecords as jest.MockedFunction<
-    typeof getAllPlayRecords
-  >;
+  const mockedGetPlayRecordsForContent =
+    getPlayRecordsForContent as jest.MockedFunction<
+      typeof getPlayRecordsForContent
+    >;
 
   beforeEach(() => {
     jest.useFakeTimers();
@@ -479,7 +490,7 @@ describe('PlayPage source initialization', () => {
     mockSearchParams = new URLSearchParams(
       'source=detail-source&id=detail-id&title=%E8%AF%A6%E6%83%85%E5%BD%B1%E7%89%87'
     );
-    mockedGetAllPlayRecords.mockResolvedValue({});
+    mockedGetPlayRecordsForContent.mockResolvedValue({});
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url.startsWith('/api/playback-debug')) {
@@ -563,7 +574,13 @@ describe('PlayPage source initialization', () => {
     }
     function media() {
       return mockArtPlayerInstance?.video.hls as
-        | { loadSource: jest.Mock }
+        | {
+            config: { startPosition?: number; fLoader?: unknown };
+            loadSource: jest.Mock;
+            once: jest.Mock;
+            startLoad: jest.Mock;
+            stopLoad: jest.Mock;
+          }
         | undefined;
     }
     function qualityRecords() {
@@ -1107,11 +1124,12 @@ describe('PlayPage source initialization', () => {
     it('starts media while search is pending, but waits for history before choosing episode and resume', async () => {
       const search = deferred<Response>();
       const detail = deferred<Response>();
-      const history = deferred<Awaited<ReturnType<typeof getAllPlayRecords>>>();
-      mockedGetAllPlayRecords.mockReturnValue(history.promise);
+      const history =
+        deferred<Awaited<ReturnType<typeof getPlayRecordsForContent>>>();
+      mockedGetPlayRecordsForContent.mockReturnValue(history.promise);
       requests(search.promise, detail.promise);
       render(<PlayPage />);
-      expect(mockedGetAllPlayRecords).toHaveBeenCalled();
+      expect(mockedGetPlayRecordsForContent).toHaveBeenCalled();
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/search'),
         expect.anything()
@@ -1169,6 +1187,112 @@ describe('PlayPage source initialization', () => {
     });
 
     it.each([
+      'default',
+      'disabled',
+      'position-applied',
+      'position-unapplied',
+      'shorter-playlist',
+    ] as const)(
+      'uses the requested episode history on the selected line (%s)',
+      async (variant) => {
+        const previous = process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED;
+        if (variant === 'default')
+          delete process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED;
+        else
+          process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED =
+            variant === 'disabled' ? 'false' : 'true';
+        try {
+          const source = requested();
+          mockSearchParams.set('episode', '2');
+          mockSearchParams.set('year', '2026');
+          const record = {
+            title: '详情影片',
+            source_name: '详情源',
+            year: '2026',
+            cover: '',
+            index: 2,
+            total_episodes: 2,
+            play_time: 96,
+            total_time: 240,
+            save_time: 1,
+          };
+          mockedGetPlayRecordsForContent.mockResolvedValue({
+            'wp:详情影片::2026#0': {
+              ...record,
+              index: 1,
+              play_time: 150,
+              save_time: 2,
+            },
+            'wp:详情影片::2026#1': record,
+          });
+          const pending = deferred<Response>();
+          requests(pending.promise, Promise.resolve(response(source)));
+          await act(async () => {
+            render(<PlayPage />);
+          });
+
+          expect(mockedGetPlayRecordsForContent).toHaveBeenCalledWith(
+            {
+              contentKey: '详情影片::2026',
+              legacyRoute: { source: 'detail-source', id: 'detail-id' },
+            },
+            expect.any(AbortSignal)
+          );
+          expect(media()?.loadSource).toHaveBeenCalledWith(source.episodes[1]);
+          const hls = media();
+          expect(hls?.config.startPosition).toBe(
+            variant === 'disabled' ? undefined : 94.5
+          );
+          expect(typeof hls?.config.fLoader).toBe(
+            variant === 'disabled' ? 'undefined' : 'function'
+          );
+          const applySeek = jest.fn();
+          if (variant === 'position-applied') {
+            const player = mockArtPlayerInstance;
+            if (!player)
+              throw new Error('Expected ArtPlayer to be initialized');
+            player.video.currentTime = 94.5;
+            Object.defineProperty(player, 'currentTime', {
+              get: () => 94.5,
+              set: applySeek,
+            });
+          }
+          if (variant === 'shorter-playlist') {
+            const levelUpdated = hls?.once.mock.calls.find(
+              ([name]) => name === 'levelUpdated'
+            )?.[1];
+            act(() => {
+              levelUpdated(undefined, {
+                details: { live: false, fragmentStart: 0, edge: 90 },
+              });
+              jest.runAllTicks();
+            });
+            expect(hls?.stopLoad).toHaveBeenCalledTimes(1);
+            expect(hls?.startLoad).toHaveBeenCalledWith(0);
+            expect(hls?.config.startPosition).toBe(-1);
+            if (mockArtPlayerInstance) mockArtPlayerInstance.duration = 90;
+          }
+          act(() => {
+            mockManifestParsedHandlers.at(-1)?.();
+            mockArtPlayerEventHandlers.get('video:canplay')?.();
+          });
+          expect(
+            screen.getByTestId('episode-selector-sources')
+          ).toHaveAttribute('data-episode', '2');
+          expect(mockArtPlayerInstance?.currentTime).toBe(
+            variant === 'shorter-playlist' ? 85 : 94.5
+          );
+          if (variant === 'position-applied')
+            expect(applySeek).not.toHaveBeenCalled();
+        } finally {
+          if (previous === undefined)
+            delete process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED;
+          else process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED = previous;
+        }
+      }
+    );
+
+    it.each([
       { first: 'search', fromHistory: true },
       { first: 'detail', fromHistory: true },
       { first: 'search', fromHistory: false },
@@ -1177,7 +1301,7 @@ describe('PlayPage source initialization', () => {
       'waits for the other response when $first is missing the resumed episode (history entry: $fromHistory)',
       async ({ first, fromHistory }) => {
         if (fromHistory) mockSearchParams.set('from', 'playrecord');
-        mockedGetAllPlayRecords.mockResolvedValue({
+        mockedGetPlayRecordsForContent.mockResolvedValue({
           'detail-source+detail-id': {
             title: '详情影片',
             year: '2026',
@@ -1228,7 +1352,7 @@ describe('PlayPage source initialization', () => {
       'waits for same-episode history fallback for %s',
       async (reason) => {
         mockSearchParams.set('from', 'playrecord');
-        mockedGetAllPlayRecords.mockResolvedValue({
+        mockedGetPlayRecordsForContent.mockResolvedValue({
           'detail-source+detail-id': {
             title: '详情影片',
             year: '2026',
@@ -1277,8 +1401,9 @@ describe('PlayPage source initialization', () => {
     it('ignores detail, history and search that resolve after leaving the page', async () => {
       const search = deferred<Response>();
       const detail = deferred<Response>();
-      const history = deferred<Awaited<ReturnType<typeof getAllPlayRecords>>>();
-      mockedGetAllPlayRecords.mockReturnValue(history.promise);
+      const history =
+        deferred<Awaited<ReturnType<typeof getPlayRecordsForContent>>>();
+      mockedGetPlayRecordsForContent.mockReturnValue(history.promise);
       requests(search.promise, detail.promise);
       const view = render(<PlayPage />);
       view.unmount();
@@ -1503,7 +1628,7 @@ describe('PlayPage source initialization', () => {
       'shows missing-episode copy when the saved route exists: %s',
       async (detailExists) => {
         mockSearchParams.set('from', 'playrecord');
-        mockedGetAllPlayRecords.mockResolvedValue({
+        mockedGetPlayRecordsForContent.mockResolvedValue({
           'detail-source+detail-id': {
             title: '详情影片',
             year: '2026',
@@ -2680,7 +2805,7 @@ describe('PlayPage failed history recovery controls', () => {
     mockSearchParams = new URLSearchParams(
       'source=bfzy&id=149697&title=测试&year=2026&from=playrecord'
     );
-    jest.mocked(getAllPlayRecords).mockResolvedValue({
+    jest.mocked(getPlayRecordsForContent).mockResolvedValue({
       'bfzy+149697': {
         title: '测试',
         year: '2026',
@@ -2822,9 +2947,10 @@ describe('PlayPage failed history recovery controls', () => {
 });
 
 describe('PlayPage lower detail composition', () => {
-  const mockedGetAllPlayRecords = getAllPlayRecords as jest.MockedFunction<
-    typeof getAllPlayRecords
-  >;
+  const mockedGetPlayRecordsForContent =
+    getPlayRecordsForContent as jest.MockedFunction<
+      typeof getPlayRecordsForContent
+    >;
 
   function mockPlayPageFetch(
     recommends: {
@@ -2893,7 +3019,7 @@ describe('PlayPage lower detail composition', () => {
     mockSearchParams = new URLSearchParams(
       'source=detail-source&id=detail-id&title=%E8%AF%A6%E6%83%85%E5%BD%B1%E7%89%87'
     );
-    mockedGetAllPlayRecords.mockResolvedValue({});
+    mockedGetPlayRecordsForContent.mockResolvedValue({});
     mockPlayPageFetch();
   });
 
@@ -2935,6 +3061,42 @@ describe('PlayPage lower detail composition', () => {
     const recommendIndex = container.textContent?.indexOf('相关推荐') ?? -1;
     expect(synopsisIndex).toBeGreaterThanOrEqual(0);
     expect(recommendIndex).toBeGreaterThan(synopsisIndex);
+  });
+
+  it('defers the recommendation history request until the section is visible', async () => {
+    const original = Object.getOwnPropertyDescriptor(
+      window,
+      'IntersectionObserver'
+    );
+    const getHistory = jest.requireMock('@/lib/db.client').getAllPlayRecords;
+    const disconnect = jest.fn();
+    let reveal: (() => void) | undefined;
+    Object.defineProperty(window, 'IntersectionObserver', {
+      configurable: true,
+      value: jest
+        .fn()
+        .mockImplementation(
+          (callback: (entries: { isIntersecting: boolean }[]) => void) => ({
+            observe: () => {
+              reveal = () => callback([{ isIntersecting: true }]);
+            },
+            disconnect,
+          })
+        ),
+    });
+    try {
+      render(<PlayPage />);
+      await settlePlayPage();
+      expect(getHistory).not.toHaveBeenCalled();
+      expect(reveal).toEqual(expect.any(Function));
+      await act(async () => reveal?.());
+      expect(getHistory).toHaveBeenCalledTimes(1);
+      expect(disconnect).toHaveBeenCalled();
+    } finally {
+      if (original)
+        Object.defineProperty(window, 'IntersectionObserver', original);
+      else Reflect.deleteProperty(window, 'IntersectionObserver');
+    }
   });
 
   it('hides 相关推荐 when the recommends endpoint returns an empty list', async () => {
@@ -3018,7 +3180,9 @@ describe('PlayPage automatic source-switch resume', () => {
     mockArtPlayerEventHandlers.clear();
     mockArtPlayerEventHandlerLists.clear();
     (
-      getAllPlayRecords as jest.MockedFunction<typeof getAllPlayRecords>
+      getPlayRecordsForContent as jest.MockedFunction<
+        typeof getPlayRecordsForContent
+      >
     ).mockResolvedValue({});
 
     const oldSource = createSource({
@@ -3175,7 +3339,7 @@ describe('PlayPage automatic source-switch resume', () => {
   it('keeps the chosen same-episode source resume instead of adopting older server progress', async () => {
     await settleWithSources();
     const history =
-      jest.requireMock('@/lib/db.client').requestPlayRecordsFromApi;
+      jest.requireMock('@/lib/db.client').requestPlayRecordsForContent;
     history.mockResolvedValue({
       'wp:测试::2026#0': {
         index: 1,
@@ -3472,13 +3636,14 @@ describe('PlayPage automatic source-switch resume', () => {
     }
     expect(playback.getSwitches()).toEqual([]);
     expect(playback.player.video.currentTime).toBe(22);
-    expect(jest.mocked(reducePlaybackSession).mock.calls).toContainEqual([
-      expect.anything(),
+    expect(
+      jest.mocked(reducePlaybackSession).mock.calls.map(([, event]) => event)
+    ).toContainEqual(
       expect.objectContaining({
         type: 'user.seekStarted',
         confirmedUserGesture: true,
-      }),
-    ]);
+      })
+    );
   });
 
   it('forwards fatal HLS evidence during source-switch settle while suppressing soft errors', async () => {
@@ -3853,7 +4018,9 @@ describe('PlayPage preparation transition completion', () => {
     mockArtPlayerEventHandlers.clear();
     mockArtPlayerEventHandlerLists.clear();
     (
-      getAllPlayRecords as jest.MockedFunction<typeof getAllPlayRecords>
+      getPlayRecordsForContent as jest.MockedFunction<
+        typeof getPlayRecordsForContent
+      >
     ).mockResolvedValue({});
 
     const oldSource = createSource({
@@ -4069,7 +4236,7 @@ describe('PlayPage playback regression coverage', () => {
     mockArtPlayerEventHandlerLists.clear();
     mockManifestParsedHandlers.length = 0;
     mockHlsErrorHandlers.length = 0;
-    jest.mocked(getAllPlayRecords).mockResolvedValue({});
+    jest.mocked(getPlayRecordsForContent).mockResolvedValue({});
     global.fetch = jest.fn(
       async (input: RequestInfo | URL) =>
         ({
@@ -4120,7 +4287,7 @@ describe('PlayPage playback regression coverage', () => {
       mockUseRealMediaAdapter = false;
       jest
         .requireMock('@/lib/db.client')
-        .requestPlayRecordsFromApi.mockReset()
+        .requestPlayRecordsForContent.mockReset()
         .mockResolvedValue({});
     });
     it.each(
@@ -4136,10 +4303,23 @@ describe('PlayPage playback regression coverage', () => {
       async (targetHistory, readinessBeforeMetadata, delayedSave, sameUrl) => {
         mockUseRealArtPlayer = true;
         mockUseRealMediaAdapter = true;
+        let requestScopedRecords!: typeof import('@/lib/db.client').requestPlayRecordsForContent;
+        const runtime = window.RUNTIME_CONFIG;
+        window.RUNTIME_CONFIG = { ...runtime, STORAGE_TYPE: 'd1' };
+        try {
+          jest.isolateModules(() => {
+            requestScopedRecords =
+              jest.requireActual(
+                '@/lib/db.client'
+              ).requestPlayRecordsForContent;
+          });
+        } finally {
+          window.RUNTIME_CONFIG = runtime;
+        }
         jest
           .requireMock('@/lib/db.client')
-          .requestPlayRecordsFromApi.mockImplementation(
-            jest.requireActual('@/lib/db.client').requestPlayRecordsFromApi
+          .requestPlayRecordsForContent.mockImplementation(
+            requestScopedRecords
           );
         mockHlsSupported = true;
         mockDefaultPlayerDuration = 3000;
@@ -4184,7 +4364,7 @@ describe('PlayPage playback regression coverage', () => {
           records['wp:斗破苍穹年番::2022#196'] =
             records['wp:斗破苍穹::2022#196'];
         }
-        jest.mocked(getAllPlayRecords).mockResolvedValue(records);
+        jest.mocked(getPlayRecordsForContent).mockResolvedValue(records);
         const saves = jest.requireMock('@/lib/db.client').savePlayRecordKeys;
         saves.mockReset();
         saves.mockResolvedValue(undefined);
@@ -4252,7 +4432,7 @@ describe('PlayPage playback regression coverage', () => {
         });
         const leavingHls = player.video.hls;
         const historyReadsBeforeSwitch =
-          jest.requireMock('@/lib/db.client').requestPlayRecordsFromApi.mock
+          jest.requireMock('@/lib/db.client').requestPlayRecordsForContent.mock
             .calls.length;
         seeks.length = 0;
         if (delayedSave)
@@ -4267,7 +4447,7 @@ describe('PlayPage playback regression coverage', () => {
             player.emit?.('video:playing');
             expect(player.currentTime).toBe(1226);
             expect(
-              jest.requireMock('@/lib/db.client').requestPlayRecordsFromApi
+              jest.requireMock('@/lib/db.client').requestPlayRecordsForContent
             ).toHaveBeenCalledTimes(historyReadsBeforeSwitch);
           }
           await Promise.resolve();
@@ -4358,7 +4538,7 @@ describe('PlayPage playback regression coverage', () => {
   describe('history response ownership', () => {
     const history = jest.mocked(
       jest.requireMock<typeof import('@/lib/db.client')>('@/lib/db.client')
-        .requestPlayRecordsFromApi
+        .requestPlayRecordsForContent
     );
     afterEach(() => history.mockReset().mockResolvedValue({}));
     it.each(['pause', 'rewind'])(

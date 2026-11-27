@@ -9,6 +9,7 @@ import {
   planLatestWatchProgressForContent,
   planWatchProgressRead,
   planWatchProgressWrite,
+  selectWatchProgressContentRecords,
 } from './planner';
 
 function createRecord(overrides: Partial<PlayRecord> = {}): PlayRecord {
@@ -192,6 +193,31 @@ describe('planWatchProgressWrite', () => {
     expect(plan.primaryKey).toBe('source-a+1');
     expect(plan.dualWriteKeys).toEqual([]);
   });
+});
+
+it('selects content-key rows plus compatible legacy rows across sources and aliases', () => {
+  const records = {
+    'wp:测试影片::2026#3': createRecord({ title: '旧标题', year: '2025' }),
+    'wp:测试影片::2025#3': createRecord(),
+    'other+1': createRecord({
+      title: '不同展示名',
+      search_title: '测试 影片',
+      year: ' 2026 ',
+    }),
+    'current+1': createRecord({
+      title: '改名前',
+      search_title: '改名前',
+      year: '2024',
+    }),
+    'other+2': createRecord({ year: '2025' }),
+  };
+  const scope = {
+    contentKey: '测试影片::2026',
+    legacyRoute: { source: 'current', id: '1' },
+  };
+  expect(
+    Object.keys(selectWatchProgressContentRecords(records, scope))
+  ).toEqual(['wp:测试影片::2026#3', 'other+1', 'current+1']);
 });
 
 describe('planLatestWatchProgressForContent', () => {

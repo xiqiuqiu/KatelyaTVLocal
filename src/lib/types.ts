@@ -4,6 +4,7 @@ import type {
 } from './ad-skip-window';
 import { AdminConfig } from './admin.types';
 import type { AiFindResponse } from './ai-find/types';
+import type { WatchProgressContentScope } from './watch-progress';
 
 export type { EpisodeAdSkipConfig, PersistedAdSkipWindow };
 
@@ -18,7 +19,7 @@ export interface PlayRecord {
   play_time: number; // 播放进度（秒）
   total_time: number; // 总进度（秒）
   save_time: number; // 记录保存时间（时间戳）
-  search_title: string; // 搜索时使用的标题
+  search_title?: string; // 搜索时使用的标题
   /** Resume-route preference — not part of Watch Progress identity. */
   route_source?: string;
   /** Resume-route preference — not part of Watch Progress identity. */
@@ -93,6 +94,10 @@ export interface IStorage {
     record: PlayRecord
   ): Promise<void>;
   getAllPlayRecords(userName: string): Promise<{ [key: string]: PlayRecord }>;
+  getPlayRecordContentCandidates?(
+    userName: string,
+    scope: WatchProgressContentScope
+  ): Promise<Record<string, PlayRecord>>;
   getRecentPlayRecords?(
     userName: string,
     limit: number

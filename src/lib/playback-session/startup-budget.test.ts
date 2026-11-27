@@ -4,7 +4,10 @@ import {
   createInitialPlaybackSessionState,
   reducePlaybackSession,
 } from './reducer';
-import { isStartupWorkAllowed } from './startup-budget';
+import {
+  getStartupSourceTimeoutMs,
+  isStartupWorkAllowed,
+} from './startup-budget';
 import type { PlaybackSessionEvent, PlaybackSessionState } from './types';
 import type { SearchResult } from '../types';
 
@@ -69,6 +72,46 @@ function sourceTimeout(
 }
 
 describe('startup budget authority', () => {
+  it('waits only for recent resume progress from the current source attempt, up to the cap', () => {
+    const state = media(start());
+    const progress = {
+      attemptId: 1,
+      sourceKey: 'first-1',
+      lastProgressAtMs: 9950,
+    };
+    const normalDeadline = { type: 'startup.tick', nowMs: 10000 } as const;
+    const active = reducePlaybackSession(state, normalDeadline, progress);
+    expect(active.effects).toEqual([]);
+    expect(active.state.startup).not.toBeNull();
+    if (!active.state.startup) throw new Error('Expected active startup');
+    expect(getStartupSourceTimeoutMs(active.state.startup, progress)).toBe(
+      11150
+    );
+
+    const hardCap = reducePlaybackSession(
+      active.state,
+      { type: 'startup.tick', nowMs: 12000 },
+      { ...progress, lastProgressAtMs: 11990 }
+    );
+    expect(hardCap.effects).toEqual([
+      { type: 'startupSourceTimeout', attemptId: 1, sourceKey: 'first-1' },
+    ]);
+    const noLongerReceiving = reducePlaybackSession(
+      active.state,
+      { type: 'startup.tick', nowMs: 11150 },
+      progress
+    );
+    expect(noLongerReceiving.effects).toEqual(hardCap.effects);
+    const oldAttempt = reducePlaybackSession(state, normalDeadline, {
+      ...progress,
+      attemptId: 2,
+    });
+    expect(oldAttempt.effects).toEqual(hardCap.effects);
+    expect(reducePlaybackSession(active.state, normalDeadline).effects).toEqual(
+      hardCap.effects
+    );
+  });
+
   it('counts preparation before a media element exists and emits only one exhaustion', () => {
     const running = reducePlaybackSession(createInitialPlaybackSessionState(), {
       type: 'startup.started',

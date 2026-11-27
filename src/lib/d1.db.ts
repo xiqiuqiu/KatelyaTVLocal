@@ -19,6 +19,11 @@ import {
   IStorage,
   PlayRecord,
 } from './types';
+import {
+  type WatchProgressContentScope,
+  buildLegacyPlayRecordStorageKey,
+  buildWatchProgressStoragePrefix,
+} from './watch-progress';
 
 // 搜索历史最大条数
 const SEARCH_HISTORY_LIMIT = 20;
@@ -181,6 +186,40 @@ export class D1Storage implements IStorage {
       console.error('Failed to get all play records:', err);
       throw err;
     }
+  }
+
+  async getPlayRecordContentCandidates(
+    userName: string,
+    { contentKey, legacyRoute }: WatchProgressContentScope
+  ): Promise<Record<string, PlayRecord>> {
+    const db = await this.getDatabase();
+    const prefix = buildWatchProgressStoragePrefix(contentKey);
+    // '#' and '$' are consecutive, so this also works with SQL wildcard characters in the title.
+    const end = prefix.slice(0, -1) + '$';
+    const year = contentKey.slice(contentKey.lastIndexOf('::') + 2);
+    const result = await db
+      .prepare(
+        `SELECT * FROM play_records
+         WHERE username = ? AND (
+           key = ? OR (key >= ? AND key < ?)
+           OR (
+             (key NOT GLOB 'wp:*' OR instr(key, '+') > 0)
+             AND (year = ? OR year IS NULL OR year NOT GLOB '[0-9][0-9][0-9][0-9]')
+           )
+         )
+         ORDER BY save_time DESC`
+      )
+      .bind(
+        userName,
+        buildLegacyPlayRecordStorageKey(legacyRoute.source, legacyRoute.id),
+        prefix,
+        end,
+        year
+      )
+      .all<any>();
+    return Object.fromEntries(
+      result.results.map((row) => [row.key, this.mapPlayRecordRow(row)])
+    );
   }
 
   async getRecentPlayRecords(

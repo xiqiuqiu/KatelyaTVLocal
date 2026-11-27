@@ -24,9 +24,9 @@ import type { CastStatus } from '@/lib/cast';
 import { castControlIcon, requestCastPlayback } from '@/lib/cast';
 import {
   getAdSkipConfig,
-  getAllPlayRecords,
+  getPlayRecordsForContent,
   recordAdSkipWindowConfirmation,
-  requestPlayRecordsFromApi,
+  requestPlayRecordsForContent,
   savePlayRecordKeys,
 } from '@/lib/db.client';
 import type { M3U8AdFilterDebugInfo } from '@/lib/hls-ad-filter';
@@ -60,6 +60,7 @@ import {
   resolveRememberedPlayhead,
   shouldTriggerHlsWaitingRecovery,
 } from '@/lib/hls-recovery';
+import { createHlsResumeFragmentLoader } from '@/lib/hls-resume-fragment-loader';
 import { takeBannerClick } from '@/lib/home-banner.client';
 import { stopVideoElementLoading } from '@/lib/media-cleanup';
 import {
@@ -109,18 +110,19 @@ import { classifySeekingEvent } from '@/lib/playback-seek-intent';
 import {
   type PlaybackSessionEffect,
   type PlaybackSessionState,
+  type StartupResumeProgress,
   type VideoSnapshot,
   applySameSourceRecoverAction,
   createInitialPlaybackSessionState,
   executePlaybackSessionEffects,
   getPlaybackIntentAuthorityMode,
+  getStartupSourceTimeoutMs,
   isPlaybackRecoverySessionAuthorityEnabled,
   isStartupWorkAllowed,
   reducePlaybackSession,
   resolveAdapterAutomaticEffectAllowed,
   resolveAutomaticEffectGate,
   STARTUP_BUDGET_MS,
-  STARTUP_SOURCE_TIMEOUT_MS,
 } from '@/lib/playback-session';
 import {
   clampSourceSwitchResumeTime,
@@ -1562,6 +1564,16 @@ function usePlayPageSession() {
 
   // 用于记录是否需要在播放器 ready 后跳转到指定进度
   const resumeTimeRef = useRef<number | null>(null);
+  const initialHlsResumeRef = useRef<{
+    url: string;
+    sourceKey: string;
+    episodeIndex: number;
+    position: number;
+  } | null>(null);
+  const resumeStartupProgressRef = useRef<{
+    progress: StartupResumeProgress;
+    isCurrent: () => boolean;
+  } | null>(null);
   /** Invalidates in-flight preferences when their title or episode changes. */
   const sourcePreferenceGenerationRef = useRef(0);
   /**
@@ -2825,6 +2837,11 @@ function usePlayPageSession() {
     });
   };
 
+  const getResumeStartupProgress = () => {
+    const current = resumeStartupProgressRef.current;
+    return current?.isCurrent() ? current.progress : undefined;
+  };
+
   const dispatchPlaybackSessionEvent = (
     event: Parameters<typeof reducePlaybackSession>[1]
   ) => {
@@ -2848,7 +2865,8 @@ function usePlayPageSession() {
     const previousBadPoints = playbackSessionStateRef.current.badPoints;
     const result = reducePlaybackSession(
       playbackSessionStateRef.current,
-      event
+      event,
+      getResumeStartupProgress()
     );
     playbackSessionStateRef.current = result.state;
     if (
@@ -3061,7 +3079,8 @@ function usePlayPageSession() {
           Math.min(
             STARTUP_BUDGET_MS - startup.activeWaitMs,
             startup.sourceClockRunning
-              ? STARTUP_SOURCE_TIMEOUT_MS - startup.sourceWaitMs
+              ? getStartupSourceTimeoutMs(startup, getResumeStartupProgress()) -
+                  startup.sourceWaitMs
               : Infinity
           )
         )
@@ -3655,7 +3674,10 @@ function usePlayPageSession() {
     const contentKey = getPlaybackContentKey();
     const episodeResume = episodeHistoryPendingRef.current;
     try {
-      const records = await requestPlayRecordsFromApi();
+      const records = await requestPlayRecordsForContent({
+        contentKey,
+        legacyRoute: { source, id },
+      });
       if (
         userRewoundRef.current ||
         artPlayerRef.current !== player ||
@@ -3671,16 +3693,10 @@ function usePlayPageSession() {
       ) {
         return;
       }
-      const normalized = Object.fromEntries(
-        Object.entries(records).map(([key, record]) => [
-          key,
-          { ...record, search_title: record.search_title || '' },
-        ])
-      );
       const record = planWatchProgressRead({
         contentKey,
         episodeIndex,
-        records: normalized,
+        records,
         legacyRoute: { source, id },
         authorityMode: getWatchProgressAuthorityMode(),
       }).record;
@@ -5743,6 +5759,7 @@ function usePlayPageSession() {
       } = {}
     ) => {
       playbackInitCleanupRef.current?.();
+      if (!options.sourcesOnly) initialHlsResumeRef.current = null;
       let cancelled = false;
       const controller = new AbortController();
       playbackInitCleanupRef.current = () => {
@@ -5766,6 +5783,13 @@ function usePlayPageSession() {
       const urlFromPlayRecord =
         !options.selectedSource && searchParams.get('from') === 'playrecord';
       const directEntry = Boolean(urlSource && urlId && !urlNeedPrefer);
+      const episodeParam = searchParams.get('episode');
+      const parsedEpisode = episodeParam
+        ? Number.parseInt(episodeParam, 10)
+        : NaN;
+      const urlEpisodeIndex = Number.isFinite(parsedEpisode)
+        ? Math.max(0, parsedEpisode - 1)
+        : null;
 
       if (!options.sourcesOnly) {
         setCurrentSource(urlSource);
@@ -5878,31 +5902,30 @@ function usePlayPageSession() {
         async (): Promise<PlaybackHistoryRecord | null> => {
           if (urlSource && urlId) {
             try {
-              const allRecords = await getAllPlayRecords();
-              if (cancelled) return null;
               const contentKey = buildWatchProgressContentKey({
                 title: urlSearchTitle || urlTitle,
                 year: urlYear,
               });
-              const latest = planLatestWatchProgressForContent({
+              const scope = {
                 contentKey,
-                records: allRecords as Record<
-                  string,
-                  import('@/lib/types').PlayRecord
-                >,
                 legacyRoute: { source: urlSource, id: urlId },
+              };
+              const records = await getPlayRecordsForContent(
+                scope,
+                controller.signal
+              );
+              if (cancelled) return null;
+              const input = {
+                ...scope,
+                records,
                 authorityMode: getWatchProgressAuthorityMode(),
-              });
-
-              if (latest.record) {
-                return {
-                  index: latest.record.index,
-                  play_time: latest.record.play_time,
-                  total_time: latest.record.total_time,
-                  title: latest.record.title,
-                  year: latest.record.year,
-                };
-              }
+              };
+              return directEntry && urlEpisodeIndex != null
+                ? planWatchProgressRead({
+                    ...input,
+                    episodeIndex: urlEpisodeIndex,
+                  }).record
+                : planLatestWatchProgressForContent(input).record;
             } catch (err) {
               console.error('读取播放记录失败:', err);
             }
@@ -5975,13 +5998,8 @@ function usePlayPageSession() {
             });
             historyRecord = await fetchPlaybackHistory();
             if (cancelled) return;
-            const episodeParam = searchParams.get('episode');
-            const requestedEpisode = Math.max(
-              0,
-              episodeParam
-                ? Number.parseInt(episodeParam, 10) - 1
-                : (historyRecord?.index ?? 1) - 1
-            );
+            const requestedEpisode =
+              urlEpisodeIndex ?? Math.max(0, (historyRecord?.index ?? 1) - 1);
             const firstRequested = (results: SearchResult[]) => {
               const target = results.find(
                 (source) =>
@@ -6050,12 +6068,6 @@ function usePlayPageSession() {
           let restoredResumeTime: number | null = null;
 
           if (urlSource && urlId) {
-            const urlEpisodeParam = searchParams.get('episode');
-            const urlEpisodeIndex =
-              urlEpisodeParam == null || urlEpisodeParam === ''
-                ? null
-                : Math.max(0, Number.parseInt(urlEpisodeParam, 10) - 1);
-
             const recovery = resolvePlaybackHistoryRecovery({
               currentSource: urlSource,
               currentId: urlId,
@@ -6218,6 +6230,34 @@ function usePlayPageSession() {
             resumeTimeRef.current =
               restoredResumeTime ?? escape.resumeTime ?? 0;
             resumeEpisodeIndexRef.current = restoredEpisodeIndex;
+            const duration = historyRecord?.total_time ?? 0;
+            const url = detailData.episodes[restoredEpisodeIndex];
+            if (
+              (process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED ?? 'true') ===
+                'true' &&
+              directEntry &&
+              !options.retry &&
+              !options.selectedSource &&
+              !fellBackFromHistory &&
+              getPlaybackProbePlatform() === 'desktop-hlsjs' &&
+              historyRecord?.index === restoredEpisodeIndex + 1 &&
+              restoredResumeTime != null &&
+              restoredResumeTime > 0 &&
+              Number.isFinite(duration) &&
+              restoredResumeTime < duration &&
+              clampSourceSwitchResumeTime({
+                resumeTime: restoredResumeTime,
+                duration,
+              }) === restoredResumeTime &&
+              url
+            ) {
+              initialHlsResumeRef.current = {
+                url,
+                sourceKey: historySourceKey,
+                episodeIndex: restoredEpisodeIndex,
+                position: restoredResumeTime,
+              };
+            }
           } else if (currentEpisodeIndex >= detailData.episodes.length) {
             setCurrentEpisodeIndex(0);
           }
@@ -7417,9 +7457,8 @@ function usePlayPageSession() {
           ) {
             try {
               const duration = player.duration || 0;
-              const videoReadyState = (
-                player.video as HTMLVideoElement | undefined
-              )?.readyState;
+              const resumeVideo = player.video as HTMLVideoElement | undefined;
+              const videoReadyState = resumeVideo?.readyState;
               if (
                 shouldDeferQueuedResumeUntilDurationReady({
                   resumeTime: resumeTimeRef.current,
@@ -7485,7 +7524,10 @@ function usePlayPageSession() {
                         player.video?.currentSrc || videoUrlRef.current,
                     }
                   );
-                } else {
+                } else if (
+                  resumeVideo?.hls?.config?.startPosition !== target ||
+                  Math.abs(resumeVideo.currentTime - target) > 0.05
+                ) {
                   systemSeekInFlightRef.current = true;
                   player.currentTime = target;
                   console.log('成功恢复播放进度到:', resumeTimeRef.current);
@@ -7672,7 +7714,48 @@ function usePlayPageSession() {
               if (video.hls) {
                 video.hls.destroy();
               }
+              const initialResume = initialHlsResumeRef.current;
+              initialHlsResumeRef.current = null;
+              const startPosition =
+                initialResume?.url === url &&
+                initialResume.sourceKey === getCurrentSourceKey() &&
+                initialResume.episodeIndex === currentEpisodeIndexRef.current &&
+                initialResume.position === resumeTimeRef.current
+                  ? initialResume.position
+                  : undefined;
+              const qualityAttemptId = sourceChangeAttemptIdRef.current;
+              const resumeIntentVersion = historyIntentVersionRef.current;
+              const isCurrentResumeAttempt = () =>
+                historyIntentVersionRef.current === resumeIntentVersion &&
+                playbackSessionStateRef.current.startup?.status === 'active' &&
+                isCurrentMedia();
+              const resumeFragmentLoader =
+                startPosition !== undefined
+                  ? createHlsResumeFragmentLoader(
+                      Hls.DefaultConfig.loader,
+                      startPosition,
+                      (lastProgressAtMs) => {
+                        if (!isCurrentResumeAttempt()) return;
+                        resumeStartupProgressRef.current =
+                          lastProgressAtMs === null
+                            ? null
+                            : {
+                                progress: {
+                                  attemptId: qualityAttemptId,
+                                  sourceKey: observedSource,
+                                  lastProgressAtMs,
+                                },
+                                isCurrent: isCurrentResumeAttempt,
+                              };
+                        if (lastProgressAtMs === null) armStartupTimer();
+                      }
+                    )
+                  : undefined;
               const hls = new Hls({
+                ...(startPosition === undefined ? {} : { startPosition }),
+                ...(resumeFragmentLoader
+                  ? { fLoader: resumeFragmentLoader }
+                  : {}),
                 debug: false, // 关闭日志
                 enableWorker: true, // WebWorker 解码，降低主线程压力
                 lowLatencyMode: false, // 点播场景优先稳定性，避免低缓冲导致频繁卡顿
@@ -7695,7 +7778,6 @@ function usePlayPageSession() {
               applyVideoElementPolicy(video);
               video.hls = hls;
               qualityFrameCleanupRef.current?.();
-              const qualityAttemptId = sourceChangeAttemptIdRef.current;
               const qualitySessionId =
                 playbackAttemptReporterRef.current.getSessionId();
               if (playbackQualityRef.current.isPending()) {
@@ -7790,6 +7872,32 @@ function usePlayPageSession() {
                   qualitySessionId &&
                 currentEpisodeIndexRef.current === observedEpisode &&
                 getCurrentSourceKey() === observedSource;
+              if (startPosition !== undefined) {
+                hls.once(Hls.Events.LEVEL_UPDATED, (_, { details }) => {
+                  if (!isCurrentMedia() || !canApplyStartupResult()) return;
+                  if (
+                    !details.live &&
+                    startPosition >= details.fragmentStart &&
+                    startPosition < details.edge &&
+                    clampSourceSwitchResumeTime({
+                      resumeTime: startPosition,
+                      duration: details.edge,
+                    }) === startPosition
+                  )
+                    return;
+
+                  // Stop before hls.js requests a segment on the invalid timeline.
+                  hls.config.startPosition = -1;
+                  hls.stopLoad();
+                  queueMicrotask(() => {
+                    if (isCurrentMedia() && canApplyStartupResult()) {
+                      hls.startLoad(
+                        details.live ? hls.liveSyncPosition ?? 0 : 0
+                      );
+                    }
+                  });
+                });
+              }
               const isObserving = () =>
                 document.visibilityState !== 'hidden' &&
                 playbackSessionStateRef.current.playbackIntent !==
@@ -8356,6 +8464,7 @@ function usePlayPageSession() {
                 scheduleProgressiveSourceProbe();
               };
 
+              let initialHlsSeek = false;
               const handleVideoSeeking = () => {
                 if (isCurrentMedia()) {
                   clearQoeWaiting();
@@ -8365,7 +8474,12 @@ function usePlayPageSession() {
                 // This does not relabel that seek as a user gesture.
                 historyReadSequenceRef.current += 1;
                 resetProgressiveSourceProbeStability();
-                if (systemSeekInFlightRef.current) {
+                initialHlsSeek =
+                  startPosition !== undefined &&
+                  hls.config.startPosition === startPosition &&
+                  resumeTimeRef.current === startPosition &&
+                  Math.abs(video.currentTime - startPosition) <= 0.05;
+                if (systemSeekInFlightRef.current || initialHlsSeek) {
                   return;
                 }
                 markHlsUserSeeking(video.currentTime || 0);
@@ -8383,6 +8497,10 @@ function usePlayPageSession() {
                   ) {
                     void video.play().catch(() => undefined);
                   }
+                  return;
+                }
+                if (initialHlsSeek) {
+                  initialHlsSeek = false;
                   return;
                 }
                 markHlsUserSeeked(video.currentTime || 0);

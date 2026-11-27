@@ -20,11 +20,15 @@ export interface WatchProgressRoute {
   id: string;
 }
 
+export function buildWatchProgressStoragePrefix(contentKey: string): string {
+  return `${WATCH_PROGRESS_KEY_PREFIX}${contentKey}${WATCH_PROGRESS_EPISODE_SEPARATOR}`;
+}
+
 export function buildWatchProgressStorageKey(
   contentKey: string,
   episodeIndex: number
 ): string {
-  return `${WATCH_PROGRESS_KEY_PREFIX}${contentKey}${WATCH_PROGRESS_EPISODE_SEPARATOR}${episodeIndex}`;
+  return `${buildWatchProgressStoragePrefix(contentKey)}${episodeIndex}`;
 }
 
 export function parseWatchProgressStorageKey(
@@ -307,6 +311,11 @@ export function planEpisodeChangeSave(
   };
 }
 
+export interface WatchProgressContentScope {
+  contentKey: string;
+  legacyRoute: WatchProgressRoute;
+}
+
 export interface PlanLatestWatchProgressInput {
   contentKey: string;
   records: Record<string, PlayRecord>;
@@ -314,45 +323,48 @@ export interface PlanLatestWatchProgressInput {
   authorityMode: WatchProgressAuthorityMode;
 }
 
-/**
- * Pick the newest Watch Progress row for a contentKey (any episode).
- * Used by refresh / continue-watching entry when URL omits episode.
- */
+export function selectWatchProgressContentRecords(
+  records: Record<string, PlayRecord>,
+  {
+    contentKey,
+    legacyRoute,
+  }: Pick<PlanLatestWatchProgressInput, 'contentKey' | 'legacyRoute'>
+): Record<string, PlayRecord> {
+  const legacyKey = legacyRoute
+    ? buildLegacyPlayRecordStorageKey(legacyRoute.source, legacyRoute.id)
+    : null;
+  const matches: Array<[string, PlayRecord]> = [];
+  for (const [key, record] of Object.entries(records)) {
+    const parsed = parseWatchProgressStorageKey(key);
+    if (
+      parsed?.contentKey === contentKey ||
+      (!parsed &&
+        buildWatchProgressContentKey({
+          title: record.search_title || record.title,
+          year: record.year,
+        }) === contentKey)
+    ) {
+      matches.push([key, record]);
+    }
+  }
+  // A legacy row on the requested route may predate a title or year rename.
+  if (
+    legacyKey &&
+    records[legacyKey] &&
+    !matches.some(([key]) => key === legacyKey)
+  ) {
+    matches.push([legacyKey, records[legacyKey]]);
+  }
+  return Object.fromEntries(matches);
+}
+
+/** Pick the newest Watch Progress row for a contentKey across episodes. */
 export function planLatestWatchProgressForContent(
   input: PlanLatestWatchProgressInput
 ): PlanWatchProgressReadResult {
-  const candidates: Array<{ key: string; record: PlayRecord }> = [];
-
-  for (const [key, record] of Object.entries(input.records)) {
-    const parsed = parseWatchProgressStorageKey(key);
-    if (parsed?.contentKey === input.contentKey) {
-      candidates.push({ key, record });
-      continue;
-    }
-
-    if (isWatchProgressStorageKey(key)) {
-      continue;
-    }
-
-    const recordContentKey = buildWatchProgressContentKey({
-      title: record.search_title || record.title,
-      year: record.year,
-    });
-    if (recordContentKey === input.contentKey) {
-      candidates.push({ key, record });
-    }
-  }
-
-  if (input.legacyRoute) {
-    const legacyKey = buildLegacyPlayRecordStorageKey(
-      input.legacyRoute.source,
-      input.legacyRoute.id
-    );
-    const legacy = input.records[legacyKey];
-    if (legacy && !candidates.some((item) => item.key === legacyKey)) {
-      candidates.push({ key: legacyKey, record: legacy });
-    }
-  }
+  const candidates = Object.entries(
+    selectWatchProgressContentRecords(input.records, input)
+  ).map(([key, record]) => ({ key, record }));
 
   if (candidates.length === 0) {
     return {

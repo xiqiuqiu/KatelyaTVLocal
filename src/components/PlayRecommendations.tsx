@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { getAllPlayRecords } from '@/lib/db.client';
 import { getDoubanRecommends } from '@/lib/douban.client';
@@ -46,10 +46,30 @@ export default function PlayRecommendations({
 }: PlayRecommendationsProps) {
   const [items, setItems] = useState<PlayRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [requested, setRequested] = useState(false);
+  const sectionRef = useRef<HTMLElement>(null);
   const cardWidthClass = 'w-32 min-w-[128px] sm:w-40 sm:min-w-[160px]';
   const cardType = CATEGORY_TO_TYPE[preferCategory];
 
   useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setRequested(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        observer.disconnect();
+        setRequested(true);
+      }
+    });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!requested) return;
     let cancelled = false;
 
     const fetchRecommendations = async () => {
@@ -100,7 +120,7 @@ export default function PlayRecommendations({
     return () => {
       cancelled = true;
     };
-  }, [cardType, doubanId, excludeTitle, preferCategory, vodClass]);
+  }, [cardType, doubanId, excludeTitle, preferCategory, requested, vodClass]);
 
   if (!loading && items.length === 0) {
     return null;
@@ -108,6 +128,7 @@ export default function PlayRecommendations({
 
   return (
     <section
+      ref={sectionRef}
       aria-label='相关推荐'
       className={`space-y-4 ${className || ''}`.trim()}
     >

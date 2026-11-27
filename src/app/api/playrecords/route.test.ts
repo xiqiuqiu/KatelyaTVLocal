@@ -80,6 +80,7 @@ jest.mock('@/lib/db', () => ({
     deletePlayRecordByKey: jest.fn(),
     getAllPlayRecords: jest.fn(),
     getPlayRecordByKey: jest.fn(),
+    getPlayRecordsForContent: jest.fn(),
     getRecentPlayRecords: jest.fn(),
     savePlayRecord: jest.fn(),
     savePlayRecordByKey: jest.fn(),
@@ -106,6 +107,40 @@ describe('playrecords route', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
+
+  it('reads only the requested authenticated content scope', async () => {
+    mockedDb.getPlayRecordsForContent.mockResolvedValue({});
+    const query = new URLSearchParams({
+      contentKey: '影片%_#::2026',
+      source: 'line',
+      id: '1+2',
+    });
+    const response = await GET(
+      new Request(`https://app.example.com/api/playrecords?${query}`)
+    );
+    expect(response.status).toBe(200);
+    expect(mockedDb.getPlayRecordsForContent).toHaveBeenCalledWith('alice', {
+      contentKey: '影片%_#::2026',
+      legacyRoute: { source: 'line', id: '1+2' },
+    });
+    expect(mockedDb.getAllPlayRecords).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'contentKey=film::2026',
+    'source=line&id=1',
+    'contentKey=film::2026&source=line&id=1&limit=1',
+  ])(
+    'rejects an invalid content query without falling back to all records (%s)',
+    async (query) => {
+      const response = await GET(
+        new Request(`https://app.example.com/api/playrecords?${query}`)
+      );
+      expect(response.status).toBe(400);
+      expect(mockedDb.getAllPlayRecords).not.toHaveBeenCalled();
+      expect(mockedDb.getPlayRecordsForContent).not.toHaveBeenCalled();
+    }
+  );
 
   it('saves play records with source/id parsed from the storage key', async () => {
     const response = await POST(
