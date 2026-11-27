@@ -1562,6 +1562,12 @@ function usePlayPageSession() {
 
   // 用于记录是否需要在播放器 ready 后跳转到指定进度
   const resumeTimeRef = useRef<number | null>(null);
+  const initialHlsResumeRef = useRef<{
+    url: string;
+    sourceKey: string;
+    episodeIndex: number;
+    position: number;
+  } | null>(null);
   /** Invalidates in-flight preferences when their title or episode changes. */
   const sourcePreferenceGenerationRef = useRef(0);
   /**
@@ -5740,6 +5746,7 @@ function usePlayPageSession() {
       } = {}
     ) => {
       playbackInitCleanupRef.current?.();
+      if (!options.sourcesOnly) initialHlsResumeRef.current = null;
       let cancelled = false;
       const controller = new AbortController();
       playbackInitCleanupRef.current = () => {
@@ -6210,6 +6217,33 @@ function usePlayPageSession() {
             resumeTimeRef.current =
               restoredResumeTime ?? escape.resumeTime ?? 0;
             resumeEpisodeIndexRef.current = restoredEpisodeIndex;
+            const duration = historyRecord?.total_time ?? 0;
+            const url = detailData.episodes[restoredEpisodeIndex];
+            if (
+              process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED === 'true' &&
+              directEntry &&
+              !options.retry &&
+              !options.selectedSource &&
+              !fellBackFromHistory &&
+              getPlaybackProbePlatform() === 'desktop-hlsjs' &&
+              historyRecord?.index === restoredEpisodeIndex + 1 &&
+              restoredResumeTime != null &&
+              restoredResumeTime > 0 &&
+              Number.isFinite(duration) &&
+              restoredResumeTime < duration &&
+              clampSourceSwitchResumeTime({
+                resumeTime: restoredResumeTime,
+                duration,
+              }) === restoredResumeTime &&
+              url
+            ) {
+              initialHlsResumeRef.current = {
+                url,
+                sourceKey: historySourceKey,
+                episodeIndex: restoredEpisodeIndex,
+                position: restoredResumeTime,
+              };
+            }
           } else if (currentEpisodeIndex >= detailData.episodes.length) {
             setCurrentEpisodeIndex(0);
           }
@@ -7409,9 +7443,8 @@ function usePlayPageSession() {
           ) {
             try {
               const duration = player.duration || 0;
-              const videoReadyState = (
-                player.video as HTMLVideoElement | undefined
-              )?.readyState;
+              const resumeVideo = player.video as HTMLVideoElement | undefined;
+              const videoReadyState = resumeVideo?.readyState;
               if (
                 shouldDeferQueuedResumeUntilDurationReady({
                   resumeTime: resumeTimeRef.current,
@@ -7477,7 +7510,10 @@ function usePlayPageSession() {
                         player.video?.currentSrc || videoUrlRef.current,
                     }
                   );
-                } else {
+                } else if (
+                  resumeVideo?.hls?.config?.startPosition !== target ||
+                  Math.abs(resumeVideo.currentTime - target) > 0.05
+                ) {
                   systemSeekInFlightRef.current = true;
                   player.currentTime = target;
                   console.log('成功恢复播放进度到:', resumeTimeRef.current);
@@ -7664,7 +7700,17 @@ function usePlayPageSession() {
               if (video.hls) {
                 video.hls.destroy();
               }
+              const initialResume = initialHlsResumeRef.current;
+              initialHlsResumeRef.current = null;
+              const startPosition =
+                initialResume?.url === url &&
+                initialResume.sourceKey === getCurrentSourceKey() &&
+                initialResume.episodeIndex === currentEpisodeIndexRef.current &&
+                initialResume.position === resumeTimeRef.current
+                  ? initialResume.position
+                  : undefined;
               const hls = new Hls({
+                ...(startPosition === undefined ? {} : { startPosition }),
                 debug: false, // 关闭日志
                 enableWorker: true, // WebWorker 解码，降低主线程压力
                 lowLatencyMode: false, // 点播场景优先稳定性，避免低缓冲导致频繁卡顿
@@ -7782,6 +7828,32 @@ function usePlayPageSession() {
                   qualitySessionId &&
                 currentEpisodeIndexRef.current === observedEpisode &&
                 getCurrentSourceKey() === observedSource;
+              if (startPosition !== undefined) {
+                hls.once(Hls.Events.LEVEL_UPDATED, (_, { details }) => {
+                  if (!isCurrentMedia() || !canApplyStartupResult()) return;
+                  if (
+                    !details.live &&
+                    startPosition >= details.fragmentStart &&
+                    startPosition < details.edge &&
+                    clampSourceSwitchResumeTime({
+                      resumeTime: startPosition,
+                      duration: details.edge,
+                    }) === startPosition
+                  )
+                    return;
+
+                  // Stop before hls.js requests a segment on the invalid timeline.
+                  hls.config.startPosition = -1;
+                  hls.stopLoad();
+                  queueMicrotask(() => {
+                    if (isCurrentMedia() && canApplyStartupResult()) {
+                      hls.startLoad(
+                        details.live ? hls.liveSyncPosition ?? 0 : 0
+                      );
+                    }
+                  });
+                });
+              }
               const isObserving = () =>
                 document.visibilityState !== 'hidden' &&
                 playbackSessionStateRef.current.playbackIntent !==
@@ -8348,6 +8420,7 @@ function usePlayPageSession() {
                 scheduleProgressiveSourceProbe();
               };
 
+              let initialHlsSeek = false;
               const handleVideoSeeking = () => {
                 if (isCurrentMedia()) {
                   clearQoeWaiting();
@@ -8357,7 +8430,12 @@ function usePlayPageSession() {
                 // This does not relabel that seek as a user gesture.
                 historyReadSequenceRef.current += 1;
                 resetProgressiveSourceProbeStability();
-                if (systemSeekInFlightRef.current) {
+                initialHlsSeek =
+                  startPosition !== undefined &&
+                  hls.config.startPosition === startPosition &&
+                  resumeTimeRef.current === startPosition &&
+                  Math.abs(video.currentTime - startPosition) <= 0.05;
+                if (systemSeekInFlightRef.current || initialHlsSeek) {
                   return;
                 }
                 markHlsUserSeeking(video.currentTime || 0);
@@ -8375,6 +8453,10 @@ function usePlayPageSession() {
                   ) {
                     void video.play().catch(() => undefined);
                   }
+                  return;
+                }
+                if (initialHlsSeek) {
+                  initialHlsSeek = false;
                   return;
                 }
                 markHlsUserSeeked(video.currentTime || 0);

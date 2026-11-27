@@ -397,8 +397,14 @@ jest.mock('artplayer', () => ({
 jest.mock('hls.js', () => {
   class MockHls {
     static DefaultConfig = { loader: class TestHlsLoader {} };
-    static Events = { ERROR: 'error', MANIFEST_PARSED: 'manifestParsed' };
+    static Events = {
+      ERROR: 'error',
+      MANIFEST_PARSED: 'manifestParsed',
+      LEVEL_UPDATED: 'levelUpdated',
+    };
     static isSupported = () => mockHlsSupported;
+
+    constructor(readonly config: { startPosition?: number }) {}
 
     attachMedia = jest.fn((media: HTMLVideoElement) => {
       if (mockUseRealMediaAdapter && 'ManagedMediaSource' in window) {
@@ -414,6 +420,7 @@ jest.mock('hls.js', () => {
     loadSource = jest.fn();
     startLoad = jest.fn();
     stopLoad = jest.fn();
+    once = jest.fn();
     on = jest.fn(
       (
         event: string,
@@ -565,7 +572,13 @@ describe('PlayPage source initialization', () => {
     }
     function media() {
       return mockArtPlayerInstance?.video.hls as
-        | { loadSource: jest.Mock }
+        | {
+            config: { startPosition?: number };
+            loadSource: jest.Mock;
+            once: jest.Mock;
+            startLoad: jest.Mock;
+            stopLoad: jest.Mock;
+          }
         | undefined;
     }
     function qualityRecords() {
@@ -1171,54 +1184,104 @@ describe('PlayPage source initialization', () => {
       expect(mockArtPlayerInstance?.currentTime).toBe(110);
     });
 
-    it('uses the requested episode history on the selected line even when another episode is newer', async () => {
-      const source = requested();
-      mockSearchParams.set('episode', '2');
-      mockSearchParams.set('year', '2026');
-      const record = {
-        title: '详情影片',
-        source_name: '详情源',
-        year: '2026',
-        cover: '',
-        index: 2,
-        total_episodes: 2,
-        play_time: 96,
-        total_time: 240,
-        save_time: 1,
-      };
-      mockedGetPlayRecordsForContent.mockResolvedValue({
-        'wp:详情影片::2026#0': {
-          ...record,
-          index: 1,
-          play_time: 150,
-          save_time: 2,
-        },
-        'wp:详情影片::2026#1': record,
-      });
-      const pending = deferred<Response>();
-      requests(pending.promise, Promise.resolve(response(source)));
-      await act(async () => {
-        render(<PlayPage />);
-      });
+    it.each([
+      'disabled',
+      'position-applied',
+      'position-unapplied',
+      'shorter-playlist',
+    ] as const)(
+      'uses the requested episode history on the selected line (%s)',
+      async (variant) => {
+        const previous = process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED;
+        process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED =
+          variant === 'disabled' ? 'false' : 'true';
+        try {
+          const source = requested();
+          mockSearchParams.set('episode', '2');
+          mockSearchParams.set('year', '2026');
+          const record = {
+            title: '详情影片',
+            source_name: '详情源',
+            year: '2026',
+            cover: '',
+            index: 2,
+            total_episodes: 2,
+            play_time: 96,
+            total_time: 240,
+            save_time: 1,
+          };
+          mockedGetPlayRecordsForContent.mockResolvedValue({
+            'wp:详情影片::2026#0': {
+              ...record,
+              index: 1,
+              play_time: 150,
+              save_time: 2,
+            },
+            'wp:详情影片::2026#1': record,
+          });
+          const pending = deferred<Response>();
+          requests(pending.promise, Promise.resolve(response(source)));
+          await act(async () => {
+            render(<PlayPage />);
+          });
 
-      expect(mockedGetPlayRecordsForContent).toHaveBeenCalledWith(
-        {
-          contentKey: '详情影片::2026',
-          legacyRoute: { source: 'detail-source', id: 'detail-id' },
-        },
-        expect.any(AbortSignal)
-      );
-      expect(media()?.loadSource).toHaveBeenCalledWith(source.episodes[1]);
-      act(() => {
-        mockManifestParsedHandlers.at(-1)?.();
-        mockArtPlayerEventHandlers.get('video:canplay')?.();
-      });
-      expect(screen.getByTestId('episode-selector-sources')).toHaveAttribute(
-        'data-episode',
-        '2'
-      );
-      expect(mockArtPlayerInstance?.currentTime).toBe(94.5);
-    });
+          expect(mockedGetPlayRecordsForContent).toHaveBeenCalledWith(
+            {
+              contentKey: '详情影片::2026',
+              legacyRoute: { source: 'detail-source', id: 'detail-id' },
+            },
+            expect.any(AbortSignal)
+          );
+          expect(media()?.loadSource).toHaveBeenCalledWith(source.episodes[1]);
+          const hls = media();
+          expect(hls?.config.startPosition).toBe(
+            variant === 'disabled' ? undefined : 94.5
+          );
+          const applySeek = jest.fn();
+          if (variant === 'position-applied') {
+            const player = mockArtPlayerInstance;
+            if (!player)
+              throw new Error('Expected ArtPlayer to be initialized');
+            player.video.currentTime = 94.5;
+            Object.defineProperty(player, 'currentTime', {
+              get: () => 94.5,
+              set: applySeek,
+            });
+          }
+          if (variant === 'shorter-playlist') {
+            const levelUpdated = hls?.once.mock.calls.find(
+              ([name]) => name === 'levelUpdated'
+            )?.[1];
+            act(() => {
+              levelUpdated(undefined, {
+                details: { live: false, fragmentStart: 0, edge: 90 },
+              });
+              jest.runAllTicks();
+            });
+            expect(hls?.stopLoad).toHaveBeenCalledTimes(1);
+            expect(hls?.startLoad).toHaveBeenCalledWith(0);
+            expect(hls?.config.startPosition).toBe(-1);
+            if (mockArtPlayerInstance) mockArtPlayerInstance.duration = 90;
+          }
+          act(() => {
+            mockManifestParsedHandlers.at(-1)?.();
+            mockArtPlayerEventHandlers.get('video:canplay')?.();
+          });
+          expect(
+            screen.getByTestId('episode-selector-sources')
+          ).toHaveAttribute('data-episode', '2');
+          expect(mockArtPlayerInstance?.currentTime).toBe(
+            variant === 'shorter-playlist' ? 85 : 94.5
+          );
+          if (variant === 'position-applied')
+            expect(applySeek).not.toHaveBeenCalled();
+        } finally {
+          if (previous === undefined)
+            delete process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED;
+          else process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED = previous;
+        }
+      }
+    );
 
     it.each([
       { first: 'search', fromHistory: true },
