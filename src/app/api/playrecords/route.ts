@@ -26,6 +26,32 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const contentKey = searchParams.get('contentKey');
+    const source = searchParams.get('source');
+    const id = searchParams.get('id');
+    if (contentKey !== null || source !== null || id !== null) {
+      if (
+        !contentKey ||
+        !source ||
+        !id ||
+        !/::(?:[0-9]{4}|unknown)$/.test(contentKey) ||
+        searchParams.has('limit')
+      ) {
+        return NextResponse.json(
+          { error: 'Invalid play record scope' },
+          { status: 400 }
+        );
+      }
+      const records = await db.getPlayRecordsForContent(authInfo.username, {
+        contentKey,
+        legacyRoute: { source, id },
+      });
+      return NextResponse.json(records, {
+        status: 200,
+        headers: { 'Cache-Control': 'private, no-store' },
+      });
+    }
+
     const limit = normalizePlayRecordLimit(searchParams.get('limit'));
     const records =
       limit === undefined

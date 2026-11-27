@@ -7,13 +7,18 @@ function mockPlayRecordsResponse(records: Record<string, unknown>) {
 
 function loadPlayRecordsClient(): {
   getAllPlayRecords: () => Promise<Record<string, unknown>>;
+  getPlayRecordsForContent: (
+    scope: import('./watch-progress').WatchProgressContentScope,
+    signal?: AbortSignal
+  ) => Promise<Record<string, unknown>>;
   getRecentPlayRecords: (limit: number) => Promise<Record<string, unknown>>;
   deletePlayRecord: (source: string, id: string) => Promise<void>;
   clearAllPlayRecords: () => Promise<void>;
   savePlayRecord: (
     source: string,
     id: string,
-    record: import('./db.client').PlayRecord
+    record: import('./db.client').PlayRecord,
+    options?: { keepalive?: boolean; userRewound?: boolean }
   ) => Promise<void>;
 } {
   return require('./db.client');
@@ -33,6 +38,74 @@ describe('db.client play records cache', () => {
     jest.restoreAllMocks();
     window.localStorage.clear();
     window.RUNTIME_CONFIG = undefined;
+  });
+
+  it('refreshes only the selected content in a warm cache and retains unrelated records', async () => {
+    const scope = {
+      contentKey: 'film::2026',
+      legacyRoute: { source: 'qa', id: '1' },
+    };
+    const other = { title: 'other', year: '2026', save_time: 2 };
+    const before = { title: 'film', year: '2026', save_time: 3 };
+    const after = { title: 'film', year: '2026', save_time: 4 };
+    const full = { 'qa+1': before, 'qa+2': other };
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(await mockPlayRecordsResponse(full))
+      .mockResolvedValueOnce(await mockPlayRecordsResponse({ 'qa+1': after }))
+      .mockResolvedValue(await mockPlayRecordsResponse(full));
+    global.fetch = fetchMock;
+    const client = loadPlayRecordsClient();
+    await client.getAllPlayRecords();
+    const controller = new AbortController();
+    expect(
+      await client.getPlayRecordsForContent(scope, controller.signal)
+    ).toEqual({ 'qa+1': before });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/playrecords?contentKey=film%3A%3A2026&source=qa&id=1',
+      { signal: controller.signal }
+    );
+    expect(await client.getAllPlayRecords()).toEqual({
+      'qa+1': after,
+      'qa+2': other,
+    });
+  });
+
+  it('posts the initial playback save without downloading or caching an incomplete library', async () => {
+    const record = {
+      title: 'film',
+      source_name: 'fixture',
+      cover: '',
+      year: '2026',
+      index: 2,
+      total_episodes: 2,
+      play_time: 74.5,
+      total_time: 116,
+      save_time: 3,
+    };
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce(
+        await mockPlayRecordsResponse({
+          'qa+1': record,
+          'old+2': { save_time: 1 },
+        })
+      );
+    global.fetch = fetchMock;
+    const client = loadPlayRecordsClient();
+    await client.savePlayRecord('qa', '1', record, { keepalive: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/playrecords',
+      expect.objectContaining({
+        method: 'POST',
+        keepalive: true,
+      })
+    );
+    expect(await client.getAllPlayRecords()).toHaveProperty('old+2');
   });
 
   it('dedupes concurrent recent play record reads while cache is empty', async () => {

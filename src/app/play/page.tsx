@@ -24,9 +24,9 @@ import type { CastStatus } from '@/lib/cast';
 import { castControlIcon, requestCastPlayback } from '@/lib/cast';
 import {
   getAdSkipConfig,
-  getAllPlayRecords,
+  getPlayRecordsForContent,
   recordAdSkipWindowConfirmation,
-  requestPlayRecordsFromApi,
+  requestPlayRecordsForContent,
   savePlayRecordKeys,
 } from '@/lib/db.client';
 import type { M3U8AdFilterDebugInfo } from '@/lib/hls-ad-filter';
@@ -3655,7 +3655,10 @@ function usePlayPageSession() {
     const contentKey = getPlaybackContentKey();
     const episodeResume = episodeHistoryPendingRef.current;
     try {
-      const records = await requestPlayRecordsFromApi();
+      const records = await requestPlayRecordsForContent({
+        contentKey,
+        legacyRoute: { source, id },
+      });
       if (
         userRewoundRef.current ||
         artPlayerRef.current !== player ||
@@ -3671,16 +3674,10 @@ function usePlayPageSession() {
       ) {
         return;
       }
-      const normalized = Object.fromEntries(
-        Object.entries(records).map(([key, record]) => [
-          key,
-          { ...record, search_title: record.search_title || '' },
-        ])
-      );
       const record = planWatchProgressRead({
         contentKey,
         episodeIndex,
-        records: normalized,
+        records,
         legacyRoute: { source, id },
         authorityMode: getWatchProgressAuthorityMode(),
       }).record;
@@ -5766,6 +5763,13 @@ function usePlayPageSession() {
       const urlFromPlayRecord =
         !options.selectedSource && searchParams.get('from') === 'playrecord';
       const directEntry = Boolean(urlSource && urlId && !urlNeedPrefer);
+      const episodeParam = searchParams.get('episode');
+      const parsedEpisode = episodeParam
+        ? Number.parseInt(episodeParam, 10)
+        : NaN;
+      const urlEpisodeIndex = Number.isFinite(parsedEpisode)
+        ? Math.max(0, parsedEpisode - 1)
+        : null;
 
       if (!options.sourcesOnly) {
         setCurrentSource(urlSource);
@@ -5878,31 +5882,30 @@ function usePlayPageSession() {
         async (): Promise<PlaybackHistoryRecord | null> => {
           if (urlSource && urlId) {
             try {
-              const allRecords = await getAllPlayRecords();
-              if (cancelled) return null;
               const contentKey = buildWatchProgressContentKey({
                 title: urlSearchTitle || urlTitle,
                 year: urlYear,
               });
-              const latest = planLatestWatchProgressForContent({
+              const scope = {
                 contentKey,
-                records: allRecords as Record<
-                  string,
-                  import('@/lib/types').PlayRecord
-                >,
                 legacyRoute: { source: urlSource, id: urlId },
+              };
+              const records = await getPlayRecordsForContent(
+                scope,
+                controller.signal
+              );
+              if (cancelled) return null;
+              const input = {
+                ...scope,
+                records,
                 authorityMode: getWatchProgressAuthorityMode(),
-              });
-
-              if (latest.record) {
-                return {
-                  index: latest.record.index,
-                  play_time: latest.record.play_time,
-                  total_time: latest.record.total_time,
-                  title: latest.record.title,
-                  year: latest.record.year,
-                };
-              }
+              };
+              return directEntry && urlEpisodeIndex != null
+                ? planWatchProgressRead({
+                    ...input,
+                    episodeIndex: urlEpisodeIndex,
+                  }).record
+                : planLatestWatchProgressForContent(input).record;
             } catch (err) {
               console.error('读取播放记录失败:', err);
             }
@@ -5975,13 +5978,8 @@ function usePlayPageSession() {
             });
             historyRecord = await fetchPlaybackHistory();
             if (cancelled) return;
-            const episodeParam = searchParams.get('episode');
-            const requestedEpisode = Math.max(
-              0,
-              episodeParam
-                ? Number.parseInt(episodeParam, 10) - 1
-                : (historyRecord?.index ?? 1) - 1
-            );
+            const requestedEpisode =
+              urlEpisodeIndex ?? Math.max(0, (historyRecord?.index ?? 1) - 1);
             const firstRequested = (results: SearchResult[]) => {
               const target = results.find(
                 (source) =>
@@ -6050,12 +6048,6 @@ function usePlayPageSession() {
           let restoredResumeTime: number | null = null;
 
           if (urlSource && urlId) {
-            const urlEpisodeParam = searchParams.get('episode');
-            const urlEpisodeIndex =
-              urlEpisodeParam == null || urlEpisodeParam === ''
-                ? null
-                : Math.max(0, Number.parseInt(urlEpisodeParam, 10) - 1);
-
             const recovery = resolvePlaybackHistoryRecovery({
               currentSource: urlSource,
               currentId: urlId,

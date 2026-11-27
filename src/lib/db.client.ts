@@ -21,29 +21,17 @@ import {
 } from './ad-skip-window';
 import { getRuntimeCurrentUser } from './auth';
 import { getRecentPlayRecordsFromAll } from './play-record-key';
+import type { PlayRecord } from './types';
+import {
+  type WatchProgressContentScope,
+  selectWatchProgressContentRecords,
+} from './watch-progress';
 
 export type {
   EpisodeAdSkipConfig,
   PersistedAdSkipWindow,
 } from './ad-skip-window';
-
-// ---- 类型 ----
-export interface PlayRecord {
-  title: string;
-  source_name: string;
-  year: string;
-  cover: string;
-  index: number; // 第几集
-  total_episodes: number; // 总集数
-  play_time: number; // 播放进度（秒）
-  total_time: number; // 总进度（秒）
-  save_time: number; // 记录保存时间（时间戳）
-  search_title?: string; // 搜索时使用的标题
-  /** Resume-route preference — not part of Watch Progress identity. */
-  route_source?: string;
-  /** Resume-route preference — not part of Watch Progress identity. */
-  route_id?: string;
-}
+export type { PlayRecord } from './types';
 
 // ---- 收藏类型 ----
 export interface Favorite {
@@ -222,6 +210,26 @@ class HybridCacheManager {
     }
 
     return null;
+  }
+
+  refreshCachedPlayRecordsForContent(
+    scope: WatchProgressContentScope,
+    fresh: Record<string, PlayRecord>
+  ): void {
+    const username = this.getCurrentUsername();
+    if (!username) return;
+    const cache = this.getUserCache(username);
+    const current = cache.playRecords;
+    if (!current || !this.isCacheValid(current)) return;
+    const previous = selectWatchProgressContentRecords(current.data, scope);
+    if (JSON.stringify(previous) === JSON.stringify(fresh)) return;
+
+    const updated = { ...current.data };
+    for (const key of Object.keys(previous)) delete updated[key];
+    cache.playRecords = { ...current, data: { ...updated, ...fresh } };
+    delete cache.recentPlayRecords;
+    this.saveUserCache(username, cache);
+    emitPlayRecordsUpdated(cache.playRecords.data);
   }
 
   getCachedRecentPlayRecords(limit: number): Record<string, PlayRecord> | null {
@@ -504,6 +512,53 @@ export function requestPlayRecordsFromApi(): Promise<
   return playRecordsFetchPromise;
 }
 
+export async function requestPlayRecordsForContent(
+  scope: WatchProgressContentScope,
+  signal?: AbortSignal
+): Promise<Record<string, PlayRecord>> {
+  if (typeof window === 'undefined') return {};
+  if (STORAGE_TYPE === 'localstorage') {
+    return selectWatchProgressContentRecords(await getAllPlayRecords(), scope);
+  }
+
+  const query = new URLSearchParams({
+    contentKey: scope.contentKey,
+    source: scope.legacyRoute.source,
+    id: scope.legacyRoute.id,
+  });
+  const response = await fetch(`/api/playrecords?${query}`, { signal });
+  if (!response.ok)
+    throw new Error(`读取当前视频播放记录失败: ${response.status}`);
+  const records = (await response.json()) as Record<string, PlayRecord>;
+  return selectWatchProgressContentRecords(records, scope);
+}
+
+export async function getPlayRecordsForContent(
+  scope: WatchProgressContentScope,
+  signal?: AbortSignal
+): Promise<Record<string, PlayRecord>> {
+  const cached =
+    STORAGE_TYPE === 'localstorage'
+      ? null
+      : cacheManager.getCachedPlayRecords();
+  if (!cached) return requestPlayRecordsForContent(scope, signal);
+
+  const username = getRuntimeCurrentUser()?.username;
+  const version = playRecordsMutationVersion;
+  void requestPlayRecordsForContent(scope, signal)
+    .then((fresh) => {
+      if (
+        !signal?.aborted &&
+        version === playRecordsMutationVersion &&
+        username === getRuntimeCurrentUser()?.username
+      ) {
+        cacheManager.refreshCachedPlayRecordsForContent(scope, fresh);
+      }
+    })
+    .catch(() => undefined);
+  return selectWatchProgressContentRecords(cached, scope);
+}
+
 function requestRecentPlayRecordsFromApi(
   limit: number
 ): Promise<Record<string, PlayRecord>> {
@@ -643,13 +698,12 @@ async function persistPlayRecordByKey(
   // 数据库存储模式：乐观更新策略（包括 redis、d1、upstash）
   if (STORAGE_TYPE !== 'localstorage') {
     markPlayRecordsMutated();
-    // 立即更新缓存
-    const cachedRecords = await getPlayRecordsMutationBase();
-    cachedRecords[key] = record;
-    cacheManager.cachePlayRecords(cachedRecords);
-
-    // 触发立即更新事件
-    emitPlayRecordsUpdated(cachedRecords);
+    const cached = cacheManager.getCachedPlayRecords();
+    if (cached) {
+      const updated = { ...cached, [key]: record };
+      cacheManager.cachePlayRecords(updated);
+      emitPlayRecordsUpdated(updated);
+    }
 
     // 异步同步到数据库
     try {
@@ -670,7 +724,7 @@ async function persistPlayRecordByKey(
         throw new Error(`保存播放记录失败: ${res.status}`);
       }
     } catch (err) {
-      await handleDatabaseOperationFailure('playRecords', err);
+      if (cached) await handleDatabaseOperationFailure('playRecords', err);
       throw err;
     }
     return;
