@@ -246,9 +246,6 @@ const SOURCE_PREFERENCE_MAX_BUDGET_MS = 3000;
 const SOURCE_SELECTION_DEEP_PROBE_TIMEOUT_MS = 1800;
 const PROGRESSIVE_SOURCE_PROBE_MAX_TIMEOUT_MS = 2600;
 const PROGRESSIVE_SOURCE_PROBE_BUFFER_SECONDS = 5;
-const HLS_RESUME_GRACE_PREVIEW_MS = Number(
-  process.env.NEXT_PUBLIC_HLS_RESUME_GRACE_PREVIEW_MS
-);
 const SOURCE_CHANGE_TIMEOUT_MS = 10_000;
 const PROGRESSIVE_SOURCE_PROBE_STABLE_DELAY_MS = 10000;
 const PROGRESSIVE_SOURCE_PROBE_INTERVAL_MS = 20000;
@@ -6236,7 +6233,8 @@ function usePlayPageSession() {
             const duration = historyRecord?.total_time ?? 0;
             const url = detailData.episodes[restoredEpisodeIndex];
             if (
-              process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED === 'true' &&
+              (process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED ?? 'true') ===
+                'true' &&
               directEntry &&
               !options.retry &&
               !options.selectedSource &&
@@ -7732,9 +7730,7 @@ function usePlayPageSession() {
                 playbackSessionStateRef.current.startup?.status === 'active' &&
                 isCurrentMedia();
               const resumeFragmentLoader =
-                startPosition !== undefined &&
-                Number.isSafeInteger(HLS_RESUME_GRACE_PREVIEW_MS) &&
-                HLS_RESUME_GRACE_PREVIEW_MS > 0
+                startPosition !== undefined
                   ? createHlsResumeFragmentLoader(
                       Hls.DefaultConfig.loader,
                       startPosition,
@@ -7748,7 +7744,6 @@ function usePlayPageSession() {
                                   attemptId: qualityAttemptId,
                                   sourceKey: observedSource,
                                   lastProgressAtMs,
-                                  extraWaitMs: HLS_RESUME_GRACE_PREVIEW_MS,
                                 },
                                 isCurrent: isCurrentResumeAttempt,
                               };

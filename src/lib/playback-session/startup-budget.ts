@@ -7,12 +7,12 @@ import type {
 export const STARTUP_BUDGET_MS = 30_000;
 export const STARTUP_SOURCE_TIMEOUT_MS = 10_000;
 const RESUME_FRAGMENT_PROGRESS_FRESH_MS = 1200;
+const RESUME_FRAGMENT_STARTUP_GRACE_MS = 2000;
 
 export interface StartupResumeProgress {
   attemptId: number;
   sourceKey: string;
   lastProgressAtMs: number;
-  extraWaitMs: number;
 }
 
 export interface StartupBudgetState {
@@ -145,7 +145,7 @@ export function getStartupSourceTimeoutMs(
   if (freshnessRemaining <= 0) return STARTUP_SOURCE_TIMEOUT_MS;
 
   return Math.min(
-    STARTUP_SOURCE_TIMEOUT_MS + resumeProgress.extraWaitMs,
+    STARTUP_SOURCE_TIMEOUT_MS + RESUME_FRAGMENT_STARTUP_GRACE_MS,
     startup.sourceWaitMs + freshnessRemaining
   );
 }

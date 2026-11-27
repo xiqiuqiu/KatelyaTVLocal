@@ -404,7 +404,9 @@ jest.mock('hls.js', () => {
     };
     static isSupported = () => mockHlsSupported;
 
-    constructor(readonly config: { startPosition?: number }) {}
+    constructor(
+      readonly config: { startPosition?: number; fLoader?: unknown }
+    ) {}
 
     attachMedia = jest.fn((media: HTMLVideoElement) => {
       if (mockUseRealMediaAdapter && 'ManagedMediaSource' in window) {
@@ -573,7 +575,7 @@ describe('PlayPage source initialization', () => {
     function media() {
       return mockArtPlayerInstance?.video.hls as
         | {
-            config: { startPosition?: number };
+            config: { startPosition?: number; fLoader?: unknown };
             loadSource: jest.Mock;
             once: jest.Mock;
             startLoad: jest.Mock;
@@ -1185,6 +1187,7 @@ describe('PlayPage source initialization', () => {
     });
 
     it.each([
+      'default',
       'disabled',
       'position-applied',
       'position-unapplied',
@@ -1193,8 +1196,11 @@ describe('PlayPage source initialization', () => {
       'uses the requested episode history on the selected line (%s)',
       async (variant) => {
         const previous = process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED;
-        process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED =
-          variant === 'disabled' ? 'false' : 'true';
+        if (variant === 'default')
+          delete process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED;
+        else
+          process.env.NEXT_PUBLIC_HLS_RESUME_START_ENABLED =
+            variant === 'disabled' ? 'false' : 'true';
         try {
           const source = requested();
           mockSearchParams.set('episode', '2');
@@ -1236,6 +1242,9 @@ describe('PlayPage source initialization', () => {
           const hls = media();
           expect(hls?.config.startPosition).toBe(
             variant === 'disabled' ? undefined : 94.5
+          );
+          expect(typeof hls?.config.fLoader).toBe(
+            variant === 'disabled' ? 'undefined' : 'function'
           );
           const applySeek = jest.fn();
           if (variant === 'position-applied') {

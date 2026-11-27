@@ -78,7 +78,6 @@ describe('startup budget authority', () => {
       attemptId: 1,
       sourceKey: 'first-1',
       lastProgressAtMs: 9950,
-      extraWaitMs: 2000,
     };
     const normalDeadline = { type: 'startup.tick', nowMs: 10000 } as const;
     const active = reducePlaybackSession(state, normalDeadline, progress);
